@@ -1,7 +1,7 @@
 /**
  * Industry Analysis Charts（行业分析页渲染）
  * 渲染：期货指数关联图（复用 Charts.futuresCorrelation）、行业归属、政策前景、
- * 行业研报评级分布（饼图）、近一年研报月度趋势（柱状图）、行业研报列表。
+ * 公司研报列表（针对本公司）、行业研报列表（所属行业相关）。
  * 所有渲染均做防御，数据缺失时显示友好占位而非空白。
  */
 window.IndustryCharts = {
@@ -10,9 +10,8 @@ window.IndustryCharts = {
     this.renderFutures(data.futures);
     this.renderIndustryOverview(data.industry, boardData, historyData, data.policy, stockMarketCapData);
     this.renderPolicy(data.policy);
-    this.renderReportRating(data.reportStats);
-    this.renderReportTrend(data.reportStats);
-    this.renderReportList(data.industryReports);
+    this.renderCompanyReportList(data.companyReports, data.name);
+    this.renderReportList(data.industryReports, data.industry && data.industry.induName);
   },
 
   // ---- 期货指数分析（仅产品相关时显示）----
@@ -351,66 +350,35 @@ window.IndustryCharts = {
       </div>`;
   },
 
-  // ---- 研报评级分布（饼图）----
-  renderReportRating(stats) {
-    const el = document.getElementById('indReportRating');
+  // ---- 公司研报列表（针对本公司）----
+  renderCompanyReportList(list, stockName) {
+    const nameEl = document.getElementById('indCompanyReportName');
+    if (nameEl && stockName) nameEl.textContent = stockName;
+    const el = document.getElementById('indCompanyReportList');
     if (!el) return;
-    if (!stats || !stats.ratingDist) {
-      el.innerHTML = '<div class="data-empty">⚠️ 暂未获取到行业研报评级分布（数据源未提供或网络受限）。</div>';
+    if (!list || !list.length) {
+      el.innerHTML = '<div class="data-empty">⚠️ 暂未获取到近一年针对本公司的券商研报（数据源未提供或网络受限）。</div>';
       return;
     }
-    const d = stats.ratingDist;
-    const data = [
-      { name: '买入', value: d['买入'] || 0 },
-      { name: '增持', value: d['增持'] || 0 },
-      { name: '中性', value: d['中性'] || 0 },
-      { name: '减持', value: d['减持'] || 0 },
-      { name: '卖出', value: d['卖出'] || 0 },
-      { name: '其他', value: d['其他'] || 0 },
-    ].filter((x) => x.value > 0);
-    if (!data.length) {
-      el.innerHTML = '<div class="data-empty">⚠️ 近一年无结构化评级数据。</div>';
-      return;
-    }
-    this._initChart(el, 'indReportRating', {
-      tooltip: { trigger: 'item' },
-      legend: { bottom: 0, textStyle: { color: '#888' } },
-      series: [{
-        type: 'pie', radius: ['40%', '68%'], center: ['50%', '45%'],
-        label: { color: '#bbb', formatter: '{b}: {c} ({d}%)' },
-        data,
-        color: ['#22c55e', '#84cc16', '#eab308', '#f97316', '#ef4444', '#94a3b8'],
-      }],
-    });
+    el.innerHTML = `<div class="research-list">${list.slice(0, 50).map((r) => this._renderReportItem(r)).join('')}</div>`;
   },
 
-  // ---- 研报月度趋势（柱状图）----
-  renderReportTrend(stats) {
-    const el = document.getElementById('indReportTrend');
-    if (!el) return;
-    if (!stats || !stats.monthly || !stats.monthly.months || !stats.monthly.months.length) {
-      el.innerHTML = '<div class="data-empty">⚠️ 暂未获取到行业研报发布趋势。</div>';
-      return;
-    }
-    const { months, counts } = stats.monthly;
-    this._initChart(el, 'indReportTrend', {
-      tooltip: { trigger: 'axis' },
-      grid: { left: 40, right: 16, top: 20, bottom: 64 },
-      xAxis: { type: 'category', data: months, axisLabel: { color: '#888', rotate: 45, interval: 0, fontSize: 10 } },
-      yAxis: { type: 'value', axisLabel: { color: '#888' }, splitLine: { lineStyle: { color: '#2a2f3a' } } },
-      series: [{ type: 'bar', data: counts, itemStyle: { color: '#7fa8c9' }, barWidth: '55%' }],
-    });
-  },
-
-  // ---- 行业研报列表 ----
-  renderReportList(list) {
+  // ---- 行业研报列表（所属行业相关）----
+  renderReportList(list, induName) {
+    const nameEl = document.getElementById('indIndustryReportName');
+    if (nameEl) nameEl.textContent = induName || '所属行业';
     const el = document.getElementById('indReportList');
     if (!el) return;
     if (!list || !list.length) {
-      el.innerHTML = '<div class="data-empty">⚠️ 暂未获取到近一年的行业分析师研究报告（数据源未提供或网络受限）。</div>';
+      el.innerHTML = '<div class="data-empty">⚠️ 暂未获取到近一年的行业研报（数据源未提供或网络受限）。</div>';
       return;
     }
-    const rows = list.slice(0, 50).map((r) => `
+    el.innerHTML = `<div class="research-list">${list.slice(0, 50).map((r) => this._renderReportItem(r)).join('')}</div>`;
+  },
+
+  // ---- 单条研报渲染（公司/行业共用）----
+  _renderReportItem(r) {
+    return `
       <div class="research-item">
         <div class="research-title">${r.title || '（无标题）'}</div>
         <div class="research-meta">
@@ -419,8 +387,7 @@ window.IndustryCharts = {
           ${r.targetPrice ? `<span class="research-target">目标价：¥${Number(r.targetPrice).toFixed(2)}</span>` : ''}
           ${r.publishDate ? `<span class="research-date">📅 ${r.publishDate}</span>` : ''}
         </div>
-      </div>`).join('');
-    el.innerHTML = `<div class="research-list">${rows}</div>`;
+      </div>`;
   },
 
   // 统一初始化 ECharts（先释放旧实例），并把实例挂到 Charts.instances 以便 Tab 切换时 resize

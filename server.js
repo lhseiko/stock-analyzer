@@ -10,11 +10,13 @@ const multer = require('multer');
 const { getQuote, getHistory, getHistoryPeriod, getHistoryDeep, searchStocks, detectMarket, getMarketOverview, fetchTencentMinutes } = require('./lib/stockData');
 const { technicalAnalysis, fundamentalAnalysis, evaluateSignals, aggregateSentiment, buildFundamentalComparison } = require('./lib/analysis');
 const { analyzePriceAction } = require('./lib/priceAction');
+const { getPriceActionSnapshot } = require('./lib/priceActionHub');
 const { getNews, getHotNews } = require('./lib/newsSearch');
 const { getMacroNews } = require('./lib/macroNews');
 const { getMacroIndicators } = require('./lib/macroData');
 const { getMarketRank } = require('./lib/marketRank');
 const { getIndexPETrend } = require('./lib/indexPETrend');
+const { getMarketTechnical } = require('./lib/marketTechnical'); // 首页·大盘技术分析（三大指数六步推演）
 const { deepAnalysis, getLocalDocuments, loadDividendSeries, persistDividends, fetchDividends, normalizeSymbol } = require('./lib/deepAnalysis');
 const { analyzeCapitalFlow } = require('./lib/capitalFlow');
 const { classifyCompanyType } = require('./lib/companyType');
@@ -40,7 +42,7 @@ const hotTopics = require('./lib/hotTopics'); // 20260827c：个股近期热点�
 const homeHotTopics = require('./lib/homeHotTopics'); // 20260827f：首页最热股票话题（同花顺/雪球/东方财富 AI 联网聚合）
 const { getGlobalSentiment, interpretReport, getFundIndustryMatrix } = require('./lib/cnscraperAdapter');
 const mx = require('./lib/miaoxiang');
-const { augmentStock, analyzeAspects, analyzeProducts, analyzeCompany, analyzeSupplyChain, analyzeShareholdersAI, analyzeMarketOverview, analyzeIndustryIndex, analyzeResearchReports, analyzeAnnouncements, analyzeEarningsReport, readIndustryIndexCache, loadConfig, saveConfig, publicConfig, readCache, readEarningsCache } = require('./lib/aiAugment');
+const { augmentStock, analyzeAspects, analyzeProducts, analyzeCompany, analyzeSupplyChain, analyzeShareholdersAI, analyzeMarketOverview, analyzeIndustryIndex, analyzeResearchReports, analyzeAnnouncements, analyzeEarningsReport, analyzeValuation, readIndustryIndexCache, loadConfig, saveConfig, publicConfig, readCache, readEarningsCache } = require('./lib/aiAugment');
 const docStore = require('./lib/docStore');
 const reportSync = require('./lib/reportSync'); // 20260821f：财报事件→资料库自动同步
 // 20260823p：全市场情绪指数 + 市场情绪拐点检测（启发式检测器 + 自适应学习）
@@ -66,7 +68,7 @@ app.use('/api', (req, res, next) => {
 
 // 入口 HTML 强制带版本号重定向：旧服务器曾允许缓存 index.html，浏览器可能一直用旧副本。
 // 每次访问 / 或 /index.html 都重定向到带 ?v= 的版本，确保一定拉取最新前端（无需用户手动硬刷新）。
-const APP_VERSION = '20260904c';
+const APP_VERSION = '20260905i';
 app.use((req, res, next) => {
   if ((req.path === '/' || req.path === '/index.html') && req.query.v !== APP_VERSION) {
     return res.redirect(`/index.html?v=${APP_VERSION}`);
@@ -263,33 +265,17 @@ app.get('/api/history60/:symbol', async (req, res) => {
   }
 });
 
-// 价格行为趋势推演（技术面页专用：10年日K重采样周/月线 + 60分钟K线，本地计算零LLM成本）
-// 缓存策略：盘中（交易日 09:15–15:05）10 分钟，非盘中至当日结束
-const _paCache = new Map();
+// 价格行为趋势推演（技术面页/短期判断/长期判断共用：10年日K重采样周/月线 + 60分钟K线，本地计算零LLM成本）
+// 20260905g：缓存与计算下沉到 lib/priceActionHub 唯一出口，与短期/长期判断共用同一份快照（指标级单源）
 app.get('/api/price-action/:symbol', async (req, res) => {
   try {
     const symbol = req.params.symbol;
-    const now = new Date();
-    const hk = now.getHours() * 100 + now.getMinutes();
-    const wd = now.getDay();
-    const inHours = wd >= 1 && wd <= 5 && hk >= 915 && hk <= 1505;
-    const ttl = inHours ? 10 * 60 * 1000 : 24 * 60 * 60 * 1000;
-    const cached = _paCache.get(symbol);
-    if (cached && Date.now() - cached.ts < ttl) {
-      return res.json({ success: true, ...cached.data });
+    const force = req.query.refresh === '1' || req.query.force === '1';
+    const data = await getPriceActionSnapshot(symbol, { force });
+    if (!data || data.error) {
+      return res.json({ success: false, error: (data && data.error) || '价格行为推演失败' });
     }
-    const [dailyRes, h60Res] = await Promise.allSettled([
-      getHistoryDeep(symbol, 2400),
-      getHistoryPeriod(symbol, '60m', 400),
-    ]);
-    const daily = dailyRes.status === 'fulfilled' ? dailyRes.value : [];
-    const h60 = h60Res.status === 'fulfilled' ? h60Res.value : [];
-    if (!daily || daily.length < 60) {
-      return res.json({ success: false, error: 'K线数据不足，无法进行价格行为推演' });
-    }
-    const data = analyzePriceAction(daily, h60 && h60.length ? h60 : null);
-    _paCache.set(symbol, { ts: Date.now(), data });
-    res.json({ success: !data.error, symbol, ...data });
+    res.json({ success: true, symbol, ...data });
   } catch (err) {
     console.error('PriceAction error:', err);
     res.status(500).json({ success: false, error: err.message });
@@ -643,6 +629,18 @@ app.get('/api/index-pe-trend', async (req, res) => {
   }
 });
 
+// 首页·大盘技术分析：上证/深证/创业板指 收盘后六步技术面推演（短中期预判）
+app.get('/api/market-technical', async (req, res) => {
+  try {
+    const force = req.query.refresh === '1' || req.query.force === '1';
+    const result = await getMarketTechnical({ force });
+    res.json(result);
+  } catch (err) {
+    console.error('[MarketTechnical] route error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // 首页·行业板块拥挤度（当日/本周/本月 前五）：板块成交额 ÷ 全市场成交额 × 100%
 app.get('/api/sector-crowding', async (req, res) => {
   try {
@@ -946,6 +944,27 @@ app.post('/api/ai/company', async (req, res) => {
     const { symbol, stockName, industry, force, companyName } = req.body || {};
     if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL', message: '缺少股票代码' });
     const data = await analyzeCompany({ symbol, stockName, industry, force: !!force, companyName });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+// 估值大模型（提示词驱动，读取 prompts/valuation-system.md）：AI 联网估值
+app.post('/api/ai/valuation', async (req, res) => {
+  try {
+    const { symbol, stockName, industry, force, companyName } = req.body || {};
+    if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL', message: '缺少股票代码' });
+    const data = await analyzeValuation({ symbol, stockName, industry, force: !!force, companyName });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+app.get('/api/ai/valuation/:symbol', async (req, res) => {
+  try {
+    const symbol = String(req.params.symbol || '').trim();
+    if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL', message: '缺少股票代码' });
+    const data = await analyzeValuation({ symbol, force: false });
     res.json(data);
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

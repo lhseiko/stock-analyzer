@@ -65,6 +65,8 @@ const App = {
     this.loadMarketOverview();
     // 首页·大盘估值趋势（上证50 / 沪深300 / 科创50 近5年PE-TTM）
     this.loadIndexPeTrend();
+    // 首页·大盘技术分析（上证/深证/创业板指 六步技术面推演）
+    this.loadMarketTechnical();
     // 顶栏大盘行情状态栏（上证/深证/创业板/科创50/北证50/恒生/纳斯达克/道琼斯）
     this.loadTopbarIndices();
     // 首页「今日财经热点」卡片
@@ -124,6 +126,10 @@ const App = {
     if (indexPeTrendRefresh) {
       indexPeTrendRefresh.addEventListener('click', () => this.loadIndexPeTrend());
     }
+    const marketTechnicalRefresh = document.getElementById('marketTechnicalRefresh');
+    if (marketTechnicalRefresh) {
+      marketTechnicalRefresh.addEventListener('click', () => this.loadMarketTechnical(true));
+    }
     // 首页可见时每 60 秒自动刷新行情；离开首页则暂停
     setInterval(() => {
       // 顶栏大盘行情常驻，任何页面每 60 秒刷新一次
@@ -132,6 +138,7 @@ const App = {
       if (empty && !empty.classList.contains('hidden')) {
         this.loadMarketOverview();
         this.loadIndexPeTrend();
+        this.loadMarketTechnical();
         this.loadSentimentTurningPoint();
         this.loadSectorCrowding();
       }
@@ -231,6 +238,11 @@ const App = {
     if (industryOverviewAiBtn) industryOverviewAiBtn.addEventListener('click', () => this.loadIndustryBoardIndex(true));
     const industryOverviewRefresh = document.getElementById('industryOverviewRefresh');
     if (industryOverviewRefresh) industryOverviewRefresh.addEventListener('click', () => this.loadIndustryBoardIndex(true));
+    const valuationAiBtn = document.getElementById('valuationAiBtn');
+    // 20260905i：主按钮缓存优先（force=false，30天缓存内不重复调 LLM），「🔄 重新估值」才强刷
+    if (valuationAiBtn) valuationAiBtn.addEventListener('click', () => this.runValuationAI(false));
+    const valuationAiRefresh = document.getElementById('valuationAiRefresh');
+    if (valuationAiRefresh) valuationAiRefresh.addEventListener('click', () => this.runValuationAI(true));
     document.getElementById('aiSettingsBtn').addEventListener('click', () => this.openAISettings());
     document.getElementById('aiSettingsClose').addEventListener('click', () => this.closeAISettings());
     document.getElementById('aiSettingsCancel').addEventListener('click', () => this.closeAISettings());
@@ -621,6 +633,10 @@ const App = {
     // 自动加载已存的 AI 联网补全缓存（一次搜索、长期留存，无需每次手动点击/联网）
     if (this.currentSymbol) {
       setTimeout(() => this.loadAICache(), 60);
+    }
+    // 自动加载已存的 AI 估值大模型缓存（打开个股页即显示，无需手动点击）
+    if (this.currentSymbol) {
+      setTimeout(() => this.loadValuationAICache(), 60);
     }
 
     // 概览补充卡片：行业前景 / 股东户数变化 / 最大亮点雷点（异步加载，不随切换页面中断）
@@ -1183,7 +1199,16 @@ const App = {
     const all = (j.factors || []).filter(f => f.applicable);
     const maxAbs = all.reduce((m, f) => Math.max(m, Math.abs(f.contribution || 0)), 0) || 1;
     const topN = 3; // 默认只展示贡献最大的前 3 个因子，其余折叠
-    const sorted = all.slice().sort((a, b) => Math.abs(b.contribution || 0) - Math.abs(a.contribution || 0));
+    // 20260905f：类型级一致性，所有个股按 FACTOR_KEYS 规范顺序（与 lib/sameDayJudgment.js 一致），
+    // 一级排序=规范顺序，二级排序=贡献分绝对值降序（保证可视化稳定性，贡献大的优先）。
+    // 这样无论两只股票数据是否相同，渲染顺序都一致（用户可对照同位置比较）。
+    const FACTOR_ORDER = { sentiment: 0, capital: 1, futures: 2, market: 3, holdings: 4, sectorLimit: 5, seesaw: 6, technicalShort: 7 };
+    const sorted = all.slice().sort((a, b) => {
+      const oa = (FACTOR_ORDER[a.key] != null) ? FACTOR_ORDER[a.key] : 999;
+      const ob = (FACTOR_ORDER[b.key] != null) ? FACTOR_ORDER[b.key] : 999;
+      if (oa !== ob) return oa - ob;
+      return Math.abs(b.contribution || 0) - Math.abs(a.contribution || 0);
+    });
     const rows = sorted.map((f, i) => {
       // 颜色由影响程度评分统一决定（与徽章同源）；条形方向仍按贡献分符号（左右分侧）
       const signCls = this._impactCls(f);
@@ -3471,6 +3496,77 @@ const App = {
     body.innerHTML = html;
   },
 
+  // ---- AI 估值大模型（提示词驱动，读取 prompts/valuation-system.md）----
+  async loadValuationAICache() {
+    const symbol = this.currentSymbol;
+    if (!symbol) return;
+    const body = document.getElementById('valuationAiBody');
+    if (!body) return;
+    try {
+      const resp = await fetch(`/api/ai/valuation/${encodeURIComponent(symbol)}`);
+      const data = await resp.json();
+      if (this.currentSymbol !== symbol) return;
+      if (data.success && data.cached && data.content) {
+        this.renderValuationAI(data);
+      }
+    } catch {}
+  },
+
+  async runValuationAI(force) {
+    const symbol = this.currentSymbol;
+    if (!symbol) return;
+    const body = document.getElementById('valuationAiBody');
+    const btn = document.getElementById('valuationAiBtn');
+    const refreshBtn = document.getElementById('valuationAiRefresh');
+    if (!body || !btn) return;
+    if (!this.aiConfig || !this.aiConfig.hasKey) {
+      this.aiConfig = await this.loadAIConfig();
+    }
+    if (!this.aiConfig || !this.aiConfig.hasKey) {
+      body.innerHTML = '<div class="ai-empty">⚠️ 尚未配置 API Key。请点击左侧栏「⚙️ AI 联网设置」填入通义千问等带联网搜索的 Key。</div>';
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = '⏳ 估值中…';
+    refreshBtn.style.display = 'none';
+    body.innerHTML = '<div class="ai-loading"><div class="loading-spinner"></div><p>AI 估值大模型正在联网检索 ' + (this.escapeHtml(this.currentData?.name || symbol)) + ' 的行情/财报…</p></div>';
+    try {
+      const r = await fetch('/api/ai/valuation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol, stockName: this.currentData?.name || '', industry: '', force: !!force }),
+      });
+      const j = await r.json();
+      if (this.currentSymbol !== symbol) return;
+      if (j.success) {
+        this.renderValuationAI(j);
+      } else {
+        body.innerHTML = '<div class="ai-empty">❌ ' + this.escapeHtml(j.message || '请求失败') + '</div>';
+      }
+    } catch (e) {
+      body.innerHTML = '<div class="ai-empty">❌ 网络错误：' + this.escapeHtml(e.message) + '</div>';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '✨ AI 估值';
+    }
+  },
+
+  renderValuationAI(j) {
+    const body = document.getElementById('valuationAiBody');
+    const dateEl = document.getElementById('valuationAiDate');
+    const refreshBtn = document.getElementById('valuationAiRefresh');
+    if (!body) return;
+    const d = new Date(j.date);
+    const pad = (n) => String(n).padStart(2, '0');
+    if (dateEl) dateEl.textContent = (j.cached ? '缓存于 ' : '更新于 ') +
+      `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    if (refreshBtn) refreshBtn.style.display = '';
+    let html = '<div class="ai-markdown">' + this.renderMarkdown(j.content) + '</div>';
+    const modeText = '由 AI 估值大模型（年报数据库 + 上网搜索）生成，仅供参考，请自行核实。模型：' + this.escapeHtml(j.model || '');
+    html += '<div class="ai-foot-note">' + modeText + '</div>';
+    body.innerHTML = html;
+  },
+
   // ---- 产品·客户（默认用 AI 联网获取；财报未覆盖时自动补全）----
   async loadProducts(force = false) {
     const symbol = this.currentSymbol;
@@ -3961,6 +4057,93 @@ const App = {
     requestAnimationFrame(() => {
       Charts.indexPETrend('indexPeTrendChart', data.data);
     });
+  },
+
+  async loadMarketTechnical(force) {
+    const container = document.getElementById('marketTechnicalBody');
+    if (!container) return;
+    if (!container.dataset.loaded) {
+      container.innerHTML = '<div class="mo-loading">正在对三大指数进行收盘后技术面推演…</div>';
+    }
+    try {
+      const qs = force ? '?refresh=1' : '';
+      const resp = await fetch('/api/market-technical' + qs);
+      const data = await resp.json();
+      if (!data || data.success === false) {
+        container.innerHTML = '<div class="mo-loading">大盘技术分析暂时不可用，点击右上角「刷新」重试</div>';
+        return;
+      }
+      this.renderMarketTechnical(data);
+      const upd = document.getElementById('marketTechnicalUpdated');
+      if (upd && data.updatedAt) {
+        const d = new Date(data.updatedAt);
+        const hh = String(d.getHours()).padStart(2, '0');
+        const mm = String(d.getMinutes()).padStart(2, '0');
+        upd.textContent = `更新于 ${hh}:${mm}`;
+      }
+      container.dataset.loaded = '1';
+    } catch (e) {
+      console.error('loadMarketTechnical error:', e);
+      if (!container.dataset.loaded) {
+        container.innerHTML = '<div class="mo-loading">大盘技术分析加载失败，点击右上角「刷新」重试</div>';
+      }
+    }
+  },
+
+  renderMarketTechnical(data) {
+    const container = document.getElementById('marketTechnicalBody');
+    const note = document.getElementById('marketTechnicalNote');
+    if (!container) return;
+    const dirClass = (d) => d === '看多' ? 'mt-dir-bull' : (d === '看空' ? 'mt-dir-bear' : 'mt-dir-flat');
+    const chgClass = (v) => v > 0 ? 'mt-up' : (v < 0 ? 'mt-down' : '');
+    const fmt = (v) => (v == null ? '—' : v);
+    const cards = (data.indices || []).map(x => {
+      if (x.error) {
+        return `<div class="mt-index mt-index-error"><div class="mt-name">${this.escapeHtml(x.name)}</div><div class="mt-err">${this.escapeHtml(x.error)}</div></div>`;
+      }
+      const s1 = x.step1, s2 = x.step2, s3 = x.step3, s4 = x.step4, s5 = x.step5, s6 = x.step6;
+      return `<div class="mt-index">
+        <div class="mt-index-head">
+          <span class="mt-name">${this.escapeHtml(x.name)}</span>
+          <span class="mt-close">${x.lastClose}</span>
+          <span class="mt-chg ${chgClass(x.changePct)}">${x.changePct > 0 ? '+' : ''}${x.changePct}%</span>
+          <span class="mt-date">${this.escapeHtml(x.date)}</span>
+        </div>
+        <div class="mt-steps">
+          <div class="mt-step">① 趋势定性：<b class="${dirClass(s1.trendLabel.includes('上涨') ? '看多' : s1.trendLabel.includes('下跌') ? '看空' : '震荡')}">${this.escapeHtml(s1.trendLabel)}</b>（${this.escapeHtml(s1.arrangement)}，ADX ${fmt(s1.adx)} ${this.escapeHtml(s1.adxState)}）</div>
+          <div class="mt-step">② 形态识别：${this.escapeHtml(s2.structure)}${s2.pattern && s2.pattern.name ? '｜形态：' + this.escapeHtml(s2.pattern.name) : ''}</div>
+          <div class="mt-step">③ 量价验证：${this.escapeHtml(s3.health)}（${this.escapeHtml(s3.volState)}）${s3.divergence ? '｜⚠️缩量新高背离' : ''}</div>
+          <div class="mt-step">④ 指标共振：<b>${this.escapeHtml(s4.resonance)}</b>（看多${s4.bull}/看空${s4.bear}｜MACD${s4.detail.MACD}/KDJ${s4.detail.KDJ}/RSI${s4.detail.RSI}/BOLL${s4.detail.BOLL}）</div>
+          <div class="mt-step">⑤ 周期共振：<b>${this.escapeHtml(s5.conclusion)}</b>（月${s5.monthDir}/周${s5.weekDir}/日${s5.dayDir}/30分${s5.m30Dir}）</div>
+        </div>
+        <div class="mt-verdict">
+          <div class="mt-block mt-mid">
+            <div class="mt-block-title">中期研判（1-6 个月）</div>
+            <div class="mt-dir ${dirClass(s6.midTerm.direction)}">方向：${this.escapeHtml(s6.midTerm.direction)}</div>
+            <div class="mt-line">${this.escapeHtml(s6.midTerm.logic)}</div>
+            <div class="mt-line mt-lv">支撑 ${fmt(s6.midTerm.support)} · 压力 ${fmt(s6.midTerm.pressure)}</div>
+          </div>
+          <div class="mt-block mt-short">
+            <div class="mt-block-title">短期研判（1-4 周）</div>
+            <div class="mt-dir ${dirClass(s6.shortTerm.direction)}">方向：${this.escapeHtml(s6.shortTerm.direction)}</div>
+            <div class="mt-line">${this.escapeHtml(s6.shortTerm.logic)}</div>
+            <div class="mt-line mt-lv">支撑 ${fmt(s6.shortTerm.support)} · 压力 ${fmt(s6.shortTerm.pressure)}</div>
+          </div>
+          <div class="mt-block mt-strategy">
+            <div class="mt-block-title">操作策略建议</div>
+            <div class="mt-line">仓位：${this.escapeHtml(s6.strategy.position)}</div>
+            <div class="mt-line">策略：${this.escapeHtml(s6.strategy.action)}</div>
+            <div class="mt-line mt-watch">观测：${this.escapeHtml(s6.strategy.watch)}</div>
+          </div>
+          <div class="mt-risk">⚠️ 风险提示：${this.escapeHtml(s6.risk)}</div>
+        </div>
+      </div>`;
+    }).join('');
+    container.innerHTML = `<div class="mt-list">${cards}</div>`;
+    if (note) {
+      note.innerHTML = `<div class="mt-synthesis">${this.escapeHtml(data.synthesis || '')}</div>
+        <div class="mt-src">数据源：腾讯行情 K 线（日/周/月/30分）· 收盘后推演 · 分析期 ${this.escapeHtml(data.date || '')}</div>`;
+    }
   },
 
   // 近一周涨跌前五高频板块提醒（红涨绿跌：红=上涨，绿=下跌）

@@ -26,11 +26,13 @@ function extractFn(src, name) {
 }
 
 const SRC = fs.readFileSync(path.join(__dirname, '..', 'lib', 'sameDayJudgment.js'), 'utf8');
+const STOCK_SRC = fs.readFileSync(path.join(__dirname, '..', 'lib', 'stockData.js'), 'utf8');
 const NAMES = ['clamp', 'round', 'avg', 'formatWan', 'factorFuturesShort',
+  'shortDirectionToSignal', // 20260905d/20260905e：大盘及行业板块短期走势因子依赖 helper
   'factorMarketShort', 'factorHoldings', 'factorSectorLimit', '_computeTurnoverChange'];
 const sandbox = {};
 // eslint-disable-next-line no-eval
-eval(NAMES.map(n => extractFn(SRC, n)).join('\n'));
+eval(NAMES.map(n => extractFn(SRC, n)).concat([extractFn(STOCK_SRC, 'detectMarket')]).join('\n'));
 
 const { toImpactScore, impactLabel } = require('../lib/ruleCore');
 

@@ -151,6 +151,22 @@
           <div id="marketOverview" class="market-overview-body"></div>
         </section>
 
+        <!-- 大盘技术分析（上证/深证/创业板指 收盘后六步技术面推演） -->
+        <section class="home-card market-technical-card" id="marketTechnicalCard" data-collapsible="true">
+          <div class="home-card-head">
+            <h3>🧭 大盘技术分析</h3>
+            <div class="mo-head-actions">
+              <span id="marketTechnicalUpdated" class="mo-updated"></span>
+              <button class="btn-journal-add" id="marketTechnicalRefresh" title="重新推演三大指数">🔄 刷新</button>
+              <button class="btn-collapse" data-collapse-target="marketTechnicalCard" title="折叠/展开">▾</button>
+            </div>
+          </div>
+          <div id="marketTechnicalBody" class="market-technical-body">
+            <div class="mo-loading">正在对三大指数进行收盘后技术面推演…</div>
+          </div>
+          <div class="market-technical-note" id="marketTechnicalNote"></div>
+        </section>
+
         <!-- 大盘估值趋势（上证50 / 沪深300 / 科创50 近5年PE-TTM） -->
         <section class="home-card index-pe-trend-card" id="indexPeTrendCard" data-collapsible="true">
           <div class="home-card-head">
@@ -714,6 +730,16 @@
                   <h3>💰 DDM 股息贴现估值</h3>
                   <div id="deepDDM" class="dcf-result"></div>
                 </div>
+                <!-- Section 23d: AI 估值大模型（提示词驱动，读取 prompts/valuation-system.md） -->
+                <div class="chart-card large">
+                  <h3>🤖 AI 估值大模型</h3>
+                  <div class="ai-holder-foot">
+                    <span id="valuationAiDate" class="ai-holder-date"></span>
+                    <button class="ai-trigger-btn" id="valuationAiRefresh" type="button" style="display:none">🔄 重新估值</button>
+                    <button class="ai-trigger-btn" id="valuationAiBtn" type="button">✨ AI 估值</button>
+                  </div>
+                  <div id="valuationAiBody" class="ai-holder-body"><div class="ai-empty">点击「✨ AI 估值」，由工作台内置的估值大模型（年报数据库 + 上网搜索）给出内在价值区间与贵贱判断。</div></div>
+                </div>
               </div>
 
               <!-- Section 22: Dividends -->
@@ -854,22 +880,15 @@
               <!-- 政策前景 -->
               <div class="chart-card large" id="indPolicy"></div>
 
-              <div class="chart-grid">
-                <!-- 研报评级分布 -->
-                <div class="chart-card">
-                  <h3>📊 行业研报评级分布（近一年）</h3>
-                  <div id="indReportRating" class="chart"></div>
-                </div>
-                <!-- 研报月度趋势 -->
-                <div class="chart-card">
-                  <h3>📈 行业研报发布趋势（近一年）</h3>
-                  <div id="indReportTrend" class="chart"></div>
-                </div>
+              <!-- 公司研报（针对本公司） -->
+              <div class="chart-card large">
+                <h3>📊 公司研报（近一年·针对 <span id="indCompanyReportName">本公司</span>）</h3>
+                <div id="indCompanyReportList" class="research-panel"></div>
               </div>
 
-              <!-- 行业研报列表 -->
+              <!-- 行业研报（所属行业相关） -->
               <div class="chart-card large">
-                <h3>📚 行业分析师研究报告（近一年）</h3>
+                <h3>📚 行业研报（近一年·<span id="indIndustryReportName">所属行业</span>）</h3>
                 <div id="indReportList" class="research-panel"></div>
               </div>
             </div>
