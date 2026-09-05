@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0B1120"/>
+      <stop offset="50%" stop-color="#134E4A"/>
+      <stop offset="100%" stop-color="#0D9488"/>
+    </linearGradient>
+    <linearGradient id="candleRed" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FCA5A5"/>
+      <stop offset="100%" stop-color="#EF4444"/>
+    </linearGradient>
+    <linearGradient id="candleGreen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#4ADE80"/>
+      <stop offset="100%" stop-color="#22C55E"/>
+    </linearGradient>
+    <linearGradient id="candleBrightGreen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#86EFAC"/>
+      <stop offset="100%" stop-color="#4ADE80"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="75%" cy="25%" r="35%">
+      <stop offset="0%" stop-color="#0D9488" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#0D9488" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="256" height="256" rx="48" fill="url(#bg)"/>
+  <rect width="256" height="256" rx="48" fill="url(#glow)"/>
+
+  <!-- Candle 1: red, small -->
+  <line x1="69" y1="123" x2="69" y2="194" stroke="#EF4444" stroke-width="3.5" stroke-linecap="round"/>
+  <rect x="57" y="143" width="24" height="36" rx="5" fill="url(#candleRed)"/>
+
+  <!-- Candle 2: green, medium -->
+  <line x1="128" y1="92" x2="128" y2="179" stroke="#22C55E" stroke-width="3.5" stroke-linecap="round"/>
+  <rect x="116" y="107" width="24" height="55" rx="5" fill="url(#candleGreen)"/>
+
+  <!-- Candle 3: bright green, tall -->
+  <line x1="187" y1="56" x2="187" y2="164" stroke="#4ADE80" stroke-width="3.5" stroke-linecap="round"/>
+  <rect x="175" y="69" width="24" height="75" rx="5" fill="url(#candleBrightGreen)"/>
+
+  <!-- Trend line with glow -->
+  <g>
+    <polyline points="69,143 128,107 187,69" fill="none"
+              stroke="#FCD34D" stroke-width="2.5" stroke-linecap="round"
+              stroke-linejoin="round" opacity="0.85"/>
+    <circle cx="187" cy="69" r="9" fill="#FCD34D" opacity="0.35"/>
+    <circle cx="187" cy="69" r="4.5" fill="#FFFFFF"/>
+  </g>
+</svg>

@@ -1,0 +1,1088 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>股票投资分析工作台</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="stylesheet" href="css/style.css?v=20260904c">
+  <script>
+    // 启动时确保 URL 带 ?v= 参数（用于破坏静态资源缓存）。
+    // 重要：版本号以 server.js 的 APP_VERSION 为准，由服务端重定向统一下发，
+    // 此处【禁止硬编码版本号】，否则会与 server.js 的强制定向互相覆盖形成重定向死循环。
+    (function () {
+      try {
+        var u = new URL(location.href);
+        // 仅当 URL 完全没有 v 参数时，补一个占位值；server.js 会重定向到正确的 APP_VERSION。
+        if (!u.searchParams.get('v')) {
+          u.searchParams.set('v', '1');
+          location.replace(u.pathname + u.search + location.hash);
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+</head>
+<body>
+  <!-- 顶栏：大盘行情状态栏（上证/深证/创业板/科创50/北证50/恒生/纳斯达克/道琼斯），支持折叠 -->
+  <header id="marketTopbar" class="market-topbar">
+    <div class="topbar-inner">
+      <div class="topbar-brand">📈 股票分析台</div>
+      <div id="marketTopbarIndices" class="topbar-indices">
+        <span class="tb-loading">大盘行情加载中…</span>
+      </div>
+      <button id="topbarCollapse" class="topbar-collapse" title="折叠 / 展开大盘行情">▾</button>
+    </div>
+  </header>
+
+  <div id="app">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h1 class="logo">📈 股票分析台</h1>
+        <button id="keyboardHelpBtn" class="kb-trigger" title="查看快捷键">⌨️</button>
+      </div>
+
+      <!-- Search -->
+      <div class="search-section">
+        <div class="search-box">
+          <input type="text" id="searchInput" placeholder="输入股票名称或代码..." autocomplete="off">
+          <button id="searchBtn" class="btn-search">搜索</button>
+        </div>
+        <div id="searchResults" class="search-results"></div>
+      </div>
+
+      <!-- AI 模型设置入口（联网 / 本地双模型） -->
+      <div class="sidebar-section">
+        <button id="aiSettingsBtn" class="sidebar-setting-btn" title="配置 AI 模型（联网/本地）">⚙️ AI 模型设置</button>
+      </div>
+
+      <!-- Quick links -->
+      <div class="quick-links">
+        <div class="quick-link" data-stock="000001" data-name="平安银行">平安银行</div>
+        <div class="quick-link" data-stock="600519" data-name="贵州茅台">贵州茅台</div>
+        <div class="quick-link" data-stock="000858" data-name="五粮液">五粮液</div>
+        <div class="quick-link" data-stock="601318" data-name="中国平安">中国平安</div>
+        <div class="quick-link" data-stock="AAPL" data-name="Apple">Apple</div>
+        <div class="quick-link" data-stock="TSLA" data-name="Tesla">Tesla</div>
+      </div>
+
+      <!-- Watchlist -->
+      <div class="sidebar-section">
+        <div class="section-header">
+          <h3>⭐ 自选股</h3>
+          <span id="watchlistCount" class="count-badge">0</span>
+        </div>
+        <div id="watchlist" class="watchlist"></div>
+      </div>
+
+      <!-- History -->
+      <div class="sidebar-section">
+        <div class="section-header">
+          <h3>🕐 搜索历史</h3>
+          <button id="clearHistory" class="btn-text">清除</button>
+        </div>
+        <div id="historyList" class="history-list"></div>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- 常驻顶部导航：投资心得 / 大盘记录 / AI设置（所有页面都显示） + 个股页操作按钮 -->
+      <nav class="global-nav">
+        <div class="global-nav-common">
+          <button class="home-action-btn" onclick="Notes.showScopeModal('global')">🧠 投资心得</button>
+          <button class="home-action-btn" onclick="Notes.showScopeModal('market')">🌐 大盘记录</button>
+          <button class="home-action-btn" onclick="App.openAISettings()">⚙️ AI 设置</button>
+        </div>
+        <div class="global-nav-extra hidden" id="globalNavExtra">
+          <button id="backHomeBtn" class="home-action-btn" title="返回首页">🏠 首页</button>
+          <button id="addToWatchlist" class="home-action-btn" title="加入 / 移出自选股">☆ 自选</button>
+          <button id="exportHTML" class="home-action-btn" title="导出HTML">📄 导出HTML</button>
+          <button id="exportJSON" class="home-action-btn" title="导出JSON">💾 导出JSON</button>
+          <button id="refreshBtn" class="home-action-btn" title="刷新">🔄 刷新</button>
+        </div>
+      </nav>
+
+      <!-- Loading overlay -->
+      <div id="loadingOverlay" class="loading-overlay hidden">
+        <div class="loading-spinner"></div>
+        <p class="loading-text" id="loadingText">正在获取数据...</p>
+      </div>
+
+      <!-- 顶部进度条：非阻塞加载指示（pointer-events:none，不拦截任何点击） -->
+      <div id="topProgressBar" class="top-progress hidden"></div>
+
+      <!-- Empty state / Home -->
+      <div id="emptyState" class="empty-state">
+        <div class="home-hero">
+          <div class="empty-icon">📊</div>
+          <h2>股票投资分析工作台</h2>
+          <p class="home-date" id="homeDate"></p>
+          <p class="home-sub">在左侧搜索框输入股票名称或代码，获取全面的投资分析报告</p>
+        </div>
+
+        <!-- 市场情绪拐点·完整面板（不含个股敏感度） -->
+        <section class="chart-card large" id="homeSentimentPanel" data-collapsible="true">
+          <div class="chart-header">
+            <h3>📡 市场情绪提醒</h3>
+            <div class="mo-head-actions">
+              <span id="homeSentimentUpdated" class="mo-updated"></span>
+              <button class="btn-journal-add" id="homeSentimentRefresh" title="重新检测">🔄 重新检测</button>
+              <button class="btn-collapse" data-collapse-target="homeSentimentPanel" title="折叠/展开">▾</button>
+            </div>
+          </div>
+          <div id="homeSentimentBody" class="sentiment-tp-body">
+            <div class="ai-empty">正在检测市场情绪拐点…</div>
+          </div>
+        </section>
+
+        <!-- 实时大盘（指数速览：大盘指数 / 美国股指 / 热门板块） -->
+        <section class="home-card market-overview-card" id="marketOverviewCard">
+          <div class="home-card-head">
+            <h3>📈 实时大盘</h3>
+            <div class="mo-head-actions">
+              <span id="marketUpdated" class="mo-updated"></span>
+              <button class="btn-journal-add" id="marketAIBtn" title="AI 联网解读大盘">✨ AI 解读</button>
+              <button class="btn-journal-add" id="marketRefreshBtn" title="刷新行情">🔄 刷新</button>
+            </div>
+          </div>
+          <div id="marketOverview" class="market-overview-body"></div>
+        </section>
+
+        <!-- 大盘估值趋势（上证50 / 沪深300 / 科创50 近5年PE-TTM） -->
+        <section class="home-card index-pe-trend-card" id="indexPeTrendCard" data-collapsible="true">
+          <div class="home-card-head">
+            <h3>📊 大盘估值趋势</h3>
+            <div class="mo-head-actions">
+              <span id="indexPeTrendUpdated" class="mo-updated"></span>
+              <button class="btn-journal-add" id="indexPeTrendRefresh" title="刷新估值趋势">🔄 刷新</button>
+              <button class="btn-collapse" data-collapse-target="indexPeTrendCard" title="折叠/展开">▾</button>
+            </div>
+          </div>
+          <div class="index-pe-trend-body" id="indexPeTrendBody">
+            <div class="mo-loading">正在加载三大指数估值趋势…</div>
+          </div>
+          <div class="index-pe-trend-note" id="indexPeTrendNote"></div>
+        </section>
+
+        <!-- 行业板块拥挤度（板块成交额 ÷ 全市场成交额，当日/本周/本月 前五） -->
+        <section class="home-card sector-crowding-card" id="sectorCrowdingCard" data-collapsible="true">
+          <div class="home-card-head">
+            <h3>🧮 行业板块拥挤度</h3>
+            <div class="mo-head-actions">
+              <span id="crowdingUpdated" class="mo-updated"></span>
+              <span id="crowdingMarketTotal" class="mo-sub"></span>
+              <button class="btn-journal-add" id="crowdingRefreshBtn" title="刷新拥挤度">🔄 刷新</button>
+              <button class="btn-collapse" data-collapse-target="sectorCrowdingCard" title="折叠/展开">▾</button>
+            </div>
+          </div>
+          <div class="crowding-body" id="sectorCrowding"></div>
+          <div class="crowding-note" id="sectorCrowdingNote"></div>
+        </section>
+
+        <!-- 今日财经热点（AI 联网抓取东方财富 7×24 快讯） -->
+        <section class="home-card hot-news-card" id="homeNewsCard" data-collapsible="true">
+          <div class="home-card-head">
+            <h3>🔥 今日财经热点</h3>
+            <div class="mo-head-actions">
+              <span id="homeNewsUpdated" class="mo-updated"></span>
+              <button class="btn-journal-add" id="homeNewsRefresh" title="刷新热点新闻">🔄 刷新</button>
+              <button class="btn-collapse" data-collapse-target="homeNewsCard" title="折叠/展开">▾</button>
+            </div>
+          </div>
+          <div id="homeNewsBody" class="hot-news-body">
+            <div class="ai-empty">正在获取今日财经热点…</div>
+          </div>
+        </section>
+
+        <!-- 今日最热股票话题（涨停板池真实数据·按行业聚合，AI 可选润色） -->
+        <section class="home-card hot-topics-home-card" id="homeHotTopicsCard" data-collapsible="true">
+          <div class="home-card-head">
+            <h3>🔥 今日最热股票话题</h3>
+            <div class="mo-head-actions">
+              <span id="homeHotTopicsUpdated" class="mo-updated"></span>
+              <button class="btn-journal-add" id="homeHotTopicsRefresh" title="重新获取当日涨停热点">🔄 刷新</button>
+              <button class="btn-collapse" data-collapse-target="homeHotTopicsCard" title="折叠/展开">▾</button>
+            </div>
+          </div>
+          <div id="homeHotTopicsBody" class="home-hot-topics-body">
+            <div class="ai-empty">正在获取当日涨停板热点…</div>
+          </div>
+        </section>
+
+        <!-- 每日宏观 & 政策（东方财富 7×24 宏观/政策过滤，每日自动采集） -->
+        <section class="home-card macro-card" id="macroCard" data-collapsible="true">
+          <div class="home-card-head">
+            <h3>🌐 每日宏观 &amp; 政策</h3>
+            <div class="mo-head-actions">
+              <span id="macroUpdated" class="mo-updated"></span>
+              <button class="btn-journal-add" id="macroRefresh" title="刷新宏观与政策">🔄 刷新</button>
+              <button class="btn-collapse" data-collapse-target="macroCard" title="折叠/展开">▾</button>
+            </div>
+          </div>
+          <div id="macroBody" class="macro-body">
+            <div class="ai-empty">正在采集每日宏观 &amp; 政策…</div>
+          </div>
+        </section>
+
+        <!-- 基金重仓行业配置矩阵（季度行业占比，支持用户导入真实数据） -->
+        <section class="home-card rank-card" id="rankCard" data-collapsible="true">
+          <div class="home-card-head">
+            <h3>🏭 基金重仓行业配置矩阵</h3>
+            <div class="mo-head-actions">
+              <span id="rankUpdated" class="mo-updated"></span>
+              <button class="btn-journal-add" id="rankRefresh" title="刷新排行">🔄 刷新</button>
+              <button class="btn-collapse" data-collapse-target="rankCard" title="折叠/展开">▾</button>
+            </div>
+          </div>
+          <div id="rankBody" class="rank-body">
+            <div class="ai-empty">正在获取基金 &amp; 机构重仓排行…</div>
+          </div>
+        </section>
+
+      </div>
+
+      <!-- Analysis dashboard -->
+      <div id="dashboard" class="dashboard hidden">
+        <!-- Stock header（置顶：公司名 + 股价随页面滚动常驻；含行情/财务双日期） -->
+        <div class="stock-header">
+          <div class="stock-info">
+            <div class="stock-title-row">
+              <h2 id="stockName">--</h2>
+              <span id="stockCode" class="stock-code"></span>
+              <span id="stockMarket" class="stock-market"></span>
+              <span id="stockPrice" class="stock-price">--</span>
+              <span id="stockChange" class="stock-change"></span>
+            </div>
+            <div class="stock-date-bar">
+              <span id="stockDate" class="stock-date"></span>
+              <span id="stockFinDate" class="stock-fin-date"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- K线走势图（常驻页面上方、股价正下方，不受 Tab 切换影响） -->
+        <div class="chart-card large" id="klineCard">
+          <div class="chart-header chart-header-wrap">
+            <h3>📈 主图</h3>
+            <div class="chart-controls period-controls">
+              <button class="period-btn active" data-period="daily">日K</button>
+              <button class="period-btn" data-period="weekly">周K</button>
+              <button class="period-btn" data-period="monthly">月K</button>
+              <button class="period-btn" data-period="60m">60分钟</button>
+            </div>
+            <div class="chart-controls range-controls" id="rangeControls">
+              <button class="range-btn" data-range="3m">3月</button>
+              <button class="range-btn" data-range="6m">6月</button>
+              <button class="range-btn active" data-range="1y">1年</button>
+              <button class="range-btn" data-range="3y">3年</button>
+            </div>
+          </div>
+          <div id="candlestickChart" class="chart"></div>
+        </div>
+
+        <!-- Key metrics bar -->
+        <div id="keyMetrics" class="key-metrics-bar"></div>
+
+        <!-- Overall scores -->
+        <div class="scores-row">
+          <div class="score-card clickable" id="techScoreCard" title="点击查看计算依据">
+            <div class="score-label">技术面评分</div>
+            <div class="score-value" id="techScore">--</div>
+            <div class="score-detail" id="techScoreDetail"></div>
+            <div class="score-trace">查看计算 ▾</div>
+          </div>
+          <div class="score-card clickable" id="fundScoreCard" title="点击查看计算依据">
+            <div class="score-label">基本面评分</div>
+            <div class="score-value" id="fundScore">--</div>
+            <div class="score-detail" id="fundScoreDetail"></div>
+            <div class="score-trace">查看计算 ▾</div>
+          </div>
+          <div class="score-card clickable" id="capitalScoreCard" title="点击查看计算依据">
+            <div class="score-label">资金热度</div>
+            <div class="score-value" id="capitalScore">--</div>
+            <div class="score-detail" id="capitalScoreDetail"></div>
+            <div class="score-trace">查看计算 ▾</div>
+          </div>
+          <!-- 个股近期热点（20260827c：AI 联网，按涨跌幅切异动归因/网络热议） -->
+          <div class="score-card hot-topics-card" id="hotTopicsCard">
+            <div class="hot-topics-head">
+              <div class="score-label">🔥 个股近期热点</div>
+              <span class="hot-topics-date" id="hotTopicsDate"></span>
+              <button class="btn-journal-add" id="hotTopicRefreshBtn" type="button" title="重新联网分析">🔄</button>
+            </div>
+            <div class="hot-topics-analysis" id="hotTopicsAnalysis">
+              <div class="ai-empty" id="hotTopicsEmpty">正在联网分析…</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 评分计算追溯面板（默认隐藏，紧跟第一行评分卡） -->
+        <div id="scoreTracePanel" class="score-trace-panel hidden"></div>
+
+        <!-- 概览补充卡片：行业前景 / 股东户数变化 / 最大亮点雷点（异步加载，不随切换页面中断） -->
+        <div class="scores-row">
+          <div class="score-card" id="industryScoreCard">
+            <div class="score-label">行业前景评分</div>
+            <div class="score-value" id="industryScore">--</div>
+            <div class="score-detail" id="industryScoreDetail"></div>
+          </div>
+          <div class="score-card sameday-card" id="samedayCard">
+            <div class="score-label"><span id="samedayTitle">短期行情</span> <span class="sameday-badge" id="samedayConfidence"></span></div>
+            <div class="sameday-subtitle" id="samedayTarget"></div>
+            <div class="score-value sameday-verdict" id="samedayVerdict">--</div>
+            <div class="score-detail" id="samedayDetail"></div>
+            <div class="sameday-report-sync" id="samedayReportSync" style="display:none"></div>
+            <button class="ai-trigger-btn sameday-logic-btn" id="samedayLogicBtn" type="button">📊 查看判断逻辑</button>
+            <div class="sameday-accuracy" id="samedayAccuracy"></div>
+            <a href="judgments.html" target="_blank" id="samedayAllLink" class="sameday-all-link">📋 查看该股判断记录</a>
+            <div class="sameday-logic" id="samedayLogic" style="display:none"></div>
+          </div>
+          <div class="score-card sameday-card" id="longtermCard">
+            <div class="score-label"><span id="longtermTitle">长期行情</span> <span class="sameday-badge" id="longtermConfidence"></span></div>
+            <div class="sameday-subtitle" id="longtermSubtitle"></div>
+            <div class="score-value sameday-verdict" id="longtermVerdict">--</div>
+            <div class="score-detail" id="longtermDetail"></div>
+            <button class="ai-trigger-btn sameday-logic-btn" id="longtermLogicBtn" type="button">📊 查看判断逻辑</button>
+            <div class="sameday-accuracy" id="longtermNote"></div>
+            <div class="sameday-logic" id="longtermLogic" style="display:none"></div>
+          </div>
+          <div class="score-card" id="aspectCard">
+            <div class="score-label">最大亮点 / 雷点</div>
+            <div class="score-value aspect" id="aspectValue">--</div>
+            <div class="score-detail" id="aspectDetail"></div>
+          </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tabs">
+          <button class="tab active" data-tab="overview">📊 概览</button>
+          <button class="tab" data-tab="technical">📈 技术面</button>
+          <button class="tab" data-tab="fundamental">💰 基本面</button>
+          <button class="tab" data-tab="shareholders">👥 股东分析</button>
+          <button class="tab" data-tab="deep">🔬 深度分析</button>
+          <button class="tab" data-tab="industry">🏭 行业分析</button>
+          <button class="tab" data-tab="capital">💹 资金量能</button>
+          <button class="tab" data-tab="journal">⭐ 个股亮点/雷点</button>
+          <button class="tab" data-tab="docs">📁 资料库</button>
+        </div>
+
+        <!-- Tab content -->
+        <div class="tab-content">
+          <!-- Overview tab -->
+          <div id="tab-overview" class="tab-panel active">
+            <!-- 公司概况（主要产品/客户/企业性质） -->
+            <div class="chart-card large" id="companyProfileCard">
+              <div class="chart-header">
+                <h3>🏢 公司概况</h3>
+                <span id="companyTypeBadge" class="company-type-badge-inline"></span>
+              </div>
+              <div id="companyProfile" class="company-profile"></div>
+            </div>
+
+            <!-- 公司综合介绍（分析①：AI 联网获取，含产品服务图/实控人/近10年事件） -->
+            <div class="chart-card large" id="companyIntroCard">
+              <div class="chart-header">
+                <h3>🏢 公司综合介绍</h3>
+                <div class="ai-head-actions">
+                  <span id="companyIntroDate" class="ai-date"></span>
+                  <button class="btn-journal-add" id="companyIntroAiBtn">✨ AI 联网获取</button>
+                  <button class="btn-text" id="companyIntroRefresh" style="display:none">🔄 重新搜索</button>
+                </div>
+              </div>
+              <div id="companyIntroBody" class="company-intro-body">
+                <div class="ai-empty">正在检查已存的公司介绍资料…</div>
+              </div>
+            </div>
+
+            <!-- 主要产品 & 客户（产品型公司分析核心，原独立页并入概览） -->
+            <div class="chart-card large" id="productsCard">
+              <div class="chart-header">
+                <h3>🛍️ 主要产品 &amp; 客户</h3>
+                <div class="ai-head-actions">
+                  <span id="productsDate" class="ai-date"></span>
+                  <button class="btn-journal-add" id="productsAiBtn">✨ AI 联网获取</button>
+                  <button class="btn-text" id="productsRefresh" style="display:none">🔄 重新搜索</button>
+                </div>
+              </div>
+              <div id="productsBody" class="products-body">
+                <div class="ai-empty">正在检查产品/客户数据…</div>
+              </div>
+            </div>
+
+            <!-- 供应链与成本分析（分析②：产业链位置/原材料价格/供应商/成本控制） -->
+            <div class="chart-card large" id="supplyChainCard">
+              <div class="chart-header">
+                <h3>🔗 供应链与成本分析</h3>
+                <div class="ai-head-actions">
+                  <span id="supplyChainDate" class="ai-date"></span>
+                  <button class="btn-journal-add" id="supplyChainAiBtn">✨ AI 联网获取</button>
+                  <button class="btn-text" id="supplyChainRefresh" style="display:none">🔄 重新搜索</button>
+                </div>
+              </div>
+              <div id="supplyChainBody" class="supply-chain-body">
+                <div class="ai-empty">正在检查已存的供应链分析资料…</div>
+              </div>
+            </div>
+
+            <!-- 信号提醒：利好(红)/利空(绿) -->
+            <div class="chart-card large" id="signalAlerts" style="display:none;"></div>
+
+            <div class="chart-card">
+              <h3>基本面评分雷达</h3>
+              <div id="radarChart" class="chart"></div>
+            </div>
+
+            <!-- 期货关联走势（产品型公司） -->
+            <div class="chart-card large" id="futuresPanel" style="display:none;">
+              <div class="chart-header">
+                <h3>📈 期货关联走势（股价 vs <span id="futuresName">期货</span>）</h3>
+                <div class="chart-controls">
+                  <span id="futuresCorrBadge" class="corr-badge"></span>
+                </div>
+              </div>
+              <div id="futuresChart" class="chart"></div>
+              <div id="futuresConclusion" class="futures-conclusion"></div>
+            </div>
+          </div>
+
+          <!-- Technical tab -->
+          <div id="tab-technical" class="tab-panel">
+            <!-- 价格行为趋势推演（Price Action：价格包容一切 · 人性重复演绎） -->
+            <div class="chart-card large pa-panel">
+              <h3>🎯 价格行为趋势推演<span class="pa-subtitle">价格包容一切 · 人性重复演绎</span></h3>
+              <div id="paMeta" class="pa-meta">数据加载中…</div>
+              <div id="paSummary" class="pa-summary"></div>
+              <div class="pa-grid">
+                <div id="paLongTerm" class="pa-card"></div>
+                <div id="paShortTerm" class="pa-card"></div>
+                <div id="paCoord" class="pa-card"></div>
+                <div id="paEdges" class="pa-card"></div>
+              </div>
+            </div>
+
+            <!-- 月线趋势结构（长期视角） -->
+            <div class="chart-card large">
+              <h3>📊 月线趋势结构（长期视角）</h3>
+              <div id="paMonthlyChart" class="chart" style="height:440px;"></div>
+            </div>
+
+            <!-- 成交密集区（筹码分布） -->
+            <div class="chart-card large">
+              <h3>🧲 成交密集区与价格引力（近3年）</h3>
+              <div id="paProfileChart" class="chart" style="height:380px;"></div>
+            </div>
+
+            <div class="chart-card large">
+              <h3>技术指标信号</h3>
+              <div id="signalGridMeta" class="signal-grid-meta"></div>
+              <div id="signalSummary" class="signal-grid"></div>
+            </div>
+
+            <div class="chart-card large">
+              <h3>MACD 指标</h3>
+              <div id="macdChart" class="chart"></div>
+            </div>
+            <div class="chart-grid">
+              <div class="chart-card">
+                <h3>RSI (14)</h3>
+                <div id="rsiChart" class="chart"></div>
+              </div>
+              <div class="chart-card">
+                <h3>KDJ 指标</h3>
+                <div id="kdjChart" class="chart"></div>
+              </div>
+            </div>
+            <div class="chart-card">
+              <h3>布林带 + 均线</h3>
+              <div id="bollChart" class="chart"></div>
+            </div>
+            <div class="chart-card">
+              <h3>成交量分析</h3>
+              <div id="volumeAnalysis" class="vol-analysis"></div>
+            </div>
+          </div>
+
+          <!-- Fundamental tab -->
+          <div id="tab-fundamental" class="tab-panel">
+            <div id="fundCompanyTypeBadge" class="company-type-badge" style="display:none;"></div>
+            <div class="chart-card large">
+              <h3>基本面评分明细</h3>
+              <div id="fundScoreBreakdown" class="score-breakdown"></div>
+            </div>
+            <div class="chart-card" id="fundConclusion" style="display:none;"></div>
+            <div class="chart-grid">
+              <div class="chart-card">
+                <h3>关键财务指标</h3>
+                <div id="fundMetrics" class="metrics-table"></div>
+              </div>
+              <div class="chart-card">
+                <h3>分析师评级</h3>
+                <div id="analystRating" class="analyst-rating"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Shareholders tab (issue5: 股东户数走势 + 十大股东 + 机构持仓变化) -->
+          <div id="tab-shareholders" class="tab-panel">
+            <div id="shareholdersContainer" class="shareholders-container"></div>
+            <div class="chart-card" id="aiHolderCard">
+              <h3>🤖 股东户数 AI 解读</h3>
+              <div id="aiHolderBody" class="ai-holder-body"><div class="ai-empty">—</div></div>
+              <div class="ai-holder-foot">
+                <span id="aiHolderDate" class="ai-holder-date"></span>
+                <button class="ai-trigger-btn" id="aiHolderBtn" type="button">✨ AI 解读</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Deep analysis tab -->
+          <div id="tab-deep" class="tab-panel">
+            <div id="deepLoading" class="deep-loading hidden">
+              <div class="sk-stack">
+                <div class="skeleton sk-title"></div>
+                <div class="skeleton sk-line"></div>
+                <div class="skeleton sk-line short"></div>
+                <div class="sk-row">
+                  <div class="skeleton"></div>
+                  <div class="skeleton"></div>
+                  <div class="skeleton"></div>
+                </div>
+                <div class="skeleton sk-block"></div>
+              </div>
+              <p>正在获取最近5年财务数据进行深度分析，请稍候...</p>
+            </div>
+            <div id="deepCacheBar" class="deep-cache-bar hidden">
+              <span id="deepCacheStatus" class="deep-cache-status"></span>
+              <button id="deepRefreshBtn" class="btn-icon deep-refresh-btn" title="重新获取并分析最新数据">🔄 刷新</button>
+            </div>
+            <div id="deepContent" class="deep-content">
+              <!-- Audit warning -->
+              <div id="auditWarning" class="audit-warning hidden"></div>
+
+              <!-- 公司类型分类与差异化分析重点 -->
+              <div id="deepCompanyType" class="company-type-panel"></div>
+
+              <!-- 本地资料库文档 -->
+              <div id="deepLocalDocs" class="local-docs-panel hidden"></div>
+
+              <!-- 估值结论面板 -->
+              <div id="deepConclusion" class="conclusion-panel"></div>
+
+              <!-- 最新财报解读（AI 联网，标题由 JS 根据实际报告期动态设置） -->
+              <div class="chart-card large">
+                <h3 id="deepEarningsReportTitle">📑 最新财报解读</h3>
+                <div id="deepEarningsReport" class="earnings-report-panel"></div>
+              </div>
+
+              <!-- Section 4: Revenue & Cost Trend -->
+              <div class="chart-card large">
+                <h3>📊 营收与成本趋势（近5年）</h3>
+                <div id="deepRevenueCost" class="chart"></div>
+              </div>
+
+              <!-- Section 15b: 近5年 ROE 与毛利率走势 -->
+              <div class="chart-card large">
+                <h3>📈 ROE 与毛利率走势（近5年）</h3>
+                <div id="deepRoeMargin" class="chart"></div>
+                <div id="deepRoeMarginText" class="roe-margin-text"></div>
+              </div>
+
+              <!-- 第4节：分产品收入构成（近10年折线） -->
+              <div class="chart-card large">
+                <h3>📦 分产品收入构成趋势（第4节 · 近5年）</h3>
+                <div id="deepSegmentProduct" class="chart"></div>
+              </div>
+
+              <!-- 第5节：分地区（国内外）收入构成（近10年折线） -->
+              <div class="chart-card large">
+                <h3>🌏 分地区（国内外）收入构成趋势（第5节 · 近5年）</h3>
+                <div id="deepSegmentRegion" class="chart"></div>
+              </div>
+
+              <div class="chart-grid">
+                <!-- Section 6: Short-term Financial Risk -->
+                <div class="chart-card">
+                  <h3>💰 短期财务风险</h3>
+                  <div id="deepShortTermRisk" class="chart"></div>
+                </div>
+                <!-- Section 7: Asset Composition -->
+                <div class="chart-card">
+                  <h3>🏦 资产构成分析</h3>
+                  <div id="deepAssetComp" class="chart"></div>
+                </div>
+              </div>
+
+              <!-- Section 8: Liability Composition -->
+              <div class="chart-card">
+                <h3>📉 负债构成分析</h3>
+                <div id="deepLiabComp" class="chart"></div>
+              </div>
+
+              <!-- Section 9: Revenue vs Operating Cash Flow -->
+              <div class="chart-card large">
+                <h3>💵 营收 vs 经营现金流净额（近5年）</h3>
+                <div id="deepRevVsCash" class="chart"></div>
+              </div>
+
+              <!-- Section 10: Revenue vs Market Cap -->
+              <div class="chart-card large">
+                <h3>📈 营收 vs 市值（双Y轴）</h3>
+                <div id="deepRevVsMC" class="chart"></div>
+              </div>
+
+              <!-- Section 11: Net Profit vs Market Cap -->
+              <div class="chart-card large">
+                <h3>💹 净利润 vs 市值（双Y轴）</h3>
+                <div id="deepProfitVsMC" class="chart"></div>
+              </div>
+
+              <!-- Section 12: Net Assets vs Market Cap -->
+              <div class="chart-card large">
+                <h3>🏦 净资产 vs 市值（双Y轴）</h3>
+                <div id="deepNAVVsMC" class="chart"></div>
+              </div>
+
+              <!-- Section 13: Net Profit vs Operating Cash Flow -->
+              <div class="chart-card large">
+                <h3>🔍 净利润 vs 经营现金流（业绩真实性）</h3>
+                <div id="deepProfitVsCash" class="chart"></div>
+              </div>
+
+              <!-- Section 14: Revenue vs Total Cost -->
+              <div class="chart-card large">
+                <h3>📊 营收 vs 总成本趋势</h3>
+                <div id="deepRevVsCost" class="chart"></div>
+              </div>
+
+              <!-- Section 15: Revenue vs Expenses -->
+              <div class="chart-card large">
+                <h3>📋 营收 vs 三费（销售/管理/研发）双Y轴</h3>
+                <div id="deepRevVsExp" class="chart"></div>
+              </div>
+
+              <div class="chart-grid">
+                <!-- Section 17: Growth Rates -->
+                <div class="chart-card">
+                  <h3>增长率分析（基准年对比）</h3>
+                  <div id="deepGrowth" class="chart"></div>
+                </div>
+                <!-- Section 18: Revenue vs Accounts Payable -->
+                <div class="chart-card">
+                  <h3>应付账款 vs 营收（资金占用）</h3>
+                  <div id="deepPayable" class="chart"></div>
+                </div>
+              </div>
+
+              <div class="chart-grid">
+                <!-- Section 19: PE Ratio -->
+                <div class="chart-card">
+                  <h3>市盈率PE趋势（含均值±标准差）</h3>
+                  <div id="deepPE" class="chart"></div>
+                </div>
+                <!-- Section 20: PB Ratio -->
+                <div class="chart-card">
+                  <h3>市净率PB趋势（含均值±标准差）</h3>
+                  <div id="deepPB" class="chart"></div>
+                </div>
+              </div>
+
+              <div class="chart-grid">
+                <!-- Section 21: PS Ratio -->
+                <div class="chart-card">
+                  <h3>市销率PS趋势（含均值±标准差）</h3>
+                  <div id="deepPS" class="chart"></div>
+                </div>
+              </div>
+
+              <!-- Section 23: DCF Valuation -->
+              <div class="chart-card large">
+                <h3>自由现金流折现估值（DCF）</h3>
+                <div id="deepDCF" class="dcf-result"></div>
+              </div>
+
+              <div class="chart-grid">
+                <!-- Section 23b: P/EV Valuation -->
+                <div class="chart-card">
+                  <h3>⚖️ P/EV 估值分析</h3>
+                  <div id="deepPEV" class="dcf-result"></div>
+                </div>
+                <!-- Section 23c: DDM Valuation -->
+                <div class="chart-card">
+                  <h3>💰 DDM 股息贴现估值</h3>
+                  <div id="deepDDM" class="dcf-result"></div>
+                </div>
+              </div>
+
+              <!-- Section 22: Dividends -->
+              <div class="chart-card large">
+                <h3>净利润 vs 分红（近5年）</h3>
+                <div id="deepDividend" class="chart"></div>
+              </div>
+
+              <!-- Section 22c: 分红分析（金额 / 每股 可切换） -->
+              <div class="chart-card large">
+                <h3>分红分析（近5年 · 每次 / 每年 / 每股 可切换）</h3>
+                <div class="dy-toggle">
+                  <button class="dy-toggle-btn active" data-mode="payout">每次分红</button>
+                  <button class="dy-toggle-btn" data-mode="year">每年合计</button>
+                  <button class="dy-toggle-btn" data-mode="perShare">每股分红</button>
+                </div>
+                <div id="deepDividendBar" class="chart"></div>
+                <div id="deepDividendBarNote" class="chart-caption"></div>
+              </div>
+
+              <!-- Section 22b: Dividend Yield Trend (10y + mean±σ + industry) -->
+              <div class="chart-card large">
+                <h3>股息率趋势（近10年 · 均值±标准差参考线）</h3>
+                <div id="deepDivYield" class="chart"></div>
+                <div id="deepDivYieldAnalysis" class="dy-analysis"></div>
+              </div>
+
+              <!-- 第24节：近一年券商研报观点与估值 -->
+              <div class="chart-card large">
+                <h3>📚 近一年券商研报观点与估值（第24节）</h3>
+                <div id="deepResearchReports" class="research-panel"></div>
+              </div>
+
+              <!-- 第25节：近一年公告（增持/减持/回购/高管/立案） -->
+              <div class="chart-card large">
+                <h3>📢 近一年重要公告（增持/减持/回购/高管/立案 · 第25节）</h3>
+                <div id="deepAnnouncements" class="annc-panel"></div>
+              </div>
+
+              <!-- 第4节补充：细分产品/业务毛利率（营收占比 · 成本占比 · 毛利率） -->
+              <div class="chart-card large product-margin-card">
+                <h3>🧮 细分产品 / 业务毛利率（营收占比 · 成本占比 · 毛利率）</h3>
+                <div id="deepProductMargin" class="product-margin-chart"></div>
+              </div>
+
+              <!-- 保险公司专属分析 -->
+              <div id="deepInsuranceAnalysis" class="insurance-panel hidden">
+                <div class="chart-card large">
+                  <h3>🏷️ 保费收入趋势（近5年）</h3>
+                  <div id="deepPremiumTrend" class="chart"></div>
+                  <div class="chart-caption" id="deepPremiumTrendNote"></div>
+                </div>
+                <!-- 险种占比 + 综合成本率 并排 -->
+                <div class="chart-grid">
+                  <div class="chart-card">
+                    <h3>📊 险种及业务结构占比</h3>
+                    <div id="deepPremiumPie" class="chart"></div>
+                    <div class="chart-caption" id="deepPremiumPieNote"></div>
+                  </div>
+                  <div class="chart-card">
+                    <h3>📉 综合成本率趋势（产险业务）</h3>
+                    <div id="deepCombinedRatio" class="chart"></div>
+                    <div class="chart-caption" id="deepCombinedRatioNote"></div>
+                  </div>
+                </div>
+                <!-- 新业务价值 NBV 趋势 单独展示 -->
+                <div class="chart-card large">
+                  <h3>💎 新业务价值NBV趋势（2020-2026 分季度 · 含TTM滚动）</h3>
+                  <div id="deepNBV" class="chart"></div>
+                  <div class="chart-caption" id="deepNBVNote"></div>
+                </div>
+                <!-- 投资收益率趋势 单独展示 -->
+                <div class="chart-card large">
+                  <h3>📈 投资收益率趋势（总投资收益率）</h3>
+                  <div id="deepInvestmentYield" class="chart"></div>
+                  <div class="chart-caption" id="deepInvestmentYieldNote"></div>
+                </div>
+                <div class="chart-card large">
+                  <h3>💰 营运利润 vs 净利润对比</h3>
+                  <div id="deepProfitComparison" class="chart"></div>
+                </div>
+                <!-- 分业务营收趋势（近10年） -->
+                <div class="chart-card large">
+                  <h3>📈 寿险（寿险及健康险板块）保费收入趋势</h3>
+                  <div id="deepLifeTrend" class="chart"></div>
+                </div>
+                <div class="chart-card large">
+                  <h3>📈 财产保险（平安产险）保费收入趋势</h3>
+                  <div id="deepPropertyTrend" class="chart"></div>
+                </div>
+                <div class="chart-card large">
+                  <h3>📈 养老险（平安养老）保险业务收入趋势</h3>
+                  <div id="deepPensionTrend" class="chart"></div>
+                </div>
+                <div class="chart-card large">
+                  <h3>📈 健康险（平安健康）保险业务收入趋势</h3>
+                  <div id="deepHealthTrend" class="chart"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 行业分析 tab -->
+          <div id="tab-industry" class="tab-panel">
+            <div id="industryLoading" class="deep-loading hidden">
+              <div class="loading-spinner"></div>
+              <p>正在获取行业政策、板块与研报数据，请稍候...</p>
+            </div>
+            <div id="industryContent" class="industry-content">
+              <!-- 期货指数分析（仅产品相关时显示） -->
+              <div class="chart-card large" id="indFuturesCard" style="display:none;">
+                <div class="chart-header">
+                  <h3>📈 期货指数分析（股价 vs <span id="indFuturesName">期货</span>）</h3>
+                  <div class="chart-controls">
+                    <span id="indFuturesCorrBadge" class="corr-badge"></span>
+                  </div>
+                </div>
+                <div id="indFuturesChart" class="chart"></div>
+                <div id="indFuturesConclusion" class="futures-conclusion"></div>
+              </div>
+
+              <!-- 行业分析总览：行业归属 + 行业指数 + 走势（合并卡片） -->
+              <div class="chart-card large" id="industryOverviewCard">
+                <div class="chart-header">
+                  <h3>🏭 行业分析总览</h3>
+                  <div class="ai-head-actions">
+                    <span id="industryOverviewDate" class="ai-date"></span>
+                    <button class="btn-journal-add" id="industryOverviewAiBtn">✨ AI 联网获取</button>
+                    <button class="btn-text" id="industryOverviewRefresh" style="display:none">🔄 重新搜索</button>
+                  </div>
+                </div>
+                <div id="industryOverviewBody" class="industry-overview-body">
+                  <div class="ai-empty">正在加载行业信息…</div>
+                </div>
+                <div id="industryIndexChart" class="chart" style="height:420px;"></div>
+              </div>
+
+              <!-- 政策前景 -->
+              <div class="chart-card large" id="indPolicy"></div>
+
+              <div class="chart-grid">
+                <!-- 研报评级分布 -->
+                <div class="chart-card">
+                  <h3>📊 行业研报评级分布（近一年）</h3>
+                  <div id="indReportRating" class="chart"></div>
+                </div>
+                <!-- 研报月度趋势 -->
+                <div class="chart-card">
+                  <h3>📈 行业研报发布趋势（近一年）</h3>
+                  <div id="indReportTrend" class="chart"></div>
+                </div>
+              </div>
+
+              <!-- 行业研报列表 -->
+              <div class="chart-card large">
+                <h3>📚 行业分析师研究报告（近一年）</h3>
+                <div id="indReportList" class="research-panel"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 资金量能 tab -->
+          <div id="tab-capital" class="tab-panel">
+            <div id="capitalLoading" class="deep-loading hidden">
+              <div class="loading-spinner"></div>
+              <p>正在获取资金流向和量能数据，请稍候...</p>
+            </div>
+            <div id="capitalContent" class="capital-content">
+              <!-- 量价关系概览 -->
+              <div class="chart-card large">
+                <h3>📊 量价关系分析</h3>
+                <div id="capVolumePrice" class="capital-summary"></div>
+              </div>
+
+              <!-- 资金流向趋势 -->
+              <div class="chart-card large">
+                <h3>💰 主力资金流向（近60日）</h3>
+                <div id="capMoneyFlowChart" class="chart"></div>
+              </div>
+
+              <div class="chart-grid">
+                <!-- 资金流向汇总 -->
+                <div class="chart-card">
+                  <h3>📋 资金流向汇总</h3>
+                  <div id="capFlowSummary" class="capital-summary"></div>
+                </div>
+                <!-- 量能指标 -->
+                <div class="chart-card">
+                  <h3>📐 量能指标</h3>
+                  <div id="capVolIndicators" class="capital-summary"></div>
+                </div>
+              </div>
+
+              <div class="chart-grid">
+                <!-- OBV 指标 -->
+                <div class="chart-card">
+                  <h3>📈 OBV 能量潮</h3>
+                  <div id="capOBVChart" class="chart"></div>
+                </div>
+                <!-- VR 指标 -->
+                <div class="chart-card">
+                  <h3>📊 VR 容量比率</h3>
+                  <div id="capVRChart" class="chart"></div>
+                </div>
+              </div>
+
+              <!-- 成交量与均量 -->
+              <div class="chart-card large">
+                <h3>📊 成交量与均量趋势</h3>
+                <div id="capVolumeChart" class="chart"></div>
+              </div>
+
+              <!-- 融资融券 -->
+              <div class="chart-card large">
+                <h3>🏦 融资融券数据</h3>
+                <div id="capMarginChart" class="chart"></div>
+              </div>
+
+              <div class="chart-grid">
+                <div class="chart-card">
+                  <h3>📋 融资融券明细</h3>
+                  <div id="capMarginSummary" class="capital-summary"></div>
+                </div>
+                <div class="chart-card">
+                  <h3>💡 资金量能综合判断</h3>
+                  <div id="capConclusion" class="capital-conclusion"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 个股亮点/雷点 记录（issue4：亮点与雷点放在一起，按股票存储） -->
+          <div id="tab-journal" class="tab-panel">
+            <div id="stockNotesContainer" class="stock-notes-container"></div>
+          </div>
+
+          <!-- Document Store tab -->
+          <div id="tab-docs" class="tab-panel">
+            <div id="docStoreContainer" class="doc-store-container"></div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Toast notification -->
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <!-- 右键菜单（自选股） -->
+  <div id="watchlistContextMenu" class="context-menu hidden"></div>
+
+  <!-- 二次确认弹窗 -->
+  <div id="confirmDialog" class="confirm-overlay hidden" role="dialog" aria-modal="true">
+    <div class="confirm-dialog">
+      <div class="confirm-head">
+        <h3 id="confirmTitle">确认操作</h3>
+        <button class="confirm-x" id="confirmClose" title="关闭">✕</button>
+      </div>
+      <div class="confirm-body"><p id="confirmMessage"></p></div>
+      <div class="confirm-foot">
+        <button class="btn-secondary" id="confirmCancel">取消</button>
+        <button class="btn-primary" id="confirmOk">确认</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 快捷键提示层 -->
+  <div id="keyboardHelp" class="kb-overlay hidden" role="dialog" aria-modal="true">
+    <div class="kb-dialog">
+      <div class="kb-head">
+        <h3>⌨️ 快捷键</h3>
+        <button id="keyboardHelpClose" class="kb-close" title="关闭">✕</button>
+      </div>
+      <div class="kb-body">
+        <div class="kb-row"><span class="kb-key">↑</span><span class="kb-key">↓</span><span class="kb-desc">切换自选股</span></div>
+        <div class="kb-row"><span class="kb-key">Enter</span><span class="kb-desc">查看选中自选股</span></div>
+        <div class="kb-row"><span class="kb-key">/</span><span class="kb-desc">聚焦搜索框</span></div>
+        <div class="kb-row"><span class="kb-key">1–4</span><span class="kb-desc">切换周期（日K/周K/月K/60分钟）</span></div>
+        <div class="kb-row"><span class="kb-key">Esc</span><span class="kb-desc">关闭弹窗 / 下拉</span></div>
+        <div class="kb-row"><span class="kb-key">滚轮</span><span class="kb-desc">图表缩放</span></div>
+        <div class="kb-row"><span class="kb-key">拖拽</span><span class="kb-desc">图表平移 · 双击复位</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 错误占位横幅（断网 / 接口异常，保留已展示数据） -->
+  <div id="errorBanner" class="error-banner hidden" role="alert">
+    <span class="err-icon">⚠️</span>
+    <span class="err-msg" id="errorBannerMsg">数据加载失败</span>
+    <button class="err-retry" id="errorBannerRetry">重试</button>
+    <button class="err-close" id="errorBannerClose" title="关闭">✕</button>
+  </div>
+
+  <script src="js/storage.js?v=20260904c"></script>
+  <script src="js/charts.js?v=20260904c"></script>
+  <script src="js/deepCharts.js?v=20260904c"></script>
+  <script src="js/industryCharts.js?v=20260904c"></script>
+  <script src="js/capitalCharts.js?v=20260904c"></script>
+  <script src="js/notes.js?v=20260904c"></script>
+  <script src="js/shareholderCharts.js?v=20260904c"></script>
+  <script src="js/docStore.js?v=20260904c"></script>
+  <script src="js/export.js?v=20260904c"></script>
+  <script src="js/homeNews.js?v=20260904c"></script>
+  <script src="js/homeHotTopics.js?v=20260904c"></script>
+  <script src="js/homeMacro.js?v=20260904c"></script>
+  <script src="js/homeRank.js?v=20260904c"></script>
+  <script src="js/app.js?v=20260904c"></script>
+
+  <!-- AI 设置弹窗（20260902e：双模型 · 联网 / 本地分离，股东户数已接入本地模型） -->
+  <div class="ai-modal-overlay hidden" id="aiSettingsModal">
+    <div class="ai-modal ai-modal-wide">
+      <div class="ai-modal-head">
+        <h3>⚙️ AI 模型设置（联网 / 本地）</h3>
+        <button class="ai-close" id="aiSettingsClose" title="关闭">✕</button>
+      </div>
+      <div class="ai-modal-body">
+        <p class="ai-settings-note">工作台本身不能上网，AI 能力由你自配的大模型 API 提供。Key 仅保存在你本机 <code>data/ai_config.json</code>，不会上传。默认 <b>通义千问（DashScope）</b>，申请地址 <span class="ai-link">dashscope.aliyun.com</span>。</p>
+
+        <div class="ai-cat-legend">
+          <div class="ai-cat-row">
+            <span class="ai-cat-tag web">联网模型</span>
+            <span class="ai-cat-desc"><b>需要模型先上网获取信息，再进行分析。</b> 工作台自身不能上网，因此调用带联网搜索能力的大模型。适用：个股资料补全、投资亮点/雷点、产品与客户、公司综合介绍、供应链与成本、股东户数、大盘概览、行业指数、研报检索、公告检索、异动归因、网络热议等。</span>
+          </div>
+          <div class="ai-cat-row">
+            <span class="ai-cat-tag local">本地模型</span>
+            <span class="ai-cat-desc"><b>只需要模型分析本地数据、做逻辑推导。</b> 例如分析本地财务数据库中的财报文本、已上传年报、复杂图表、生成分析报告等。当前<b>财报解读</b>会自动注入本地营收/净利全序列与同比·边际，不联网、不消耗检索额度。未配置本地模型时，自动回退到联网模型（但仍关闭联网检索）。</span>
+          </div>
+        </div>
+
+        <label class="ai-field-label">服务商</label>
+        <select id="aiProvider" class="ai-input">
+          <option value="qwen">通义千问 Qwen（推荐，原生联网搜索）</option>
+          <option value="glm">智谱 GLM（联网搜索）</option>
+          <option value="openai">OpenAI（需自备搜索方案）</option>
+        </select>
+        <label class="ai-field-label">API Key</label>
+        <input type="password" id="aiApiKey" class="ai-input" placeholder="粘贴你的 API Key（留空则保留原值）" autocomplete="off">
+        <label class="ai-field-label">🌐 联网模型（modelWeb）</label>
+        <input type="text" id="aiModelWeb" class="ai-input" placeholder="留空使用默认（qwen-max / glm-4-plus / gpt-4o-mini）">
+        <label class="ai-field-label">💾 本地模型（modelLocal）</label>
+        <input type="text" id="aiModelLocal" class="ai-input" placeholder="分析本地财报数据用；留空则回退到联网模型（仍不联网检索）">
+        <label class="ai-field-label">🔍 联网搜索方式</label>
+        <select id="aiSearchMode" class="ai-input">
+          <option value="builtin">内置联网搜索（enable_search，无免费额度，约 0.003 元/次）</option>
+          <option value="mcp">阿里百炼联网搜索 MCP（前 2000 次调用免费，一次性总额度，超出约 0.029 元/次）</option>
+          <option value="volc">火山豆包搜索（每月 500 次免费，每月 1 日重置，超出 0.020 元/次）</option>
+          <option value="baidu">百度千帆 AI 搜索 MCP（每日 100 次免费，每日重置，超出约 0.008 元/次）</option>
+        </select>
+        <p class="ai-settings-note" id="aiSearchModeNote">火山与百度为<b>周期性重置</b>免费额度（约 500 次/月、3000 次/月），按本工作台当前用量可长期免费；阿里 2000 次为一次性总额度、用完不再重置；内置搜索无免费额度，留作回退。</p>
+
+        <div id="aiVolcFields" class="hidden">
+          <label class="ai-field-label">🌋 火山方舟 Ark API Key</label>
+          <input type="password" id="aiVolcApiKey" class="ai-input" placeholder="火山方舟通用 API Key（留空则保留原值；未配置时自动回退内置搜索）" autocomplete="off">
+          <label class="ai-field-label">🌋 火山豆包模型（可留空）</label>
+          <input type="text" id="aiVolcModel" class="ai-input" placeholder="留空使用默认 doubao-seed-1-6-250615">
+        </div>
+
+        <div id="aiBaiduFields" class="hidden">
+          <label class="ai-field-label">🐾 百度千帆 API Key</label>
+          <input type="password" id="aiBaiduApiKey" class="ai-input" placeholder="千帆平台 API Key（留空则保留原值；未配置时自动回退内置搜索）" autocomplete="off">
+        </div>
+
+        <div id="aiSettingsStatus" class="ai-settings-status"></div>
+      </div>
+      <div class="ai-modal-foot">
+        <button class="btn-secondary" id="aiSettingsCancel">取消</button>
+        <button class="btn-primary" id="aiSettingsSave">保存</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

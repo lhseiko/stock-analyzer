@@ -1,0 +1,22 @@
+# 本地 SQLite 数据层（运行时生成，非源码，不应入库）
+data/stock_analyzer.db
+data/stock_analyzer.db-shm
+data/stock_analyzer.db-wal
+
+# 临时/缓存
+*.log
+.DS_Store
+
+# 依赖（体积大，按 package.json 重建，勿入库）
+node_modules/
+
+# 运行时数据 / 缓存 / 用户上传 PDF / 密钥（含 apiKey/volcApiKey/baiduApiKey，严禁入库）
+data/
+
+# WorkBuddy 项目记忆（非源码）
+.workbuddy/
+
+# 编辑器 / OS
+.vscode/
+.idea/
+Thumbs.db

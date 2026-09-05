@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>财政支出多渠道获取与交叉分析 · 2026年1-7月</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+<style>
+  :root{
+    --bg:#f5f7fa; --card:#ffffff; --ink:#1f2733; --sub:#5b6776; --line:#e6ebf2;
+    --up:#cf1322; --down:#389e0d; --brand:#2f54eb; --warn:#d48806; --mut:#8c98a8;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,"PingFang SC","Microsoft YaHei",Segoe UI,Roboto,sans-serif;
+    line-height:1.6;font-size:15px;}
+  .wrap{max-width:1080px;margin:0 auto;padding:28px 20px 60px;}
+  header{border-bottom:3px solid var(--brand);padding-bottom:14px;margin-bottom:22px;}
+  h1{font-size:26px;margin:0 0 6px;}
+  .meta{color:var(--sub);font-size:13px;}
+  .tldr{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin:18px 0 26px;}
+  .tldr .k{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;
+    box-shadow:0 1px 3px rgba(20,40,80,.05);}
+  .tldr .k .v{font-size:22px;font-weight:700;color:var(--brand);}
+  .tldr .k .v.up{color:var(--up);} .tldr .k .v.down{color:var(--down);}
+  .tldr .k .l{font-size:12.5px;color:var(--sub);margin-top:2px;}
+  section{background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:20px 22px;margin-bottom:20px;box-shadow:0 1px 3px rgba(20,40,80,.05);}
+  h2{font-size:19px;margin:0 0 12px;padding-left:10px;border-left:4px solid var(--brand);}
+  h3{font-size:15.5px;margin:18px 0 8px;color:#2b3a4d;}
+  p{margin:8px 0;}
+  .up{color:var(--up);font-weight:600;} .down{color:var(--down);font-weight:600;}
+  table{border-collapse:collapse;width:100%;font-size:13.5px;margin:10px 0;}
+  th,td{border:1px solid var(--line);padding:8px 10px;text-align:center;}
+  th{background:#f0f4fa;color:#33425a;font-weight:600;}
+  td.l,th.l{text-align:left;}
+  .tag{display:inline-block;padding:1px 8px;border-radius:20px;font-size:12px;font-weight:600;}
+  .tag.ok{background:#e6f7ec;color:#1a7a3c;} .tag.warn{background:#fff4e0;color:#a85b00;}
+  .tag.bad{background:#fdeaea;color:#b3261e;}
+  .tag.pend{background:#eef1f6;color:#5b6776;}
+  .chart{width:100%;height:380px;margin:10px 0 4px;}
+  .src{font-size:12px;color:var(--mut);margin-top:6px;}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0;}
+  .chip{background:#eef2fb;border:1px solid #d6e0f5;color:#2f54eb;border-radius:8px;
+    padding:4px 10px;font-size:12.5px;}
+  ul{margin:8px 0 8px 4px;padding-left:20px;} li{margin:5px 0;}
+  .note{background:#fbfcfe;border:1px dashed var(--line);border-radius:8px;padding:10px 14px;
+    font-size:13px;color:var(--sub);margin:12px 0;}
+  .flow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:14px 0;}
+  .flow .box{background:#eef2fb;border:1px solid #d6e0f5;border-radius:8px;padding:8px 12px;font-size:13px;}
+  .flow .arr{color:var(--brand);font-weight:700;}
+  .disc{font-size:12px;color:var(--mut);border-top:1px solid var(--line);padding-top:12px;margin-top:18px;}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  @media(max-width:760px){.tldr,.two{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>财政支出多渠道获取与交叉分析</h1>
+  <div class="meta">数据周期：2026年1-7月（财政部国库司，发布 2026-08-14 / 08-21 国新办发布会）&nbsp;·&nbsp;生成时间：2026-08-24&nbsp;·&nbsp;口径：全国一般公共预算（第一本账）</div>
+</header>
+
+<!-- 结论先行 -->
+<div class="tldr">
+  <div class="k"><div class="v up">+5.8%</div><div class="l">1-7月一般公共预算收入累计同比（税收+6.7% 主导，质量改善）</div></div>
+  <div class="k"><div class="v down">+1.3%</div><div class="l">1-7月一般公共预算支出累计同比（显著弱于收入端）</div></div>
+  <div class="k"><div class="v">19,193亿</div><div class="l">1-7月第一本账赤字（支出162,889 − 收入143,696 亿元）</div></div>
+  <div class="k"><div class="v down">−30.8%</div><div class="l">1-7月国有土地使用权出让收入同比（土地财政深度调整）</div></div>
+</div>
+
+<!-- 渠道与可信度 -->
+<section>
+  <h2>一、多渠道取数与可信度（A股情报调查员方法）</h2>
+  <p>本次按要求调用 cnfinancialscraper、东方财富妙想（mx-finance-data）、agentic_search、WebSearch 四个技能通道获取财政支出数据，并做交叉验证。</p>
+  <table>
+    <tr><th class="l">数据通道</th><th>状态</th><th class="l">取数结果 / 说明</th><th>可信度</th></tr>
+    <tr>
+      <td class="l"><b>① 财政部国库司官网</b><br>gks.mof.gov.cn（一手来源）</td>
+      <td><span class="tag ok">已取数</span></td>
+      <td class="l">经 cnfinancialscraper 直连统计数据库，解析《2026年1-7月财政收支情况》：收入143,696亿(+5.8%)、支出162,889亿(+1.3%)。修复了 GBK 编码误判（官网声明 UTF-8 实为 GBK），现可稳定取数。</td>
+      <td><span class="tag ok">✅ 已确认</span></td>
+    </tr>
+    <tr>
+      <td class="l"><b>② WebSearch 聚合</b><br>人民网 / 央视 / 新华社 转引财政部</td>
+      <td><span class="tag ok">一致</span></td>
+      <td class="l">检索到财政部官网原文及央视/人民日报报道，数字与通道①逐项一致（16.29万亿支出、+1.3% 等）。</td>
+      <td><span class="tag ok">✅ 已确认</span></td>
+    </tr>
+    <tr>
+      <td class="l"><b>③ agentic_search 智能检索</b></td>
+      <td><span class="tag ok">一致</span></td>
+      <td class="l">合成并补充历史对照：2025全年（收216,045/−1.7%、支287,395/+1%）、2026上半年（收121,047/+4.7%、支143,329/+1.5%）、政府性基金（收−21.2%、支−16.4%），与①②一致。</td>
+      <td><span class="tag ok">✅ 已确认</span></td>
+    </tr>
+    <tr>
+      <td class="l"><b>④ 东方财富妙想</b><br>mx-finance-data</td>
+      <td><span class="tag pend">待授权</span></td>
+      <td class="l">脚本运行退出码 10（need_auth），需用户扫码授权 <code>EM_API_KEY</code> 后方可取数。该通道为结构化东财数据，可作为第四重交叉验证源。<br><span class="src">授权地址（扫码）：https://dl.dfcfs.com/m/u6e0?m_token=979156f51a134af2a0ce221e1885e968</span></td>
+      <td><span class="tag warn">🔍 待开通</span></td>
+    </tr>
+  </table>
+  <div class="note">结论：核心指标（1-7月收支累计额及同比）在 ①②③ 三个独立通道高度一致，属<span class="up">一手财政部数据，可信度最高</span>；通道④待授权后补充。7月当月数（收22,649亿/+11.7%、支19,560亿/+0.5%）由累计数相减推算，内部一致，标注为「推算」。</div>
+</section>
+
+<!-- 交叉验证表 -->
+<section>
+  <h2>二、关键指标三源交叉验证</h2>
+  <table>
+    <tr><th class="l">指标（周期）</th><th>财政部官网①</th><th>WebSearch②</th><th>agentic③</th><th>一致</th></tr>
+    <tr><td class="l">一般公共预算收入（1-7月，亿 / 同比）</td><td>143,696 / +5.8%</td><td>一致</td><td>一致</td><td><span class="tag ok">✓</span></td></tr>
+    <tr><td class="l">一般公共预算支出（1-7月，亿 / 同比）</td><td>162,889 / +1.3%</td><td>一致</td><td>一致</td><td><span class="tag ok">✓</span></td></tr>
+    <tr><td class="l">税收收入（1-7月，亿 / 同比）</td><td>118,381 / +6.7%</td><td>一致</td><td>一致</td><td><span class="tag ok">✓</span></td></tr>
+    <tr><td class="l">收入（2026上半年，亿 / 同比）</td><td>121,047 / +4.7%</td><td>一致</td><td>一致</td><td><span class="tag ok">✓</span></td></tr>
+    <tr><td class="l">支出（2026上半年，亿 / 同比）</td><td>143,329 / +1.5%</td><td>一致</td><td>一致</td><td><span class="tag ok">✓</span></td></tr>
+    <tr><td class="l">收入（2025全年，亿 / 同比）</td><td>—</td><td>—</td><td>216,045 / −1.7%</td><td><span class="tag warn">单一源</span></td></tr>
+    <tr><td class="l">支出（2025全年，亿 / 同比）</td><td>—</td><td>—</td><td>287,395 / +1%</td><td><span class="tag warn">单一源</span></td></tr>
+    <tr><td class="l">政府性基金收入（1-7月，亿 / 同比）</td><td>18,219 / −21.2%</td><td>一致</td><td>一致</td><td><span class="tag ok">✓</span></td></tr>
+    <tr><td class="l">政府性基金支出（1-7月，亿 / 同比）</td><td>45,410 / −16.4%</td><td>一致</td><td>一致</td><td><span class="tag ok">✓</span></td></tr>
+  </table>
+  <div class="src">来源：财政部国库司《2026年1-7月财政收支情况》(gks.mof.gov.cn/tongjishuju/202608/t20260814_3995497.htm)；人民网/央视新闻(2026-08-21)；agentic_search 合成（含2025全年、政府性基金）。2025全年数为媒体引财政部，标注单一源。</div>
+</section>
+
+<!-- 图表 -->
+<section>
+  <h2>三、收支走势与结构</h2>
+  <h3>3.1 一般公共预算：支出额高于收入，但收入增速反超支出</h3>
+  <div id="chartA" class="chart"></div>
+  <div class="src">柱=累计额(亿元，左轴)；线=累计同比(%)，右轴。来源：财政部国库司 2026-08-14/21。</div>
+
+  <h3>3.2 重点支出科目同比增速（1-7月，红涨绿跌）</h3>
+  <div id="chartB" class="chart"></div>
+  <div class="src">民生类（卫健+9.8%、社保就业+7%）高增；传统基建/环保/农林（节能环保−11.9%、农林水−6.8%、城乡社区−2.9%）压减，反映零基预算改革与债务付息挤压。来源：财政部。</div>
+
+  <h3>3.3 两本账收支同比：第一本账温和，第二本账（土地财政）深度负增</h3>
+  <div id="chartC" class="chart"></div>
+  <div class="src">政府性基金收入−21.2%（其中土地出让−30.8%），支出−16.4%，是广义财政支出偏弱的主因。来源：财政部 / 中国财政。</div>
+</section>
+
+<!-- 分析 -->
+<section>
+  <h2>四、分析：收入强、支出弱、土地财政拖累</h2>
+
+  <h3>1）收入端：高增且质量改善</h3>
+  <ul>
+    <li>1-7月收入 <span class="up">+5.8%</span>，增速较上半年(+4.7%)再抬升；7月当月 <span class="up">+11.7%</span>，创19个月新高。</li>
+    <li>结构：税收 <span class="up">+6.7%</span> &gt; 非税 +1.6%，收入"含税额"回升，质量改善。</li>
+    <li>驱动：①价格上行（PPI回升，约80%税收为价相关税）；②股市活跃（<b>证券交易印花税+99.2%</b>）；③外贸强劲（进口环节税+12.3%）；④企业利润改善（所得税+7.2%）。</li>
+  </ul>
+
+  <h3>2）支出端：温和且地方偏弱</h3>
+  <ul>
+    <li>1-7月支出 <span class="down">+1.3%</span>，显著低于收入增速；7月当月 <span class="down">+0.5%</span>（较6月回落3.5pct），地方支出 <span class="down">−0.4%</span>。</li>
+    <li>原因：零基预算改革压低效支出、债务付息（7,966亿，+5.2%）挤占、土地出让下滑削弱地方财力。</li>
+  </ul>
+
+  <h3>3）两本账与赤字</h3>
+  <ul>
+    <li>第一本账：1-7月赤字 <b>19,193亿</b>（支162,889 − 收143,696）；2025全年赤字 71,350亿。</li>
+    <li>第二本账（政府性基金）：收 −21.2% / 支 −16.4%，<b>土地出让收入−30.8%</b> —— 土地财政仍在深度调整，是广义财政支出欠进度的核心拖累。</li>
+    <li>广义财政：1-7月广义收入累计 <span class="up">+1.9%</span>（接近预算+1.8%），但广义支出累计 <span class="down">−3.1%</span>（预算目标+4.6%）—— <b>支出端明显欠进度</b>。</li>
+  </ul>
+
+  <div class="note">政策前瞻：财政部8月21日国新办发布会明确表示"下半年将及时谋划出台务实管用的增量政策"。在支出欠进度 + 土地财政收缩背景下，下半年增量财政（特别国债、专项债提速、消费补贴扩围）是可预期的博弈方向。</div>
+</section>
+
+<!-- 宏观传导 -->
+<section>
+  <h2>五、宏观→行业传导（对 A股 / 债市的影响链）</h2>
+  <div class="flow">
+    <span class="box">财政支出偏弱 + 基金收缩</span><span class="arr">→</span>
+    <span class="box">基建/地产链需求预期受压</span><span class="arr">→</span>
+    <span class="box">建材·工程机械·建筑·地产承压</span>
+  </div>
+  <div class="flow">
+    <span class="box">"投资于人"民生倾斜</span><span class="arr">→</span>
+    <span class="box">医疗·养老·消费服务结构性机会</span><span class="arr">→</span>
+    <span class="box">医保/养老服务/必选消费</span>
+  </div>
+  <div class="flow">
+    <span class="box">收入高增 + 印花税翻倍</span><span class="arr">→</span>
+    <span class="box">市场活跃度提升</span><span class="arr">→</span>
+    <span class="box">券商/财富管理业绩弹性（已部分定价）</span>
+  </div>
+  <div class="two">
+    <div>
+      <h3>一阶 / 二阶受益</h3>
+      <ul>
+        <li><b>受益（财政倾斜）</b>：医疗服务、养老、必选消费、设备更新/以旧换新链条；券商（市场活跃）。</li>
+        <li><b>承压</b>：传统基建建材、地产链、城投债（土地财政收缩 + 化债约束）。</li>
+        <li><b>二阶弹性</b>：专项债提速利好下的工程机械、电网设备，需等数据验证（时滞1-2季度）。</li>
+      </ul>
+    </div>
+    <div>
+      <h3>债市视角</h3>
+      <ul>
+        <li>财政"紧平衡" + 赤字率约束 → 利率下行空间受限。</li>
+        <li>专项债/特别国债提速 → 利率债供给压力。</li>
+        <li>但经济内生动能偏弱、广义支出欠进度 → 配置需求仍支撑。</li>
+        <li>传导时滞提示：数据公布时市场可能已部分定价，警惕"利好兑现"反向交易。</li>
+      </ul>
+    </div>
+  </div>
+  <div class="note">传导不是直线：历史上财政数据与市场表现常背离，且不假设政策意图必然兑现。以上为方向性框架，非买卖建议。</div>
+</section>
+
+<!-- 工具化进展 -->
+<section>
+  <h2>六、对 Stock Analyzer 工具化的进展</h2>
+  <ul>
+    <li><b>cnfinancialscraper 通道已修通</b>：升级 <code>scripts/cnscraper_adapter.py</code> 的 <code>fiscal</code> 子命令——直连财政部统计数据库（gks.mof.gov.cn），并修复 GBK/UTF-8 编码误判；现可稳定返回收入与支出累计额及同比（已实跑验证：收入143,696/+5.8%、支出162,889/+1.3%）。</li>
+    <li><b>端到端打通</b>：<code>lib/macroData.js</code> 的「财政支出（一般公共预算）」卡已能取到真实财政部数据（此前沙箱无网时为占位），与「财政收入」卡对称呈现。</li>
+    <li><b>东方财富妙想通道</b>：待用户扫码授权 EM_API_KEY 后，可在 <code>lib/cnscraperAdapter.js</code> 之外增加第四重东财结构化交叉验证。</li>
+  </ul>
+</section>
+
+<div class="disc">
+  <b>免责声明</b>：以上内容基于公开数据和量化分析，仅供参考，不构成投资建议。市场有风险，投资需谨慎。任何投资决策应结合个人风险承受能力、资金状况和投资目标独立判断，必要时咨询持牌专业机构。过往表现不预示未来收益。<br>
+  数据来源：财政部国库司（一手）、人民网/央视新闻/新华社（一手转引）、agentic_search 合成、cnfinancialscraper 直连解析。7月当月数为累计相减推算。统计时点：2026年1-7月（发布 2026-08-14/21）。
+</div>
+</div>
+
+<script>
+(function(){
+  var UP='#cf1322', DOWN='#389e0d', BRAND='#2f54eb', GREY='#8c98a8';
+  function init(id, opt){ echarts.init(document.getElementById(id)).setOption(opt); }
+
+  // 图A：累计额(柱,左轴) + 累计同比(线,右轴)
+  init('chartA', {
+    tooltip:{trigger:'axis', axisPointer:{type:'shadow'}},
+    legend:{data:['累计额(亿元)','累计同比(%)']},
+    xAxis:{type:'category', data:['一般公共预算收入','一般公共预算支出']},
+    yAxis:[
+      {type:'value', name:'累计额(亿)', axisLabel:{formatter:'{value}'}},
+      {type:'value', name:'同比(%)', axisLabel:{formatter:'{value}%'}}
+    ],
+    series:[
+      {name:'累计额(亿元)', type:'bar', barWidth:'42%',
+        data:[{value:143696, itemStyle:{color:BRAND}}, {value:162889, itemStyle:{color:'#7a8aa0'}}],
+        label:{show:true, position:'top', formatter:'{c}'}},
+      {name:'累计同比(%)', type:'line', yAxisIndex:1, symbolSize:10,
+        data:[{value:5.8, itemStyle:{color:UP}}, {value:1.3, itemStyle:{color:DOWN}}],
+        label:{show:true, formatter:'{c}%'}, lineStyle:{width:3}}
+    ]
+  });
+
+  // 图B：重点支出科目同比（横向柱，红涨绿跌）
+  var items = [
+    {n:'卫生健康', v:9.8}, {n:'社会保障和就业', v:7.0}, {n:'债务付息', v:5.2},
+    {n:'住房保障', v:4.0}, {n:'教育', v:0.7}, {n:'科学技术', v:1.5},
+    {n:'城乡社区', v:-2.9}, {n:'农林水', v:-6.8}, {n:'文化旅游体育与传媒', v:-6.9},
+    {n:'节能环保', v:-11.9}
+  ].sort(function(a,b){return a.v-b.v;});
+  init('chartB', {
+    tooltip:{trigger:'axis', axisPointer:{type:'shadow'}, formatter:'{b}: {c}%'},
+    grid:{left:140, right:40, top:20, bottom:20},
+    xAxis:{type:'value', axisLabel:{formatter:'{value}%'}},
+    yAxis:{type:'category', data:items.map(function(i){return i.n;})},
+    series:[{
+      type:'bar', barWidth:'62%',
+      data:items.map(function(i){return {value:i.v, itemStyle:{color: i.v>=0?UP:DOWN}};}),
+      label:{show:true, position:'right', formatter:'{c}%'}
+    }]
+  });
+
+  // 图C：两本账收支同比
+  init('chartC', {
+    tooltip:{trigger:'axis', axisPointer:{type:'shadow'}},
+    legend:{data:['收入同比','支出同比']},
+    xAxis:{type:'category', data:['一般公共预算(第一本账)','政府性基金(第二本账)']},
+    yAxis:{type:'value', axisLabel:{formatter:'{value}%'}},
+    series:[
+      {name:'收入同比', type:'bar', barWidth:'30%',
+        data:[{value:5.8, itemStyle:{color:UP}}, {value:-21.2, itemStyle:{color:DOWN}}],
+        label:{show:true, position:'top', formatter:'{c}%'}},
+      {name:'支出同比', type:'bar', barWidth:'30%',
+        data:[{value:1.3, itemStyle:{color:UP}}, {value:-16.4, itemStyle:{color:DOWN}}],
+        label:{show:true, position:'top', formatter:'{c}%'}}
+    ]
+  });
+})();
+</script>
+</body>
+</html>

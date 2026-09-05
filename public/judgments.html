@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>个股行情判断记录 · 准确率核对</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="stylesheet" href="css/style.css?v=20260904c">
+  <!-- 本页是独立长页，覆盖主工作台全局的 html,body{overflow:hidden} 以恢复滚动 -->
+  <style>
+    html, body { height: auto !important; overflow-y: auto !important; overflow-x: hidden; }
+    .jd-page { min-height: 100vh; }
+    .jd-toolbar { position: sticky; top: 0; z-index: 20; background: var(--bg-primary);
+      padding: 10px 0; border-bottom: 1px solid var(--border); margin-top: 0; }
+  </style>
+</head>
+<body>
+  <div class="jd-page">
+    <header class="jd-header">
+      <div class="jd-title">📋 个股下一交易日判断记录 · 准确率核对</div>
+      <div class="jd-actions">
+        <button id="recheckBtn" class="btn-secondary" title="用原始数据重新验算记录与准确率">🧮 重新核对</button>
+        <button id="refreshSettleBtn" class="btn-primary" title="先拉取 K 线结算该股历史判断，再刷新">🔄 结算并刷新</button>
+        <a href="index.html" class="btn-text">🏠 返回工作台</a>
+      </div>
+    </header>
+
+    <!-- 个股视图横幅：从个股分析页点「查看该股判断记录」进入时显示 -->
+    <div id="symbolBanner" class="jd-symbol-banner" style="display:none"></div>
+
+    <div id="loadingOverlay" class="loading-overlay hidden">
+      <div class="loading-spinner"></div>
+      <p id="loadingText">正在加载判断记录…</p>
+    </div>
+
+    <!-- 准确率核对：存储值 vs 本页重算 -->
+    <section class="home-card" id="accuracyCard">
+      <div class="home-card-head">
+        <h3>🎯 准确率核对（存储值 <span class="vs">vs</span> 本页重算）</h3>
+        <span id="accUpdated" class="mo-updated"></span>
+      </div>
+      <div id="accuracyBody" class="acc-body"></div>
+      <div id="accVerify" class="acc-verify"></div>
+    </section>
+
+    <!-- 错误分析与自我进化 -->
+    <section class="home-card" id="learningCard">
+      <div class="home-card-head">
+        <h3>🧠 错误分析与自我进化</h3>
+        <span id="learnUpdated" class="mo-updated"></span>
+      </div>
+      <div id="learningBody" class="learn-body"></div>
+    </section>
+
+    <!-- 工具栏 -->
+    <section class="jd-toolbar">
+      <input type="text" id="filterInput" class="jd-filter" placeholder="按股票代码 / 名称筛选…" autocomplete="off">
+      <div class="jd-filter-tags">
+        <button class="jd-tag active" data-filter="all">全部</button>
+        <button class="jd-tag" data-filter="settled">已结算</button>
+        <button class="jd-tag" data-filter="pending">待结算</button>
+        <button class="jd-tag" data-filter="mismatch">⚠️ 不一致</button>
+      </div>
+      <span id="recordCount" class="rc"></span>
+    </section>
+
+    <!-- 记录列表 -->
+    <div id="recordList" class="record-list"></div>
+  </div>
+
+  <script src="js/judgments.js?v=20260904c"></script>
+</body>
+</html>
