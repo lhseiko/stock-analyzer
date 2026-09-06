@@ -1,0 +1,154 @@
+{
+  "deepAnalysis": [
+    {
+      "key": "deepAnalysis",
+      "type": "function"
+    },
+    {
+      "key": "fetchFinancialData",
+      "type": "function"
+    },
+    {
+      "key": "getLocalDocuments",
+      "type": "function"
+    },
+    {
+      "key": "fetchSegmentData",
+      "type": "function"
+    },
+    {
+      "key": "fetchResearchReports",
+      "type": "function"
+    },
+    {
+      "key": "fetchAnnouncements",
+      "type": "function"
+    },
+    {
+      "key": "fetchDividends",
+      "type": "function"
+    },
+    {
+      "key": "persistDividends",
+      "type": "function"
+    },
+    {
+      "key": "loadDividendSeries",
+      "type": "function"
+    },
+    {
+      "key": "classifyDividendStage",
+      "type": "function"
+    },
+    {
+      "key": "dividendLabel",
+      "type": "function"
+    },
+    {
+      "key": "normalizeSymbol",
+      "type": "function"
+    },
+    {
+      "key": "persistValuationScalars",
+      "type": "function"
+    }
+  ],
+  "aiAugment": [
+    {
+      "key": "augmentStock",
+      "type": "function"
+    },
+    {
+      "key": "analyzeAspects",
+      "type": "function"
+    },
+    {
+      "key": "analyzeProducts",
+      "type": "function"
+    },
+    {
+      "key": "analyzeCompany",
+      "type": "function"
+    },
+    {
+      "key": "analyzeSupplyChain",
+      "type": "function"
+    },
+    {
+      "key": "analyzeShareholdersAI",
+      "type": "function"
+    },
+    {
+      "key": "analyzeMarketOverview",
+      "type": "function"
+    },
+    {
+      "key": "analyzeIndustryIndex",
+      "type": "function"
+    },
+    {
+      "key": "analyzeResearchReports",
+      "type": "function"
+    },
+    {
+      "key": "analyzeAnnouncements",
+      "type": "function"
+    },
+    {
+      "key": "analyzeEarningsReport",
+      "type": "function"
+    },
+    {
+      "key": "analyzeValuation",
+      "type": "function"
+    },
+    {
+      "key": "readIndustryIndexCache",
+      "type": "function"
+    },
+    {
+      "key": "loadConfig",
+      "type": "function"
+    },
+    {
+      "key": "saveConfig",
+      "type": "function"
+    },
+    {
+      "key": "publicConfig",
+      "type": "function"
+    },
+    {
+      "key": "readCache",
+      "type": "function"
+    },
+    {
+      "key": "readEarningsCache",
+      "type": "function"
+    },
+    {
+      "key": "readValuationCache",
+      "type": "function"
+    },
+    {
+      "key": "extractEarningsSignal",
+      "type": "function"
+    },
+    {
+      "key": "PROVIDERS",
+      "type": "object"
+    },
+    {
+      "key": "callLLM",
+      "type": "function"
+    },
+    {
+      "key": "pickModelFor",
+      "type": "function"
+    },
+    {
+      "key": "buildLocalEarningsContext",
+      "type": "function"
+    }
+  ]
+}
