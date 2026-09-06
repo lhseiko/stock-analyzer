@@ -2606,8 +2606,6 @@ const App = {
       const data = await resp.json();
 
       if (data.error) {
-        loadingEl.classList.add('hidden');
-        contentEl.style.opacity = '1';
         contentEl.innerHTML = `<div style="text-align:center;padding:60px;color:var(--text-secondary);">
           <h3>⚠️ ${data.error}</h3>
           <p>深度分析目前仅支持A股市场，且需要该股票有完整的财务报表数据。</p>
@@ -2621,8 +2619,6 @@ const App = {
 
       // 数据不完整兜底：避免整页空白
       if (!data.sections) {
-        loadingEl.classList.add('hidden');
-        contentEl.style.opacity = '1';
         contentEl.innerHTML = `<div style="text-align:center;padding:60px;color:var(--text-secondary);">
           <h3>⚠️ 深度分析数据不完整</h3>
           <p>本次未能获取到完整的分析数据，请点击「🔄 刷新」重试。</p>
@@ -2636,9 +2632,6 @@ const App = {
         warnEl.textContent = data.auditWarning;
         warnEl.classList.remove('hidden');
       }
-
-      loadingEl.classList.add('hidden');
-      contentEl.style.opacity = '1';
 
       // 若章节骨架被意外清空/覆盖，先恢复静态骨架，避免 renderAll 找不到元素而白屏
       this.ensureDeepSkeleton();
@@ -2654,11 +2647,13 @@ const App = {
 
       this.toast(forceRefresh ? '已重新分析完成' : (data.fromCache ? '已加载缓存数据' : '深度分析数据加载完成'));
     } catch (e) {
-      loadingEl.classList.add('hidden');
-      contentEl.style.opacity = '1';
       const msg = (e && e.name === 'AbortError') ? '请求超时（>45秒），请检查网络或稍后重试' : (e && e.message);
       this.toast('深度分析加载失败: ' + msg, 'error');
       console.error('Deep analysis error:', e);
+    } finally {
+      // 统一收口：成功/失败/数据不完整各路径 loading 必定移除、内容恢复可见（防转圈残留）
+      loadingEl.classList.add('hidden');
+      contentEl.style.opacity = '1';
     }
   },
 

@@ -178,12 +178,12 @@
       if (STATE.symbolScope) STATE.symbolName = data.symbolName || STATE.symbolScope;
       applySymbolScope();
       render();
-      hideLoading();
     } catch (e) {
-      hideLoading();
       $('recordList').innerHTML = `<div class="jd-empty">加载失败：${escapeHtml(e.message)}</div>`;
       $('accuracyBody').innerHTML = '';
       $('accVerify').innerHTML = '';
+    } finally {
+      hideLoading();
     }
   }
 
