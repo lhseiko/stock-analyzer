@@ -3556,14 +3556,36 @@ const App = {
   },
 
   _colorizeValuationText(html) {
-    // 20260905r：AI 估值结论文本的语义着色（仅展示层，跳过 HTML 标签内部）
-    // 利好=红，利空=绿，章节标题/命中提示/警告符号=黄
-    return html.replace(/(<[^>]+>)|利好|利空|【[^】]+】|命中\d+项|⚠/g, (m, tag) => {
-      if (tag) return tag;
-      if (m === '利好') return '<span class="ai-text-bullish">利好</span>';
-      if (m === '利空') return '<span class="ai-text-bearish">利空</span>';
-      return '<span class="ai-text-key">' + m + '</span>';
+    // 20260905r → 20260906e：AI 估值结论文本的语义着色（仅展示层，跳过 HTML 标签内部）
+    // 实测 AI 正文从不出现「利好/利空」字面词，改为按标点切段、整段语义着色：
+    // 利好段=红，利空段=绿，同段多空混合=黄；章节标题/命中提示/警告符号=黄
+    return html.split(/(<[^>]+>)/g).map(part => {
+      if (!part || /^</.test(part)) return part; // 标签原样
+      return this._colorizeValuationChunk(part);
+    }).join('');
+  },
+
+  _colorizeValuationChunk(text) {
+    // 利好关键词（红）
+    const RE_BULL = /(低估|被低估|安全边际|保护|支撑|提振|看好|积极|正面|乐观|充裕|稳健|修复|改善|优势|吸引力|高股息|竞争优势|护城河强)/;
+    // 利空关键词（绿）。（?<!无)风险 排除"无风险利率"误判
+    const RE_BEAR = /(亏损|恶化|偏高|过高|承压|压力大|压力较大|缩水|回避|高估|负面|悲观|侵蚀|流出|为负|下滑|下行|疲弱|疲软|减值|质押|退市|杠杆|占用严重|谨慎|跌破|回落|失效|失真|紧张|存疑|偏离|价格战|评级：弱|依赖|拖累|(?<!无)风险)/;
+    // 用占位符保护已确定的着色片段，避免二次包裹
+    const parts = [];
+    const hold = (wrapped) => { parts.push(wrapped); return `\u0000${parts.length - 1}\u0000`; };
+    let t = text
+      .replace(/【[^】]+】/g, m => hold(`<span class="ai-text-key">${m}</span>`))
+      .replace(/命中\d+项|⚠/g, m => hold(`<span class="ai-text-key">${m}</span>`));
+    // 按句读切段，整段判色（同段多空并存→黄）
+    t = t.replace(/[^，。；！？\n]+[，。；！？]?/g, seg => {
+      if (!seg.trim()) return seg;
+      const bull = RE_BULL.test(seg), bear = RE_BEAR.test(seg);
+      if (bull && bear) return hold(`<span class="ai-text-key">${seg}</span>`);
+      if (bull) return hold(`<span class="ai-text-bullish">${seg}</span>`);
+      if (bear) return hold(`<span class="ai-text-bearish">${seg}</span>`);
+      return seg;
     });
+    return t.replace(/\u0000(\d+)\u0000/g, (_, i) => parts[Number(i)]);
   },
 
   renderValuationAI(j) {
