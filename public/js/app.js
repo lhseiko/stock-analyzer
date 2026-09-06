@@ -606,7 +606,6 @@ const App = {
     this.renderOverview(data);
     this.renderTechnical(data);
     this.renderFundamental(data);
-    this.renderSignals(data);
 
     // 缓存中栏图表所需的日K历史 + 技术指标（周期切换 / 指标 Tab 切换复用）
     this.dailyHistory = data.history || [];
@@ -1889,11 +1888,6 @@ const App = {
       Charts.candlestick('candlestickChart', history, technical);
     }
 
-    // Radar chart
-    if (fundamental?.scores) {
-      Charts.radar('radarChart', fundamental);
-    }
-
     // 期货关联走势面板（产品型公司，异步加载，不阻塞概览渲染）
     this.renderFuturesPanel(this.currentSymbol, data.name);
 
@@ -2476,35 +2470,6 @@ const App = {
       reasoning.push(line);
     }
     return { conclusion, reasoning };
-  },
-
-  // 利好/利空 信号提醒（红=利好，绿=利空）
-  renderSignals(data) {
-    const el = document.getElementById('signalAlerts');
-    if (!el) return;
-    const sig = data.signals;
-    if (!sig || !Array.isArray(sig.signals) || sig.signals.length === 0) {
-      el.style.display = 'none';
-      return;
-    }
-    el.style.display = '';
-    const basis = sig.compareBasis || '行业均值';
-    const quote = data.quote || {};
-    const f = quote.fundamentals || {};
-    const finLabel = f.reportPeriod || f.reportDate || '';
-    const priceDate = quote.date || '—';
-    const rows = sig.signals.map(s => {
-      const cls = s.signal === 'bull' ? 'sig-bull' : s.signal === 'bear' ? 'sig-bear' : 'sig-neutral';
-      const tag = s.signal === 'bull' ? '利好' : s.signal === 'bear' ? '利空' : '中性';
-      return `<div class="sig-item ${cls}">
-        <div class="sig-head"><span class="sig-label">${s.label}</span><span class="sig-value">${s.value}</span><span class="sig-tag">${tag}</span></div>
-        <div class="sig-reason">${s.reason}</div>
-      </div>`;
-    }).join('');
-    el.innerHTML = `<h3>📣 信号提醒（利好 / 利空）</h3>
-      <div class="sig-note">对比基准：${basis}（🔴 红 = 利好股价，🟢 绿 = 利空股价）</div>
-      <div class="sig-list">${rows}</div>
-      <div class="sig-meta">数据来源：行情 ${priceDate}${finLabel ? ' · 财报 ' + finLabel : ''} · 本地规则计算</div>`;
   },
 
   // ---- Tab switching ----
