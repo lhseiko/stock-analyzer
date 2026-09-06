@@ -579,7 +579,7 @@ graph TD
 - 一次性断言脚本（可写入 `scripts/check-split.js` 供 QA 复用）：
   - 快照比对：`Object.keys` + `typeof` 与基线**逐键一致**（deep 13 / ai 24，含 `extractEarningsSignal` 键存在）。
   - `node --check` 遍历 lib/、lib/deep/、lib/ai/ 全部 .js。
-  - 状态唯一性 grep：`gSearchMode|gVolcKey|gVolcModel|gBaiduKey` 在 lib/ 下**零匹配**；`_promptCache` 仅 config.js 定义；`_industryIndexRunning` 仅 market.js；`_cninfoOrgCache` 仅 deep/research.js；`runtime` 解构红线 grep（`\{[^}]*searchMode[^}]*\}\s*=\s*require` 零匹配）。
+  - 状态唯一性 grep：`gSearchMode|gVolcKey|gVolcModel|gBaiduKey` 在 lib/ 下**零功能性匹配**（QA 实测：lib/ai/config.js 有 2 处 g* 字样为迁移说明注释，属预期豁免；断言应排除注释行）；`_promptCache` 仅 config.js 定义；`_industryIndexRunning` 仅 market.js；`_cninfoOrgCache` 仅 deep/research.js；`runtime` 解构红线 grep（`\{[^}]*searchMode[^}]*\}\s*=\s*require` 零匹配）。
   - require 边 grep：`require('./aiAugment')` 仅剩下游 7 处（changeAnalysis/homeHotTopics/hotTopics/sameDayJudgment/server/aiRoutes/_test_impact）；`require('./deepAnalysis')` 仅剩 factStore（延迟）+ ai/augmentStock + ai/earnings（延迟）。
   - 缓存路径校验：`node -e` 打印 `config.CACHE_DIR` 与拆分前逐字节一致（`…\data\ai_cache`）。
 - ✅ 验证：全部断言绿；提交 tag `refactor-split-done`。
@@ -633,7 +633,7 @@ graph LR
 node -e "const d=require('./lib/deepAnalysis');console.log(Object.keys(d).length)"          # 13
 node -e "const a=require('./lib/aiAugment');console.log(Object.keys(a).length)"            # 24
 node -e "const {readCache,readEarningsCache,readValuationCache}=require('./lib/aiAugment');console.log(readCache('__none__'),readEarningsCache('__none__'),readValuationCache('__none__'))"   # null null null
-node -e "const {loadConfig,normSearchMode}=require('./lib/aiAugment');console.log(normSearchMode('bogus'))"  # builtin
+node -e "const {normSearchMode}=require('./lib/ai/config');console.log(normSearchMode('bogus'))"  # builtin（注：normSearchMode 从不经 aiAugment 门面导出，拆分前后均如此，须直连子模块）
 node -e "const {extractEarningsSignal}=require('./lib/aiAugment');console.log(extractEarningsSignal('综合信号：-2'))"  # ≈ -0.667
 node -e "const {_calcStats}=require('./lib/deep/shared');console.log(_calcStats([1,2,3]))" # {mean:2,std:0.82,high:2.82,low:1.18}
 node -e "const {_postProcessEarningsSummary}=require('./lib/aiAugment')||require('./lib/ai/earnings');..."  # 重复行折叠行为与拆分前一致（对照测试）
