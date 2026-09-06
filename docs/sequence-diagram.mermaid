@@ -1,0 +1,52 @@
+sequenceDiagram
+    autonumber
+    participant S as server.js
+    participant FD as lib/deepAnalysis.js（门面）
+    participant FA as lib/aiAugment.js（门面）
+    participant Pipe as deep/pipeline.js
+    participant Cache as ai/cache.js
+    participant Cfg as ai/config.js
+    participant Earn as ai/earnings.js
+    participant DA as deepAnalysis 主流程（pipeline 内）
+
+    rect rgb(235, 244, 255)
+    Note over S,Cfg: 阶段一 · 进程启动（require 加载期）——原循环依赖已消除
+    S->>FD: require('./lib/deepAnalysis')
+    FD->>Pipe: require('./deep/pipeline')
+    Pipe->>Cache: require('../ai/cache')  ← 替代原 require('./aiAugment')（循环切割点）
+    Cache->>Cfg: require('./ai/config')（CACHE_DIR / SEMI_STATIC_TTL_MS）
+    Cfg->>Cfg: 载入期初始化：loadConfig() → setSearchMode/setSearchCreds 写入唯一 runtime
+    Pipe-->>FD: 导出 deepAnalysis 等
+    FD-->>S: 13 键导出（与基线逐键一致）
+    S->>FA: require('./lib/aiAugment')
+    FA->>Cfg: require 各 ai/* 子模块（config/cache/llm/…）
+    FA-->>S: 24 键导出（含 extractEarningsSignal 别名、PROVIDERS 同一引用）
+    Note over S,DA: factStore.deep() 延迟 require deepAnalysis 门面保持不变（此环已不存在）
+    end
+
+    rect rgb(240, 255, 240)
+    Note over S,DA: 阶段二 · 深度分析请求（readCache 静态链路）
+    S->>FD: deepAnalysis(symbol, name, quote, history)
+    FD->>DA: pipeline.deepAnalysis(...)
+    DA->>DA: 抓取财报/分红/股东 → 三表分析 → 估值结论 → augmentSections
+    DA->>Cache: readCache(symbol, '_research') / '_announcements' / '_earnings'
+    Note right of Cache: 直连 ai/cache.js，<br>不再经过 aiAugment 门面
+    Cache->>Cfg: 读 CACHE_DIR（路径与拆分前逐字节一致）
+    Cache-->>DA: 缓存 JSON 或 null
+    DA-->>S: 完整分析结果（sections._conclusions 等）
+    end
+
+    rect rgb(255, 248, 235)
+    Note over S,DA: 阶段三 · 财报解读请求（延迟 require 链路 · 原样保留）
+    S->>FA: analyzeEarningsReport({symbol, force})
+    FA->>Earn: earnings.analyzeEarningsReport(...)
+    Earn->>Earn: 缓存检查（EARNINGS_PROMPT_VERSION 门控）
+    alt 缓存未命中 / force
+        Earn->>DA: const { fetchFinancialData } = require('./deepAnalysis')（函数内延迟 require，L1910 原样）
+        DA-->>Earn: finData（近8期三表）
+        Earn->>Earn: buildLocalEarningsContext → callLLM → _postProcessEarningsSummary
+        Earn->>Earn: 写缓存（CACHE_DIR/<symbol>_earnings.json）
+    end
+    Earn-->>S: 解读结果（summary/reportPeriod/earningsSignal/verdict）
+    Note over Earn,DA: ai/augmentStock.js 中 analyzeAspects 的延迟 require（L652）与此同型，亦原样保留
+    end

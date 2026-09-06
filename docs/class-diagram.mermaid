@@ -1,0 +1,232 @@
+classDiagram
+    %% 拆分后模块结构（门面 + 领域子模块）
+    %% 关系标注：FAC..>X = 门面 re-export；A-->B = 静态依赖；A..>B = 运行期延迟 require（保留项）
+
+    class DeepAnalysisFacade {
+        <<facade lib/deepAnalysis.js 13键 零逻辑>>
+    }
+    class AiAugmentFacade {
+        <<facade lib/aiAugment.js 24键 零逻辑>>
+        +extractEarningsSignal$ 别名→_extractEarningsSignal
+        +PROVIDERS$ 同一引用
+    }
+
+    class deep_shared {
+        <<lib/deep/shared.js 跨块工具>>
+        +UA$ +HEADERS$
+        +fmtPrice(v)$ string
+        +fmtPct(n)$ string
+        +toYi(n)$ number
+        +_calcStats(arr)$ Object
+        +_stmtStage(reportName)$ string|null
+        +withTimeout(p, ms, fb)$ Promise
+    }
+    class deep_financials {
+        <<lib/deep/financials.js>>
+        +EM_FINANCE_BASE$
+        +getAnnualDates(years)$ Date[]
+        +ANALYSIS_YEARS$ 5
+        +fetchFinancialStatement(type, code, dates)$ Promise
+        +fetchFinancialData(code)$ Promise
+        +fetchShareholders(code)$ Promise
+        +buildShareholderStats(holders, total)$ Object
+        +fetchTopShareholders(code)$ Promise
+    }
+    class deep_dividends {
+        <<lib/deep/dividends.js>>
+        +fetchDividends(code)$ Promise
+        +classifyDividendStage(rd, plan)$ string
+        +dividendLabel(year, stage)$ string
+        +normalizeSymbol(s)$ string
+        +persistDividends(symbol, emCode, rows)$ void
+        +loadDividendSeries(symbol)$ Array
+        +persistValuationScalars(symbol, emCode, val)$ void
+        +aggregateAnnualDPS(dividends)$ Map
+    }
+    class deep_yield {
+        <<lib/deep/yield.js>>
+        +fetchBfqBars(code, count, endDate)$ Promise
+        +fetchAllBfqBars(code, years)$ Promise
+        +computeCurrentYield(dividends, price)$ number
+        +buildInsuranceIndustryYield(...)$ Promise
+        +analyzeDividendYield(dividends, quote, symbol, name)$ Promise
+    }
+    class deep_statements {
+        <<lib/deep/statements.js>>
+        +_STAGE_ORDER$
+        +_calcTtmProfit(income)$ number
+        +analyzeRevenueCost(income)$ Array
+        +analyzeBalanceSheet(balance)$ Object
+        +analyzeCashFlow(cf, income, rcData)$ Array
+        +analyzeValuation(finData, quote, holders, emVal)$ Object
+        +analyzeGrowth(rcData)$ Object
+        +calculateDCF(...)$ Object
+        -calcStats(arr)$ 局部函数·勿与_calcStats合并
+    }
+    class deep_conclusions {
+        <<lib/deep/conclusions.js 21个build*>>
+        +buildRevenueConclusion(rc)$ Object
+        +analyzeRoeMarginTrend(rc, quote)$ Object
+        +buildValuationMetricConclusion(val, label)$ Object
+        +buildInsuranceDDMConclusion(ddm)$ Object
+        +buildValuationReasoning(obj)$ Array
+    }
+    class deep_conclusion {
+        <<lib/deep/conclusion.js 估值综合结论>>
+        +generateConclusion(...)$ Object
+        -generateConclusionText(...)$ string
+    }
+    class deep_pipeline {
+        <<lib/deep/pipeline.js 主流程>>
+        +deepAnalysis(symbol, name, quote, history)$ Promise
+        +augmentSections(sections, ctx)$ sections
+        +calculateChipDistribution(history, price)$ Object
+    }
+    class deep_research {
+        <<lib/deep/research.js>>
+        -_cninfoOrgCache$ Map·状态唯一持有
+        +getLocalDocuments(stockCode)$ Object|null
+        +fetchSegmentData(emCode)$ Promise
+        +buildProductGrossMargin(seg)$ Object
+        +fetchResearchReports(code)$ Promise
+        +fetchAnnouncements(code, name)$ Promise
+    }
+
+    class ai_config {
+        <<lib/ai/config.js ★状态唯一持有>>
+        +DATA_DIR$ +CONFIG_PATH$ +CACHE_DIR$ +IMG_DIR$
+        +CACHE_TTL_MS$ +SEMI_STATIC_TTL_MS$ +PROMPTS_DIR$
+        +PROVIDERS$
+        -_promptCache$ 状态1
+        +runtime$ 状态2-5·searchMode/volcKey/volcModel/baiduKey
+        +loadConfig()$ +saveConfig(cfg)$ +publicConfig(c)$
+        +setSearchMode(mode)$ +setSearchCreds(c)$
+        +ensureDirs()$ +loadPromptFile(name)$ +normSearchMode(m)$
+    }
+    class ai_cache {
+        <<lib/ai/cache.js ★循环依赖切割点>>
+        +EARNINGS_PROMPT_VERSION$
+        +VALUATION_VER$
+        +readCache(symbol, suffix)$ Object|null
+        +readEarningsCache(symbol)$ Object|null
+        +readValuationCache(symbol)$ Object|null
+    }
+    class ai_llm {
+        <<lib/ai/llm.js>>
+        +SEARCH_CHANNELS$
+        +callLLM(provider, key, model, messages, opts)$ Promise
+        +pickModelFor(cfg, kind)$ Object
+        +pickLocalSummaryModel(cfg)$ Object
+        +postLLM(url, key, body, timeout)$ Promise
+        +guardCtxBudget(cfg, pick, len, tag, sym)$ Object
+        +LOCAL_CTX_CHAR_BUDGET$
+        +extractJson(text)$ Object|null
+        +extractSources(text)$ Array
+    }
+    class ai_images {
+        <<lib/ai/images.js>>
+        +downloadImage(url, dest)$ Promise
+        +searchCommonsImage(query)$ Promise
+        +attachImage(symbol, prefix, url, query)$ Promise
+    }
+    class ai_augmentStock {
+        <<lib/ai/augmentStock.js>>
+        +augmentStock(opts)$ Promise
+        +analyzeAspects(opts)$ Promise
+        +buildAugmentContext(symbol, name)$ Promise
+    }
+    class ai_products {
+        <<lib/ai/products.js>>
+        +analyzeProducts(opts)$ Promise
+        +buildProductsContext(segment)$ Object
+    }
+    class ai_company {
+        <<lib/ai/company.js>>
+        +analyzeCompany(opts)$ Promise
+        +analyzeSupplyChain(opts)$ Promise
+        +analyzeShareholdersAI(opts)$ Promise
+        +buildLocalHoldersContext(symbol)$ Promise
+    }
+    class ai_market {
+        <<lib/ai/market.js>>
+        -_industryIndexRunning$ Set·状态唯一持有
+        +analyzeMarketOverview(opts)$ Promise
+        +analyzeIndustryIndex(opts)$ Promise
+        +readIndustryIndexCache(code, name)$ Object|null
+    }
+    class ai_research {
+        <<lib/ai/research.js>>
+        +analyzeResearchReports(opts)$ Promise
+        +analyzeAnnouncements(opts)$ Promise
+    }
+    class ai_earnings {
+        <<lib/ai/earnings.js>>
+        +analyzeEarningsReport(opts)$ Promise
+        +buildLocalEarningsContext(symbol, opts)$ Promise
+        +_extractEarningsSignal(content)$ number
+        +_reportDateToLabel(rd)$ string
+        +_detectCitedYear(text)$ number|null
+        +_postProcessEarningsSummary(text)$ string
+        +pickReportDoc(docs, rd)$ Object|null
+    }
+    class ai_valuation {
+        <<lib/ai/valuation.js>>
+        +analyzeValuation(opts)$ Promise
+    }
+
+    %% 门面 re-export
+    DeepAnalysisFacade ..> deep_pipeline : deepAnalysis
+    DeepAnalysisFacade ..> deep_financials : fetchFinancialData
+    DeepAnalysisFacade ..> deep_dividends : 分红7键
+    DeepAnalysisFacade ..> deep_research : 文档/分部/研报/公告4键
+    AiAugmentFacade ..> ai_augmentStock
+    AiAugmentFacade ..> ai_products
+    AiAugmentFacade ..> ai_company
+    AiAugmentFacade ..> ai_market
+    AiAugmentFacade ..> ai_research
+    AiAugmentFacade ..> ai_earnings
+    AiAugmentFacade ..> ai_valuation
+    AiAugmentFacade ..> ai_cache : readCache/readEarningsCache/readValuationCache
+    AiAugmentFacade ..> ai_llm : callLLM/pickModelFor
+    AiAugmentFacade ..> ai_config : loadConfig/saveConfig/publicConfig/PROVIDERS
+
+    %% deep 内部依赖
+    deep_financials --> deep_shared
+    deep_dividends --> deep_shared
+    deep_yield --> deep_shared
+    deep_yield --> deep_dividends : fetchDividends·aggregateAnnualDPS
+    deep_statements --> deep_shared
+    deep_conclusions --> deep_shared
+    deep_conclusion --> deep_shared
+    deep_pipeline --> deep_shared
+    deep_pipeline --> deep_financials
+    deep_pipeline --> deep_dividends
+    deep_pipeline --> deep_yield
+    deep_pipeline --> deep_statements
+    deep_pipeline --> deep_conclusions
+    deep_pipeline --> deep_conclusion
+    deep_pipeline --> deep_research
+
+    %% ai 内部依赖
+    ai_cache --> ai_config
+    ai_llm --> ai_config : runtime 实时读取
+    ai_images --> ai_config
+    ai_augmentStock --> ai_config
+    ai_augmentStock --> ai_llm
+    ai_augmentStock --> ai_earnings : _reportDateToLabel/_detectCitedYear
+    ai_products --> ai_llm
+    ai_products --> ai_images
+    ai_company --> ai_llm
+    ai_company --> ai_images
+    ai_market --> ai_llm
+    ai_research --> ai_llm
+    ai_earnings --> ai_llm
+    ai_earnings --> ai_cache : EARNINGS_PROMPT_VERSION
+    ai_valuation --> ai_llm
+    ai_valuation --> ai_cache : VALUATION_VER
+    ai_valuation --> ai_earnings : buildLocalEarningsContext
+
+    %% 跨树关键边
+    deep_pipeline --> ai_cache : readCache（静态·替代原顶层aiAugment依赖）
+    ai_augmentStock ..> DeepAnalysisFacade : fetchFinancialData（延迟·原样保留）
+    ai_earnings ..> DeepAnalysisFacade : fetchFinancialData（延迟·原样保留）
