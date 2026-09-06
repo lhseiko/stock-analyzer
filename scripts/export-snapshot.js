@@ -111,7 +111,9 @@ function main() {
   if (failed) {
     process.exit(1);
   }
-  if (baselineText === text) {
+  // 换行符归一化：git autocrlf 可能把基线文件转成 CRLF，语义比较须忽略换行差异
+  const norm = (s) => s.replace(/\r\n/g, '\n');
+  if (norm(baselineText) === norm(text)) {
     console.log('[export-snapshot] PASS: 快照与基线逐键一致 (deep=' + snapshot.deepAnalysis.length + ', ai=' + snapshot.aiAugment.length + ')');
     process.exit(0);
   }
