@@ -1545,65 +1545,32 @@ const DeepCharts = {
     const tgtWarn = ai.targetMismatch
       ? '<div class="er-mismatch">⚠️ ' + this.escapeHtml(ai.targetWarn || '解读标的与当前股票不符，疑似串公司') + '</div>'
       : '';
-    // 20260831h：标题由实际报告期驱动，避免三级标题重复。
-    // 分组标题（group-earnings）已固定为「📑 财报解读」，此处仅更新卡片级 h3 为具体报告期。
+    // 20260906b：单层注释式标题「{公司名}{报告期}财报解读」（用户要求去掉多层框架）。
+    // 「中报」在标题口径统一显示为「半年报」（如「中国平安2026年半年报财报解读」）。
     const titleEl = document.getElementById('deepEarningsReportTitle');
     const period = ai.reportPeriod ? String(ai.reportPeriod).trim() : '';
     const nameTag = stockName || ai.stockName || symbol;
-    if (period) {
-      if (titleEl) titleEl.textContent = '📑 ' + nameTag + ' · ' + period + '分析';
-    } else {
-      if (titleEl) titleEl.textContent = '📑 ' + nameTag + ' 最新财报解读';
-    }
+    const periodLabel = period ? period.replace(/中报/g, '半年报') : '';
+    if (titleEl) titleEl.textContent = periodLabel
+      ? nameTag + periodLabel + '财报解读'
+      : nameTag + ' 最新财报解读';
     // 移除内部二级标题，直接把解读正文、来源与重算按钮平铺展示
     // 20260902j：来源标签按实际模式展示——local = 本地模型+本地财报数据（含资料库同期PDF节选），
     // web-fallback = 本地数据缺失降级联网检索
     const srcLabel = ai.mode === 'local'
       ? 'AI 本地解读（本地财报数据' + (ai.localDocName ? ' + 资料库同期PDF：' + this.escapeHtml(ai.localDocPeriod || '') + ' ' + this.escapeHtml(ai.localDocName) : '') + '）'
       : 'AI 联网生成' + (ai.stockName ? '（已联网核实 ' + this.escapeHtml(ai.stockName) + '）' : '');
-    // 20260902k：结构化渲染——信号横幅（利好红/利空绿）+ 分节正文 + 关键词/数字行内高亮
-    const parsed = this._earningsParse(ai.summary);
-    const sigVal = parsed.signal != null ? parsed.signal
-      : (typeof ai.earningsSignal === 'number' && isFinite(ai.earningsSignal)
-        ? Math.max(-3, Math.min(3, Math.round(ai.earningsSignal * 3))) : null);
-    const sem = sigVal == null ? 'flat' : (sigVal > 0 ? 'pos' : sigVal < 0 ? 'neg' : 'flat');
-    const semLabel = sem === 'pos' ? '利好' : sem === 'neg' ? '利空' : '中性';
-    const sigText = sigVal == null ? '' : (sigVal > 0 ? '+' + sigVal : String(sigVal));
-    const banner = (parsed.verdict || sigVal != null)
-      ? '<div class="er-signal er-signal-' + sem + '">' +
-          (sigVal == null ? '' : '<span class="er-badge er-badge-' + sem + '"><i class="er-dot"></i>' + semLabel + ' ' + sigText + '</span>') +
-          (parsed.verdict ? '<div class="er-verdict">' + this._earningsHighlight(this.escapeHtml(parsed.verdict)) + '</div>' : '') +
-        '</div>'
-      : '';
-    const itemHtml = l => {
-      if (/^注[：:]/.test(l)) return '<div class="er-note">' + this._earningsHighlight(this.escapeHtml(l)) + '</div>';
-      if (/^[-•·]\s+/.test(l)) return '<div class="er-item">' + this._earningsHighlight(this.escapeHtml(l.replace(/^[-•·]\s+/, ''))) + '</div>';
-      return '<div class="er-para">' + this._earningsHighlight(this.escapeHtml(l)) + '</div>';
-    };
-    let bodyHtml;
-    if (parsed.sections.length) {
-      // 「再次总结」与横幅结论重复时跳过，避免同页重复
-      const norm = t => String(t || '').replace(/[\s，。、；;：:（）()\-—]/g, '');
-      const verdictNorm = norm(parsed.verdict);
-      const secs = parsed.sections.filter(sec => {
-        if (!/再次总结/.test(sec.title) || !verdictNorm) return true;
-        const a = norm(sec.lines.join(''));
-        return !(a.includes(verdictNorm) || verdictNorm.includes(a));
-      });
-      bodyHtml = parsed.intro.map(itemHtml).join('') + banner + secs.map(sec => {
-        const sSem = /亮点|积极/.test(sec.title) ? 'pos' : (/风险|隐忧/.test(sec.title) ? 'neg' : '');
-        return '<div class="er-section">' +
-          '<div class="er-sec-head er-sec-' + sSem + '"><span class="er-sec-chip">' + this.escapeHtml(sec.idx) + '</span><span class="er-sec-title">' + this.escapeHtml(sec.title) + '</span></div>' +
-          sec.lines.map(itemHtml).join('') +
-        '</div>';
-      }).join('');
-    } else {
-      bodyHtml = banner + String(ai.summary).split(/\n+/).map(p => p.trim()).filter(Boolean)
-        .map(p => '<div class="er-para">' + this._earningsHighlight(this.escapeHtml(p)) + '</div>').join('');
-    }
+    // 20260906c：单层框架 + 详细解读正文（用户分工：深度卡=详细解读，行情判断小卡=精简结论）。
+    // 「综合信号：+X」为结构化字段不在正文展示；「综合结论」行用结论样式突出，其余维度为普通段落；
+    // 串公司红框告警（tgtWarn）保留——数据安全防线不砍。
+    const bodyHtml = String(ai.summary).split(/\n+/).map(p => p.trim()).filter(Boolean)
+      .filter(p => !/^综合信号[：:]/.test(p))
+      .map(p => /^综合结论[：:]/.test(p)
+        ? '<div class="er-verdict">' + this._earningsHighlight(this.escapeHtml(p)) + '</div>'
+        : '<div class="er-para">' + this._earningsHighlight(this.escapeHtml(p)) + '</div>')
+      .join('');
     el.innerHTML = `<div class="er-wrap">
       ${tgtWarn}
-      <div class="er-head">${tgtBadge}</div>
       ${bodyHtml}
       <div class="mx-summary-foot">来源：${srcLabel}${dateStr ? '（' + dateStr + '）' : ''}${ai.model ? ' · ' + this.escapeHtml(ai.model) : ''}</div>
       <button class="ai-trigger-btn" data-ai-type="earnings">🔄 重新解读</button>
