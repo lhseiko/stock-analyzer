@@ -1454,6 +1454,11 @@ body {
   margin-bottom: 16px;
 }
 
+/* ===== 20260905j：估值结论面板合并 AI 估值（valuation-merged） ===== */
+/* 规则版解读与 AI 结果同容器切换（JS 控制 display）；按钮行置顶（date 左 / 按钮右），字体颜色沿用面板既有变量 */
+.valuation-merged { margin-bottom: 16px; }
+.valuation-merged .valuation-ai-head { margin: 0 0 10px; }
+
 /* ===== 估值结论卡片（20260902i 重设计：中性炭黑卡面 + 语义色徽章 + 估值区间定位条）===== */
 /* 语义方向：利好红/利空绿只出现在评级徽章与价格锚点上，卡面不再大面积着色 */
 .vc-card {

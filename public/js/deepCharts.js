@@ -787,14 +787,13 @@ const DeepCharts = {
     }
   },
 
-  // Render valuation conclusion panel
-  renderConclusion(data) {
-    const el = document.getElementById('deepConclusion');
-    if (!el || !data) return;
-    // 语义方向（利好红/利空绿，与趋势预测 20260902a 同口径）：
-    // 低估=机会(利好)→红，高估/偏高=风险(利空)→绿，合理=中性灰。
-    // 20260902i 重设计：中性炭黑卡面，语义色只出现在评级徽章与价格锚点（消除大面积色块），
-    // 新增"估值区间定位条"直观展示当前价在综合合理区间中的位置
+  // ---- 估值数据卡片（vc-card）渲染 —— 规则版结论与 AI 估值共用（20260905k 单一来源）----
+  // sum: { overallRating, currentPrice, fairValueRange:[lo,hi], fairValueCenter, methodsUsed:[] }
+  // 样式即用户确认的图一布局：评级徽章 + 当前股价 + 综合合理估值区间定位条 + 估值方法 chips
+  renderValuationCardHTML(sum, livePrice) {
+    // 20260906：当前股价一律用工作台头部权威实时价（livePrice）覆盖摘要自带价（单一权威源铁律），无效时回退原值
+    const _live = (livePrice != null && isFinite(Number(livePrice)) && Number(livePrice) > 0) ? Number(livePrice) : null;
+    const displayPrice = _live != null ? _live : Number(sum.currentPrice);
     const ratingColors = {
       '低估': { bg: 'rgba(246,70,93,0.12)', border: 'rgba(246,70,93,0.45)', text: '#F6465D' },
       '合理': { bg: 'rgba(150,160,180,0.12)', border: 'rgba(150,160,180,0.35)', text: '#aab2c0' },
@@ -803,15 +802,17 @@ const DeepCharts = {
       '数据不足': { bg: 'rgba(139,147,156,0.10)', border: 'rgba(139,147,156,0.35)', text: '#8B949E' },
     };
     const fmt2 = v => (v != null && v !== '' && !isNaN(v) && isFinite(v)) ? Number(v).toFixed(2) : '--';
-    const c = ratingColors[data.overallRating] || ratingColors['数据不足'];
+    // 20260905k：评级词模糊归档（AI 可能输出"合理偏低"等复合词，按关键词命中取语义色，徽章仍显示原词）
+    const ratingKey = ['高估', '偏高', '低估', '合理'].find(k => String(sum.overallRating || '').includes(k)) || '数据不足';
+    const c = ratingColors[ratingKey] || ratingColors['数据不足'];
 
     // ---- 估值区间定位条 ----
     let rangeHTML = '';
-    const lo = data.fairValueRange ? Number(data.fairValueRange[0]) : NaN;
-    const hi = data.fairValueRange ? Number(data.fairValueRange[1]) : NaN;
+    const lo = sum.fairValueRange ? Number(sum.fairValueRange[0]) : NaN;
+    const hi = sum.fairValueRange ? Number(sum.fairValueRange[1]) : NaN;
     if (isFinite(lo) && isFinite(hi) && hi - lo > 0.005) {
-      const price = Number(data.currentPrice);
-      const center = Number(data.fairValueCenter);
+      const price = displayPrice;
+      const center = Number(sum.fairValueCenter);
       const pct = (p) => Math.max(0, Math.min(100, (p - lo) / (hi - lo) * 100));
       const pricePct = (isFinite(price) && price > 0) ? pct(price) : null;
       const centerPct = (isFinite(center) && center > 0) ? pct(center) : null;
@@ -834,31 +835,18 @@ const DeepCharts = {
         </div>`;
     }
 
-    const methodsHTML = (data.methodsUsed || []).map(m => `<span class="vc-method-chip">${m}</span>`).join('');
+    const methodsHTML = (sum.methodsUsed || []).map(m => `<span class="vc-method-chip">${m}</span>`).join('');
 
-    const ratingItems = (data.ratings || []).map(r => {
-      const rc = ratingColors[r.rating] || ratingColors['数据不足'];
-      const fv = (r.fairValueRange && (r.fairValueRange[1] - r.fairValueRange[0] > 0.005))
-        ? `<div class="method-fair-row"><span class="method-fair">合理估值区间 ¥${fmt2(r.fairValueRange[0])} ~ ¥${fmt2(r.fairValueRange[1])}</span></div>`
-        : (r.fairValue != null && r.fairValue > 0 ? `<div class="method-fair-row"><span class="method-fair">合理估值 ¥${fmt2(r.fairValue)}</span></div>` : '');
-      return `<div class="conclusion-method" style="border-left:3px solid ${rc.border};">
-        <span class="method-name">${r.method}</span>
-        <span class="method-rating" style="color:${rc.text};background:${rc.bg};padding:2px 8px;border-radius:4px;font-weight:600;">${r.rating}</span>
-        <span class="method-detail">${r.detail}</span>
-        ${fv}
-      </div>`;
-    }).join('');
-
-    el.innerHTML = `
+    return `
       <div class="vc-card">
         <div class="vc-header">
           <div class="vc-rating-wrap">
             <span class="vc-rating-label">综合估值评级</span>
-            <span class="vc-rating-chip" style="background:${c.bg};border-color:${c.border};color:${c.text};"><i style="background:${c.text};"></i>${data.overallRating}</span>
+            <span class="vc-rating-chip" style="background:${c.bg};border-color:${c.border};color:${c.text};"><i style="background:${c.text};"></i>${sum.overallRating || '数据不足'}</span>
           </div>
           <div class="vc-price">
             <span class="vc-price-label">当前股价</span>
-            <span class="vc-price-value">¥${fmt2(data.currentPrice)}</span>
+            <span class="vc-price-value">¥${fmt2(displayPrice)}</span>
           </div>
         </div>
         ${rangeHTML}
@@ -867,10 +855,26 @@ const DeepCharts = {
           <span class="vc-methods-label">估值方法</span>
           <div class="vc-methods-list">${methodsHTML}</div>
         </div>` : ''}
-      </div>
-      <div class="conclusion-text">${(data.conclusionText || '').split('\n').map(l => `<p>${l}</p>`).join('')}</div>
-      ${ratingItems ? `<div class="conclusion-methods-list">${ratingItems}</div>` : ''}
-    `;
+      </div>`;
+  },
+
+  // Render valuation conclusion panel
+  renderConclusion(data) {
+    const el = document.getElementById('deepConclusion');
+    if (!el || !data) return;
+    // 20260906：AI 估值视图已激活时不抢视图（单按钮口径：打开自动展示已保存的 AI 融合估值，
+    // 深度分析数据后到不得把视图打回规则版旧模型），仅静默更新规则版内容；切股残留由 selectStock 重置兜底
+    const _aiBody = document.getElementById('valuationAiBody');
+    const aiActive = !!(_aiBody && _aiBody.style.display !== 'none' && _aiBody.innerHTML.trim() !== '');
+    // 20260902i 重设计：中性炭黑卡面，语义色只出现在评级徽章与价格锚点（消除大面积色块），
+    // 新增"估值区间定位条"直观展示当前价在综合合理区间中的位置
+    // 20260905k：vc-card 渲染提取为 renderValuationCardHTML（与 AI 估值共用，单一来源）
+
+    // 20260905j：各估值方法小卡片行（如「PE估值带」）已按需求删除——方法信息已在结论文本中完整呈现，避免重复展示
+
+    el.innerHTML = this.renderValuationCardHTML(data) +
+      `<div class="conclusion-text">${(data.conclusionText || '').split('\n').map(l => `<p>${l}</p>`).join('')}</div>`;
+    el.style.display = aiActive ? 'none' : '';
   },
 
   // Render trend prediction panel
@@ -1621,7 +1625,8 @@ const DeepCharts = {
     // 每个分节独立 try/catch：任一分节渲染失败都不会导致整页空白
     const safe = (label, fn) => { try { fn(); } catch (e) { console.error('DeepCharts 渲染失败 [' + label + ']:', e); } };
 
-    safe('companyType', () => this.renderCompanyType(sections.companyClassification));
+    // 20260905j：公司类型/分析重点行已按需求删除（估值区合并为单模块），renderCompanyType 保留但不再调用
+    // safe('companyType', () => this.renderCompanyType(sections.companyClassification));
     safe('localDocs', () => this.renderLocalDocs(sections.localDocuments));
     safe('segmentProduct', () => this.renderSegmentProduct(sections.segmentData));
     safe('segmentRegion', () => this.renderSegmentRegion(sections.segmentData));

@@ -578,14 +578,20 @@
               <!-- Audit warning -->
               <div id="auditWarning" class="audit-warning hidden"></div>
 
-              <!-- 公司类型分类与差异化分析重点 -->
-              <div id="deepCompanyType" class="company-type-panel"></div>
-
               <!-- 本地资料库文档 -->
               <div id="deepLocalDocs" class="local-docs-panel hidden"></div>
 
-              <!-- 估值结论面板 -->
-              <div id="deepConclusion" class="conclusion-panel"></div>
+              <!-- 估值结论面板（20260905j 合并 AI 估值大模型：默认规则版解读，点「✨ AI 估值」原地切换；
+                   原公司类型/分析重点行、PE估值带小卡片、独立 AI 估值大模型卡片均已并入/删除） -->
+              <div class="valuation-merged">
+                <div class="ai-holder-foot valuation-ai-head">
+                  <span id="valuationAiDate" class="ai-holder-date"></span>
+                  <!-- 20260905m：原「🔄 重新估值」按钮已删除——单按钮口径：打开自动读保存的结果，点「✨ AI 估值」即重新估值并保存 -->
+                  <button class="ai-trigger-btn" id="valuationAiBtn" type="button">✨ AI 估值</button>
+                </div>
+                <div id="deepConclusion" class="conclusion-panel"></div>
+                <div id="valuationAiBody" class="ai-holder-body" style="display:none"></div>
+              </div>
 
               <!-- 最新财报解读（AI 联网，标题由 JS 根据实际报告期动态设置） -->
               <div class="chart-card large">
@@ -730,16 +736,7 @@
                   <h3>💰 DDM 股息贴现估值</h3>
                   <div id="deepDDM" class="dcf-result"></div>
                 </div>
-                <!-- Section 23d: AI 估值大模型（提示词驱动，读取 prompts/valuation-system.md） -->
-                <div class="chart-card large">
-                  <h3>🤖 AI 估值大模型</h3>
-                  <div class="ai-holder-foot">
-                    <span id="valuationAiDate" class="ai-holder-date"></span>
-                    <button class="ai-trigger-btn" id="valuationAiRefresh" type="button" style="display:none">🔄 重新估值</button>
-                    <button class="ai-trigger-btn" id="valuationAiBtn" type="button">✨ AI 估值</button>
-                  </div>
-                  <div id="valuationAiBody" class="ai-holder-body"><div class="ai-empty">点击「✨ AI 估值」，由工作台内置的估值大模型（年报数据库 + 上网搜索）给出内在价值区间与贵贱判断。</div></div>
-                </div>
+                <!-- 20260905j：原 Section 23d「AI 估值大模型」卡片已合并至上方估值结论面板（valuation-merged），独立卡片删除 -->
               </div>
 
               <!-- Section 22: Dividends -->

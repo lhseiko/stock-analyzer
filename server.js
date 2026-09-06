@@ -68,7 +68,7 @@ app.use('/api', (req, res, next) => {
 
 // 入口 HTML 强制带版本号重定向：旧服务器曾允许缓存 index.html，浏览器可能一直用旧副本。
 // 每次访问 / 或 /index.html 都重定向到带 ?v= 的版本，确保一定拉取最新前端（无需用户手动硬刷新）。
-const APP_VERSION = '20260905i';
+const APP_VERSION = '20260905o';
 app.use((req, res, next) => {
   if ((req.path === '/' || req.path === '/index.html') && req.query.v !== APP_VERSION) {
     return res.redirect(`/index.html?v=${APP_VERSION}`);
@@ -960,12 +960,16 @@ app.post('/api/ai/valuation', async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-app.get('/api/ai/valuation/:symbol', async (req, res) => {
+app.get('/api/ai/valuation/:symbol', (req, res) => {
   try {
     const symbol = String(req.params.symbol || '').trim();
     if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL', message: '缺少股票代码' });
-    const data = await analyzeValuation({ symbol, force: false });
-    res.json(data);
+    // 20260906：GET 纯只读——仅返回有效缓存（v4 版本+TTL 匹配），绝不自动联网重算。
+    // 打开个股不消耗额度；无有效缓存时前端保持规则版结论，用户点「✨ AI 估值」（force=true）才重算。
+    const { readValuationCache } = require('./lib/aiAugment');
+    const cached = readValuationCache(symbol);
+    if (!cached) return res.json({ success: false, cached: false });
+    res.json({ success: true, ...cached, cached: true });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

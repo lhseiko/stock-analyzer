@@ -239,10 +239,9 @@ const App = {
     const industryOverviewRefresh = document.getElementById('industryOverviewRefresh');
     if (industryOverviewRefresh) industryOverviewRefresh.addEventListener('click', () => this.loadIndustryBoardIndex(true));
     const valuationAiBtn = document.getElementById('valuationAiBtn');
-    // 20260905i：主按钮缓存优先（force=false，30天缓存内不重复调 LLM），「🔄 重新估值」才强刷
-    if (valuationAiBtn) valuationAiBtn.addEventListener('click', () => this.runValuationAI(false));
-    const valuationAiRefresh = document.getElementById('valuationAiRefresh');
-    if (valuationAiRefresh) valuationAiRefresh.addEventListener('click', () => this.runValuationAI(true));
+    // 20260905m：单按钮口径——打开自动读保存的结果（loadValuationAICache），点「✨ AI 估值」= 重新估值并保存；
+    // 原「🔄 重新估值」按钮已删除（与主按钮功能重复）
+    if (valuationAiBtn) valuationAiBtn.addEventListener('click', () => this.runValuationAI(true));
     document.getElementById('aiSettingsBtn').addEventListener('click', () => this.openAISettings());
     document.getElementById('aiSettingsClose').addEventListener('click', () => this.closeAISettings());
     document.getElementById('aiSettingsCancel').addEventListener('click', () => this.closeAISettings());
@@ -634,6 +633,13 @@ const App = {
     if (this.currentSymbol) {
       setTimeout(() => this.loadAICache(), 60);
     }
+    // 20260906：切股即重置估值面板（清旧股 AI 视图残留、回规则版占位；新股已存估值由下方 loadValuationAICache 自动接管）
+    const _vaiBodyReset = document.getElementById('valuationAiBody');
+    if (_vaiBodyReset) { _vaiBodyReset.style.display = 'none'; _vaiBodyReset.innerHTML = ''; }
+    const _vDeepConcReset = document.getElementById('deepConclusion');
+    if (_vDeepConcReset) _vDeepConcReset.style.display = '';
+    const _vaiDateReset = document.getElementById('valuationAiDate');
+    if (_vaiDateReset) _vaiDateReset.textContent = '';
     // 自动加载已存的 AI 估值大模型缓存（打开个股页即显示，无需手动点击）
     if (this.currentSymbol) {
       setTimeout(() => this.loadValuationAICache(), 60);
@@ -2743,7 +2749,7 @@ const App = {
 
     const groups = [
       { id: 'group-overview', title: '📋 公司概览与结论', open: true,
-        nodes: [helper('deepCompanyType'), helper('deepConclusion')] },
+        nodes: [document.querySelector('.valuation-merged')] },
       { id: 'group-earnings', title: '📑 财报解读',
         nodes: [cardOf('deepEarningsReport')] },
       { id: 'group-revenue', title: '📊 营收与盈利趋势',
@@ -3517,8 +3523,11 @@ const App = {
     if (!symbol) return;
     const body = document.getElementById('valuationAiBody');
     const btn = document.getElementById('valuationAiBtn');
-    const refreshBtn = document.getElementById('valuationAiRefresh');
     if (!body || !btn) return;
+    // 20260905j：点击即切换到 AI 视图（隐藏规则版估值，同一模块原地展示 AI 结果）
+    const deepConc = document.getElementById('deepConclusion');
+    if (deepConc) deepConc.style.display = 'none';
+    body.style.display = '';
     if (!this.aiConfig || !this.aiConfig.hasKey) {
       this.aiConfig = await this.loadAIConfig();
     }
@@ -3528,7 +3537,6 @@ const App = {
     }
     btn.disabled = true;
     btn.textContent = '⏳ 估值中…';
-    refreshBtn.style.display = 'none';
     body.innerHTML = '<div class="ai-loading"><div class="loading-spinner"></div><p>AI 估值大模型正在联网检索 ' + (this.escapeHtml(this.currentData?.name || symbol)) + ' 的行情/财报…</p></div>';
     try {
       const r = await fetch('/api/ai/valuation', {
@@ -3551,19 +3559,59 @@ const App = {
     }
   },
 
+  // 20260905k：解析 AI 估值输出的【机器可读摘要】JSON 块（提示词要求正文末尾固定附）
+  _parseValuationSummary(content) {
+    const text = String(content || '');
+    const blocks = text.match(/```json\s*([\s\S]*?)```/g);
+    if (!blocks || !blocks.length) return null;
+    let s;
+    try { s = JSON.parse(blocks[blocks.length - 1].replace(/```json\s*|\s*```/g, '').trim()); } catch { return null; }
+    if (!s || !s.overallRating) return null;
+    const lo = Number(s.fairValueLow), hi = Number(s.fairValueHigh);
+    return {
+      overallRating: String(s.overallRating),
+      currentPrice: Number(s.currentPrice),
+      fairValueRange: (isFinite(lo) && isFinite(hi)) ? [lo, hi] : null,
+      fairValueCenter: isFinite(Number(s.fairValueCenter)) ? Number(s.fairValueCenter) : null,
+      methodsUsed: Array.isArray(s.methodsUsed) ? s.methodsUsed.map(x => String(x)) : [],
+    };
+  },
+
+  _stripValuationSummary(content) {
+    return String(content || '')
+      .replace(/```json[\s\S]*?```/g, '')
+      .replace(/【机器可读摘要】[^\n]*/g, '')
+      .trim();
+  },
+
   renderValuationAI(j) {
     const body = document.getElementById('valuationAiBody');
     const dateEl = document.getElementById('valuationAiDate');
-    const refreshBtn = document.getElementById('valuationAiRefresh');
     if (!body) return;
+    // 20260905j：AI 内容渲染时切换视图（缓存命中/生成成功均隐藏规则版估值，同模块原地显示 AI 结果）
+    const deepConc = document.getElementById('deepConclusion');
+    if (deepConc) deepConc.style.display = 'none';
+    body.style.display = '';
     const d = new Date(j.date);
     const pad = (n) => String(n).padStart(2, '0');
     if (dateEl) dateEl.textContent = (j.cached ? '缓存于 ' : '更新于 ') +
       `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-    if (refreshBtn) refreshBtn.style.display = '';
-    let html = '<div class="ai-markdown">' + this.renderMarkdown(j.content) + '</div>';
-    const modeText = '由 AI 估值大模型（年报数据库 + 上网搜索）生成，仅供参考，请自行核实。模型：' + this.escapeHtml(j.model || '');
-    html += '<div class="ai-foot-note">' + modeText + '</div>';
+    // 20260905k：优先按「图一 vc-card 数据卡 + 图二行式文字说明」展示（与规则版估值结论视觉统一）
+    const summary = this._parseValuationSummary(j.content);
+    let html = '';
+    if (summary && typeof DeepCharts !== 'undefined' && DeepCharts.renderValuationCardHTML) {
+      const bodyText = this._stripValuationSummary(j.content);
+      // 20260906：当前股价传工作台头部权威实时价（腾讯行情），覆盖 AI 摘要里的二手价（单一权威源）
+      html = DeepCharts.renderValuationCardHTML(summary, this.currentData?.quote?.price);
+      html += '<div class="conclusion-text">' + bodyText.split('\n').map(l => `<p>${this.escapeHtml(l)}</p>`).join('') + '</div>';
+      const srcNote = j.localDataUsed ? '历史财务：本地年报数据库；实时数据：联网搜索' : '数据来源：联网搜索（补抓）';
+      html += '<div class="ai-foot-note">' + this.escapeHtml(srcNote) + ' · 模型：' + this.escapeHtml(j.model || '') + '</div>';
+    } else {
+      // 兜底：摘要缺失/解析失败时按原 markdown 展示
+      html = '<div class="ai-markdown">' + this.renderMarkdown(j.content) + '</div>';
+      const modeText = '由 AI 估值大模型（年报数据库 + 上网搜索）生成，仅供参考，请自行核实。模型：' + this.escapeHtml(j.model || '');
+      html += '<div class="ai-foot-note">' + modeText + '</div>';
+    }
     body.innerHTML = html;
   },
 
