@@ -821,11 +821,11 @@ const DeepCharts = {
         <div class="vc-range">
           <div class="vc-range-head">
             <span class="vc-range-label">综合合理估值区间</span>
-            <span class="vc-range-note">${posTxt}${centerPct != null ? ` · 中枢 ¥${fmt2(center)}` : ''}</span>
+            <span class="vc-range-note">${posTxt}</span>
           </div>
           <div class="vc-range-track">
             <div class="vc-range-fill" style="width:${pricePct == null ? 0 : pricePct}%;"></div>
-            ${centerPct != null ? `<div class="vc-range-center" style="left:${centerPct}%;" title="中枢 ¥${fmt2(center)}"></div>` : ''}
+            ${centerPct != null ? `<div class="vc-range-center" style="left:${centerPct}%;" title="中枢 ¥${fmt2(center)}"><span class="vc-range-center-label">中枢 ¥${fmt2(center)}</span></div>` : ''}
             ${pricePct != null ? `<div class="vc-range-dot" style="left:${pricePct}%;border-color:${c.text};" title="当前价 ¥${fmt2(price)}"></div>` : ''}
           </div>
           <div class="vc-range-scale">

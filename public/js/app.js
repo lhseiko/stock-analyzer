@@ -1177,6 +1177,13 @@ const App = {
     return `<span class="sd-impact ${cls}" title="影响程度评分：${label} ${sign}${s}（±3 为最强；红=利好，绿=利空）">${label} ${sign}${s}</span>`;
   },
 
+  // 20260906：因子名渲染——板块跷跷板标题中的「负相关」用黄色高亮（用户要求，仅此因子；其他因子名原样）
+  _factorNameHtml(f) {
+    const name = this._escapeHtml(f.name);
+    if (f.key === 'seesaw') return name.replace(/负相关/g, '<span class="sd-rel-hl">负相关</span>');
+    return name;
+  },
+
   // 渲染单个因子的详情体：含子维度的因子用卡片网格分段，否则保留原有密集文本
   _renderFactorBody(f) {
     const subs = f.subFactors;
@@ -1184,11 +1191,15 @@ const App = {
       const cards = subs.map(sf => {
         // 颜色由影响程度评分统一决定，保证圆点/取值/徽章三者同向
         const signCls = this._impactCls(sf);
+        // 20260906：板块跷跷板因子子卡片不做利好/利空/中性判断，只标注「负相关」（黄色；用户要求，仅此因子）
+        const badge = (f.key === 'seesaw')
+          ? '<span class="sd-impact rel" title="该板块与个股呈负相关关系（跷跷板效应），不做方向判断">负相关</span>'
+          : this._impactBadge(sf);
         return `<div class="sd-sub-card">
           <div class="sd-sub-head">
             <span class="sd-dot ${signCls}"></span>
             <span class="sd-sub-name">${this._escapeHtml(sf.name)}</span>
-            ${this._impactBadge(sf)}
+            ${badge}
           </div>
           <div class="sd-sub-value ${signCls}">${this._escapeHtml(String(sf.value || '—'))}</div>
           <div class="sd-sub-detail">${this._escapeHtml(sf.detail || '')}</div>
@@ -1225,7 +1236,7 @@ const App = {
       return `<div class="sd-factor-row${hidden}">
         <button class="sd-factor-toggle" type="button" aria-expanded="false">
           <span class="sd-dot ${signCls}"></span>
-          <span class="sd-factor-name">${this._escapeHtml(f.name)}</span>
+          <span class="sd-factor-name">${this._factorNameHtml(f)}</span>
           ${this._impactBadge(f)}
           <span class="sd-bar-track"><span class="sd-bar ${signCls}" style="${barStyle}"></span></span>
           <span class="sd-factor-w">权重 ${Math.round((f.effectiveWeight || 0) * 100)}%</span>
@@ -1465,7 +1476,7 @@ const App = {
       const contrib = (f.contribution >= 0 ? '+' : '') + (f.contribution * 100).toFixed(2);
       return `<div class="sd-factor">
         <div class="sd-factor-head">
-          <span class="sd-factor-name">${this._escapeHtml(f.name)}</span>
+          <span class="sd-factor-name">${this._factorNameHtml(f)}</span>
           ${this._impactBadge(f)}
           <span class="sd-factor-signal ${signCls}">${arrow}</span>
           <span class="sd-factor-w">权重 ${(f.effectiveWeight * 100).toFixed(0)}%</span>
@@ -3584,6 +3595,17 @@ const App = {
       .trim();
   },
 
+  _colorizeValuationText(html) {
+    // 20260905r：AI 估值结论文本的语义着色（仅展示层，跳过 HTML 标签内部）
+    // 利好=红，利空=绿，章节标题/命中提示/警告符号=黄
+    return html.replace(/(<[^>]+>)|利好|利空|【[^】]+】|命中\d+项|⚠/g, (m, tag) => {
+      if (tag) return tag;
+      if (m === '利好') return '<span class="ai-text-bullish">利好</span>';
+      if (m === '利空') return '<span class="ai-text-bearish">利空</span>';
+      return '<span class="ai-text-key">' + m + '</span>';
+    });
+  },
+
   renderValuationAI(j) {
     const body = document.getElementById('valuationAiBody');
     const dateEl = document.getElementById('valuationAiDate');
@@ -3603,12 +3625,13 @@ const App = {
       const bodyText = this._stripValuationSummary(j.content);
       // 20260906：当前股价传工作台头部权威实时价（腾讯行情），覆盖 AI 摘要里的二手价（单一权威源）
       html = DeepCharts.renderValuationCardHTML(summary, this.currentData?.quote?.price);
-      html += '<div class="conclusion-text">' + bodyText.split('\n').map(l => `<p>${this.escapeHtml(l)}</p>`).join('') + '</div>';
+      const conclusionRaw = '<div class="conclusion-text">' + bodyText.split('\n').map(l => `<p>${this.escapeHtml(l)}</p>`).join('') + '</div>';
+      html += this._colorizeValuationText(conclusionRaw);
       const srcNote = j.localDataUsed ? '历史财务：本地年报数据库；实时数据：联网搜索' : '数据来源：联网搜索（补抓）';
       html += '<div class="ai-foot-note">' + this.escapeHtml(srcNote) + ' · 模型：' + this.escapeHtml(j.model || '') + '</div>';
     } else {
       // 兜底：摘要缺失/解析失败时按原 markdown 展示
-      html = '<div class="ai-markdown">' + this.renderMarkdown(j.content) + '</div>';
+      html = this._colorizeValuationText('<div class="ai-markdown">' + this.renderMarkdown(j.content) + '</div>');
       const modeText = '由 AI 估值大模型（年报数据库 + 上网搜索）生成，仅供参考，请自行核实。模型：' + this.escapeHtml(j.model || '');
       html += '<div class="ai-foot-note">' + modeText + '</div>';
     }

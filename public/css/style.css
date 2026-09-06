@@ -1509,14 +1509,20 @@ body {
 .vc-range-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; flex-wrap: wrap; gap: 4px 12px; }
 .vc-range-label { color: var(--text-secondary); }
 .vc-range-note { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-.vc-range-track { position: relative; height: 6px; border-radius: 3px; background: rgba(255,255,255,0.07); }
+.vc-range-track { position: relative; height: 6px; border-radius: 3px; background: rgba(255,255,255,0.07); margin-top: 20px; }
 .vc-range-fill {
   position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px;
   background: linear-gradient(90deg, rgba(224,180,92,0.18), rgba(224,180,92,0.42));
 }
+/* 20260906：中枢竖线上下贯穿突出于刻度条，标注文字挂竖线上方（用户要求，全部个股生效） */
 .vc-range-center {
-  position: absolute; top: -3px; width: 2px; height: 12px; border-radius: 1px;
+  position: absolute; top: -9px; width: 2px; height: 24px; border-radius: 1px;
   background: #e0b45c; transform: translateX(-1px);
+}
+.vc-range-center-label {
+  position: absolute; bottom: calc(100% + 4px); left: 50%; transform: translateX(-50%);
+  font-size: 11px; line-height: 1; color: #e0b45c; white-space: nowrap;
+  font-variant-numeric: tabular-nums; text-shadow: 0 1px 4px rgba(0,0,0,0.5);
 }
 .vc-range-dot {
   position: absolute; top: 50%; width: 14px; height: 14px; border-radius: 50%;
@@ -1557,6 +1563,11 @@ body {
 .conclusion-text p:last-child {
   margin-bottom: 0;
 }
+
+/* 20260905r：AI 估值结论文本的语义着色（利好红/利空绿/关键信息黄） */
+.ai-text-bullish { color: #F6465D; font-weight: 600; }
+.ai-text-bearish { color: #0ECB81; font-weight: 600; }
+.ai-text-key { color: #e0b45c; font-weight: 500; }
 
 .conclusion-methods-list {
   display: flex;
@@ -3113,6 +3124,9 @@ body {
 .sd-impact.pos { color: var(--red); background: rgba(246,70,93,0.14); border: 1px solid rgba(246,70,93,0.4); }
 .sd-impact.neg { color: var(--green); background: rgba(14,203,129,0.14); border: 1px solid rgba(14,203,129,0.4); }
 .sd-impact.neu { color: #aab2c0; background: rgba(150,160,180,0.16); border: 1px solid rgba(150,160,180,0.35); }
+/* 20260906：板块跷跷板专用——子卡片「负相关」标注（黄色）与因子标题「负相关」高亮 */
+.sd-impact.rel { color: #e0b45c; background: rgba(224,180,92,0.14); border: 1px solid rgba(224,180,92,0.4); }
+.sd-rel-hl { color: #e0b45c; }
 .sd-factor-signal.pos { color: var(--red); }
 .sd-factor-signal.neg { color: var(--green); }
 .sd-factor-signal.neu { color: #aab2c0; }
