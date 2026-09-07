@@ -2527,6 +2527,42 @@ body {
 /* ===== 首页「今日财经热点」卡片 ===== */
 .hot-news-card { min-height: 0; }
 .hot-news-body { display: flex; flex-direction: column; gap: 8px; }
+
+/* 20260907a：事件驱动卡片 */
+.event-drive-body { display: flex; flex-direction: column; gap: 8px; }
+.ev-list { display: flex; flex-direction: column; gap: 6px; }
+.ev-row {
+  display: flex; flex-direction: column; gap: 5px;
+  padding: 9px 10px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--bg-card);
+}
+.ev-line1 { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.ev-line2 { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.ev-title { font-size: 12px; color: var(--text-secondary); line-height: 1.4; }
+.ev-row.ev-major { border-left: 3px solid #F6465D; }
+.ev-row.ev-moderate { border-left: 3px solid #F0B97B; }
+.ev-row.ev-minor { border-left: 3px solid var(--text-light); }
+.ev-grade { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 10px; }
+.ev-grade.ev-major { background: rgba(246,70,93,0.16); color: #F6465D; }
+.ev-grade.ev-moderate { background: rgba(240,185,123,0.16); color: #F0B97B; }
+.ev-grade.ev-minor { background: rgba(255,255,255,0.06); color: var(--text-secondary); }
+.ev-dir { font-size: 12px; font-weight: 700; }
+.ev-dir.ev-up { color: #F6465D; }
+.ev-dir.ev-down { color: #0ECB81; }
+.ev-dir.ev-neu { color: var(--text-secondary); }
+.ev-sector { font-size: 13px; color: var(--text-primary); font-weight: 600; }
+.ev-weight { font-size: 12px; color: var(--text-secondary); }
+.ev-stocks { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.ev-stock { font-size: 11px; background: rgba(240,185,123,0.12); color: #F0B97B; padding: 1px 6px; border-radius: 8px; }
+.ev-paused { font-size: 11px; color: var(--text-light); }
+.ev-pending { font-size: 11px; color: #F0B97B; background: rgba(240,185,123,0.12); padding: 1px 6px; border-radius: 8px; }
+.ev-confirm {
+  font-size: 11px; cursor: pointer; border-radius: 8px; padding: 2px 8px;
+  background: rgba(240,185,123,0.16); color: #F0B97B; border: 1px solid rgba(240,185,123,0.4);
+}
+.ev-confirm:hover { background: rgba(240,185,123,0.28); }
+.ev-confirm:disabled { opacity: .6; cursor: default; }
+.ev-foot { font-size: 11px; color: var(--text-light); line-height: 1.6; padding-top: 2px; }
 .hn-featured {
   display: block; text-decoration: none;
   background: linear-gradient(135deg, rgba(240,185,123,0.16), rgba(240,185,123,0.04));

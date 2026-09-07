@@ -55,6 +55,7 @@ const factStore = require('./lib/factStore');
 // 20260906 路由拆分（第一阶段）：AI/妙想/行业指数 + 资料库路由移至 routes/，server.js 瘦身
 const aiRoutes = require('./routes/aiRoutes');
 const docsRoutes = require('./routes/docsRoutes');
+const eventRoutes = require('./routes/eventRoutes'); // 20260907a：三联动·事件驱动权重引擎
 // Python 解释器探测器移至 lib/pyRuntime.js（AI 行业指数 / 研报下载 / 板块拥挤度回补共用）
 const { findPython } = require('./lib/pyRuntime');
 
@@ -73,7 +74,7 @@ app.use('/api', (req, res, next) => {
 
 // 入口 HTML 强制带版本号重定向：旧服务器曾允许缓存 index.html，浏览器可能一直用旧副本。
 // 每次访问 / 或 /index.html 都重定向到带 ?v= 的版本，确保一定拉取最新前端（无需用户手动硬刷新）。
-const APP_VERSION = '20260906e';
+const APP_VERSION = '20260907i';
 app.use((req, res, next) => {
   if ((req.path === '/' || req.path === '/index.html') && req.query.v !== APP_VERSION) {
     return res.redirect(`/index.html?v=${APP_VERSION}`);
@@ -725,6 +726,8 @@ app.put('/api/watchlist', (req, res) => {
 
 // 20260906 路由拆分：AI 联网 / 妙想 / 行业指数 / 产品图片等 35 条路由移至 routes/aiRoutes.js
 app.use(aiRoutes);
+// 20260907a：三联动·事件驱动路由（活跃事件 / 扫描 / 配置 / 暂停 / 改分级 / 重算）
+app.use(eventRoutes);
 
 // 个股市值历史走势（亿元，日频），供行业分析页叠加当前股票市值双坐标轴
 // 复用 lib/eastmoneyValuation.fetchValuationTTM 的 daily 序列（TOTAL_MARKET_CAP），保证与估值模块同源（规则一）
@@ -1726,6 +1729,42 @@ function startDailySettlementScheduler() {
   }, 60 * 1000);
 }
 
+// 20260907a：三联动·事件驱动定时扫描
+// 在 9:00 / 12:30 / 15:30 / 21:00 触发一次新闻扫描，更新活跃事件库并作废受影响个股的短期判断缓存。
+function startEventScheduler() {
+  let lastSlot = '';
+  setInterval(() => {
+    const now = new Date();
+    const dow = now.getDay();
+    if (dow === 0 || dow === 6) return; // 周末不扫
+    const hh = now.getHours();
+    const mm = now.getMinutes();
+    const slots = [['09', '00'], ['12', '30'], ['15', '30'], ['21', '00']];
+    let hit = null;
+    for (const [sh, sm] of slots) {
+      if (hh === parseInt(sh, 10) && mm === parseInt(sm, 10)) { hit = `${sh}:${sm}`; break; }
+    }
+    if (!hit) return;
+    const slotKey = `${localDate(now)} ${hit}`;
+    if (slotKey === lastSlot) return;
+    lastSlot = slotKey;
+    eventEngineScanOnce()
+      .then(r => console.log(`  [事件] 定时扫描完成：${r.activeCount} 活跃 / 变更 ${r.changedSymbols ? r.changedSymbols.length : 0} 股`))
+      .catch(e => console.error('  [事件] 定时扫描失败:', e.message));
+  }, 60 * 1000);
+}
+
+// 封装单次事件扫描（依赖 eventEngine，避免与结算调度耦合）
+async function eventEngineScanOnce() {
+  const eventEngine = require('./lib/eventEngine');
+  const sameDay = require('./lib/sameDayJudgment');
+  const result = await eventEngine.scanEvents(false);
+  for (const s of (result.changedSymbols || [])) {
+    try { sameDay.invalidateJudgmentForSymbol(s); } catch (e) {}
+  }
+  return result;
+}
+
 function startServer(port, retries = 5) {
   const server = app.listen(port, () => {
     const url = `http://localhost:${port}`;
@@ -1742,6 +1781,10 @@ function startServer(port, retries = 5) {
       .catch(e => console.error('  [结算] 初始化失败:', e.message));
     // 每日 15:30 盘后定时结算 + 自学习自动复核
     startDailySettlementScheduler();
+    // 20260907a：三联动·事件驱动定时扫描（9:00 / 12:30 / 15:30 / 21:00）
+    startEventScheduler();
+    // 启动后做一次静默首扫（网络受限时返回空，不影响启动）
+    eventEngineScanOnce().catch(e => console.error('  [事件] 首扫失败:', e.message));
   });
   server.on('error', (err) => {
     if (err.code === 'EADDRINUSE') {

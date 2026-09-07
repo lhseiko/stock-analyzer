@@ -2073,8 +2073,8 @@ const App = {
       stEl.innerHTML = `
         <h4>② 短期动向预判（1-5个交易日） <span class="pa-verdict ${this._paVerdictClass(shortTerm.direction)}">${shortTerm.direction} · 概率${shortTerm.probability}</span></h4>
         <ul class="pa-evidence">${shortTerm.evidence.map(e => `<li>${this.escapeHtml(e)}</li>`).join('')}</ul>
-        ${shortTerm.resistances.length ? `<div class="pa-zone-title resistance">上方关键阻力区间</div>${shortTerm.resistances.map(z => zoneRow(z, 'resistance')).join('')}` : ''}
-        ${shortTerm.supports.length ? `<div class="pa-zone-title support">下方关键支撑区间</div>${shortTerm.supports.map(z => zoneRow(z, 'support')).join('')}` : ''}
+        ${shortTerm.resistances.length ? `<div class="pa-zone-title resistance">上方关键阻力区间</div>${[...shortTerm.resistances].sort((a, b) => b.low - a.low).map(z => zoneRow(z, 'resistance')).join('')}` : ''}
+        ${shortTerm.supports.length ? `<div class="pa-zone-title support">下方关键支撑区间</div>${[...shortTerm.supports].sort((a, b) => b.low - a.low).map(z => zoneRow(z, 'support')).join('')}` : ''}
       `;
     }
 
