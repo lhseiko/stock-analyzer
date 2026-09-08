@@ -862,19 +862,19 @@ const DeepCharts = {
   renderConclusion(data) {
     const el = document.getElementById('deepConclusion');
     if (!el || !data) return;
-    // 20260906：AI 估值视图已激活时不抢视图（单按钮口径：打开自动展示已保存的 AI 融合估值，
-    // 深度分析数据后到不得把视图打回规则版旧模型），仅静默更新规则版内容；切股残留由 selectStock 重置兜底
-    const _aiBody = document.getElementById('valuationAiBody');
-    const aiActive = !!(_aiBody && _aiBody.style.display !== 'none' && _aiBody.innerHTML.trim() !== '');
+    // 20260908h：专属估值模型（如 601318）的 AI 估值卡片是确定性计算明细，不是旧 AI 融合估值，
+    // 因此仍保留规则版「综合估值评级」滑条卡，避免用户误认为原来的综合估值卡片被删除。
     // 20260902i 重设计：中性炭黑卡面，语义色只出现在评级徽章与价格锚点（消除大面积色块），
     // 新增"估值区间定位条"直观展示当前价在综合合理区间中的位置
     // 20260905k：vc-card 渲染提取为 renderValuationCardHTML（与 AI 估值共用，单一来源）
 
     // 20260905j：各估值方法小卡片行（如「PE估值带」）已按需求删除——方法信息已在结论文本中完整呈现，避免重复展示
 
+    // 20260908m：顶部「综合估值评级」滑条卡对所有个股常显（统一平安模板布局：顶部滑条卡 + 明细卡），
+    // 不再因 AI 估值视图激活而隐藏；是否专属模型（dedicated-valuation）只影响明细卡内容，不影响顶部卡。
     el.innerHTML = this.renderValuationCardHTML(data) +
       `<div class="conclusion-text">${(data.conclusionText || '').split('\n').map(l => `<p>${l}</p>`).join('')}</div>`;
-    el.style.display = aiActive ? 'none' : '';
+    el.style.display = '';
   },
 
   // Render trend prediction panel

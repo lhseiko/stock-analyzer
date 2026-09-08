@@ -158,7 +158,50 @@ router.post('/api/ai/valuation', async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-router.get('/api/ai/valuation/:symbol', (req, res) => {
+// 20260908：个股专属估值模型（确定性计算，无 LLM 参与）。目前仅中国平安 601318 有专属模型。
+router.get('/api/valuation/model/:symbol', (req, res) => {
+  try {
+    const symbol = String(req.params.symbol || '').trim().replace(/^(sh|sz|bj)/i, '');
+    if (symbol !== '601318') {
+      return res.json({ ok: false, error: 'NO_MODEL', message: `该标的暂无专属估值模型（当前仅中国平安 601318）` });
+    }
+    const paModel = require('../lib/valuation/pingAn601318.js');
+    const cfg = paModel.loadInputs();
+    if (!cfg) return res.json({ ok: false, error: 'NO_INPUTS', message: '缺少输入配置 data/valuation/601318.json' });
+    // 现价跟随实时行情（唯一随时间变化的输入；其余为财报锁死值）
+    try {
+      const qt = require('../lib/quoteService');
+      if (qt && typeof qt.getQuote === 'function') {
+        const q = qt.getQuote('sh601318');
+        const px = q && (q.price != null ? q.price : (q.latest && q.latest.price));
+        if (px) cfg.inputs.P = Object.assign({}, cfg.inputs.P, { value: px, source: '实时行情' });
+      }
+    } catch (e) { /* 取不到实时价则用配置文件中的收盘价 */ }
+    res.json(paModel.compute(cfg));
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// 券商分类 + 估值（确定性：分类见 lib/brokerClassification，估值见 lib/brokerValuation）
+router.post('/api/broker/classify', (req, res) => {
+  try {
+    const { classify } = require('../lib/brokerClassification');
+    const { metrics } = req.body || {};
+    if (!metrics) return res.status(400).json({ ok: false, error: 'NO_METRICS', message: '缺少 metrics（6 核心指标）' });
+    res.json(classify(metrics));
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+router.post('/api/broker/valuation', (req, res) => {
+  try {
+    const { classifyAndValue } = require('../lib/brokerValuation');
+    const { metrics, valuationInputs } = req.body || {};
+    if (!metrics) return res.status(400).json({ ok: false, error: 'NO_METRICS', message: '缺少 metrics（6 核心指标）' });
+    res.json(classifyAndValue(metrics, valuationInputs || {}));
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+router.get('/api/ai/valuation/:symbol', async (req, res) => {
   try {
     const symbol = String(req.params.symbol || '').trim();
     if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL', message: '缺少股票代码' });
@@ -166,8 +209,19 @@ router.get('/api/ai/valuation/:symbol', (req, res) => {
     // 打开个股不消耗额度；无有效缓存时前端保持规则版结论，用户点「✨ AI 估值」（force=true）才重算。
     const { readValuationCache } = require('../lib/aiAugment');
     const cached = readValuationCache(symbol);
-    if (!cached) return res.json({ success: false, cached: false });
-    res.json({ success: true, ...cached, cached: true });
+    if (cached) return res.json({ success: true, ...cached, cached: true });
+    // 20260908b：无旧缓存时，若该标的拥有「专属确定性估值模型」（601318 平安 / 券商配置标的），
+    // 直接实时计算并返回（无 LLM 参与、确定性、不消耗额度）。20260908l：闸门改为 hasDedicatedValuation。
+    const bare = symbol.replace(/^(sh|sz|bj)/i, '');
+    const { hasDedicatedValuation } = require('../lib/ai/valuation');
+    if (hasDedicatedValuation(bare)) {
+      try {
+        const { analyzeValuation } = require('../lib/ai/valuation');
+        const r = await analyzeValuation({ symbol: bare });
+        if (r && r.dedicated) return res.json(r);
+      } catch (e) { /* 失败则回落到下方 cached:false */ }
+    }
+    res.json({ success: false, cached: false });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

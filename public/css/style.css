@@ -1569,6 +1569,63 @@ body {
 .ai-text-bearish { color: #0ECB81; font-weight: 600; }
 .ai-text-key { color: #e0b45c; font-weight: 500; }
 
+/* ===== 20260908b：个股专属确定性估值模型渲染（计算过程表，无 AI 参与） ===== */
+.vd-card {
+  background: var(--bg-card);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.vd-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.vd-title { font-size: 15px; font-weight: 700; color: var(--text-primary); }
+.vd-badge {
+  display: inline-flex; align-items: center; padding: 3px 12px; border-radius: 6px;
+  font-size: 14px; font-weight: 700; border: 1px solid; line-height: 1.4;
+}
+.vd-rating-low { color: #F6465D; border-color: rgba(246,70,93,0.5); background: rgba(246,70,93,0.10); }
+.vd-rating-high { color: #0ECB81; border-color: rgba(14,203,129,0.5); background: rgba(14,203,129,0.10); }
+.vd-rating-mid { color: #e0b45c; border-color: rgba(224,180,92,0.5); background: rgba(224,180,92,0.10); }
+.vd-intervals { display: flex; flex-direction: column; gap: 8px; }
+.vd-iv {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  padding: 8px 12px; background: var(--bg-secondary); border-radius: 6px; font-size: 13px;
+}
+.vd-iv span { color: var(--text-secondary); }
+.vd-iv b { font-size: 16px; color: var(--text-primary); font-variant-numeric: tabular-nums; font-weight: 700; }
+.vd-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.vd-table th {
+  text-align: left; padding: 8px 12px; color: var(--text-secondary); font-weight: 600;
+  border-bottom: 1px solid rgba(255,255,255,0.10); background: rgba(255,255,255,0.03);
+}
+.vd-table td { padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,0.05); vertical-align: top; }
+.vd-label { color: var(--text-primary); }
+.vd-value { color: var(--text-primary); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; font-weight: 600; }
+.vd-note { font-size: 12px; padding: 8px 12px; border-radius: 6px; }
+.vd-warn { color: #e0b45c; background: rgba(224,180,92,0.10); border: 1px solid rgba(224,180,92,0.3); }
+.vd-foot { font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
+
+/* 20260908g：专属估值模型三段式明细 */
+.vd-sec { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px dashed rgba(255,255,255,0.10); }
+.vd-sec-title { font-size: 14px; font-weight: 700; color: var(--text-primary); }
+.vd-sec-sub { font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
+.vd-seg-table th:nth-child(2),
+.vd-seg-table th:nth-child(3),
+.vd-seg-table th:nth-child(4) { text-align: right; }
+.vd-seg-total td { font-weight: 700; background: rgba(255,255,255,0.03); border-top: 1px solid rgba(255,255,255,0.12); }
+.vd-formula {
+  font-size: 12px; color: #F0B97B; background: rgba(240,185,123,0.08);
+  border: 1px solid rgba(240,185,123,0.25); border-radius: 6px; padding: 8px 12px;
+  font-variant-numeric: tabular-nums; line-height: 1.6; word-break: break-all;
+}
+.vd-src-block { display: flex; flex-direction: column; gap: 6px; }
+.vd-src-title { font-size: 12px; font-weight: 700; color: var(--text-secondary); }
+.vd-src-table td, .vd-src-table th { font-size: 12px; vertical-align: top; }
+.vd-src { color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
+.vd-src-title + .vd-src-table { margin-top: 2px; }
+
 .conclusion-methods-list {
   display: flex;
   flex-direction: column;
