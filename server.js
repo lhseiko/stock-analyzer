@@ -74,7 +74,7 @@ app.use('/api', (req, res, next) => {
 
 // 入口 HTML 强制带版本号重定向：旧服务器曾允许缓存 index.html，浏览器可能一直用旧副本。
 // 每次访问 / 或 /index.html 都重定向到带 ?v= 的版本，确保一定拉取最新前端（无需用户手动硬刷新）。
-const APP_VERSION = '20260909j'; // 20260909j：ROE/毛利率/净利率 统一 TTM 权威口径（可加分子分母滚动12个月），关键财务指标/信号/百分位/深度分析走势图同源；修复「去年同期」索引错位
+const APP_VERSION = '20260909k'; // 20260909k：全站 TTM 口径审计——PE/PS/股息率信号与评分文案补 TTM 标注，PS 兜底单期口径分支标注，PEG 假值 0.00 修正，概览卡 PE tooltip 矛盾修正；数值计算路径不变
 app.use((req, res, next) => {
   if ((req.path === '/' || req.path === '/index.html') && req.query.v !== APP_VERSION) {
     return res.redirect(`/index.html?v=${APP_VERSION}`);

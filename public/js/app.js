@@ -5,9 +5,11 @@
 // 关键指标释义（点击指标标签后的「?」图标展示）
 const METRIC_HELP = {
   '市盈率(PE)': { title: '市盈率 PE', body: '市盈率 = 股价 ÷ 每股收益，表示按当前盈利多少年回本。<br>· 越低通常越便宜，但过低可能反映市场对其增长预期差；<br>· 不同行业不可直接比，成长股 PE 天然偏高。' },
-  '市净率(PB)': { title: '市净率 PB', body: '市净率 = 股价 ÷ 每股净资产，反映股价相对账面资产的溢价。<br>· PB&lt;1（破净）可能低估，但也可能是资产质量差；<br>· 银行、地产等重资产行业常用 PB 估值。' },
+  '市盈率(PE·TTM)': { title: '市盈率 PE(TTM)', body: '<b>PE(TTM) = 总市值 ÷ 近12个月归母净利（滚动12个月口径）</b>，随行情每日更新，不绑定某一财报期。<br>· 亏损股 PE 为负，市盈率失效；<br>· 不同行业不可直接比，成长股 PE 天然偏高。' },
+  '市净率(PB)': { title: '市净率 PB', body: '市净率 = 股价 ÷ 每股净资产，反映股价相对账面资产的溢价。<br>· 每股净资产为<b>最新报告期（MRQ）时点值</b>，非 TTM 概念；<br>· PB&lt;1（破净）可能低估，但也可能是资产质量差；<br>· 银行、地产等重资产行业常用 PB 估值。' },
   '市销率(PS)': { title: '市销率 PS', body: '市销率 = 市值 ÷ 营业收入，适合尚未盈利的成长型公司。<br>· 看"收入规模"与估值的匹配度；<br>· PS 低不代表便宜，需结合利润率看。' },
-  'PEG': { title: 'PEG', body: 'PEG = 市盈率 PE ÷（盈利增长率×100）。<br>· PEG≈1 表示估值与成长性匹配；<br>· &lt;1 可能被低估，&gt;1 可能偏贵（仅适用于正增长公司）。' },
+  '市销率(PS·TTM)': { title: '市销率 PS(TTM)', body: '<b>PS(TTM) = 总市值 ÷ 近12个月营业收入（滚动12个月口径）</b>，随行情每日更新。<br>· 分母为东方财富 PS_TTM 权威值；<br>· PS 低不代表便宜，需结合利润率看。' },
+  'PEG': { title: 'PEG', body: 'PEG = 市盈率 PE(TTM) ÷（盈利增长率×100）。<br>· PEG≈1 表示估值与成长性匹配；<br>· &lt;1 可能被低估，&gt;1 可能偏贵（仅适用于正增长公司）。<br>· 当前行情数据源未提供 PEG 字段时，本工具显示「--」而不估算。' },
   'ROE': { title: '净资产收益率 ROE', body: 'ROE = 净利润 ÷ 净资产，衡量用股东投入赚钱的能力。<br>· 长期 ROE&gt;15% 是优质公司的标志；<br>· 但过高的 ROE 也可能来自高杠杆（债务），需结合资债比看。' },
   '毛利率': { title: '毛利率', body: '毛利率 =（营业收入 − 营业成本）÷ 营业收入。<br>· 反映产品竞争力与定价权，越高越能抵御成本上涨；<br>· 茅台式高毛利代表强品牌护城河。' },
   '净利率': { title: '净利率', body: '净利率 = 净利润 ÷ 营业收入，扣除税费、利息、费用后的真实盈利能力。<br>· 比毛利率更综合，受费用率、减值等影响。' },
@@ -16,6 +18,7 @@ const METRIC_HELP = {
   '资产负债率': { title: '资产负债率 · 信号算法详解', body: '<b>一、取数来源（两个口径，已自动识别）</b><br>· <b>A 股</b>：取东方财富 F10 资产负债表「资产负债率 ZCFZL」，单位是 <b>%</b>（如 89.88 表示 89.88%）。本工具已加 <code>debtMetricPct</code> 标记；<br>· <b>港股 / 美股</b>：取「带息债 ÷ 所有者权益」<b>比值</b>（无单位小数，如 0.27）。<br><br><b>二、信号判定步骤（evaluateSignals）</b><br>第 1 步：读取数值 d = 资产负债率（A股用% / 港股美股用比值）；<br>第 2 步：判断是否金融业（银行/保险/证券等）→ 直接判 <b>中性</b>（高负债是经营常态，不红不绿）；<br>第 3 步：非金融业，按口径分档：<br>&nbsp;&nbsp;▸ A股（%）：<b>＞70%</b> → 利空(绿)；<b>＜40%</b> → 利好(红)；40%~70% 合理区间不提示；<br>&nbsp;&nbsp;▸ 港股/美股（比值）：<b>＞2</b> → 利空(绿)；<b>＜0.5</b> → 利好(红)；中间不提示。<br><br><b>三、健康评分里的算法（fundamentalAnalysis）</b><br>同口径分档累加（满分 25 再按权重缩放）：A股 资产负债率 ＜40% 加12、40%~70% 加9、70%~90% 加5、＞90% 不加分；金融业 80%~96% 视为正常加10。<br><br><b>四、颜色与边界</b><br>红=利好、绿=利空，仅适用于<b>非金融</b>公司；金融业一律中性。例：中国平安 89.88%→中性；贵州茅台（A股，约 20%出头）→利好(红)。' },
   '流动比率': { title: '流动比率', body: '流动比率 = 流动资产 ÷ 流动负债，衡量短期偿债能力。<br>· &gt;2 较安全，&lt;1 可能短期资金紧张；<br>· 不同行业合理区间差异大（如零售天然较低）。' },
   '股息率': { title: '股息率', body: '股息率 = 每股分红 ÷ 股价（年化）。<br>· 红利型公司（银行、电力、煤炭等）看重此指标；<br>· 高股息率通常偏利好，但需警惕"分红不可持续"。' },
+  '股息率(TTM)': { title: '股息率(TTM)', body: '<b>股息率(TTM) = 近12个月已实施除息的每股分红合计 ÷ 当前股价</b>（滚动12个月口径）。<br>· 无近12个月分红记录时回退「最近完整年度」口径并已在悬浮说明标注；<br>· 红利型公司（银行、电力、煤炭等）看重此指标；<br>· 高股息率通常偏利好，但需警惕"分红不可持续"。' },
   '每股经营现金流': { title: '每股经营现金流', body: '每股经营现金流 = 经营活动现金流量净额 ÷ 总股本。<br>· 反映公司日常经营真正产生了多少现金，比净利润更难粉饰；<br>· 若长期高于每股收益，说明盈利质量高、回款好。' },
 };
 
@@ -1711,7 +1714,7 @@ const App = {
         const repPeriod = quote.fundamentals?.reportPeriod;
         if (rep) {
           finEl.textContent = repPeriod || rep;
-          finEl.title = 'PE/PB 等估值指标所用的每股收益、每股净资产来自该报告期';
+          finEl.title = 'PB 所用每股净资产来自该报告期（MRQ）；PE(TTM)/PS(TTM)/ROE(TTM) 为滚动12个月口径，随行情更新，不绑定财报期';
         } else {
           finEl.textContent = '';
           finEl.removeAttribute('title');
@@ -1756,8 +1759,8 @@ const App = {
         label: '市盈率(TTM)',
         value: Storage.formatNumber(quote.pe),
         source: f.peSource || '行情数据',
-        sub: finLabel ? `股价 ${priceDate} · 财报 ${finLabel}` : `股价 ${priceDate}`,
-        title: finLabel ? `PE(TTM) = 股价(${priceDate}) ÷ 近12个月每股收益(财报 ${finLabel}) · 来源：${f.peSource || '行情数据'}` : '市盈率 PE(TTM)'
+        sub: `股价 ${priceDate} · TTM 随行情更新`,
+        title: `PE(TTM) = 总市值 ÷ 近12个月归母净利（滚动12个月，随行情每日更新，不绑定某一财报期） · 来源：${f.peSource || '行情数据'}`
       });
       if (quote.pb) metrics.push({
         label: '市净率(PB)',
@@ -1766,13 +1769,21 @@ const App = {
         sub: finLabel ? `股价 ${priceDate} · 财报 ${finLabel}` : `股价 ${priceDate}`,
         title: finLabel ? `PB = 股价(${priceDate}) ÷ 每股净资产(财报 ${finLabel}) · 来源：${f.pbSource || '行情数据'}` : '市净率 PB'
       });
-      if (f.ps) metrics.push({
-        label: '市销率(PS)',
-        value: Storage.formatNumber(f.ps),
-        source: f.psSource || '本地计算',
-        sub: finLabel ? `总市值(行情 ${priceDate}) ÷ 营收(财报 ${finLabel})` : `总市值(行情 ${priceDate}) ÷ 营收`,
-        title: finLabel ? `PS = 总市值(行情 ${priceDate}) ÷ 营业收入(财报 ${finLabel}) · 来源：${f.psSource || '本地计算'}` : '市销率 PS'
-      });
+      if (f.ps) {
+        // 20260909j 审计：PS 主口径为东财 PS_TTM（真 TTM）；本地兜底（总市值÷最新一期营收）为单期口径，须分开标注避免假 TTM
+        const psIsTtm = f.psSource && String(f.psSource).indexOf('PS_TTM') >= 0;
+        metrics.push({
+          label: psIsTtm ? '市销率(PS·TTM)' : '市销率(PS)',
+          value: Storage.formatNumber(f.ps),
+          source: f.psSource || '本地计算',
+          sub: psIsTtm
+            ? `总市值(行情 ${priceDate}) ÷ 近12个月营收`
+            : (finLabel ? `总市值(行情 ${priceDate}) ÷ 营收(财报 ${finLabel}，单期)` : `总市值(行情 ${priceDate}) ÷ 营收`),
+          title: psIsTtm
+            ? `PS(TTM) = 总市值(行情 ${priceDate}) ÷ 近12个月营业收入（滚动12个月，随行情更新） · 来源：${f.psSource || '本地计算'}`
+            : `PS = 总市值(行情 ${priceDate}) ÷ 最新一期营业收入(财报 ${finLabel}，单期口径非TTM) · 来源：${f.psSource || '本地计算'}`
+        });
+      }
       if (f.roeTtm != null || f.roe) metrics.push({
         label: '净资产收益率(ROE)',
         value: Storage.formatNumber(f.roeTtm != null ? f.roeTtm : f.roe) + '%',
@@ -2328,13 +2339,13 @@ const App = {
     // 数据期标注：报表指标引用具体财报期；估值类为 TTM；股息率为历史分红（均非财报期）
     const stmtPeriod = finLabel ? '财报 ' + finLabel : '';
     const valPeriod = 'TTM';
-    const divPeriod = '历史分红';
+    const divPeriod = 'TTM·分红';
     const ocflowPeriod = ocfLabel ? '财报 ' + ocfLabel : stmtPeriod;
     const rows = [
-      ['市盈率(PE)', m.pe?.toFixed(2), `PE(TTM) · 股价 ${priceDate} ÷ 近12个月每股收益${finLabel ? '(财报 ' + finLabel + ')' : ''} · 来源：${qf.peSource || '行情数据'}`, { indKey: 'pe', pctKey: 'pe' }, valPeriod],
+      ['市盈率(PE·TTM)', m.pe?.toFixed(2), `PE(TTM) · 总市值 ÷ 近12个月归母净利（滚动12个月，随行情每日更新，不绑定财报期） · 来源：${qf.peSource || '行情数据'}`, { indKey: 'pe', pctKey: 'pe' }, valPeriod],
       ['市净率(PB)', m.pb?.toFixed(2), `PB · 股价 ${priceDate} ÷ 每股净资产${finLabel ? '(财报 ' + finLabel + ')' : ''} · 来源：${qf.pbSource || '行情数据'}`, { indKey: 'pb', pctKey: 'pb' }, valPeriod],
-      ['市销率(PS)', m.ps?.toFixed(2), `PS(TTM) · 总市值 ÷ 近12个月营业收入 · 来源：${qf.psSource || '东方财富估值(PS_TTM)'}`, { indKey: null, pctKey: 'ps' }, valPeriod],
-      ['PEG', m.peg?.toFixed(2), 'PEG · 本地计算（PE/PB 为 TTM）', { indKey: null, pctKey: null }, valPeriod],
+      [(qf.psSource && String(qf.psSource).indexOf('PS_TTM') >= 0) ? '市销率(PS·TTM)' : '市销率(PS)', m.ps?.toFixed(2), (qf.psSource && String(qf.psSource).indexOf('PS_TTM') >= 0) ? `PS(TTM) · 总市值 ÷ 近12个月营收（滚动12个月，随行情更新） · 来源：${qf.psSource || '东方财富估值(PS_TTM)'}` : `PS · 总市值 ÷ 最新一期营收（财报 ${finLabel}，单期口径非TTM） · 来源：${qf.psSource || '本地计算'}`, { indKey: null, pctKey: 'ps' }, (qf.psSource && String(qf.psSource).indexOf('PS_TTM') >= 0) ? valPeriod : stmtPeriod],
+      ['PEG', m.peg > 0 ? m.peg.toFixed(2) : '--', 'PEG · 当前行情数据源未提供该字段（PE(TTM)÷盈利增速），本工具不做估算，避免展示无依据数值', { indKey: null, pctKey: null }, '--'],
       ['ROE', m.roe ? m.roe.toFixed(2) + '%' : '--',
         qf.roeTtm != null
           ? `ROE(TTM) = 近12个月归母净利 ÷ 期末归母净资产（滚动12个月，与深度分析 ROE 走势图同源一致） · 来源：${qf.roeSource || '东方财富财报'}`
@@ -2355,15 +2366,15 @@ const App = {
       ['扣非净利润增长', m.deductedProfitGrowth != null ? m.deductedProfitGrowth.toFixed(2) + '%' : '--', `扣非归母净利润同比增长 · 来源：东方财富财报${finLabel ? ' · 财报 ' + finLabel : ''}`, { indKey: null, pctKey: null, prior: priorDedYoy != null ? `去年同期 ${priorDedYoy.toFixed(2)}%` : null }, stmtPeriod],
       ['资产负债率', m.debtToEquity != null ? m.debtToEquity.toFixed(2) + (m.debtMetricPct ? '%' : '') : '--', `资产负债率 · 来源：${qf.reportSource || '东方财富财报'}${finLabel ? ' · 财报 ' + finLabel : ''}`, { indKey: null, pctKey: 'debtToEquity' }, stmtPeriod],
       ['流动比率', m.currentRatio?.toFixed(2), `流动比率 · 来源：${qf.reportSource || '东方财富财报'}${finLabel ? ' · 财报 ' + finLabel : ''}`, { indKey: null, pctKey: 'currentRatio' }, stmtPeriod],
-      ['股息率', m.dividendYield ? m.dividendYield.toFixed(2) + '%' : '--', '股息率 · 来源：历史分红数据', { indKey: null, pctKey: null }, divPeriod],
+      ['股息率(TTM)', m.dividendYield ? m.dividendYield.toFixed(2) + '%' : '--', '股息率(TTM) = 近12个月已实施除息的每股分红合计 ÷ 当前股价（滚动12个月口径；无近12个月分红记录时回退最近完整年度） · 来源：东方财富分红数据', { indKey: null, pctKey: null }, divPeriod],
       ['每股经营现金流', m.operatingCashFlowPerShare ? m.operatingCashFlowPerShare.toFixed(2) : '--', `每股经营现金流 = 经营现金流净额 ÷ 总股本${ocfLabel ? ' · 财报 ' + ocfLabel : ''} · 来源：${qf.operatingCashFlowSource || '东方财富财报'}`, { indKey: null, pctKey: null }, ocflowPeriod],
     ];
     // 卡片级数据期说明（报表指标 vs 估值指标，避免把 TTM 误读为财报期）
-    const periodNote = `报表指标引用：<b>${finLabel || '—'}</b>${qf.reportDate ? '（' + qf.reportDate + '）' : ''} · 来源 ${qf.reportSource || '东方财富财报'} ｜ 估值指标 TTM（截至 ${priceDate}）· 股息率取自历史分红`;
+    const periodNote = `报表指标引用：<b>${finLabel || '—'}</b>${qf.reportDate ? '（' + qf.reportDate + '）' : ''} · 来源 ${qf.reportSource || '东方财富财报'} ｜ 估值指标 PE/PS 为 TTM 滚动口径（截至 ${priceDate}）· PB 为最新报告期账面值 · 股息率为 TTM 口径（近12个月实际分红）`;
     // 指标行按信号着色：利好(红)/利空(绿)
     const sigMap = {};
     (data.signals?.signals || []).forEach(s => { sigMap[s.key] = s; });
-    const keyOf = (label) => ({ '市盈率(PE)': 'pe', '市净率(PB)': 'pb', '市销率(PS)': 'ps', 'PEG': 'peg', 'ROE': 'roe', '毛利率': 'grossMargin', '净利率': 'netMargin', '营收增长': 'growth', '利润增长': 'profitGrowth', '扣非净利润增长': 'dedProfitGrowth', '资产负债率': 'debt', '流动比率': 'currentRatio', '股息率': 'div', '每股经营现金流': 'ocf' }[label]);
+    const keyOf = (label) => ({ '市盈率(PE)': 'pe', '市盈率(PE·TTM)': 'pe', '市净率(PB)': 'pb', '市销率(PS)': 'ps', '市销率(PS·TTM)': 'ps', 'PEG': 'peg', 'ROE': 'roe', '毛利率': 'grossMargin', '净利率': 'netMargin', '营收增长': 'growth', '利润增长': 'profitGrowth', '扣非净利润增长': 'dedProfitGrowth', '资产负债率': 'debt', '流动比率': 'currentRatio', '股息率': 'div', '股息率(TTM)': 'div', '每股经营现金流': 'ocf' }[label]);
     const metricsEl = document.getElementById('fundMetrics');
     const periodNoteHtml = `<div class="metrics-period-note">${periodNote}</div>`;
     metricsEl.innerHTML = periodNoteHtml + rows.map(r => {
@@ -5333,8 +5344,8 @@ const App = {
       }).join('');
       const m = f.metrics || {};
       const metricRows = [
-        ['市盈率 PE', m.pe], ['市净率 PB', m.pb], ['ROE', m.roe],
-        ['净利率', m.netMargin], ['营收增速', m.revenueGrowth], ['股息率', m.dividendYield],
+        ['市盈率 PE(TTM)', m.pe], ['市净率 PB(MRQ)', m.pb], ['ROE(TTM)', m.roe],
+        ['净利率(TTM)', m.netMargin], ['营收增速', m.revenueGrowth], ['股息率(TTM)', m.dividendYield],
       ].map(([k, v]) => `<div class="st-row"><span>${k}</span><span>${v ?? '--'}</span></div>`).join('');
       return `
         <div class="st-head">🔍 基本面评分计算依据</div>
