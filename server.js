@@ -39,7 +39,7 @@ const { getIndustryIndexHistory } = require('./lib/industryIndexHistory');
 const { fetchValuationTTM } = require('./lib/eastmoneyValuation');
 const { getSectorCapitalFlow } = require('./lib/sectorCapitalFlow'); // 20260827g：行业板块资金流向（主力净流入/流出前五 + 近5日最大）
 const hotTopics = require('./lib/hotTopics'); // 20260827c：个股近期热点（AI 联网，异动归因/网络热议）
-const homeHotTopics = require('./lib/homeHotTopics'); // 20260827f：首页最热股票话题（同花顺/雪球/东方财富 AI 联网聚合）
+const hotTopicsWeekly = require('./lib/hotTopicsWeekly'); // 20260909m：板块舆情热度周榜（替代旧涨停池逻辑）
 const { getGlobalSentiment, interpretReport, getFundIndustryMatrix } = require('./lib/cnscraperAdapter');
 const mx = require('./lib/miaoxiang');
 const { augmentStock, analyzeAspects, analyzeProducts, analyzeCompany, analyzeSupplyChain, analyzeShareholdersAI, analyzeMarketOverview, analyzeIndustryIndex, analyzeResearchReports, analyzeAnnouncements, analyzeEarningsReport, analyzeValuation, readIndustryIndexCache, loadConfig, saveConfig, publicConfig, readCache, readEarningsCache } = require('./lib/aiAugment');
@@ -74,7 +74,7 @@ app.use('/api', (req, res, next) => {
 
 // 入口 HTML 强制带版本号重定向：旧服务器曾允许缓存 index.html，浏览器可能一直用旧副本。
 // 每次访问 / 或 /index.html 都重定向到带 ?v= 的版本，确保一定拉取最新前端（无需用户手动硬刷新）。
-const APP_VERSION = '20260909l'; // 20260909l：AI 估值 GET 端点专属模型前置（修复 688660 旧 AI 缓存与 DCAVM 双区间不一致）+ /api/valuation/model 白名单动态化；前端展示逻辑零变化
+const APP_VERSION = '20260909m'; // 20260909m：首页「今日最热股票话题」重构为「板块舆情热度周榜」——五指标(A/B/C/D/E)+三路交叉验证引擎，删除涨停板池旧逻辑；其余模块零变化
 app.use((req, res, next) => {
   if ((req.path === '/' || req.path === '/index.html') && req.query.v !== APP_VERSION) {
     return res.redirect(`/index.html?v=${APP_VERSION}`);
@@ -227,14 +227,14 @@ app.get('/api/hot-news', async (req, res) => {
   }
 });
 
-// 首页「今日最热股票投资话题」（AI 联网聚合同花顺/雪球/东方财富，?refresh=1 强制刷新缓存）
+// 首页「板块舆情热度周榜」（20260909m：舆情+社区讨论热度五指标引擎，?refresh=1 强制刷新；不涉及行情主计算）
 app.get('/api/home-hot-topics', async (req, res) => {
   try {
-    const data = await homeHotTopics.getHomeHotTopics(req.query.refresh === '1');
+    const data = await hotTopicsWeekly.getWeeklyReport(req.query.refresh === '1');
     res.json(data);
   } catch (err) {
     console.error('Home hot topics error:', err);
-    res.status(500).json({ ok: false, updated: new Date().toISOString(), date: new Date().toISOString().slice(0, 10), sources: [], topics: [], summary: '聚合失败：' + err.message, error: err.message });
+    res.json({ ok: false, status: 'error', updated: new Date().toISOString(), rows: [], message: '周榜计算失败：' + err.message });
   }
 });
 
