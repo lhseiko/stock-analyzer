@@ -521,7 +521,7 @@ const App = {
     } catch (e) {}
   },
 
-  async analyze(symbol, name = '') {
+  async analyze(symbol, name = '', _retry = 0) {
     // 请求令牌：每次调用自增；后续若用户切换到别的股票/再触发分析，
     // 旧请求的返回值会被丢弃，避免"慢的旧请求覆盖快的新请求"或闪烁。
     const token = (this._reqToken = (this._reqToken || 0) + 1);
@@ -587,6 +587,14 @@ const App = {
       }
     } catch (e) {
       if (token !== this._reqToken) return; // 过期请求，不弹错误、不干扰新请求
+      // 20260909o：网络层瞬断（服务重启窗口/瞬时断连）自动重试 2 次——服务恢复即自愈，用户无感；穷尽才弹错误条
+      const msg = String((e && e.message) || e);
+      if (_retry < 2 && /Failed to fetch|NetworkError|Load failed/i.test(msg)) {
+        this.showLoading(`连接中断，正在自动重连（${_retry + 1}/2）…`);
+        await new Promise(r => setTimeout(r, 2500));
+        if (token !== this._reqToken) return; // 重连期间用户已切换其他股票
+        return this.analyze(symbol, name, _retry + 1);
+      }
       this.hideLoading();
       this.showErrorBanner('获取数据失败: ' + e.message, () => this.analyze(symbol, name));
       console.error(e);
@@ -5133,10 +5141,10 @@ const App = {
       if (n === null || n === undefined || isNaN(n)) return '—';
       return (n >= 0 ? '+' : '') + Number(n).toFixed(2) + '亿';
     };
-    const renderTile = (it, dirOverride) => {
+    const renderTile = (it, dirOverride, netLabel) => {
       if (!it) return '';
       const dir = dirOverride || (it.mainNet > 0 ? 'up' : (it.mainNet < 0 ? 'down' : 'flat'));
-      const sub = it.leader ? `领涨：${this.escapeHtml(it.leader)}` : `主力净流：${fmtNet(it.mainNet)}`;
+      const sub = it.leader ? `领涨：${this.escapeHtml(it.leader)}` : `${netLabel || '主力净流'}：${fmtNet(it.mainNet)}`;
       return `<div class="mo-tile ${dir}">
         <div class="mo-name">${this.escapeHtml(it.name)}</div>
         <div class="mo-price">${this.escapeHtml(sub)}</div>
@@ -5158,20 +5166,25 @@ const App = {
         <div class="mo-chg">${fmtNet(it.mainNet)}</div>
       </div>`;
     };
-    const renderRow = (items, label, fiveDay, cls) => {
+    const renderRow = (items, label, fiveDay, cls, srcNote, netLabel) => {
       const body = (items && items.length)
-        ? items.map(it => renderTile(it)).join('')
+        ? items.map(it => renderTile(it, null, netLabel)).join('')
         : '<span class="mo-empty">— 暂无数据 —</span>';
       const srcWarn = data.fallbackWarning ? `<span class="mo-src mo-src-warn" title="${this.escapeHtml(data.fallbackWarning)}">${this.escapeHtml(data.source)}</span>`
         : `<span class="mo-src">${this.escapeHtml(data.source)}</span>`;
-      const note = data.note ? `<span class="mo-count" title="${this.escapeHtml(data.note)}">口径说明</span>` : '';
+      const noteText = srcNote || data.note;
+      const note = noteText ? `<span class="mo-count" title="${this.escapeHtml(noteText)}">口径说明</span>` : '';
       return `<div class="mo-row mo-capital-flow ${cls}">
         <div class="mo-row-head"><span class="mo-flag">💰</span><span class="mo-row-name">${this.escapeHtml(label)}</span>${srcWarn}${note}</div>
         <div class="mo-tiles">${body}${renderFiveDay(fiveDay, cls === 'mo-capital-in' ? '近5日净流入最大' : '近5日净流出最大')}</div>
       </div>`;
     };
+    // 20260909o：新增散户（小单）净流入/流出前五两行——与主力卡同模板，数据源同接口小单口径
+    const RETAIL_NOTE = '散户净流入 = 小单净流入（单笔＜2万股或＜4万元的散户口径）';
     const html = renderRow(data.todayInflowTop5, '主力资金净流入前五（含暗盘）', data.fiveDayMaxInflow, 'mo-capital-in') +
-      renderRow(data.todayOutflowTop5, '主力资金净流出前五（含暗盘）', data.fiveDayMaxOutflow, 'mo-capital-out');
+      renderRow(data.todayOutflowTop5, '主力资金净流出前五（含暗盘）', data.fiveDayMaxOutflow, 'mo-capital-out') +
+      (data.retailInflowTop5 ? renderRow(data.retailInflowTop5, '散户（小单）资金净流入前五', data.retailFiveDayMaxInflow, 'mo-capital-in', RETAIL_NOTE, '散户净流') : '') +
+      (data.retailOutflowTop5 ? renderRow(data.retailOutflowTop5, '散户（小单）资金净流出前五', data.retailFiveDayMaxOutflow, 'mo-capital-out', RETAIL_NOTE, '散户净流') : '');
     const anchor = document.getElementById('moCapitalFlowAnchor');
     if (anchor) anchor.insertAdjacentHTML('beforebegin', html);
     else stack.insertAdjacentHTML('beforeend', html);

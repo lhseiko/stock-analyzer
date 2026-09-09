@@ -34,10 +34,10 @@ const { annotateNewsImpact } = require('./lib/newsSectorImpact');
 const { recordImpact, correctImpact, getLearningState: getNewsImpactLearningState, autoReviewImpacts } = require('./lib/newsImpactLearning');
 const { recordDailyRanking, getSectorRankReminder, backfillSeed, SEED_DAYS } = require('./lib/sectorRankHistory');
 // 20260823t：行业板块拥挤度（板块成交额 ÷ 全市场成交额，当日/本周/本月前五）
-const { recordDaily: recordSectorCrowding, getCrowding: getSectorCrowding, backfillHistory: backfillSectorCrowding, needsBackfill: sectorCrowdingNeedsBackfill } = require('./lib/sectorCrowding');
+const { recordDaily: recordSectorCrowding, getCrowding: getSectorCrowding, backfillHistory: backfillSectorCrowding, needsBackfill: sectorCrowdingNeedsBackfill, hasDate: sectorCrowdingHasDate } = require('./lib/sectorCrowding');
 const { getIndustryIndexHistory } = require('./lib/industryIndexHistory');
 const { fetchValuationTTM } = require('./lib/eastmoneyValuation');
-const { getSectorCapitalFlow } = require('./lib/sectorCapitalFlow'); // 20260827g：行业板块资金流向（主力净流入/流出前五 + 近5日最大）
+const { getSectorCapitalFlow, warmup: warmupSectorCapitalFlow } = require('./lib/sectorCapitalFlow'); // 20260827g：行业板块资金流向（主力+散户小单 净流入/流出前五 + 近5日最大）20260909o纯Node化提速
 const hotTopics = require('./lib/hotTopics'); // 20260827c：个股近期热点（AI 联网，异动归因/网络热议）
 const hotTopicsWeekly = require('./lib/hotTopicsWeekly'); // 20260909m：板块舆情热度周榜（替代旧涨停池逻辑）
 const { getGlobalSentiment, interpretReport, getFundIndustryMatrix } = require('./lib/cnscraperAdapter');
@@ -74,7 +74,7 @@ app.use('/api', (req, res, next) => {
 
 // 入口 HTML 强制带版本号重定向：旧服务器曾允许缓存 index.html，浏览器可能一直用旧副本。
 // 每次访问 / 或 /index.html 都重定向到带 ?v= 的版本，确保一定拉取最新前端（无需用户手动硬刷新）。
-const APP_VERSION = '20260909m'; // 20260909m：首页「今日最热股票话题」重构为「板块舆情热度周榜」——五指标(A/B/C/D/E)+三路交叉验证引擎，删除涨停板池旧逻辑；其余模块零变化
+const APP_VERSION = '20260909o'; // 20260909o：板块资金流向纯Node化提速+新增散户小单净流入/流出前五卡；…m板块舆情热度周榜→n行业拥挤度收盘补写守卫（仅后端未升版）
 app.use((req, res, next) => {
   if ((req.path === '/' || req.path === '/index.html') && req.query.v !== APP_VERSION) {
     return res.redirect(`/index.html?v=${APP_VERSION}`);
@@ -548,8 +548,9 @@ app.get('/api/sector-crowding', async (req, res) => {
   try {
     const refresh = req.query.refresh === '1';
     const mo = await getMarketOverview();
-    // 落盘当日拥挤度（仅在数据日期==今天时写入，避免周末/盘前污染周月统计）
-    if (Array.isArray(mo.sectorAll)) {
+    // 落盘当日拥挤度（20260909n：交易日感知——上证日K最新日期==今天才落盘；
+    // 节假日/盘前的陈旧板块数据不再被误标为「今天」污染周月统计。数据源 date 字段=抓取时刻，非真实数据日期）
+    if (Array.isArray(mo.sectorAll) && (await isTradingDayToday())) {
       recordSectorCrowding(mo.sectorAll, mo.sectorDate);
     }
     // 历史回填：刷新时同步拉取（前端有 loading 提示）；首跑 store 空时后台静默补，不阻塞首页
@@ -1607,8 +1608,8 @@ async function runAutoReview() {
       if (s && s.name != null && typeof s.changePct === 'number') chgMap[s.name] = s.changePct;
     }
     impactReview = autoReviewImpacts(chgMap);
-    // 盘后落当日行业拥挤度（仅数据日期==今天时写入）
-    if (Array.isArray(mo.sectorAll)) recordSectorCrowding(mo.sectorAll, mo.sectorDate);
+    // 盘后落当日行业拥挤度（20260909n：交易日感知，节假日不落盘）
+    if (Array.isArray(mo.sectorAll) && (await isTradingDayToday())) recordSectorCrowding(mo.sectorAll, mo.sectorDate);
     // 盘后自动回填近 21 个交易日历史，确保本周/本月统计每日收盘后自动更新
     try {
       const bf = await backfillSectorCrowding(21, findPython());
@@ -1694,6 +1695,58 @@ function logAutoReview(r) {
   }
 }
 
+// 20260909n：行业板块拥挤度·交易日感知 + 收盘补写守卫
+// 背景：当日拥挤度此前依赖「15:30 定时结算恰好命中运行中的服务」，电脑/服务未开机或结算失败时，
+//       当日数据会缺席到深夜（实测 2026-09-09 当日记录 23:00 才由历史回填补上）。
+// 交易日判断：上证日 K 最新日期==今天 ⇒ 今天开过盘（节假日/盘前自动为 false）；true 缓存到当日结束，false 缓存 10 分钟。
+let _tradeDayCache = { date: '', result: null, at: 0 };
+async function isTradingDayToday() {
+  const now = new Date();
+  const today = localDate(now);
+  if (_tradeDayCache.date === today && _tradeDayCache.result === true) return true;
+  if (_tradeDayCache.date === today && _tradeDayCache.result === false && now - _tradeDayCache.at < 10 * 60 * 1000) return false;
+  try {
+    const hist = await (require('./lib/stockData').getHistory('sh000001', '1mo'));
+    const last = Array.isArray(hist) && hist.length ? hist[hist.length - 1] : null;
+    const result = Boolean(last && last.date === today);
+    _tradeDayCache = { date: today, result, at: Date.now() };
+    return result;
+  } catch (e) {
+    console.error('  [SectorCrowding] 交易日判断失败:', e.message);
+    return false; // 判断失败不落盘（宁可延迟重试，不可把旧数据误标为今天）
+  }
+}
+
+// 收盘补写守卫：交易日 15:30 后，凡当日记录缺失 → 立即用实时收盘数据补写（失败再回填兜底）。
+// 触发点：启动后 30 秒（覆盖「白天未开机、晚间才启动」）+ 每分钟调度检查（覆盖「15:30 结算失败」）。
+let _crowdingGuardMinute = '';
+async function ensureSectorCrowdingToday(reason) {
+  try {
+    const now = new Date();
+    const dow = now.getDay();
+    if (dow === 0 || dow === 6) return;
+    const hh = now.getHours(), mm = now.getMinutes();
+    if (hh < 15 || (hh === 15 && mm < 30)) return;
+    const today = localDate(now);
+    if (sectorCrowdingHasDate(today)) return;          // 本地文件查询，每分钟一次零压力
+    if (!(await isTradingDayToday())) return;          // 节假日/休市不落盘
+    const minuteKey = `${today} ${hh}:${mm}`;
+    if (_crowdingGuardMinute === minuteKey) return;    // 同一分钟防抖
+    _crowdingGuardMinute = minuteKey;
+    console.log(`  [SectorCrowding] 收盘补写守卫触发（${reason}，${today} 当日记录缺失）...`);
+    const mo = await getMarketOverview();
+    if (Array.isArray(mo.sectorAll)) recordSectorCrowding(mo.sectorAll, mo.sectorDate);
+    if (sectorCrowdingHasDate(today)) {
+      console.log('  [SectorCrowding] 当日数据已补写 ✓');
+      return;
+    }
+    const bf = await backfillSectorCrowding(21, findPython());
+    console.log('  [SectorCrowding] 收盘补写·历史回填兜底:', JSON.stringify(bf));
+  } catch (e) {
+    console.error('  [SectorCrowding] 收盘补写守卫失败:', e.message);
+  }
+}
+
 function startDailySettlementScheduler() {
   setInterval(() => {
     const now = new Date();
@@ -1712,6 +1765,8 @@ function startDailySettlementScheduler() {
           .then(logAutoReview)
           .catch(e => console.error('  [结算] 每日定时结算失败:', e.message));
       }
+      // —— 15:30 收盘补写守卫：当日拥挤度记录缺失时自动补写（20260909n，幂等，记录已存在时秒回）——
+      ensureSectorCrowdingToday('每分钟检查').catch(() => {});
     }
 
     // —— 盘前预重算（方案 C·Part B）：交易日 8:00–9:30，每 10 分钟一次，吸收隔夜美股与早间消息 ——
@@ -1783,6 +1838,14 @@ function startServer(port, retries = 5) {
       .catch(e => console.error('  [结算] 初始化失败:', e.message));
     // 每日 15:30 盘后定时结算 + 自学习自动复核
     startDailySettlementScheduler();
+    // 启动后 30 秒：收盘补写守卫——覆盖「交易日 15:30 时电脑未开机、晚间才启动服务」场景（20260909n）
+    setTimeout(() => {
+      ensureSectorCrowdingToday('启动守卫').catch(e => console.error('  [SectorCrowding] 启动守卫失败:', e.message));
+    }, 30000);
+    // 启动后 10 秒：板块资金流向预热——提前填充缓存，用户打开首页即命中（20260909o 提速）
+    setTimeout(() => {
+      try { warmupSectorCapitalFlow(); } catch (e) { console.error('  [SectorCapitalFlow] 预热失败:', e.message); }
+    }, 10000);
     // 20260907a：三联动·事件驱动定时扫描（9:00 / 12:30 / 15:30 / 21:00）
     startEventScheduler();
     // 启动后做一次静默首扫（网络受限时返回空，不影响启动）
