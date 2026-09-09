@@ -127,7 +127,7 @@ const DeepCharts = {
         for (const r of data.reasoning) html += '<li>' + this.escapeHtml(r) + '</li>';
         html += '</ul>';
       }
-      html += '<div class="metrics-period-note">数据来源：' + this.escapeHtml(srcLabel) + '。ROE 为加权净资产收益率(ROEJQ)，毛利率/净利率取自利润表，均与全页口径一致。</div>';
+      html += '<div class="metrics-period-note">数据来源：' + this.escapeHtml(srcLabel) + '。ROE 历史年份为年报加权口径(ROEJQ)，最新一期为 TTM 滚动口径（近12个月归母净利÷期末归母净资产，与关键财务指标页 ROE 同源一致）；毛利率/净利率取自利润表，均与全页口径一致。</div>';
       textEl.innerHTML = html;
     }
   },

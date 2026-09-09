@@ -1773,12 +1773,14 @@ const App = {
         sub: finLabel ? `总市值(行情 ${priceDate}) ÷ 营收(财报 ${finLabel})` : `总市值(行情 ${priceDate}) ÷ 营收`,
         title: finLabel ? `PS = 总市值(行情 ${priceDate}) ÷ 营业收入(财报 ${finLabel}) · 来源：${f.psSource || '本地计算'}` : '市销率 PS'
       });
-      if (f.roe) metrics.push({
+      if (f.roeTtm != null || f.roe) metrics.push({
         label: '净资产收益率(ROE)',
-        value: Storage.formatNumber(f.roe) + '%',
+        value: Storage.formatNumber(f.roeTtm != null ? f.roeTtm : f.roe) + '%',
         source: f.roeSource || '财报数据',
-        sub: finLabel ? `财报 ${finLabel}` : '',
-        title: `ROE = 归母净利润 ÷ 净资产(财报 ${finLabel}) · 来源：${f.roeSource || '财报数据'}`
+        sub: f.roeTtm != null ? `TTM（截至 ${priceDate}）` : (finLabel ? `财报 ${finLabel}` : ''),
+        title: f.roeTtm != null
+          ? `ROE(TTM) = 近12个月归母净利 ÷ 期末归母净资产（滚动12个月，与关键财务指标页/深度分析同源） · 来源：${f.roeSource || '财报数据'}`
+          : `ROE = 归母净利润 ÷ 净资产(财报 ${finLabel}) · 来源：${f.roeSource || '财报数据'}`
       });
     }
 
@@ -2300,12 +2302,25 @@ const App = {
     const pctOf = comp.percentiles || {};
     const ind = comp.industryAvg || {};
     const ocfLabel = qf.operatingCashFlowPeriodName || finLabel || '';
-    // 去年同期同比增速：取自东财 ZYZBAjaxNew 多期序列，与后台 evaluateSignals 边际趋势同源
+    // 去年同期：按「去年同月日」报告期精确匹配（zyzbHistory 为降序多期序列，最新在前）。
+    // 20260909j 修复：原 zyzb[zyzb.length-2] 在降序序列中取到的是接近最早期的数据（如 300319 实际取到 2024-09-30 的值），并非去年同期。
     const zyzb = Array.isArray(qf.zyzbHistory) ? qf.zyzbHistory : [];
-    const priorYoy = zyzb.length >= 2 ? zyzb[zyzb.length - 2] : null;
+    const latestZyzb = zyzb.length ? zyzb[0] : null;
+    const priorYoy = (() => {
+      if (!latestZyzb) return null;
+      const ld = String(latestZyzb.REPORT_DATE || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}/.test(ld)) return null;
+      const tgt = (parseInt(ld.slice(0, 4), 10) - 1) + ld.slice(4);
+      return zyzb.find(x => String(x.REPORT_DATE || '').slice(0, 10) === tgt) || null;
+    })();
     const priorRevenueYoy = priorYoy && !isNaN(parseFloat(priorYoy.TOTALOPERATEREVETZ)) ? parseFloat(priorYoy.TOTALOPERATEREVETZ) : null;
     const priorProfitYoy = priorYoy && !isNaN(parseFloat(priorYoy.PARENTNETPROFITTZ)) ? parseFloat(priorYoy.PARENTNETPROFITTZ) : null;
-    const priorRoe = priorYoy && !isNaN(parseFloat(priorYoy.ROEJQ)) ? parseFloat(priorYoy.ROEJQ) : null;
+    // ROE 去年同期：优先与当前值同口径的 TTM（取数层 roeTtmPrev）；无则回退同期披露加权 ROE(ROEJQ)，文字明确标注口径
+    const priorRoeTtm = (typeof qf.roeTtmPrev === 'number') ? qf.roeTtmPrev : null;
+    const priorRoeJQ = priorYoy && !isNaN(parseFloat(priorYoy.ROEJQ)) ? parseFloat(priorYoy.ROEJQ) : null;
+    const priorRoeTxt = priorRoeTtm != null
+      ? `去年同期(TTM同口径) ${priorRoeTtm.toFixed(2)}%`
+      : (priorRoeJQ != null ? `去年同期(同期加权) ${priorRoeJQ.toFixed(2)}%` : null);
     // 扣非净利润同比：与营收/归母同源，取自东财 ZYZBAjaxNew 主要指标（zyzbHistory.KCFJCXSYJLRTZ）
     const parsePct = (v) => { const n = parseFloat(v); return (v == null || isNaN(n)) ? null : n; };
     const curDedYoy = zyzb.length ? parsePct(zyzb[0].KCFJCXSYJLRTZ) : null;
@@ -2320,9 +2335,21 @@ const App = {
       ['市净率(PB)', m.pb?.toFixed(2), `PB · 股价 ${priceDate} ÷ 每股净资产${finLabel ? '(财报 ' + finLabel + ')' : ''} · 来源：${qf.pbSource || '行情数据'}`, { indKey: 'pb', pctKey: 'pb' }, valPeriod],
       ['市销率(PS)', m.ps?.toFixed(2), `PS(TTM) · 总市值 ÷ 近12个月营业收入 · 来源：${qf.psSource || '东方财富估值(PS_TTM)'}`, { indKey: null, pctKey: 'ps' }, valPeriod],
       ['PEG', m.peg?.toFixed(2), 'PEG · 本地计算（PE/PB 为 TTM）', { indKey: null, pctKey: null }, valPeriod],
-      ['ROE', m.roe ? m.roe.toFixed(2) + '%' : '--', `ROE · 归母净利润 ÷ 净资产${finLabel ? '(财报 ' + finLabel + ')' : ''} · 来源：${qf.roeSource || '财报数据'}`, { indKey: 'roe', pctKey: 'roe', prior: priorRoe != null ? `去年同期 ${priorRoe.toFixed(2)}%` : null }, stmtPeriod],
-      ['毛利率', m.grossMargin ? m.grossMargin.toFixed(2) + '%' : '--', `毛利率 · 来源：${qf.reportSource || '东方财富财报'}${finLabel ? ' · 财报 ' + finLabel : ''}`, { indKey: null, pctKey: 'grossMargin' }, stmtPeriod],
-      ['净利率', m.netMargin ? m.netMargin.toFixed(2) + '%' : '--', `净利率 · 来源：${qf.reportSource || '东方财富财报'}${finLabel ? ' · 财报 ' + finLabel : ''}`, { indKey: null, pctKey: 'netMargin' }, stmtPeriod],
+      ['ROE', m.roe ? m.roe.toFixed(2) + '%' : '--',
+        qf.roeTtm != null
+          ? `ROE(TTM) = 近12个月归母净利 ÷ 期末归母净资产（滚动12个月，与深度分析 ROE 走势图同源一致） · 来源：${qf.roeSource || '东方财富财报'}`
+          : `ROE · 归母净利润 ÷ 净资产${finLabel ? '(财报 ' + finLabel + ')' : ''} · 来源：${qf.roeSource || '财报数据'}`,
+        { indKey: 'roe', pctKey: 'roe', prior: priorRoeTxt }, qf.roeTtm != null ? valPeriod : stmtPeriod],
+      ['毛利率', m.grossMargin ? m.grossMargin.toFixed(2) + '%' : '--',
+        qf.grossMarginTtm != null
+          ? `毛利率(TTM) = 近12个月毛利额 ÷ 近12个月营收（滚动12个月） · 来源：${qf.reportSource || '东方财富财报'}`
+          : `毛利率 · 来源：${qf.reportSource || '东方财富财报'}${finLabel ? ' · 财报 ' + finLabel : ''}`,
+        { indKey: null, pctKey: 'grossMargin' }, qf.grossMarginTtm != null ? valPeriod : stmtPeriod],
+      ['净利率', m.netMargin ? m.netMargin.toFixed(2) + '%' : '--',
+        qf.netMarginTtm != null
+          ? `净利率(TTM) = 近12个月净利额 ÷ 近12个月营收（滚动12个月） · 来源：${qf.reportSource || '东方财富财报'}`
+          : `净利率 · 来源：${qf.reportSource || '东方财富财报'}${finLabel ? ' · 财报 ' + finLabel : ''}`,
+        { indKey: null, pctKey: 'netMargin' }, qf.netMarginTtm != null ? valPeriod : stmtPeriod],
       ['营收增长', m.revenueGrowth ? m.revenueGrowth.toFixed(2) + '%' : '--', `营收同比增长 · 来源：${qf.reportSource || '东方财富财报'}${finLabel ? ' · 财报 ' + finLabel : ''}`, { indKey: null, pctKey: 'revenueGrowth', prior: priorRevenueYoy != null ? `去年同期 ${priorRevenueYoy.toFixed(2)}%` : null }, stmtPeriod],
       ['利润增长', m.profitGrowth ? m.profitGrowth.toFixed(2) + '%' : '--', `归母净利润同比增长 · 来源：${qf.reportSource || '东方财富财报'}${finLabel ? ' · 财报 ' + finLabel : ''}`, { indKey: null, pctKey: 'profitGrowth', prior: priorProfitYoy != null ? `去年同期 ${priorProfitYoy.toFixed(2)}%` : null }, stmtPeriod],
       ['扣非净利润增长', m.deductedProfitGrowth != null ? m.deductedProfitGrowth.toFixed(2) + '%' : '--', `扣非归母净利润同比增长 · 来源：东方财富财报${finLabel ? ' · 财报 ' + finLabel : ''}`, { indKey: null, pctKey: null, prior: priorDedYoy != null ? `去年同期 ${priorDedYoy.toFixed(2)}%` : null }, stmtPeriod],
