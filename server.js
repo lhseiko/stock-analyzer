@@ -74,7 +74,7 @@ app.use('/api', (req, res, next) => {
 
 // 入口 HTML 强制带版本号重定向：旧服务器曾允许缓存 index.html，浏览器可能一直用旧副本。
 // 每次访问 / 或 /index.html 都重定向到带 ?v= 的版本，确保一定拉取最新前端（无需用户手动硬刷新）。
-const APP_VERSION = '20260909a';
+const APP_VERSION = '20260909h';
 app.use((req, res, next) => {
   if ((req.path === '/' || req.path === '/index.html') && req.query.v !== APP_VERSION) {
     return res.redirect(`/index.html?v=${APP_VERSION}`);
@@ -429,13 +429,11 @@ app.get('/api/analysis/:symbol', async (req, res) => {
     const companyType = quote ? classifyCompanyType(symbol, name || quote?.name, quote, { income: [], balance: [], cashflow: [] }, null, []) : null;
     console.log(`[Analysis] Company type: ${companyType?.typeName || 'N/A'} (${companyType?.type || 'N/A'})`);
 
-    // Fundamental analysis (with company type differentiation)
-    const fundamental = quote ? fundamentalAnalysis(quote, companyType) : { error: 'No fundamental data' };
-
     // Market overview
     const info = detectMarket(symbol);
 
     // 关键财务指标对标：历史百分位 + 行业均值（先算，作为全站统一的「行业均值」基准）
+    // 20260909d：基本面评分需以行业均值为基准，故必须先算 comparison，再算 fundamental（单一数据源）。
     let comparison = null;
     if (quote && info.market === 'CN') {
       try {
@@ -444,6 +442,10 @@ app.get('/api/analysis/:symbol', async (req, res) => {
         console.error('[Analysis] fundamental comparison failed:', e.message);
       }
     }
+    const industryAvgForScore = (comparison && comparison.industryAvg) ? comparison.industryAvg : null;
+
+    // Fundamental analysis (with company type differentiation)
+    const fundamental = quote ? fundamentalAnalysis(quote, companyType, { industryAvg: industryAvgForScore }) : { error: 'No fundamental data' };
 
     // 利好/利空 信号标记：统一复用 comparison.industryAvg 作为「行业均值」基准，
     // 确保概览信号卡与基本面卡的「行业均值」数值完全一致（单一数据源，杜绝两套基准）。
