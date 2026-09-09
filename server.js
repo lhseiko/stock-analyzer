@@ -74,7 +74,7 @@ app.use('/api', (req, res, next) => {
 
 // 入口 HTML 强制带版本号重定向：旧服务器曾允许缓存 index.html，浏览器可能一直用旧副本。
 // 每次访问 / 或 /index.html 都重定向到带 ?v= 的版本，确保一定拉取最新前端（无需用户手动硬刷新）。
-const APP_VERSION = '20260909k'; // 20260909k：全站 TTM 口径审计——PE/PS/股息率信号与评分文案补 TTM 标注，PS 兜底单期口径分支标注，PEG 假值 0.00 修正，概览卡 PE tooltip 矛盾修正；数值计算路径不变
+const APP_VERSION = '20260909l'; // 20260909l：AI 估值 GET 端点专属模型前置（修复 688660 旧 AI 缓存与 DCAVM 双区间不一致）+ /api/valuation/model 白名单动态化；前端展示逻辑零变化
 app.use((req, res, next) => {
   if ((req.path === '/' || req.path === '/index.html') && req.query.v !== APP_VERSION) {
     return res.redirect(`/index.html?v=${APP_VERSION}`);

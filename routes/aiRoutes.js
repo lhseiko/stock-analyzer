@@ -158,12 +158,18 @@ router.post('/api/ai/valuation', async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-// 20260908：个股专属估值模型（确定性计算，无 LLM 参与）。目前仅中国平安 601318 有专属模型。
+// 20260908：个股专属估值模型（确定性计算，无 LLM 参与）。
+// 20260909l：闸门从硬编码 601318 改为 hasDedicatedValuation 动态判定（平安/圣湘/海天/士兰/华安/长江/麦捷/电气风电/券商）；
+// 本端点同步计算实现仍仅 601318 平安——其余专属股结果统一走 /api/ai/valuation/:symbol 的 analyzeValuation 专属分支。
 router.get('/api/valuation/model/:symbol', (req, res) => {
   try {
     const symbol = String(req.params.symbol || '').trim().replace(/^(sh|sz|bj)/i, '');
+    const { hasDedicatedValuation } = require('../lib/ai/valuation');
+    if (!hasDedicatedValuation(symbol)) {
+      return res.json({ ok: false, error: 'NO_MODEL', message: `该标的暂无专属估值模型` });
+    }
     if (symbol !== '601318') {
-      return res.json({ ok: false, error: 'NO_MODEL', message: `该标的暂无专属估值模型（当前仅中国平安 601318）` });
+      return res.json({ ok: true, dedicated: true, message: '该标的拥有专属确定性估值模型，结果请走 /api/ai/valuation/:symbol 获取' });
     }
     const paModel = require('../lib/valuation/pingAn601318.js');
     const cfg = paModel.loadInputs();
@@ -205,22 +211,25 @@ router.get('/api/ai/valuation/:symbol', async (req, res) => {
   try {
     const symbol = String(req.params.symbol || '').trim();
     if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL', message: '缺少股票代码' });
-    // 20260906：GET 纯只读——仅返回有效缓存（v4 版本+TTL 匹配），绝不自动联网重算。
+    const bare = symbol.replace(/^(sh|sz|bj)/i, '');
+    // 20260909l：专属确定性估值标的（601318/圣湘/海天/士兰/华安/长江/麦捷/电气风电/券商）一律优先实时计算——
+    // 根因修复：旧顺序「先缓存后专属」会让专属模型上线前遗留的 AI 自由发挥旧缓存被命中
+    // （电气风电 688660：20260909h 上线 DCAVM 时未删 2026-09-06 旧缓存，打开页面下卡显示旧 AI 文本
+    // 区间 3.00~5.20，与上卡 DCAVM 确定性 5.39~9.62 不一致）。专属股打开页面即确定性计算
+    // （无 LLM、不消耗额度），模型失败时也不回落旧 AI 文本——返回 cached:false，前端保持规则版结论。
+    const { hasDedicatedValuation } = require('../lib/ai/valuation');
+    if (hasDedicatedValuation(bare)) {
+      try {
+        const r = await analyzeValuation({ symbol: bare });
+        if (r && r.dedicated) return res.json(r);
+      } catch (e) { /* 失败 → 下方 cached:false，绝不回落旧 AI 文本缓存 */ }
+      return res.json({ success: false, cached: false, dedicated: true });
+    }
+    // 20260906：非专属股 GET 纯只读——仅返回有效缓存（v4 版本+TTL 匹配），绝不自动联网重算。
     // 打开个股不消耗额度；无有效缓存时前端保持规则版结论，用户点「✨ AI 估值」（force=true）才重算。
     const { readValuationCache } = require('../lib/aiAugment');
     const cached = readValuationCache(symbol);
     if (cached) return res.json({ success: true, ...cached, cached: true });
-    // 20260908b：无旧缓存时，若该标的拥有「专属确定性估值模型」（601318 平安 / 券商配置标的），
-    // 直接实时计算并返回（无 LLM 参与、确定性、不消耗额度）。20260908l：闸门改为 hasDedicatedValuation。
-    const bare = symbol.replace(/^(sh|sz|bj)/i, '');
-    const { hasDedicatedValuation } = require('../lib/ai/valuation');
-    if (hasDedicatedValuation(bare)) {
-      try {
-        const { analyzeValuation } = require('../lib/ai/valuation');
-        const r = await analyzeValuation({ symbol: bare });
-        if (r && r.dedicated) return res.json(r);
-      } catch (e) { /* 失败则回落到下方 cached:false */ }
-    }
     res.json({ success: false, cached: false });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
