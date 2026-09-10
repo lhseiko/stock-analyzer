@@ -28,8 +28,10 @@
 """
 import argparse
 import json
+import os
 import sys
 import io
+import time
 import traceback
 from datetime import datetime, timedelta
 
@@ -42,11 +44,92 @@ try:
 except Exception:
     pass
 
+# ---------------------------------------------------------------
+# 20260911 修复：本机网络阻断 d.10jqka.com.cn:443（ConnectTimeout），
+# 但同一主机 80 端口可达。akshare 源码写死 https://d.10jqka.com.cn/v4/line/...
+# 因此这里对 requests.get 打一个「仅该主机」的 scheme 降级补丁：
+# 先按原样请求 https，失败（超时/连接被拒）再自动改用 http 重试。
+# 只影响该主机的 URL，其他请求（板块列表 q.10jqka.com.cn 等）完全不受影响。
+# ---------------------------------------------------------------
+import requests as _requests
+# 本机系统代理(HTTP_PROXY=127.0.0.1:xxxxx)会挂起/阻断同花顺请求（项目既有教训）：
+# 出图脚本全程强制直连，并清掉进程内代理环境变量（防止其他库再读）。
+for _k in ('HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy'):
+    os.environ.pop(_k, None)
+
+_orig_get = _requests.get
+
+
+def _get_with_ths_fallback(url, *args, **kwargs):
+    kwargs.setdefault('timeout', 12)
+    kwargs['proxies'] = {'http': None, 'https': None}   # 强制直连
+    if isinstance(url, str) and url.startswith('https://d.10jqka.com.cn/'):
+        try:
+            return _orig_get(url, *args, **kwargs)
+        except Exception:
+            # 443 被本机网络阻断时自动降级 80（同主机 http 可达）
+            return _orig_get('http://' + url[len('https://'):], *args, **kwargs)
+    return _orig_get(url, *args, **kwargs)
+
+
+_requests.get = _get_with_ths_fallback
+
 try:
     import akshare as ak
 except ImportError as e:
     print(json.dumps({"ok": False, "error": "akshare 未安装: %s" % e}, ensure_ascii=False))
     sys.exit(2)
+
+# 板块名 → 代码 缓存（网络/反爬异常时回退，避免整图失败）
+BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BOARD_CACHE = os.path.join(BASE, 'data', 'cache', 'ths_industry_boards.json')
+BOARD_CACHE_TTL = 7 * 24 * 3600
+
+
+def _read_board_cache():
+    try:
+        if not os.path.exists(BOARD_CACHE):
+            return None
+        with open(BOARD_CACHE, 'r', encoding='utf-8') as f:
+            obj = json.load(f)
+        pairs = obj.get('pairs')
+        if isinstance(pairs, list) and pairs:
+            return pairs
+    except Exception:
+        pass
+    return None
+
+
+def _write_board_cache(pairs):
+    try:
+        os.makedirs(os.path.dirname(BOARD_CACHE), exist_ok=True)
+        tmp = BOARD_CACHE + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump({'ts': time.time(), 'pairs': pairs}, f, ensure_ascii=False)
+        os.replace(tmp, BOARD_CACHE)
+    except Exception:
+        pass
+
+
+def get_board_pairs():
+    """返回 [(板块名, 代码)]。优先实时拉取并写缓存；实时失败时回退缓存（不阻塞出图）。"""
+    try:
+        name_df = ak.stock_board_industry_name_ths()
+        pairs = []
+        for _, r in name_df.iterrows():
+            try:
+                pairs.append((str(r['name']).strip(), str(r['code']).strip()))
+            except Exception:
+                continue
+        if pairs:
+            _write_board_cache(pairs)
+            return pairs, 'live'
+        raise ValueError('板块列表为空')
+    except Exception as e:
+        cached = _read_board_cache()
+        if cached:
+            return cached, 'cache(%s)' % str(e)[:40]
+        raise
 
 
 def normalize_name(s):
@@ -71,22 +154,23 @@ def _is_refinement(prefix, full):
     return suf in REFINEMENT_SUFFIXES or any(suf.startswith(s) for s in REFINEMENT_SUFFIXES)
 
 
-def find_sector_name(target, df):
-    """按名称匹配同花顺板块列表；优先精确，再「短名+白名单后缀」的合理细化，杜绝跨概念误命中。"""
+def find_sector_name(target, pairs):
+    """按名称匹配同花顺板块列表；优先精确，再「短名+白名单后缀」的合理细化，杜绝跨概念误命中。
+    pairs: [(板块名, 代码)]"""
     t = normalize_name(target)
-    names = [normalize_name(x) for x in df['name'].tolist()]
+    names = [normalize_name(p[0]) for p in pairs]
     # 1) 精确匹配
     for i, n in enumerate(names):
         if n == t:
-            return str(df.iloc[i]['name']).strip(), str(df.iloc[i]['code']).strip()
+            return pairs[i][0], pairs[i][1]
     # 2) target 为板块名的合理细化前缀（target 短、板块长，且板块=target+白名单后缀）
     for i, n in enumerate(names):
         if _is_refinement(t, n):
-            return str(df.iloc[i]['name']).strip(), str(df.iloc[i]['code']).strip()
+            return pairs[i][0], pairs[i][1]
     # 3) 板块名为 target 的合理细化前缀（板块短、target 长）
     for i, n in enumerate(names):
         if _is_refinement(n, t):
-            return str(df.iloc[i]['name']).strip(), str(df.iloc[i]['code']).strip()
+            return pairs[i][0], pairs[i][1]
     return None, None
 
 
@@ -98,12 +182,12 @@ def main():
     args = ap.parse_args()
 
     try:
-        name_df = ak.stock_board_industry_name_ths()
+        pairs, src = get_board_pairs()
     except Exception as e:
         print(json.dumps({"ok": False, "error": "获取板块列表失败: %s" % e}, ensure_ascii=False))
         sys.exit(3)
 
-    sector_name, sector_code = find_sector_name(args.name, name_df)
+    sector_name, sector_code = find_sector_name(args.name, pairs)
     if not sector_name:
         print(json.dumps({"ok": False, "error": "未找到名为 '%s' 的同花顺行业板块" % args.name}, ensure_ascii=False))
         sys.exit(4)
@@ -166,6 +250,7 @@ def main():
         "data": out,
         "count": len(out),
         "source": "同花顺·行业板块",
+        "boardListSrc": src,
     }
     print(json.dumps(result, ensure_ascii=False))
 

@@ -235,36 +235,184 @@ def collect_news():
     return {'status': 'ok' if items else 'empty', 'items': items}
 
 
-def collect_guba(session, boards, cookie_path, min_interval):
-    """逐板块抓取。返回 (status, boards_data, promoted, ok_codes)"""
+# ---------- 同花顺讨论 API（替代东财股吧：绕过验证码墙，20260910） ----------
+THS_DISC_URL = 'https://t.10jqka.com.cn/lgt/post/open/api/forum/post/v2/recent'
+THS_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'Host': 't.10jqka.com.cn',
+    'Accept': 'application/json, text/javascript, */*; q=0.01',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Referer': 'https://t.10jqka.com.cn/',
+    'sec-ch-ua': '"Not(A:Brand";v="24", "Chromium";v="122"',
+    'sec-ch-ua-mobile': '?0', 'sec-ch-ua-platform': '"macOS"',
+    'Sec-Fetch-Dest': 'document', 'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'none', 'Sec-Fetch-User': '?1', 'Upgrade-Insecure-Requests': '1',
+}
+# 直连（不经过系统代理，与 Node fetch 同效；代理曾阻断 axios/部分请求）
+THS_PROXIES = {'http': None, 'https': None}
+EM_CONST_HOST = 'push2delay.eastmoney.com'
+
+
+def market_id_of(code):
+    """同花顺讨论 API 的 market_id：沪市(600/601/603/605/688 科创板)=17，深市(000/001/002/003/300)=33。"""
+    c = str(code or '').strip()
+    if c.startswith('6'):
+        return 17
+    return 33
+
+
+_TAG_RE = re.compile(r'<[^>]+>')
+_ENT_RE = {'&amp;': '&', '&nbsp;': ' ', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'",
+           '&ldquo;': '"', '&rdquo;': '"', '&hellip;': '…'}
+
+
+def strip_tags(s):
+    """剥离同花顺帖文里的 <hx_stock>/<span data-hx-tag> 等内联标签与 HTML 实体，返回纯文本。"""
+    if not s:
+        return ''
+    t = str(s)
+    for k, v in _ENT_RE.items():
+        t = t.replace(k, v)
+    t = _TAG_RE.sub('', t)
+    return t.strip()
+
+
+def fetch_ths_discussion(code, market_id, timeout=12):
+    """取单只股票在同花顺的讨论（最新一页，最多 15 条）。返回帖子列表或 None(失败)。"""
+    params = {'page': 1, 'page_size': 15, 'pid': 0, 'time': 0, 'sort': 'publish',
+              'code': str(code), 'market_id': market_id}
+    try:
+        r = requests.get(THS_DISC_URL, params=params, headers=THS_HEADERS,
+                         timeout=timeout, proxies=THS_PROXIES)
+        if r.status_code != 200:
+            return None
+        j = r.json()
+        feed = (j.get('data') or {}).get('feed') or []
+        out = []
+        for p in feed:
+            content = strip_tags(p.get('content', ''))
+            if not content:
+                continue
+            pid = p.get('pid') or p.get('id')
+            if not pid:
+                continue
+            stat = p.get('stat') or {}
+            try:
+                likes = int(stat.get('like', 0) or 0)
+            except Exception:
+                likes = 0
+            try:
+                replies = int(stat.get('reply', 0) or 0)
+            except Exception:
+                replies = 0
+            try:
+                shares = int(stat.get('share', 0) or 0)
+            except Exception:
+                shares = 0
+            out.append({
+                'id': '%s_%s' % (code, pid),
+                'title': content[:240],
+                'nick': '',
+                'clicks': likes + shares,
+                'comments': replies,
+                'time': str(p.get('ctime', '') or ''),
+                'pinned': 0,
+            })
+        return out
+    except Exception:
+        return None
+
+
+def build_members(boards, cache_path, max_age_days=7, top_n=3):
+    """建立 板块码(BKxxxx) → 代表性成分股[{code,market_id}] 映射（按东财板块成分股市值前 top_n）。
+    结果缓存到 cache_path，7 天内复用，避免每日重复抓取成分股。"""
+    now = time.time()
+    if os.path.exists(cache_path):
+        try:
+            with open(cache_path, 'r', encoding='utf-8') as f:
+                cached = json.load(f)
+            if (now - cached.get('_built', 0)) < max_age_days * 86400:
+                return cached.get('members', {})
+        except Exception:
+            pass
+    members = {}
+    for b in boards:
+        code = b.get('code')
+        if not code:
+            continue
+        try:
+            params = {'pn': 1, 'pz': 50, 'po': 1, 'np': 1,
+                      'ut': 'b2884a393a59ad64002292a3e90d46a5', 'fltt': 2, 'invt': 2,
+                      'fid': 'f20', 'fs': 'b:%s' % code, 'fields': 'f12,f14,f20'}
+            r = requests.get('https://%s/api/qt/clist/get' % EM_CONST_HOST, params=params,
+                             headers={'User-Agent': UA, 'Referer': 'https://quote.eastmoney.com/'},
+                             timeout=12, proxies=THS_PROXIES)
+            d = r.json()
+            diff = (d.get('data') or {}).get('diff') or []
+
+            def _mc(x):
+                v = x.get('f20')
+                try:
+                    return float(v) if v is not None else 0
+                except Exception:
+                    return 0
+            top = sorted(diff, key=_mc, reverse=True)[:top_n]
+            mems = []
+            for x in top:
+                c = str(x.get('f12', '') or '').strip()
+                if c:
+                    mems.append({'code': c, 'market_id': market_id_of(c)})
+            if mems:
+                members[code] = mems
+        except Exception:
+            pass
+        time.sleep(0.25)
+    try:
+        out = {'_built': now, 'members': members}
+        tmp = cache_path + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(out, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, cache_path)
+    except Exception:
+        pass
+    return members
+
+
+def collect_guba_ths(boards, members, min_interval):
+    """同花顺讨论替代东财股吧：逐板块取其代表性成分股的讨论，归集到板块。
+    返回 {status, boards:{code:{bar_name,count,posts}}, okCount, total, mapCount}（结构与旧 collect_guba 一致）。"""
+    interval = min(min_interval, 0.6)  # 同花顺限流：单请求间隔收紧到 0.6s
     boards_data = {}
-    promoted, removed = [], []
-    challenged = False
     ok_cnt = 0
+    total = len(boards)
+    fail_streak = 0
+    challenged = False
     for i, b in enumerate(boards):
         code = b['code']
-        if challenged:
-            break
-        ok, data, ch = fetch_guba_board(session, code)
-        if ch:
-            challenged = True
-            break
-        if ok:
-            ok_cnt += 1
-            boards_data[code] = data
-            # 候选板块自动校正：拿到权威 bar_name 后固化，错误代码剔除
-            if b.get('verify'):
-                bn = data.get('bar_name')
-                if bn:
-                    promoted.append({'code': code, 'name': bn, 'keywords': b.get('keywords', [])})
+        mems = members.get(code) or []
+        collected = []
+        cnt = 0
+        if mems:
+            for m in mems:
+                if fail_streak >= 15:
+                    challenged = True
+                    break
+                res = fetch_ths_discussion(m['code'], m['market_id'])
+                if res is None:
+                    fail_streak += 1
                 else:
-                    removed.append(code)
-        if i < len(boards) - 1:
-            time.sleep(min_interval + random.uniform(0, 0.35))
+                    fail_streak = 0
+                    collected.extend(res)
+                    cnt += len(res)
+                if i < total - 1 or m is not mems[-1]:
+                    time.sleep(interval + random.uniform(0, 0.25))
+            if challenged:
+                break
+        boards_data[code] = {'bar_name': b.get('name'), 'count': cnt, 'posts': collected}
+        if collected:
+            ok_cnt += 1
     status = 'challenge' if challenged else ('ok' if ok_cnt > 0 else 'empty')
-    save_cookies(session, cookie_path)
-    return {'status': status, 'boards': boards_data, 'promoted': promoted, 'removed': removed,
-            'okCount': ok_cnt, 'total': len(boards)}
+    return {'status': status, 'boards': boards_data, 'okCount': ok_cnt, 'total': total, 'mapCount': total}
 
 
 def update_sector_map(promoted, removed):
@@ -365,32 +513,14 @@ def main():
         result['errors'].append('market: ' + str(e)[:160])
     code_set = {r['code'] for r in result['market'].get('rows', []) if r.get('code')}
     name_by_code = {r['code']: r['name'] for r in result['market'].get('rows', []) if r.get('code')}
-    # 2) 社区讨论（股吧）
+    # 2) 社区讨论（同花顺讨论 API 替代东财股吧，绕过验证码墙，20260910）
     try:
         m = load_sector_map(_p('data/hotTopics/sector_map.json'))
         boards = [b for b in m.get('boards', [])]
-        session = make_session(_p('data/hotTopics/em_cookies.txt'))
-        result['guba'] = collect_guba(session, boards, _p('data/hotTopics/em_cookies.txt'), args.interval)
+        members = build_members(boards, _p('data/hotTopics/sector_members.json'))
+        result['guba'] = collect_guba_ths(boards, members, args.interval)
         result['guba']['mapCount'] = len(boards)
-        # 候选板块校正：行情清单可验证代码有效性（不依赖股吧是否被风控）
-        if code_set:
-            promoted, removed = [], []
-            for b in boards:
-                if not b.get('verify'):
-                    continue
-                if b['code'] in code_set:
-                    bn = result['guba']['boards'].get(b['code'], {}).get('bar_name') or name_by_code.get(b['code'])
-                    if bn:
-                        promoted.append({'code': b['code'], 'name': bn, 'keywords': b.get('keywords', [])})
-                else:
-                    removed.append(b['code'])
-            if promoted or removed:
-                result['guba']['promoted'] = promoted
-                result['guba']['removed'] = removed
-                update_sector_map(promoted, removed)
-            else:
-                result['guba'].pop('promoted', None)
-                result['guba'].pop('removed', None)
+        result['guba']['memberTotal'] = sum(len(v) for v in members.values())
     except Exception as e:
         result['guba'] = {'status': 'error', 'boards': {}, 'okCount': 0}
         result['errors'].append('guba: ' + str(e)[:160])

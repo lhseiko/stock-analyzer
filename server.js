@@ -34,7 +34,7 @@ const { annotateNewsImpact } = require('./lib/newsSectorImpact');
 const { recordImpact, correctImpact, getLearningState: getNewsImpactLearningState, autoReviewImpacts } = require('./lib/newsImpactLearning');
 const { recordDailyRanking, getSectorRankReminder, backfillSeed, SEED_DAYS } = require('./lib/sectorRankHistory');
 // 20260823t：行业板块拥挤度（板块成交额 ÷ 全市场成交额，当日/本周/本月前五）
-const { recordDaily: recordSectorCrowding, getCrowding: getSectorCrowding, backfillHistory: backfillSectorCrowding, needsBackfill: sectorCrowdingNeedsBackfill, hasDate: sectorCrowdingHasDate } = require('./lib/sectorCrowding');
+const { recordDaily: recordSectorCrowding, getCrowding: getSectorCrowding, backfillHistory: backfillSectorCrowding, needsBackfill: sectorCrowdingNeedsBackfill, hasDate: sectorCrowdingHasDate, latestMarketTotal: sectorCrowdingLatestTotal } = require('./lib/sectorCrowding');
 const { getIndustryIndexHistory } = require('./lib/industryIndexHistory');
 const { fetchValuationTTM } = require('./lib/eastmoneyValuation');
 const { getSectorCapitalFlow, warmup: warmupSectorCapitalFlow } = require('./lib/sectorCapitalFlow'); // 20260827g：行业板块资金流向（主力+散户小单 净流入/流出前五 + 近5日最大）20260909o纯Node化提速
@@ -550,7 +550,7 @@ app.get('/api/sector-crowding', async (req, res) => {
     const mo = await getMarketOverview();
     // 落盘当日拥挤度（20260909n：交易日感知——上证日K最新日期==今天才落盘；
     // 节假日/盘前的陈旧板块数据不再被误标为「今天」污染周月统计。数据源 date 字段=抓取时刻，非真实数据日期）
-    if (Array.isArray(mo.sectorAll) && (await isTradingDayToday())) {
+    if (Array.isArray(mo.sectorAll) && (await _canRecordToday(mo.sectorAll))) {
       recordSectorCrowding(mo.sectorAll, mo.sectorDate);
     }
     // 历史回填：刷新时同步拉取（前端有 loading 提示）；首跑 store 空时后台静默补，不阻塞首页
@@ -746,13 +746,30 @@ app.get('/api/stock-market-cap-history/:symbol', async (req, res) => {
       .filter(d => d.date && d.marketCap > 0)
       .map(d => ({ date: d.date, marketCap: d.marketCap }))
       .sort((a, b) => a.date.localeCompare(b.date));
+    // 20260911：新鲜度闸门（数据最新性铁律）——序列末日距今天过久时不再返回，
+    // 避免前端把「最后一次已知市值」一路平移到最新K线上画出误导性直线。
+    // 例：688660 电气风电在东财估值明细源只有到 2023-02-27 的数据（数据源缺口，非本机故障）。
+    const lastDate = data[data.length - 1].date;
+    const lagDays = Math.floor((Date.now() - new Date(lastDate + 'T00:00:00+08:00').getTime()) / 86400000);
+    if (!isFinite(lagDays) || lagDays > 20) {
+      return res.json({
+        success: false,
+        symbol,
+        error: 'MARKETCAP_STALE',
+        staleDate: lastDate,
+        lagDays,
+        message: `个股市值历史数据已过期（截至 ${lastDate}，滞后 ${lagDays} 天），已跳过市值线绘制`,
+        source: '东方财富TTM',
+        fetchedAt: new Date().toISOString(),
+      });
+    }
     res.json({
       success: true,
       symbol,
       data,
       unit: '亿元',
       source: '东方财富TTM',
-      date: data[data.length - 1].date,
+      date: lastDate,
       fetchedAt: new Date().toISOString(),
     });
   } catch (err) {
@@ -1609,7 +1626,7 @@ async function runAutoReview() {
     }
     impactReview = autoReviewImpacts(chgMap);
     // 盘后落当日行业拥挤度（20260909n：交易日感知，节假日不落盘）
-    if (Array.isArray(mo.sectorAll) && (await isTradingDayToday())) recordSectorCrowding(mo.sectorAll, mo.sectorDate);
+    if (Array.isArray(mo.sectorAll) && (await _canRecordToday(mo.sectorAll))) recordSectorCrowding(mo.sectorAll, mo.sectorDate);
     // 盘后自动回填近 21 个交易日历史，确保本周/本月统计每日收盘后自动更新
     try {
       const bf = await backfillSectorCrowding(21, findPython());
@@ -1700,20 +1717,62 @@ function logAutoReview(r) {
 //       当日数据会缺席到深夜（实测 2026-09-09 当日记录 23:00 才由历史回填补上）。
 // 交易日判断：上证日 K 最新日期==今天 ⇒ 今天开过盘（节假日/盘前自动为 false）；true 缓存到当日结束，false 缓存 10 分钟。
 let _tradeDayCache = { date: '', result: null, at: 0 };
+// 20260910 修复：主通道改用 Node 原生 fetch 直连腾讯日 K（不走环境代理）。
+// 教训：axios 会读 HTTP_PROXY 走系统代理，代理对腾讯/东财域名转发故障时（实测 09-10 502/断连）
+// getHistory 全线失败 → 交易日判断失败 → 当日拥挤度被保守策略整体拦截。
+// 原生 fetch（undici）不受 HTTP_PROXY 影响，直连实测 0.15s 稳定。
+// 数据新鲜度指纹（20260910）：判断通道全部故障时用它兜底——
+// 交易日 15:30 后的板块成交额是新值；节假日/休市时数据源返回的是上一交易日的冻结值（与 store 最新一天完全一致）。
+// 因此「合计>0 且与最新一天不等」⇒ 判定为新交易日的活跃数据，允许落盘；冻结/为零 ⇒ 拒收。
+function _looksFresh(sectorAll) {
+  if (!Array.isArray(sectorAll) || !sectorAll.length) return false;
+  const total = sectorAll.reduce((s, x) => s + (Number(x.amount) || 0), 0);
+  if (total <= 0) return false;                       // 数据源清零/无成交 ⇒ 拒收
+  const prev = sectorCrowdingLatestTotal();
+  if (prev == null) return true;
+  return Math.abs(total - prev) > Math.max(1, Math.abs(prev) * 1e-6);
+}
+// 是否允许落盘当日：true=确认交易日；false=确认非交易日；null=判断通道故障→退回新鲜度指纹
+async function _canRecordToday(sectorAll) {
+  const tday = await isTradingDayToday();
+  if (tday === true) return true;
+  if (tday === false) return false;
+  return _looksFresh(sectorAll);
+}
+
+async function _lastTradeDateViaFetch() {
+  const url = 'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh000001,day,,,40,qfq';
+  const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const j = await r.json();
+  const days = j && j.data && j.data.sh000001 && j.data.sh000001.day;
+  if (!Array.isArray(days) || !days.length) throw new Error('腾讯日K返回空 day 数组');
+  return String(days[days.length - 1][0]);
+}
+// 返回值：true=今天是交易日 / false=确认非交易日 / null=判断失败（两条通道都不可用）
+// 三态语义：判断失败不再等同于「非交易日」——20260910 教训（代理+直连双故障时，
+// 判断失败被当成非交易日，导致守卫连尝试补写的机会都没有）。
 async function isTradingDayToday() {
   const now = new Date();
   const today = localDate(now);
   if (_tradeDayCache.date === today && _tradeDayCache.result === true) return true;
   if (_tradeDayCache.date === today && _tradeDayCache.result === false && now - _tradeDayCache.at < 10 * 60 * 1000) return false;
   try {
-    const hist = await (require('./lib/stockData').getHistory('sh000001', '1mo'));
-    const last = Array.isArray(hist) && hist.length ? hist[hist.length - 1] : null;
-    const result = Boolean(last && last.date === today);
+    let lastDate = null;
+    try {
+      lastDate = await _lastTradeDateViaFetch();            // ① 原生直连主通道
+    } catch (e1) {
+      const hist = await (require('./lib/stockData').getHistory('sh000001', '1mo')); // ② axios 兜底
+      const last = Array.isArray(hist) && hist.length ? hist[hist.length - 1] : null;
+      lastDate = last ? String(last.date) : null;
+    }
+    if (!lastDate) throw new Error('两条通道均未返回有效交易日期');
+    const result = lastDate === today;
     _tradeDayCache = { date: today, result, at: Date.now() };
     return result;
   } catch (e) {
-    console.error('  [SectorCrowding] 交易日判断失败:', e.message);
-    return false; // 判断失败不落盘（宁可延迟重试，不可把旧数据误标为今天）
+    console.error('  [SectorCrowding] 交易日判断失败（将改用回填接口探测）:', e.message);
+    return null; // 判断失败≠非交易日；由调用方决定是否探测（守卫视作可尝试，写入口仍保守不写）
   }
 }
 
@@ -1729,13 +1788,19 @@ async function ensureSectorCrowdingToday(reason) {
     if (hh < 15 || (hh === 15 && mm < 30)) return;
     const today = localDate(now);
     if (sectorCrowdingHasDate(today)) return;          // 本地文件查询，每分钟一次零压力
-    if (!(await isTradingDayToday())) return;          // 节假日/休市不落盘
+    const tday = await isTradingDayToday();
+    // false=确认非交易日（周末/节假日）→ 不落盘；null=判断失败 → 仍尝试回填探测：
+    // 同花顺历史接口只有交易日才会产生当日行，节假日天然无数据，不会污染周/月统计
+    if (tday === false) return;
     const minuteKey = `${today} ${hh}:${mm}`;
     if (_crowdingGuardMinute === minuteKey) return;    // 同一分钟防抖
     _crowdingGuardMinute = minuteKey;
     console.log(`  [SectorCrowding] 收盘补写守卫触发（${reason}，${today} 当日记录缺失）...`);
     const mo = await getMarketOverview();
-    if (Array.isArray(mo.sectorAll)) recordSectorCrowding(mo.sectorAll, mo.sectorDate);
+    // true=确认交易日直接写；null=判断通道故障 → 用新鲜度指纹判定（防节假日冻结数据误标为今天）
+    if (tday === true || _looksFresh(mo.sectorAll)) {
+      if (Array.isArray(mo.sectorAll)) recordSectorCrowding(mo.sectorAll, mo.sectorDate);
+    }
     if (sectorCrowdingHasDate(today)) {
       console.log('  [SectorCrowding] 当日数据已补写 ✓');
       return;

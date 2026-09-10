@@ -27,6 +27,7 @@ import json
 import sys
 import io
 import os
+import re
 import traceback
 import time
 import requests
@@ -38,6 +39,24 @@ try:
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 except Exception:
     pass
+
+# 20260911：本机系统代理(HTTP_PROXY=127.0.0.1:xxxxx)对腾讯/东财/金十等转发故障，
+# 会把 akshare 请求挂起或 ProxyError（融资余额曾因此恒失败）。脚本全程强制直连，
+# 并清掉进程内代理环境变量；仅影响本进程，不改系统设置。
+for _pk in ('HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy'):
+    os.environ.pop(_pk, None)
+
+_orig_requests_get = requests.get
+
+
+def _direct_get(url, *args, **kwargs):
+    """强制不经过系统代理（项目既有教训：直连才通）。"""
+    kwargs.setdefault('timeout', 20)
+    kwargs['proxies'] = {'http': None, 'https': None}
+    return _orig_requests_get(url, *args, **kwargs)
+
+
+requests.get = _direct_get
 
 
 def _now_str():
@@ -629,6 +648,131 @@ def fetch_discussion_heat(symbol, name):
     return out
 
 
+# 同花顺个股讨论（替代东财股吧个股讨论，绕过验证码墙；20260910 供个股舆情模块消费）
+_THS_DISC_URL = 'https://t.10jqka.com.cn/lgt/post/open/api/forum/post/v2/recent'
+_THS_DISC_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'Host': 't.10jqka.com.cn',
+    'Accept': 'application/json, text/javascript, */*; q=0.01',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Referer': 'https://t.10jqka.com.cn/',
+    'sec-ch-ua': '"Not(A:Brand";v="24", "Chromium";v="122"',
+    'sec-ch-ua-mobile': '?0', 'sec-ch-ua-platform': '"macOS"',
+    'Sec-Fetch-Dest': 'document', 'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'none', 'Sec-Fetch-User': '?1', 'Upgrade-Insecure-Requests': '1',
+}
+# 直连（不经过系统代理，与 Node fetch 同效；代理曾阻断 axios/部分请求）
+_THS_DISC_PROXIES = {'http': None, 'https': None}
+
+
+def _strip_ths_tags(s):
+    """剥离同花顺帖文内联标签与 HTML 实体，返回纯文本（与 hot_topics_collect.py 同款）。"""
+    if not s:
+        return ''
+    t = str(s)
+    for k, v in {'&amp;': '&', '&nbsp;': ' ', '&lt;': '<', '&gt;': '>',
+                 '&quot;': '"', '&#39;': "'", '&ldquo;': '"', '&rdquo;': '"',
+                 '&hellip;': '…'}.items():
+        t = t.replace(k, v)
+    t = re.sub(r'<[^>]+>', '', t)
+    return t.strip()
+
+
+def _ths_market_id(code):
+    """同花顺讨论 API market_id：沪市(6 开头)=17，深市=33。"""
+    c = str(code or '').strip()
+    return 17 if c.startswith('6') else 33
+
+
+def fetch_stock_discussion(symbol, name='', max_pages=5):
+    """同花顺个股讨论（多页聚合，绕过东财股吧验证码）。
+    返回 {ok, posts:[{id,content,ctime,reply,like,share,forward,isV}], pageCount, count, note}。
+      · ctime 为 epoch 秒（时间衰减权重用）
+      · user.is_v 为认证大V（KOL 近似；同花顺无粉丝字段）
+      · 单页最多 15 条（page_size>15 接口返回 0），4~5 页覆盖近期讨论约 50~60 条
+    任一异常 → ok=false 优雅降级，不阻塞其他子模块。"""
+    if not symbol or not str(symbol).isdigit() or len(str(symbol)) != 6:
+        return {'ok': False, 'posts': [], 'pageCount': 0,
+                'note': '缺少有效 6 位股票代码，跳过同花顺讨论'}
+    code = str(symbol)
+    market_id = _ths_market_id(code)
+    posts = []
+    seen = set()
+    page_count = 0
+    last_err = None
+    for page in range(1, max_pages + 1):
+        params = {'page': page, 'page_size': 15, 'pid': 0, 'time': 0, 'sort': 'publish',
+                  'code': code, 'market_id': market_id}
+        try:
+            r = requests.get(_THS_DISC_URL, params=params, headers=_THS_DISC_HEADERS,
+                             timeout=12, proxies=_THS_DISC_PROXIES)
+            if r.status_code != 200:
+                last_err = f'HTTP {r.status_code}'
+                break
+            j = r.json()
+            feed = (j.get('data') or {}).get('feed') or []
+            if not feed:
+                break
+            page_count += 1
+            for p in feed:
+                content = _strip_ths_tags(p.get('content', ''))
+                if not content:
+                    continue
+                pid = p.get('pid') or p.get('id')
+                if not pid:
+                    continue
+                key = f'{code}_{pid}'
+                if key in seen:
+                    continue
+                seen.add(key)
+                stat = p.get('stat') or {}
+                user = p.get('user') or {}
+                try:
+                    ctime = int(p.get('ctime', 0) or 0)
+                except Exception:
+                    ctime = 0
+                try:
+                    reply = int(stat.get('reply', 0) or 0)
+                except Exception:
+                    reply = 0
+                try:
+                    like = int(stat.get('like', 0) or 0)
+                except Exception:
+                    like = 0
+                try:
+                    share = int(stat.get('share', 0) or 0)
+                except Exception:
+                    share = 0
+                try:
+                    forward = int(stat.get('forward', 0) or 0)
+                except Exception:
+                    forward = 0
+                posts.append({
+                    'id': key,
+                    'content': content,
+                    'ctime': ctime,
+                    'reply': reply,
+                    'like': like,
+                    'share': share,
+                    'forward': forward,
+                    'isV': bool(user.get('is_v')),
+                })
+        except Exception as e:
+            last_err = str(e)[:80]
+            break
+    if not posts:
+        return {'ok': False, 'posts': [], 'pageCount': page_count,
+                'error': last_err or '空结果',
+                'note': f'同花顺讨论({symbol})无有效帖：{last_err or "空结果"}'}
+    return {
+        'ok': True,
+        'posts': posts,
+        'pageCount': page_count,
+        'count': len(posts),
+        'note': f'同花顺讨论({name or symbol})·近{page_count}页共{len(posts)}帖',
+    }
+
+
 def _try_dates(n=5):
     """涨跌停池在非交易日为空，向前回溯 n 个交易日。"""
     out = []
@@ -651,13 +795,14 @@ def main():
     name = (args.name or '').strip()
 
     result = {
-        'source': '东方财富·涨跌停池/融资余额/个股新闻/股吧舆情 + 同花顺/雪球公开热度榜',
+        'source': '东方财富·涨跌停池/融资余额/个股新闻/股吧舆情 + 同花顺/雪球公开热度榜 + 同花顺个股讨论',
         'date': _now_str(),
         'breadth': None,
         'margin': None,
         'newsSentiment': None,
         'marketSentiment': None,
         'discussionHeat': None,
+        'stockDiscussion': None,
         'subOkCount': 0,
     }
 
@@ -709,7 +854,16 @@ def main():
         result['discussionHeat'] = {'ok': False, 'signal': 0.0,
                                       'error': '缺少有效 6 位股票代码，跳过股吧热度'}
 
-    result['subOkCount'] = sum(1 for k in ('breadth', 'margin', 'newsSentiment', 'marketSentiment', 'discussionHeat')
+    # 6) 同花顺个股讨论（替代东财股吧个股讨论，绕过验证码墙；供个股舆情模块消费）
+    if symbol and symbol.isdigit() and len(symbol) == 6:
+        try:
+            result['stockDiscussion'] = fetch_stock_discussion(symbol, name)
+        except Exception as e:
+            result['stockDiscussion'] = {'ok': False, 'posts': [], 'error': str(e)}
+    else:
+        result['stockDiscussion'] = {'ok': False, 'posts': [], 'error': '缺少有效 6 位股票代码'}
+
+    result['subOkCount'] = sum(1 for k in ('breadth', 'margin', 'newsSentiment', 'marketSentiment', 'discussionHeat', 'stockDiscussion')
                                if result[k] and result[k].get('ok'))
 
     # 全部失败
@@ -720,6 +874,7 @@ def main():
             'newsSentiment': result['newsSentiment'].get('error'),
             'marketSentiment': result['marketSentiment'].get('error'),
             'discussionHeat': result['discussionHeat'].get('error'),
+            'stockDiscussion': result['stockDiscussion'].get('error'),
         }}, ensure_ascii=False))
         sys.exit(1)
 
