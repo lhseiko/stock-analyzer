@@ -31,10 +31,12 @@ def main():
         for _, row in df.iterrows():
             name = str(row['板块']).strip()
             change = float(row['涨跌幅']) if pd_notna(row['涨跌幅']) else 0.0
-            # 总成交额原始单位：元 → 转 亿元（1 亿 = 1e8）
+            # 总成交额单位自适应：akshare 1.18.x 该字段已是「亿元」，历史版本为「元」。
+            # 按量级判别（<1e6 视为亿元，否则按元换算），避免单位错配导致成交额恒为 0（曾致行业拥挤度失效）。
             amount_raw = row['总成交额'] if pd_notna(row['总成交额']) else 0.0
             try:
-                amount_yi = float(amount_raw) / 1e8
+                raw = float(amount_raw)
+                amount_yi = raw if raw < 1e6 else raw / 1e8
             except (ValueError, TypeError):
                 amount_yi = 0.0
             up = int(row['上涨家数']) if pd_notna(row['上涨家数']) else 0

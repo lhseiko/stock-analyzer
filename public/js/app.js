@@ -70,7 +70,7 @@ const App = {
     this.loadIndexPeTrend();
     // 首页·大盘技术分析（上证/深证/创业板指 六步技术面推演）
     this.loadMarketTechnical();
-    // 顶栏大盘行情状态栏（上证/深证/创业板/科创50/北证50/恒生/纳斯达克/道琼斯）
+    // 顶栏大盘行情状态栏（上证/深证/创业板/科创50/日经指数/恒生/纳斯达克/道琼斯）
     this.loadTopbarIndices();
     // 首页「今日财经热点」卡片
     if (typeof HomeNews !== 'undefined') {
@@ -154,8 +154,6 @@ const App = {
     const btn = document.getElementById('searchBtn');
 
     btn.addEventListener('click', () => this.handleSearch());
-    const aiHolderBtn = document.getElementById('aiHolderBtn');
-    if (aiHolderBtn) aiHolderBtn.addEventListener('click', () => this.loadAIHolders(true, this._aiHolderMode || 'web'));
     input.addEventListener('keydown', e => {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         this.navigateSearch(e.key === 'ArrowDown' ? 1 : -1, e);
@@ -1215,7 +1213,12 @@ const App = {
           <div class="sd-sub-detail">${this._escapeHtml(sf.detail || '')}</div>
         </div>`;
       }).join('');
-      return `<div class="sd-sub-grid">${cards}</div>`;
+      // 含子维度的因子：顶部一行「汇总取值」+ 子维度卡片网格 + 底部「小字来源/日期标注」
+      const summary = (f.value != null && String(f.value).trim() !== '')
+        ? `<div class="sd-factor-val-summary">${this._escapeHtml(String(f.value))}</div>` : '';
+      const caption = f.caption
+        ? `<div class="sd-factor-caption">${this._escapeHtml(f.caption)}</div>` : '';
+      return `${summary}<div class="sd-sub-grid">${cards}</div>${caption}`;
     }
     return `<div class="sd-factor-detail">${this._escapeHtml(f.detail)}</div>
       <div class="sd-factor-val">取值：${this._escapeHtml(String(f.value))}</div>`;
@@ -3171,8 +3174,6 @@ const App = {
     if (typeof ShareholderCharts !== 'undefined') {
       ShareholderCharts.renderAll(container, data);
     }
-    // 股东户数 AI 解读卡片：本地 F10 有数据→本地模型解读；无数据→联网补充
-    this.setupAIHolder(data);
   },
 
   // ---- Watchlist ----
@@ -3250,14 +3251,6 @@ const App = {
     if (aiDate) aiDate.textContent = '';
     if (aiRefresh) aiRefresh.style.display = 'none';
     this.aiAugmentSymbol = null;
-
-    // 股东户数 AI 补充卡片：复位，避免残留上一只股票数据
-    const ahBody = document.getElementById('aiHolderBody');
-    const ahDate = document.getElementById('aiHolderDate');
-    const ahBtn = document.getElementById('aiHolderBtn');
-    if (ahBody) ahBody.innerHTML = '<div class="ai-empty">正在检查已存的股东户数资料…</div>';
-    if (ahDate) ahDate.textContent = '';
-    if (ahBtn) ahBtn.style.display = '';
 
     // 短期判断卡片的「财报资料同步」提示：复位，避免残留上一只股票
     const sdSync = document.getElementById('samedayReportSync');
@@ -4788,78 +4781,6 @@ const App = {
     `;
   },
 
-  // 股东户数：本地 F10 有数据→AI 本地模型解读（不联网）；无数据→AI 联网补充
-  setupAIHolder(data) {
-    const body = document.getElementById('aiHolderBody');
-    const dateEl = document.getElementById('aiHolderDate');
-    const btn = document.getElementById('aiHolderBtn');
-    if (!body) return;
-    const hasLocal = !!(data && data.holderCountTrend && data.holderCountTrend.length > 0);
-    if (hasLocal) {
-      this._aiHolderMode = 'local';
-      body.innerHTML = '<div class="ai-note">✅ 本地 F10 已含股东户数走势，可点击下方按钮用 AI 本地模型解读趋势（不联网）。</div>';
-      if (dateEl) dateEl.textContent = '';
-      if (btn) { btn.style.display = ''; btn.textContent = '✨ AI 本地解读'; }
-      this.loadAIHolders(false, 'local');
-      return;
-    }
-    this._aiHolderMode = 'web';
-    if (btn) { btn.style.display = ''; btn.textContent = '✨ AI 联网补充'; }
-    body.innerHTML = '<div class="ai-empty">本地 F10 未提供股东户数，可点击下方按钮让 AI 联网补充（搜索一次后长期留存）。</div>';
-    this.loadAIHolders(false, 'web');
-  },
-  async loadAIHolders(force, mode) {
-    const symbol = this.currentSymbol;
-    if (!symbol) return;
-    const body = document.getElementById('aiHolderBody');
-    const dateEl = document.getElementById('aiHolderDate');
-    if (!body) return;
-    mode = mode || this._aiHolderMode || 'web';
-    if (!force) {
-      try {
-        const resp = await fetch(`/api/ai/holders/${encodeURIComponent(symbol)}`);
-        const c = await resp.json();
-        if (this.currentSymbol !== symbol) return;
-        if (c.success && (c.holderCount || c.trend) && c.mode === mode) { this.renderAIHolder(c); return; }
-      } catch {}
-    }
-    body.innerHTML = mode === 'local'
-      ? '<div class="ai-empty">正在用 AI 本地模型解读股东户数…</div>'
-      : '<div class="ai-empty">正在联网获取股东户数…</div>';
-    try {
-      const resp = await fetch('/api/ai/holders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol, stockName: this.currentData?.name || '', mode }),
-      });
-      const d = await resp.json();
-      if (this.currentSymbol !== symbol) return;
-      if (d.noKey) { body.innerHTML = '<div class="ai-empty">未配置 AI Key，请在「⚙️ AI 设置」中粘贴通义千问 Key 后重试。</div>'; return; }
-      if (!d.success && d.error) { body.innerHTML = '<div class="ai-empty">获取失败：' + this.escapeHtml(d.error) + '</div>'; return; }
-      this.renderAIHolder(d);
-    } catch (e) {
-      body.innerHTML = '<div class="ai-empty">获取失败：' + this.escapeHtml(e.message) + '</div>';
-    }
-  },
-  renderAIHolder(d) {
-    const body = document.getElementById('aiHolderBody');
-    const dateEl = document.getElementById('aiHolderDate');
-    if (!body) return;
-    const cnt = d.holderCount ? Number(d.holderCount).toLocaleString('zh-CN') + ' 户' : '未知';
-    const isLocal = d.mode === 'local';
-    const note = isLocal
-      ? '✅ 基于本地 F10 股东户数数据，由 AI 本地模型解读（未联网，数据来源：东方财富 F10）。'
-      : '⚠️ 该数据为 AI 联网检索的估计值，仅供参考，请以交易所/公司公告为准。';
-    body.innerHTML = `<div class="ai-holder-result">
-      <div class="aih-count">${cnt} <span class="aih-asof">（截至 ${this.escapeHtml(d.asOf || '—')}）</span></div>
-      ${d.trend ? `<div class="aih-trend">${this.escapeHtml(d.trend)}</div>` : ''}
-      ${d.source ? `<div class="aih-source">来源：${this.escapeHtml(d.source)}</div>` : ''}
-      <div class="aih-note${isLocal ? ' aih-note-local' : ''}">${note}</div>
-    </div>`;
-    if (dateEl) dateEl.textContent = d.date ? '更新于 ' + d.date : '';
-  },
-
-
   escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -5083,51 +5004,58 @@ const App = {
   },
 
   // 近一周涨跌前五高频板块提醒（红涨绿跌：红=上涨，绿=下跌）
-  // 将 7日涨幅最大 / 7日跌幅最大 各追加到行业板块涨幅前5 / 跌幅前5 的 .mo-tiles 末尾，
-  // 与 Top5 卡片在同一行展示，大小样式与 .mo-tile 完全一致。
+  // 数据缓存到 this.lastSectorReminder，由 renderMarketOverview 同步渲染到
+  // 涨幅/跌幅前5 卡片末尾的 .mo-tiles-reminder 槽位；本函数只负责拉取最新数据并就地更新槽位，
+  // 不再用 insertAdjacentHTML('beforeend') 追加，避免 60s 定时整块 innerHTML 重渲染时卡片丢失/重复。
   async loadSectorRankReminder() {
-    const upTiles = document.querySelector('.mo-up .mo-tiles');
-    const downTiles = document.querySelector('.mo-down .mo-tiles');
-    if (!upTiles && !downTiles) return;
     try {
       const resp = await fetch('/api/sector-rank-reminder');
       const data = await resp.json();
-      const up = data && data.featuredUp;
-      const down = data && data.featuredDown;
-      if (!data || data.success === false || (!up && !down)) return;
-
-      const renderTile = (s, kind) => {
-        if (!s) return '';
-        const dir = kind === 'up' ? 'up' : 'down';
-        const label = kind === 'up' ? '7日涨幅最大' : '7日跌幅最大';
-        const chg = s.weekChgPct == null ? '—' : (s.weekChgPct >= 0 ? '+' : '') + s.weekChgPct + '%';
-        return `<div class="mo-tile ${dir}">
-          <div class="mo-name">${label}</div>
-          <div class="mo-price">${this.escapeHtml(s.name)}</div>
-          <div class="mo-chg">${chg}</div>
-        </div>`;
-      };
-
-      if (up && upTiles) upTiles.insertAdjacentHTML('beforeend', renderTile(up, 'up'));
-      if (down && downTiles) downTiles.insertAdjacentHTML('beforeend', renderTile(down, 'down'));
+      if (!data || data.success === false) return;
+      this.lastSectorReminder = data;
+      this.updateSectorReminderDom();
     } catch (e) {
       console.error('loadSectorRankReminder error:', e);
     }
   },
 
+  // 从缓存生成单个槽位（up/down）的提醒卡片 HTML
+  buildReminderHtml(slot) {
+    const d = this.lastSectorReminder;
+    if (!d || d.success === false) return '';
+    const s = slot === 'up' ? d.featuredUp : d.featuredDown;
+    if (!s) return '';
+    const dir = slot === 'up' ? 'up' : 'down';
+    const label = slot === 'up' ? '7日涨幅最大' : '7日跌幅最大';
+    const chg = s.weekChgPct == null ? '—' : (s.weekChgPct >= 0 ? '+' : '') + s.weekChgPct + '%';
+    const badge = s.swLevel ? `<span class="mo-sw-level">${this.escapeHtml(s.swLevel)}</span>` : '';
+    return `<div class="mo-tile ${dir}">
+      <div class="mo-name">${label}</div>
+      <div class="mo-price">${this.escapeHtml(s.name)}${badge}</div>
+      <div class="mo-chg">${chg}</div>
+    </div>`;
+  },
+
+  // 仅就地更新两个提醒槽位（replace，不追加），与 renderMarketOverview 的整块刷新解耦
+  updateSectorReminderDom() {
+    ['up', 'down'].forEach(slot => {
+      const el = document.querySelector(`.mo-tiles-reminder[data-slot="${slot}"]`);
+      if (el) el.innerHTML = this.buildReminderHtml(slot);
+    });
+  },
+
   // 首页·行业板块资金流向（主力净流入/流出前五 + 近5日最大）
+  // 数据缓存到 this.lastCapitalFlow，由 renderMarketOverview 同步渲染进 #moCapitalFlow 容器；
+  // 本函数只负责拉取最新数据并就地 replace 该容器，不再整块追加，杜绝 60s 定时刷新导致的丢失/重复。
   async loadSectorCapitalFlow() {
-    const stack = document.querySelector('#marketOverview .mo-stack');
-    if (!stack) return;
-    // 若已渲染则避免重复（刷新按钮会清空后重跑）
-    if (stack.querySelector('.mo-capital-flow')) return;
     if (this._scfLoading) return;
     this._scfLoading = true;
     try {
       const resp = await fetch('/api/sector-capital-flow');
       const data = await resp.json();
       if (!data || data.success === false) return;
-      this.renderSectorCapitalFlow(data, stack);
+      this.lastCapitalFlow = data;
+      this.updateCapitalFlowDom();
     } catch (e) {
       console.error('loadSectorCapitalFlow error:', e);
     } finally {
@@ -5135,18 +5063,21 @@ const App = {
     }
   },
 
-  renderSectorCapitalFlow(data, stack) {
+  // 由缓存生成行业资金流向卡片 HTML（与 renderMarketOverview 共用，避免重复拼接逻辑）
+  buildCapitalFlowHtml(data) {
+    if (!data) return '';
     const fmtPct = (n) => (n === null || n === undefined || isNaN(n)) ? '—' : (n >= 0 ? '+' : '') + n.toFixed(2) + '%';
     const fmtNet = (n) => {
       if (n === null || n === undefined || isNaN(n)) return '—';
       return (n >= 0 ? '+' : '') + Number(n).toFixed(2) + '亿';
     };
+    const swBadge = (it) => it && it.swLevel ? `<span class="mo-sw-level">${this.escapeHtml(it.swLevel)}</span>` : '';
     const renderTile = (it, dirOverride, netLabel) => {
       if (!it) return '';
       const dir = dirOverride || (it.mainNet > 0 ? 'up' : (it.mainNet < 0 ? 'down' : 'flat'));
       const sub = it.leader ? `领涨：${this.escapeHtml(it.leader)}` : `${netLabel || '主力净流'}：${fmtNet(it.mainNet)}`;
       return `<div class="mo-tile ${dir}">
-        <div class="mo-name">${this.escapeHtml(it.name)}</div>
+        <div class="mo-name">${this.escapeHtml(it.name)}${swBadge(it)}</div>
         <div class="mo-price">${this.escapeHtml(sub)}</div>
         <div class="mo-chg">${fmtPct(it.changePct)}</div>
       </div>`;
@@ -5162,7 +5093,7 @@ const App = {
       const dir = it.mainNet > 0 ? 'up' : (it.mainNet < 0 ? 'down' : 'flat');
       return `<div class="mo-tile ${dir}">
         <div class="mo-name">${this.escapeHtml(label)}</div>
-        <div class="mo-price">${this.escapeHtml(it.name)}</div>
+        <div class="mo-price">${this.escapeHtml(it.name)}${swBadge(it)}</div>
         <div class="mo-chg">${fmtNet(it.mainNet)}</div>
       </div>`;
     };
@@ -5181,13 +5112,16 @@ const App = {
     };
     // 20260909o：新增散户（小单）净流入/流出前五两行——与主力卡同模板，数据源同接口小单口径
     const RETAIL_NOTE = '散户净流入 = 小单净流入（单笔＜2万股或＜4万元的散户口径）';
-    const html = renderRow(data.todayInflowTop5, '主力资金净流入前五（含暗盘）', data.fiveDayMaxInflow, 'mo-capital-in') +
+    return renderRow(data.todayInflowTop5, '主力资金净流入前五（含暗盘）', data.fiveDayMaxInflow, 'mo-capital-in') +
       renderRow(data.todayOutflowTop5, '主力资金净流出前五（含暗盘）', data.fiveDayMaxOutflow, 'mo-capital-out') +
       (data.retailInflowTop5 ? renderRow(data.retailInflowTop5, '散户（小单）资金净流入前五', data.retailFiveDayMaxInflow, 'mo-capital-in', RETAIL_NOTE, '散户净流') : '') +
       (data.retailOutflowTop5 ? renderRow(data.retailOutflowTop5, '散户（小单）资金净流出前五', data.retailFiveDayMaxOutflow, 'mo-capital-out', RETAIL_NOTE, '散户净流') : '');
-    const anchor = document.getElementById('moCapitalFlowAnchor');
-    if (anchor) anchor.insertAdjacentHTML('beforebegin', html);
-    else stack.insertAdjacentHTML('beforeend', html);
+  },
+
+  // 仅就地更新资金流向容器（replace，不追加），消除整块刷新导致的卡片丢失/重复
+  updateCapitalFlowDom() {
+    const el = document.getElementById('moCapitalFlow');
+    if (el && this.lastCapitalFlow) el.innerHTML = this.buildCapitalFlowHtml(this.lastCapitalFlow);
   },
 
   // 首页大盘/板块 AI 滚动解读
@@ -5240,8 +5174,8 @@ const App = {
     // 四个分组各自占一行（国内股指 / 涨幅前5 / 跌幅前5 / 美国股指），组内横向排列
     const groups = [
       { key: 'cn', country: '中国指数', flag: '🇨🇳', cls: 'mo-cn', aiKey: 'cn' },
-      { key: 'sectorsUp', country: '行业板块涨幅前5', flag: '📈', cls: 'mo-up', aiKey: 'gainers', source: data.sectorSource, isEm: data.sectorIsEastmoney },
-      { key: 'sectorsDown', country: '行业板块跌幅前5', flag: '📉', cls: 'mo-down', aiKey: 'losers', source: data.sectorSource, isEm: data.sectorIsEastmoney },
+      { key: 'sectorsUp', country: '行业板块涨幅前5', flag: '📈', cls: 'mo-up', aiKey: 'gainers', source: data.panelSource || data.sectorSource, isEm: data.panelIsEastmoney != null ? data.panelIsEastmoney : data.sectorIsEastmoney, reminderSlot: 'up' },
+      { key: 'sectorsDown', country: '行业板块跌幅前5', flag: '📉', cls: 'mo-down', aiKey: 'losers', source: data.panelSource || data.sectorSource, isEm: data.panelIsEastmoney != null ? data.panelIsEastmoney : data.sectorIsEastmoney, reminderSlot: 'down' },
       { key: 'us', country: '美国指数', flag: '🇺🇸', cls: 'mo-us', aiKey: null },
     ];
     const fmt = (n) => (n === null || n === undefined || isNaN(n)) ? '--' : n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -5254,6 +5188,7 @@ const App = {
       ? `<div class="mo-note">ℹ️ ${this.escapeHtml(data.sectorNote)}</div>`
       : '';
     // 单个 group 渲染为可复用的函数
+    const swBadge = (it) => it && it.swLevel ? `<span class="mo-sw-level">${this.escapeHtml(it.swLevel)}</span>` : '';
     const renderGroup = (g) => {
       const items = (data[g.key] || []).map(it => {
         const dir = (!it.unavailable && it.changePct > 0) ? 'up' : ((!it.unavailable && it.changePct < 0) ? 'down' : 'flat');
@@ -5263,7 +5198,7 @@ const App = {
           else if (it.upCount != null && it.downCount != null) subInfo = `涨${it.upCount} / 跌${it.downCount}`;
         }
         return `<div class="mo-tile ${dir}">
-          <div class="mo-name">${it.name || it.code}</div>
+          <div class="mo-name">${it.name || it.code}${swBadge(it)}</div>
           <div class="mo-price">${subInfo}</div>
           <div class="mo-chg">${fmtPct(it.changePct)}</div>
         </div>`;
@@ -5281,22 +5216,26 @@ const App = {
         ? `<span class="mo-count">涨${data.sectorUpCount} · 跌${data.sectorDownCount} · 平${data.sectorFlatCount}</span>`
         : '';
       const srcTag = g.source ? `<span class="mo-src${g.isEm ? '' : ' mo-src-warn'}">${g.source}</span>${cntTag}` : '';
+      // 提醒卡片槽位：由 renderMarketOverview 同步从缓存生成，整块刷新时不会丢失
+      const reminderSlot = g.reminderSlot ? `<div class="mo-tiles-reminder" data-slot="${g.reminderSlot}">${this.buildReminderHtml(g.reminderSlot)}</div>` : '';
       return `${aiBar}<div class="mo-row ${g.cls}">
         <div class="mo-row-head"><span class="mo-flag">${g.flag}</span><span class="mo-row-name">${g.country}</span>${srcTag}</div>
-        <div class="mo-tiles">${body}</div>
+        <div class="mo-tiles">${body}${reminderSlot}</div>
       </div>`;
     };
     // 中国指数 / 行业板块涨幅前5 / 行业板块跌幅前5 / 美国指数，各自占一行；
-    // 近一周高频板块（7日涨幅/跌幅最大）由 loadSectorRankReminder 在 .mo-tiles 末尾追加。
+    // 近一周高频板块（7日涨幅/跌幅最大）由 buildReminderHtml 同步渲染进 .mo-tiles-reminder 槽位；
+    // 行业资金流向由 buildCapitalFlowHtml 同步渲染进 #moCapitalFlow 容器（均来自缓存，整块刷新不再丢失）。
     const cnHtml = renderGroup(groups.find(g => g.key === 'cn'));
     const usHtml = renderGroup(groups.find(g => g.key === 'us'));
     const sectorsUpHtml = renderGroup(groups.find(g => g.key === 'sectorsUp'));
     const sectorsDownHtml = renderGroup(groups.find(g => g.key === 'sectorsDown'));
+    const capitalFlowHtml = this.lastCapitalFlow ? this.buildCapitalFlowHtml(this.lastCapitalFlow) : '';
     const html = warnHtml + noteHtml + '<div class="mo-stack">' +
       cnHtml +
       sectorsUpHtml +
       sectorsDownHtml +
-      '<div id="moCapitalFlowAnchor"></div>' +
+      `<div id="moCapitalFlow">${capitalFlowHtml}</div>` +
       usHtml +
       '</div>';
     document.getElementById('marketOverview').innerHTML = html;

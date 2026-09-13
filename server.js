@@ -40,9 +40,11 @@ const { fetchValuationTTM } = require('./lib/eastmoneyValuation');
 const { getSectorCapitalFlow, warmup: warmupSectorCapitalFlow } = require('./lib/sectorCapitalFlow'); // 20260827g：行业板块资金流向（主力+散户小单 净流入/流出前五 + 近5日最大）20260909o纯Node化提速
 const hotTopics = require('./lib/hotTopics'); // 20260827c：个股近期热点（AI 联网，异动归因/网络热议）
 const hotTopicsWeekly = require('./lib/hotTopicsWeekly'); // 20260909m：板块舆情热度周榜（替代旧涨停池逻辑）
-const { getGlobalSentiment, interpretReport, getFundIndustryMatrix } = require('./lib/cnscraperAdapter');
+const { getGlobalSentiment, interpretReport } = require('./lib/cnscraperAdapter');
+// 20260912a：基金行业配置改为「全市场大部分基金 · 前十大重仓股 · 持仓市值加总排名」
+const fundMatrix = require('./lib/fundIndustryMatrix');
 const mx = require('./lib/miaoxiang');
-const { augmentStock, analyzeAspects, analyzeProducts, analyzeCompany, analyzeSupplyChain, analyzeShareholdersAI, analyzeMarketOverview, analyzeIndustryIndex, analyzeResearchReports, analyzeAnnouncements, analyzeEarningsReport, analyzeValuation, readIndustryIndexCache, loadConfig, saveConfig, publicConfig, readCache, readEarningsCache } = require('./lib/aiAugment');
+const { augmentStock, analyzeAspects, analyzeProducts, analyzeCompany, analyzeSupplyChain, analyzeMarketOverview, analyzeIndustryIndex, analyzeResearchReports, analyzeAnnouncements, analyzeEarningsReport, analyzeValuation, readIndustryIndexCache, loadConfig, saveConfig, publicConfig, readCache, readEarningsCache } = require('./lib/aiAugment');
 const docStore = require('./lib/docStore');
 const reportSync = require('./lib/reportSync'); // 20260821f：财报事件→资料库自动同步
 // 20260823p：全市场情绪指数 + 市场情绪拐点检测（启发式检测器 + 自适应学习）
@@ -56,6 +58,7 @@ const factStore = require('./lib/factStore');
 const aiRoutes = require('./routes/aiRoutes');
 const docsRoutes = require('./routes/docsRoutes');
 const eventRoutes = require('./routes/eventRoutes'); // 20260907a：三联动·事件驱动权重引擎
+const dedicatedFactorRoutes = require('./routes/dedicatedFactor'); // 20260911：专属因子路由
 // Python 解释器探测器移至 lib/pyRuntime.js（AI 行业指数 / 研报下载 / 板块拥挤度回补共用）
 const { findPython } = require('./lib/pyRuntime');
 
@@ -74,7 +77,7 @@ app.use('/api', (req, res, next) => {
 
 // 入口 HTML 强制带版本号重定向：旧服务器曾允许缓存 index.html，浏览器可能一直用旧副本。
 // 每次访问 / 或 /index.html 都重定向到带 ?v= 的版本，确保一定拉取最新前端（无需用户手动硬刷新）。
-const APP_VERSION = '20260909o'; // 20260909o：板块资金流向纯Node化提速+新增散户小单净流入/流出前五卡；…m板块舆情热度周榜→n行业拥挤度收盘补写守卫（仅后端未升版）
+const APP_VERSION = '20260913c'; // 20260913c：删除股东分析页「🏛️ 机构持仓数量变化」模块（该卡由「十大股东中的机构户数」按报告期统计，信息价值低且与「机构持仓变化」重复）——前端卡片/渲染/小结项与后端 fetchInstitutionTrend + institutionTrend 字段一并移除（所有个股生效）；20260913b：删除「股东户数 AI 解读」全链路；股东分析各卡片补数据来源+报告期；修复十大股东取到临时公告日（长江电力 2026-08-22 仅1行）导致最新期不是 6-30 的 bug（只认季度末）；机构持仓变化图默认显示最近12期；20260912a：首页「基金行业配置名单（全市场）」重建——改为全市场权益类基金（股票/混合/指数/QDII，按母基金去重 ~1万只）最新报告期前十大重仓股，按【持仓市值(万元)加总】排名；后台增量采集+磁盘缓存(按季度)+进度展示（替代旧「头部15只基金」矩阵）；20260911d：修复首页行业卡片（7日涨跌提醒/资金流向）在60s定时整块 innerHTML 重渲染后丢失/重复的竞态——改为同步从缓存渲染进 .mo-tiles-reminder 槽位与 #moCapitalFlow 容器，异步 fetcher 仅就地 replace；20260911c：首页行业卡片小字标注申万层级（一级/二级/三级）；20260911b：顶栏大盘行情状态栏将北证50替换为日经指数（东方财富 100.N225）；20260911a：首页行业板块涨/跌幅前5 改用东方财富口径
 app.use((req, res, next) => {
   if ((req.path === '/' || req.path === '/index.html') && req.query.v !== APP_VERSION) {
     return res.redirect(`/index.html?v=${APP_VERSION}`);
@@ -235,6 +238,26 @@ app.get('/api/home-hot-topics', async (req, res) => {
   } catch (err) {
     console.error('Home hot topics error:', err);
     res.json({ ok: false, status: 'error', updated: new Date().toISOString(), rows: [], message: '周榜计算失败：' + err.message });
+  }
+});
+
+// 原油主连冲击 · 诊断接口（突发因子·轻微事件变量，20260911；参考对象由布伦特原油期货改为原油主连）
+app.get('/api/event/oil-shock', async (req, res) => {
+  try {
+    const eventEngine = require('./lib/eventEngine');
+    res.json({ ok: true, ...eventEngine.getOilShockStatus() });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+app.post('/api/event/oil-shock/refresh', async (req, res) => {
+  try {
+    const eventEngine = require('./lib/eventEngine');
+    const force = !!(req.query.force || (req.body && req.body.force));
+    await eventEngine.refreshCrudeShock(force);
+    res.json({ ok: true, status: eventEngine.getOilShockStatus() });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
@@ -475,7 +498,7 @@ app.get('/api/analysis/:symbol', async (req, res) => {
   }
 });
 
-// 股东分析（issue5）：股东户数走势 + 十大股东 + 机构持仓数量变化
+// 股东分析（issue5）：股东户数走势 + 机构持仓变化 + 十大股东 + 基金持股
 app.get('/api/shareholders/:symbol', async (req, res) => {
   try {
     const symbol = req.params.symbol;
@@ -608,17 +631,44 @@ app.get('/api/sector-trend/:symbol', async (req, res) => {
   }
 });
 
-// 基金重仓行业配置矩阵（头部基金最新季报前 10 重仓股 → 行业 × 基金 矩阵）
-// 数据源：akshare 混合型基金按近 1 年业绩头部 N 只 + industryAnalysis 股票→行业映射
+// 基金行业配置名单（全市场权益类基金 · 前十大重仓股 · 按持仓市值加总排名）
+// 数据源：东方财富公开接口（基金列表 + 各基金最新报告期前十大重仓股 + 个股行业）
+// 说明：全量约 1 万只母基金，首次采集需十几分钟 → 后台增量采集 + 磁盘缓存（按季度）
 app.get('/api/fund-industry-matrix', async (req, res) => {
   try {
-    const topN = Math.max(1, Math.min(parseInt(req.query.topN || '15', 10) || 15, 30));
-    const data = await getFundIndustryMatrix({ topN });
+    const minFunds = Math.max(0, parseInt(req.query.minFunds || '0', 10) || 0);
+    const data = fundMatrix.getFundIndustryRanking({ minFunds });
+    // 首次访问且尚无缓存 → 自动启动后台采集（不阻塞本次响应）
+    if (data.coverage.covered === 0 && !data.progress.running) {
+      fundMatrix.startCrawl({}).catch(() => {});
+    }
     res.json({ success: true, ...data });
   } catch (err) {
     console.error('[FundMatrix] error:', err.message);
     res.status(500).json({ success: false, error: err.message });
   }
+});
+
+// 触发/继续/重建基金持仓采集（force=1 全量重采）
+app.post('/api/fund-industry-matrix/crawl', async (req, res) => {
+  try {
+    const force = req.query.force === '1' || (req.body && req.body.force === true);
+    const r = await fundMatrix.startCrawl({ force });
+    res.json({ success: true, ...r });
+  } catch (err) {
+    console.error('[FundMatrix] crawl error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 采集进度（供前端轮询）
+app.get('/api/fund-industry-matrix/progress', (req, res) => {
+  res.json({ success: true, ...fundMatrix.getCrawlStatus(), quarter: fundMatrix.getQuarterStatus() });
+});
+
+// 自然季度更新状态（目标报告期 / 是否已披露 / 是否已完成 / 上次与下次检查时间）
+app.get('/api/fund-industry-matrix/quarter', (req, res) => {
+  res.json({ success: true, ...fundMatrix.getQuarterStatus() });
 });
 
 // 板块涨跌停占比原始数据（板块内涨停/跌停家数占比；供调试与透明展示）
@@ -731,24 +781,32 @@ app.put('/api/watchlist', (req, res) => {
 app.use(aiRoutes);
 // 20260907a：三联动·事件驱动路由（活跃事件 / 扫描 / 配置 / 暂停 / 改分级 / 重算）
 app.use(eventRoutes);
+app.use(dedicatedFactorRoutes); // 20260911：专属因子路由
 
 // 个股市值历史走势（亿元，日频），供行业分析页叠加当前股票市值双坐标轴
-// 复用 lib/eastmoneyValuation.fetchValuationTTM 的 daily 序列（TOTAL_MARKET_CAP），保证与估值模块同源（规则一）
+// 复用 lib/eastmoneyValuation.fetchValuationTTM 的日频序列（TOTAL_MARKET_CAP），保证与估值模块同源（规则一）
 app.get('/api/stock-market-cap-history/:symbol', async (req, res) => {
   try {
     const symbol = String(req.params.symbol || '').trim();
     if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL' });
     const val = await fetchValuationTTM(symbol);
-    if (!val || !Array.isArray(val.daily) || val.daily.length === 0) {
+    // 20260911：优先用「全量日频序列」dailyAll（不过滤 PE 正负）。此前用 daily 时，PE_TTM 为负的
+    // 亏损股（如 688660 电气风电，2023-02-27 起 PE 转负）整段被 pe>0 过滤掉 → 市值线缺失；
+    // dailyAll 保留全部交易日。兼容旧缓存对象（无 dailyAll）时回退到 daily。
+    const src = (val && Array.isArray(val.dailyAll) && val.dailyAll.length) ? val.dailyAll
+      : (val && Array.isArray(val.daily) ? val.daily : null);
+    if (!src || src.length === 0) {
       return res.json({ success: false, error: '无市值历史数据', source: '东方财富TTM', fetchedAt: new Date().toISOString() });
     }
-    const data = val.daily
+    const data = src
       .filter(d => d.date && d.marketCap > 0)
       .map(d => ({ date: d.date, marketCap: d.marketCap }))
       .sort((a, b) => a.date.localeCompare(b.date));
+    if (data.length === 0) {
+      return res.json({ success: false, error: '无市值历史数据', source: '东方财富TTM', fetchedAt: new Date().toISOString() });
+    }
     // 20260911：新鲜度闸门（数据最新性铁律）——序列末日距今天过久时不再返回，
     // 避免前端把「最后一次已知市值」一路平移到最新K线上画出误导性直线。
-    // 例：688660 电气风电在东财估值明细源只有到 2023-02-27 的数据（数据源缺口，非本机故障）。
     const lastDate = data[data.length - 1].date;
     const lagDays = Math.floor((Date.now() - new Date(lastDate + 'T00:00:00+08:00').getTime()) / 86400000);
     if (!isFinite(lagDays) || lagDays > 20) {
@@ -1887,6 +1945,27 @@ async function eventEngineScanOnce() {
   return result;
 }
 
+// 20260911：专属因子月度定时触发（与事件扫描同机制）
+// 每小时检查一次；仅在国家统计局 CPI 发布窗口(8~13日)内、且当月未尝试、且配置了 AI Key 时，
+// 触发联网检索最新一期 CPI 并落库；窗口外 / 当月已尝试 / 无 Key → 静默跳过，不影响启动与运行。
+function startDedicatedFactorScheduler() {
+  setInterval(() => {
+    const now = new Date();
+    const dom = now.getDate();
+    if (dom < 8 || dom > 13) return; // 窗口外静默
+    let df, sameDay;
+    try { df = require('./lib/dedicatedFactor'); sameDay = require('./lib/sameDayJudgment'); } catch (e) { return; }
+    df.triggerDedicatedFactors({ force: false })
+      .then(r => {
+        if (r && r.triggered && r.triggered.length) {
+          for (const s of (r.changedSymbols || [])) { try { sameDay.invalidateJudgmentForSymbol(s); } catch (e) {} }
+          console.log(`  [专属因子] 月度触发完成：新增 ${r.triggered.length} 个实例（${r.period}）`);
+        }
+      })
+      .catch(e => console.error('  [专属因子] 定时触发失败:', e && e.message));
+  }, 60 * 60 * 1000); // 每小时检查
+}
+
 function startServer(port, retries = 5) {
   const server = app.listen(port, () => {
     const url = `http://localhost:${port}`;
@@ -1911,8 +1990,47 @@ function startServer(port, retries = 5) {
     setTimeout(() => {
       try { warmupSectorCapitalFlow(); } catch (e) { console.error('  [SectorCapitalFlow] 预热失败:', e.message); }
     }, 10000);
+    // 20260912c：基金行业配置 · **自然季度**更新调度
+    //   - 启动后 30 秒：若「今天还没检查过」就补跑一次（电脑关机/重启也能补齐，忽略每日时刻）
+    //   - 之后每 30 分钟 tick 一次：到了每日检查时刻(DAILY_HOUR)且今天未跑过 → 跑一次
+    //   每次检查：探测东财是否已开始披露当季报告 → 未发布则只花几次请求后结束；
+    //   已发布则跑一批（受批次大小/时间预算约束），未全部更新完则次日继续，直到本季度完成。
+    setTimeout(() => {
+      try {
+        fundMatrix.startCrawl({ ignoreHour: true })
+          .then((r) => console.log(`  [FundMatrix] 季度检查(启动补偿)：${r.started ? '已启动批次' : '跳过(' + r.reason + ')'}`))
+          .catch((e) => console.error('  [FundMatrix] 季度检查失败:', e.message));
+      } catch (e) { console.error('  [FundMatrix] 季度检查异常:', e.message); }
+    }, 30000);
+    setInterval(() => {
+      try {
+        fundMatrix.startCrawl({})
+          .then((r) => { if (r.started) console.log(`  [FundMatrix] 每日检查：启动（${r.reason}）`); })
+          .catch((e) => console.error('  [FundMatrix] 每日检查失败:', e.message));
+      } catch (e) { console.error('  [FundMatrix] 每日检查异常:', e.message); }
+    }, 30 * 60 * 1000);
+    // 进程退出前把采集进度强制落盘（把「断点」推到最后一刻，最多丢一次落盘间隔）
+    // 覆盖：Ctrl+C / 关闭终端 / 任务管理器结束任务（能捕获到的退出信号）。
+    // 注意：Windows 关机不一定会派发这些信号，那种情况下最多丢 60 秒进度。
+    (function registerFlushOnExit() {
+      let flushed = false;
+      const flush = (why) => {
+        if (flushed) return; flushed = true;
+        try {
+          const r = fundMatrix.flushCache();
+          console.log(`  [FundMatrix] ${why} 退出前落盘：基金 ${r.funds} 只 / 行业 ${r.industry} 条`
+            + (r.ok ? '' : '（失败：' + r.error + '）'));
+        } catch (e) { /* 忽略 */ }
+      };
+      ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGBREAK'].forEach((sig) => {
+        try { process.on(sig, () => { flush(sig); process.exit(0); }); } catch (e) { /* 平台不支持则忽略 */ }
+      });
+      process.on('beforeExit', () => flush('beforeExit'));
+    })();
     // 20260907a：三联动·事件驱动定时扫描（9:00 / 12:30 / 15:30 / 21:00）
     startEventScheduler();
+    // 20260911：专属因子月度定时触发（CPI 发布窗口内自动检索并落库）
+    startDedicatedFactorScheduler();
     // 启动后做一次静默首扫（网络受限时返回空，不影响启动）
     eventEngineScanOnce().catch(e => console.error('  [事件] 首扫失败:', e.message));
   });

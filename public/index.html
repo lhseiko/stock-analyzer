@@ -6,7 +6,7 @@
   <title>股票投资分析工作台</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
-  <link rel="stylesheet" href="css/style.css?v=20260904c">
+  <link rel="stylesheet" href="css/style.css?v=20260913c">
   <script>
     // 启动时确保 URL 带 ?v= 参数（用于破坏静态资源缓存）。
     // 重要：版本号以 server.js 的 APP_VERSION 为准，由服务端重定向统一下发，
@@ -25,7 +25,7 @@
   <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
 </head>
 <body>
-  <!-- 顶栏：大盘行情状态栏（上证/深证/创业板/科创50/北证50/恒生/纳斯达克/道琼斯），支持折叠 -->
+  <!-- 顶栏：大盘行情状态栏（上证/深证/创业板/科创50/日经指数/恒生/纳斯达克/道琼斯），支持折叠 -->
   <header id="marketTopbar" class="market-topbar">
     <div class="topbar-inner">
       <div class="topbar-brand">📈 股票分析台</div>
@@ -243,18 +243,18 @@
           </div>
         </section>
 
-        <!-- 基金重仓行业配置矩阵（季度行业占比，支持用户导入真实数据） -->
+        <!-- 基金行业配置名单（全市场权益类基金最新季前十大重仓股 → 按持仓市值加总排名，展示前20名 + 季度环比） -->
         <section class="home-card rank-card" id="rankCard" data-collapsible="true">
           <div class="home-card-head">
-            <h3>🏭 基金重仓行业配置矩阵</h3>
+            <h3>🏭 基金行业配置名单（全市场 · 前20 · 季度环比）</h3>
             <div class="mo-head-actions">
               <span id="rankUpdated" class="mo-updated"></span>
-              <button class="btn-journal-add" id="rankRefresh" title="刷新排行">🔄 刷新</button>
+              <button class="btn-journal-add" id="rankRefresh" title="刷新 / 继续采集">🔄 刷新</button>
               <button class="btn-collapse" data-collapse-target="rankCard" title="折叠/展开">▾</button>
             </div>
           </div>
           <div id="rankBody" class="rank-body">
-            <div class="ai-empty">正在获取基金 &amp; 机构重仓排行…</div>
+            <div class="ai-empty">正在获取全市场基金行业配置名单…</div>
           </div>
         </section>
 
@@ -536,14 +536,6 @@
           <!-- Shareholders tab (issue5: 股东户数走势 + 十大股东 + 机构持仓变化) -->
           <div id="tab-shareholders" class="tab-panel">
             <div id="shareholdersContainer" class="shareholders-container"></div>
-            <div class="chart-card" id="aiHolderCard">
-              <h3>🤖 股东户数 AI 解读</h3>
-              <div id="aiHolderBody" class="ai-holder-body"><div class="ai-empty">—</div></div>
-              <div class="ai-holder-foot">
-                <span id="aiHolderDate" class="ai-holder-date"></span>
-                <button class="ai-trigger-btn" id="aiHolderBtn" type="button">✨ AI 解读</button>
-              </div>
-            </div>
           </div>
 
           <!-- Deep analysis tab -->
@@ -1015,22 +1007,22 @@
     <button class="err-close" id="errorBannerClose" title="关闭">✕</button>
   </div>
 
-  <script src="js/storage.js?v=20260904c"></script>
-  <script src="js/charts.js?v=20260904c"></script>
+  <script src="js/storage.js?v=20260913c"></script>
+  <script src="js/charts.js?v=20260913c"></script>
   <script src="js/deepCharts.js?v=20260906e"></script>
-  <script src="js/industryCharts.js?v=20260904c"></script>
-  <script src="js/capitalCharts.js?v=20260904c"></script>
-  <script src="js/notes.js?v=20260904c"></script>
-  <script src="js/shareholderCharts.js?v=20260904c"></script>
-  <script src="js/docStore.js?v=20260904c"></script>
-  <script src="js/export.js?v=20260904c"></script>
-  <script src="js/homeNews.js?v=20260904c"></script>
+  <script src="js/industryCharts.js?v=20260913c"></script>
+  <script src="js/capitalCharts.js?v=20260913c"></script>
+  <script src="js/notes.js?v=20260913c"></script>
+  <script src="js/shareholderCharts.js?v=20260913c"></script>
+  <script src="js/docStore.js?v=20260913c"></script>
+  <script src="js/export.js?v=20260913c"></script>
+  <script src="js/homeNews.js?v=20260913c"></script>
   <script src="js/homeHotTopics.js?v=20260909m"></script>
-  <script src="js/homeMacro.js?v=20260904c"></script>
-  <script src="js/homeRank.js?v=20260904c"></script>
-  <script src="js/app.js?v=20260904c"></script>
+  <script src="js/homeMacro.js?v=20260913c"></script>
+  <script src="js/homeRank.js?v=20260913c"></script>
+  <script src="js/app.js?v=20260913c"></script>
 
-  <!-- AI 设置弹窗（20260902e：双模型 · 联网 / 本地分离，股东户数已接入本地模型） -->
+  <!-- AI 设置弹窗（20260902e：双模型 · 联网 / 本地分离） -->
   <div class="ai-modal-overlay hidden" id="aiSettingsModal">
     <div class="ai-modal ai-modal-wide">
       <div class="ai-modal-head">
@@ -1043,7 +1035,7 @@
         <div class="ai-cat-legend">
           <div class="ai-cat-row">
             <span class="ai-cat-tag web">联网模型</span>
-            <span class="ai-cat-desc"><b>需要模型先上网获取信息，再进行分析。</b> 工作台自身不能上网，因此调用带联网搜索能力的大模型。适用：个股资料补全、投资亮点/雷点、产品与客户、公司综合介绍、供应链与成本、股东户数、大盘概览、行业指数、研报检索、公告检索、异动归因、网络热议等。</span>
+            <span class="ai-cat-desc"><b>需要模型先上网获取信息，再进行分析。</b> 工作台自身不能上网，因此调用带联网搜索能力的大模型。适用：个股资料补全、投资亮点/雷点、产品与客户、公司综合介绍、供应链与成本、大盘概览、行业指数、研报检索、公告检索、异动归因、网络热议等。</span>
           </div>
           <div class="ai-cat-row">
             <span class="ai-cat-tag local">本地模型</span>

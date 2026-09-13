@@ -10,7 +10,7 @@ const fs = require('fs');
 const {
   analyzeMarketOverview, publicConfig, loadConfig, saveConfig, augmentStock,
   analyzeAspects, readCache, analyzeProducts, analyzeCompany, analyzeValuation,
-  analyzeSupplyChain, analyzeShareholdersAI, analyzeResearchReports,
+  analyzeSupplyChain, analyzeResearchReports,
   analyzeAnnouncements, analyzeEarningsReport, analyzeIndustryIndex,
   readIndustryIndexCache, readEarningsCache,
 } = require('../lib/aiAugment');
@@ -262,25 +262,6 @@ router.get('/api/ai/supply/:symbol', (req, res) => {
 });
 // 产品图片本地服务（仅允许白名单扩展名，防目录穿越）
 const PRODUCT_IMG_DIR = path.join(__dirname, '..', 'data', 'ai_cache', 'img');
-
-// 股东户数 AI 联网补充（本地 F10 未覆盖时）
-router.post('/api/ai/holders', async (req, res) => {
-  try {
-    const { symbol, stockName, mode } = req.body || {};
-    if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL', message: '缺少股票代码' });
-    const data = await analyzeShareholdersAI({ symbol, stockName, mode: mode || 'web' });
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-router.get('/api/ai/holders/:symbol', (req, res) => {
-  const symbol = String(req.params.symbol || '').trim();
-  if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL' });
-  const cached = readCache(symbol, '_holders');
-  if (!cached) return res.json({ success: false, cached: false });
-  res.json({ success: true, cached: true, ...cached });
-});
 
 // 研报 · AI 联网总结（近一年券商研报观点与评级）
 router.post('/api/ai/research', async (req, res) => {

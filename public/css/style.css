@@ -3051,6 +3051,24 @@ body {
 .mo-tile.down .mo-chg { background: var(--green-light); color: var(--green); font-weight: 700; }
 .mo-tile.flat .mo-chg { color: var(--text-muted); }
 
+.mo-sw-level {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 14px;
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  vertical-align: middle;
+}
+/* 近一周高频板块提醒卡片槽位：与 .mo-tiles 内 Top5 卡片同处一行（不改变既有 flex 布局） */
+.mo-tiles-reminder {
+  display: contents;
+}
+
 @media (max-width: 760px) {
   .mo-row { flex-direction: column; gap: 10px; }
   .mo-row-head { flex-basis: auto; flex-direction: row; gap: 6px; align-items: center; }
@@ -3203,6 +3221,8 @@ body {
 .sh-stats-note b { color: var(--text-primary); }
 .sh-stats-main { margin-bottom: 4px; }
 .sh-stats-sub { font-size: 11px; color: var(--text-light); opacity: 0.9; }
+.sh-source { margin-top: 8px; font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+.sh-source::before { content: 'ℹ️ '; }
 
 /* ===== 当日涨跌判断卡片 ===== */
 .sameday-card { border: 1px solid var(--border); }
@@ -3245,6 +3265,8 @@ body {
 .sd-factor-contrib.neg { color: var(--green); }
 .sd-factor-detail { font-size: 11px; color: var(--text-secondary); margin-top: 2px; line-height: 1.5; }
 .sd-factor-val { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+.sd-factor-val-summary { font-size: 12px; color: var(--text-primary); margin-top: 2px; }
+.sd-factor-caption { font-size: 10px; color: var(--text-muted); margin-top: 6px; line-height: 1.4; }
 .sd-weight-note { font-size: 10px; color: var(--text-muted); margin-top: 6px; }
 .sd-settle { margin-top: 6px; font-size: 11px; padding: 5px 8px; border-radius: 6px; }
 .sd-settle:not(.sd-pending) { background: rgba(14,203,129,.12); color: var(--green); }
@@ -4362,6 +4384,110 @@ body { display: flex; flex-direction: column; }
   .mt-verdict { grid-template-columns: 1fr; }
   .mt-strategy, .mt-risk { grid-column: 1; }
 }
+
+/* ---------- 基金行业配置名单（全市场 · 持仓市值加总排名） ---------- */
+.fmr-prog {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: var(--bg-card);
+  margin-bottom: 12px;
+}
+.fmr-prog-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.fmr-prog-title { font-size: 13.5px; font-weight: 600; color: var(--text-primary); }
+.fmr-prog-num { font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.fmr-bar { height: 6px; border-radius: 4px; background: rgba(148,163,184,.16); overflow: hidden; margin: 8px 0 7px; }
+.fmr-bar-in { height: 100%; border-radius: 4px; background: linear-gradient(90deg, var(--accent), #f6d9a8); transition: width .5s ease; }
+.fmr-prog-meta { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11.5px; color: var(--text-muted); }
+.fmr-prog-meta .fmr-warn { color: var(--red); }
+.fmr-prog-hint { margin-top: 6px; font-size: 11px; color: var(--text-light); line-height: 1.6; }
+
+/* 「自然季度更新」状态条 */
+.fmr-quarter {
+  padding: 10px 12px; border-radius: 10px; margin-bottom: 12px;
+  background: rgba(240,185,123,.06); border: 1px solid rgba(240,185,123,.16);
+}
+.fmr-q-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.fmr-q-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.fmr-q-title b { color: var(--accent); font-weight: 600; }
+.fmr-q-badge {
+  font-size: 10.5px; font-weight: 500; padding: 2px 8px; border-radius: 999px; white-space: nowrap;
+}
+.fmr-qb-done { background: rgba(14,203,129,.14); color: var(--green); border: 1px solid rgba(14,203,129,.3); }
+.fmr-qb-run  { background: rgba(246,70,93,.14);  color: var(--red);   border: 1px solid rgba(246,70,93,.3); }
+.fmr-qb-wait { background: rgba(148,163,184,.14); color: var(--text-muted); border: 1px solid rgba(148,163,184,.28); }
+.fmr-q-meta { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11.5px; color: var(--text-muted); margin-top: 6px; }
+.fmr-q-time { color: var(--text-light); }
+
+.fmr-kpis { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.fmr-kpi {
+  flex: 1 1 96px; min-width: 88px;
+  border: 1px solid var(--border); border-radius: 9px;
+  padding: 8px 10px; background: var(--bg-card);
+}
+.fmr-kpi-v { font-size: 16px; font-weight: 600; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.fmr-kpi-l { font-size: 10.5px; color: var(--text-muted); margin-top: 2px; }
+
+.fmr-table-wrap { overflow-x: auto; }
+.fmr-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.fmr-table thead th {
+  text-align: left; font-size: 11px; font-weight: 600; color: var(--text-muted);
+  padding: 6px 8px; border-bottom: 1px solid var(--border); white-space: nowrap;
+}
+.fmr-th-rank { width: 34px; text-align: center !important; }
+.fmr-row { border-bottom: 1px dashed rgba(148,163,184,.14); }
+.fmr-row:hover { background: rgba(240,185,123,.05); }
+.fmr-row td { padding: 8px; vertical-align: middle; }
+.fmr-rank { text-align: center; color: var(--text-light); font-variant-numeric: tabular-nums; font-weight: 600; }
+.fmr-rank-top { color: var(--accent); font-size: 14px; }
+.fmr-ind-name { display: block; color: var(--text-primary); font-weight: 600; font-size: 13px; }
+.fmr-ind-sub { display: block; font-size: 10.5px; color: var(--text-light); margin-top: 2px; }
+.fmr-val { min-width: 118px; }
+.fmr-val-num { color: var(--red); font-weight: 600; font-variant-numeric: tabular-nums; }
+.fmr-val-bar { height: 4px; border-radius: 3px; background: rgba(148,163,184,.14); margin-top: 4px; overflow: hidden; }
+.fmr-val-bar i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, rgba(246,70,93,.85), rgba(240,185,123,.7)); }
+.fmr-share { color: var(--text-secondary); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+/* 环比变化列（增持=红 / 减持=绿，遵循 A 股习惯） */
+.fmr-th-chg { min-width: 104px; }
+.fmr-th-chg i { display: block; font-style: normal; font-size: 9.5px; font-weight: 400; color: var(--text-light); margin-top: 1px; }
+.fmr-chg { min-width: 104px; white-space: nowrap; }
+.fmr-chg-num { display: block; font-weight: 600; font-variant-numeric: tabular-nums; font-size: 12.5px; }
+.fmr-chg-pct { display: block; font-size: 10.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; margin-top: 1px; }
+.fmr-chg .fmr-up, .fmr-chg-num.fmr-up { color: var(--red); }
+.fmr-chg .fmr-down, .fmr-chg-num.fmr-down { color: var(--green); }
+.fmr-chg-flat { color: var(--text-muted); }
+.fmr-chg-na { color: var(--text-light); }
+.fmr-kpi-v .fmr-up { color: var(--red); }
+.fmr-kpi-v .fmr-down { color: var(--green); }
+.fmr-kpi-v .fmr-chg-flat { color: var(--text-primary); }
+.fmr-more { margin-top: 8px; font-size: 11px; color: var(--text-light); text-align: center; }
+.fmr-tops { min-width: 200px; }
+.fmr-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10.5px; padding: 2px 7px; margin: 2px 4px 2px 0;
+  border-radius: 999px; background: rgba(240,185,123,.09);
+  color: var(--text-secondary); border: 1px solid rgba(240,185,123,.18);
+  white-space: nowrap;
+}
+.fmr-chip b { color: var(--red); font-weight: 600; }
+.fmr-row-unres { opacity: .68; }
+.fmr-row-unres .fmr-val-num { color: var(--text-light); }
+.fmr-row-unres .fmr-val-bar i { background: rgba(148,163,184,.5); }
+.fmr-badge {
+  margin-left: 6px; font-size: 10px; font-weight: 500;
+  padding: 1px 6px; border-radius: 999px;
+  background: rgba(148,163,184,.14); color: var(--text-light);
+}
+
+@media (max-width: 760px) {
+  .fmr-kpi { flex: 1 1 72px; min-width: 72px; padding: 6px 8px; }
+  .fmr-kpi-v { font-size: 14px; }
+  /* 列序：# | 行业 | 持仓市值 | 环比 | 占比 | Top重仓股 → 窄屏只留 前 4 列 */
+  .fmr-share, .fmr-table thead th:nth-child(5),
+  .fmr-tops, .fmr-table thead th:nth-child(6) { display: none; }
+}
+
 
 
 

@@ -1,6 +1,6 @@
 /**
  * ShareholderCharts Module (issue5)
- * 股东分析 Tab 的图表与列表渲染：股东户数走势、机构持仓数量变化、十大股东。
+ * 股东分析 Tab 的图表与列表渲染：股东户数走势、机构持仓变化、十大股东、基金持股。
  * 使用已注册的 softDark 主题；任一数据缺失时优雅降级为"暂无数据"提示。
  */
 const ShareholderCharts = {
@@ -30,13 +30,9 @@ const ShareholderCharts = {
       ? `<div class="chart-card large"><h3>👥 股东户数走势</h3><div id="shHolderTrend" class="chart"></div></div>`
       : `<div class="chart-card large"><h3>👥 股东户数走势</h3><div class="sh-empty">暂无股东户数数据（F10 未披露或接口暂不可用）</div></div>`;
 
-    const instCard = d.institutionTrendAvailable
-      ? `<div class="chart-card large"><h3>🏛️ 机构持仓数量变化<span class="sh-sub">（按报告期统计十大股东中的机构户数）</span></h3><div id="shInstTrend" class="chart"></div></div>`
-      : `<div class="chart-card large"><h3>🏛️ 机构持仓数量变化</h3><div class="sh-empty">暂无机构持仓数据（F10 未披露或接口暂不可用）</div></div>`;
-
     const instHoldCard = d.institutionHoldingsAvailable
-      ? `<div class="chart-card large"><h3>🏦 机构持仓汇总<span class="sh-sub">（按报告期：机构家数 / 流通持股比例）</span></h3><div id="shInstHoldTrend" class="chart"></div></div>`
-      : `<div class="chart-card large"><h3>🏦 机构持仓汇总</h3><div class="sh-empty">暂无机构持仓数据（F10 未披露或接口暂不可用）</div></div>`;
+      ? `<div class="chart-card large"><h3>🏦 机构持仓变化<span class="sh-sub">（按报告期：机构家数 / 占流通股比）</span></h3><div id="shInstHoldTrend" class="chart"></div><div id="shInstHoldNote"></div></div>`
+      : `<div class="chart-card large"><h3>🏦 机构持仓变化</h3><div class="sh-empty">暂无机构持仓数据（F10 未披露或接口暂不可用）</div></div>`;
 
     const fundCard = d.fundHoldingsAvailable
       ? `<div class="chart-card large"><h3>📊 基金持股<span class="sh-sub">（最新报告期前 10 大持仓基金）</span></h3><div id="shFundHold" class="sh-holders"></div></div>`
@@ -54,7 +50,6 @@ const ShareholderCharts = {
       ${summary}
       ${topShareholdersRatioCard}
       ${holderCard}
-      ${instCard}
       ${instHoldCard}
       ${holdersCard}
       ${fundCard}
@@ -66,9 +61,6 @@ const ShareholderCharts = {
 
     if (d.holderCountTrendAvailable && d.holderCountTrend?.length) {
       this._renderHolderTrend(d.holderCountTrend);
-    }
-    if (d.institutionTrendAvailable && d.institutionTrend?.length) {
-      this._renderInstTrend(d.institutionTrend);
     }
     if (d.institutionHoldingsAvailable && d.institutionHoldings?.length) {
       this._renderInstHoldTrend(d.institutionHoldings);
@@ -83,11 +75,11 @@ const ShareholderCharts = {
 
   _buildSummary(d) {
     const holderTrend = d.holderCountTrend || [];
-    const instTrend = d.institutionTrend || [];
     const latestHolders = holderTrend.length ? holderTrend[holderTrend.length - 1] : null;
-    const latestInst = instTrend.length ? instTrend[instTrend.length - 1] : null;
     const latestTopDate = d.topShareholders?.length ? d.topShareholders[0]?.endDate : '';
-    const sourceNote = `来源：东方财富F10${latestHolders?.date ? ' · 户数截止 ' + latestHolders.date : ''}${latestTopDate ? ' · 十大股东报告期 ' + latestTopDate : ''}`;
+    const ihArr = d.institutionHoldings || [];
+    const latestIH = ihArr.length ? ihArr[ihArr.length - 1] : null;
+    const sourceNote = `数据来源：东方财富 F10${latestHolders?.date ? ' · 股东户数 ' + latestHolders.date : ''}${latestTopDate ? ' · 十大股东 ' + latestTopDate : ''}${latestIH ? ' · 机构持仓 ' + latestIH.date : ''}${d.fundHoldings?.length ? ' · 基金持股 ' + (d.fundHoldings[0]?.date || '') : ''}`;
 
     const items = [];
     items.push(['第一大股东', d.controllingShareholder || '—']);
@@ -103,9 +95,6 @@ const ShareholderCharts = {
         items.push(['持股集中度', latestHolders.focus]);
       }
     }
-    if (latestInst) {
-      items.push(['最新机构户数', `${latestInst.institutionCount} 家（占十大股东 ${latestInst.instRatio || 0}%）`]);
-    }
 
     return `<div class="sh-summary">${items.map(([k, v]) => `
       <div class="sh-summary-item">
@@ -114,12 +103,34 @@ const ShareholderCharts = {
       </div>`).join('')}<div class="sh-summary-note">${sourceNote}</div></div>`;
   },
 
+  // 默认视窗：报告期较多时只显示最近 12 期（与东财一致），完整历史仍可拖动下方滑块查看
+  _zoomFor(n, win = 12) {
+    if (!n || n <= win) return { start: 0, end: 100 };
+    return { start: +(((n - win) / n) * 100).toFixed(2), end: 100 };
+  },
+
+  // 在图（或列表）元素之后插入/更新一行数据来源 + 报告期说明
+  _setSource(afterElId, text) {
+    const anchor = document.getElementById(afterElId);
+    if (!anchor) return;
+    const id = afterElId + 'Src';
+    let el = document.getElementById(id);
+    if (!el) {
+      el = document.createElement('div');
+      el.id = id;
+      el.className = 'sh-source';
+      anchor.parentNode.insertBefore(el, anchor.nextSibling);
+    }
+    el.textContent = text;
+  },
+
   _renderHolderTrend(trend) {
     const chart = this._init('shHolderTrend');
     if (!chart) return;
     const dates = trend.map(t => t.date);
     const nums = trend.map(t => t.holderNum);
     const ratios = trend.map(t => t.changeRatio);
+    const z = this._zoomFor(trend.length);
 
     chart.setOption({
       tooltip: { trigger: 'axis' },
@@ -130,7 +141,7 @@ const ShareholderCharts = {
         { type: 'value', name: '户数', axisLabel: { formatter: v => (v / 1e4).toFixed(1) + '万' } },
         { type: 'value', name: '环比%', position: 'right' },
       ],
-      dataZoom: [{ type: 'inside' }, { type: 'slider', height: 18, bottom: 12 }],
+      dataZoom: [{ type: 'inside', start: z.start, end: z.end }, { type: 'slider', height: 18, bottom: 12, start: z.start, end: z.end }],
       series: [
         {
           name: '股东户数', type: 'bar', data: nums,
@@ -142,30 +153,9 @@ const ShareholderCharts = {
         },
       ],
     });
-  },
 
-  _renderInstTrend(trend) {
-    const chart = this._init('shInstTrend');
-    if (!chart) return;
-    const dates = trend.map(t => t.date);
-    const counts = trend.map(t => t.institutionCount);
-    const ratios = trend.map(t => t.instRatio);
-
-    chart.setOption({
-      tooltip: { trigger: 'axis' },
-      legend: { data: ['机构户数', '机构持股占比%'], top: 0 },
-      grid: { left: 50, right: 55, top: 40, bottom: 50 },
-      xAxis: { type: 'category', data: dates, axisLabel: { rotate: 30 } },
-      yAxis: [
-        { type: 'value', name: '户数' },
-        { type: 'value', name: '占比%', position: 'right' },
-      ],
-      dataZoom: [{ type: 'inside' }, { type: 'slider', height: 18, bottom: 12 }],
-      series: [
-        { name: '机构户数', type: 'bar', data: counts, itemStyle: { color: '#7fa8c9' }, barWidth: '50%' },
-        { name: '机构持股占比%', type: 'line', yAxisIndex: 1, smooth: true, data: ratios, lineStyle: { width: 2 } },
-      ],
-    });
+    const latest = trend[trend.length - 1];
+    this._setSource('shHolderTrend', `数据来源：东方财富 F10 · 股东户数（${latest.date}）· 共 ${trend.length} 个报告期`);
   },
 
   _renderTopHoldersPie(holders) {
@@ -203,6 +193,7 @@ const ShareholderCharts = {
     noteEl.innerHTML = `
       <div class="sh-stats-main">前十大股东中共有 <b>${institutionCount}</b> 家机构，合计占总股本 <b>${institutionRatio.toFixed(2)}%</b>（报告期：${endDate}）</div>
       <div class="sh-stats-sub">注：饼图展示前十大股东各自占总股本比例。</div>
+      <div class="sh-stats-sub">数据来源：东方财富 F10 · 十大股东（${endDate}）</div>
     `;
   },
 
@@ -240,30 +231,84 @@ const ShareholderCharts = {
         <div class="sh-holder-change">${changeLabel(h.change)}</div>
       </div>
     `).join('');
+    this._setSource('shTopHolders', `数据来源：东方财富 F10 · 十大股东（${holders[0]?.endDate || '—'}）`);
   },
 
   _renderInstHoldTrend(trend) {
     const chart = this._init('shInstHoldTrend');
-    if (!chart) return;
+    const el = document.getElementById('shInstHoldTrend');
+    if (!chart || !el) return;
     const dates = trend.map(t => t.date);
     const orgNums = trend.map(t => t.orgNum);
     const ratios = trend.map(t => t.freeRatio);
+    const z = this._zoomFor(trend.length);
 
     chart.setOption({
-      tooltip: { trigger: 'axis' },
-      legend: { data: ['机构家数', '流通持股比例%'], top: 0 },
+      tooltip: {
+        trigger: 'axis',
+        formatter: (params) => {
+          const idx = params[0]?.dataIndex ?? 0;
+          const row = trend[idx];
+          if (!row) return '';
+          const change = (v) => {
+            if (v == null) return '—';
+            const s = v >= 0 ? `+${v}` : `${v}`;
+            return v > 0 ? `<span class="sh-change up">${s}</span>` : v < 0 ? `<span class="sh-change down">${s}</span>` : `<span class="sh-change neutral">${s}</span>`;
+          };
+          return `<div style="font-weight:600;margin-bottom:4px">${row.date}</div>
+            <div>机构家数：${row.orgNum.toLocaleString('zh-CN')} 家（环比 ${change(row.orgNumChange)}）</div>
+            <div>占流通股比：${row.freeRatio.toFixed(2)}%（环比 ${change(row.freeRatioChange)}）</div>`;
+        }
+      },
+      legend: { data: ['机构家数', '占流通股比%'], top: 0 },
       grid: { left: 55, right: 55, top: 40, bottom: 50 },
       xAxis: { type: 'category', data: dates, axisLabel: { rotate: 30 } },
       yAxis: [
         { type: 'value', name: '家数' },
         { type: 'value', name: '占比%', position: 'right' },
       ],
-      dataZoom: [{ type: 'inside' }, { type: 'slider', height: 18, bottom: 12 }],
+      dataZoom: [{ type: 'inside', start: z.start, end: z.end }, { type: 'slider', height: 18, bottom: 12, start: z.start, end: z.end }],
       series: [
         { name: '机构家数', type: 'bar', data: orgNums, itemStyle: { color: '#7fa8c9' }, barWidth: '50%' },
-        { name: '流通持股比例%', type: 'line', yAxisIndex: 1, smooth: true, data: ratios, lineStyle: { width: 2 } },
+        { name: '占流通股比%', type: 'line', yAxisIndex: 1, smooth: true, data: ratios, lineStyle: { width: 2 } },
       ],
     });
+
+    // 汇总说明：最近两期机构家数变化与占流通股比变化
+    const latest = trend[trend.length - 1];
+    const prev = trend.length > 1 ? trend[trend.length - 2] : null;
+    let noteEl = document.getElementById('shInstHoldNote');
+    if (!noteEl) {
+      noteEl = document.createElement('div');
+      noteEl.id = 'shInstHoldNote';
+      noteEl.className = 'sh-stats-note';
+      el.parentNode.insertBefore(noteEl, el.nextSibling);
+    }
+    const changeText = (v, unit) => {
+      if (v == null) return '—';
+      const prefix = v > 0 ? '+' : '';
+      return v > 0 ? `<span class="sh-change up">${prefix}${v}${unit}</span>` : v < 0 ? `<span class="sh-change down">${prefix}${v}${unit}</span>` : `<span class="sh-change neutral">不变</span>`;
+    };
+    const fmtShares = (v) => {
+      const n = Number(v) || 0;
+      if (n >= 1e8) return (n / 1e8).toFixed(2) + ' 亿';
+      if (n >= 1e4) return (n / 1e4).toFixed(0) + ' 万';
+      return n.toLocaleString('zh-CN');
+    };
+    const srcLine = `数据来源：东方财富 F10 · 机构持仓汇总（${latest.date}）· 共 ${trend.length} 个报告期`;
+    const mainLine = `<div class="sh-stats-main">最新报告期 <b>${latest.date}</b>：机构家数 <b>${latest.orgNum.toLocaleString('zh-CN')}</b> 家，占流通股比 <b>${latest.freeRatio.toFixed(2)}%</b>，占总股本 <b>${(latest.totalRatio || 0).toFixed(2)}%</b>，合计持股 <b>${fmtShares(latest.totalShares)}</b> 股</div>`;
+    if (prev && latest) {
+      noteEl.innerHTML = `
+        ${mainLine}
+        <div class="sh-stats-sub">较上一期（${prev.date}）变化：机构家数 ${changeText(latest.orgNumChange, ' 家')}，占流通股比 ${changeText(latest.freeRatioChange, ' 个百分点')}。</div>
+        <div class="sh-stats-sub">${srcLine}</div>
+      `;
+    } else {
+      noteEl.innerHTML = `
+        ${mainLine}
+        <div class="sh-stats-sub">${srcLine}</div>
+      `;
+    }
   },
 
   _renderFundHoldings(holdings) {
@@ -288,6 +333,7 @@ const ShareholderCharts = {
         <div class="sh-holder-change">${fmtWan(h.value)}</div>
       </div>
     `).join('');
+    this._setSource('shFundHold', `数据来源：东方财富 F10 · 基金持股（${top[0]?.date || '—'}）· 按持股比例降序前 10`);
   },
 
   _esc(s) {
