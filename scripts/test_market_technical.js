@@ -27,4 +27,14 @@ const { getMarketTechnical } = require('../lib/marketTechnical');
     console.log('  风险:', x.step6.risk);
     if (x.issues) console.log('  数据提示:', x.issues.join(','));
   }
+  const f = res.fused;
+  console.log('\n=== 融合版 fused ===');
+  console.log('state:', f.state, '| reliable:', f.reliable, '| fusionSignal:', f.fusionSignal, '| confidence:', f.confidence);
+  console.log('anchors:', JSON.stringify(f.anchors));
+  console.log('volume:', f.volume.nature, '|', f.volume.detail);
+  console.log('external:', f.external.bias, 'score=', f.external.score, '|', f.external.note);
+  console.log('position:', JSON.stringify(f.position));
+  console.log('signals:', f.signals.join(' | '));
+  console.log('risk:', f.risk.join(' | '));
+  console.log('evidenceChain:', f.evidenceChain.join(' | '));
 })().catch(e => { console.error('FATAL', e); process.exit(1); });

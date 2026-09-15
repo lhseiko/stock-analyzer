@@ -66,8 +66,8 @@ lib/
     ├── llm.js             ← LLM 调用/模型选择/搜索通道/上下文预算/JSON 解析
     ├── images.js          ← 图片下载与兜底搜图
     ├── augmentStock.js    ← 个股资料补全 + 投资亮点/雷点
-    ├── products.js        ← 产品与客户分析
-    ├── company.js         ← 公司介绍 + 供应链 + 股东户数
+    ├── companyDeep.js     ← 公司深度分析（CFA 七段统一：画像+供应链+客户竞争，20260914f 合并 products/company① ②）
+    ├── company.js         ← 股东 AI 分析（analyzeCompany/analyzeSupplyChain 已迁至 companyDeep.js）
     ├── market.js          ← 大盘解读 + 行业指数
     ├── research.js        ← 研报总结 + 公告总结
     ├── earnings.js        ← 财报解读（含本地上下文构建 + 全部 _extract* 后处理）
@@ -325,11 +325,12 @@ module.exports = { ..., runtime, setSearchMode, setSearchCreds, ... };
 
 依赖：`./config`、`./llm`（callLLM/pickModelFor/pickLocalSummaryModel/extractJson/extractSources）、`./shareholderData`(getCompanyProfile)、`./factStore`、`./financeHub`（L651 延迟 require 原样）、**`../deepAnalysis`（L652 延迟 require 原样保留，含原注释）**、`./earnings`（`_reportDateToLabel`，L661 使用）。导出：`augmentStock, analyzeAspects`（另导出 `buildAugmentContext` 供门面备用，不进门面导出表）。
 
-### 4.6 lib/ai/products.js（~190 行）
-`PRODUCTS_WEB_SYSTEM_PROMPT`(808–815)、`PRODUCTS_LOCAL_SYSTEM_PROMPT`(818–825)、`buildProductsContext(segment)`(828–846)、`analyzeProducts(...)`(848–987)。依赖：config/llm/images/factStore/shareholderData。导出：`analyzeProducts`。
+### 4.6 lib/ai/companyDeep.js（统一 CFA 七段深度分析，20260914f 新增）
+`DEEP_SYSTEM_PROMPT`（联网版，webSearch=true）、`DEEP_LOCAL_SYSTEM_PROMPT`（本地事实版，webSearch=false）、`validateDeep(parsed)`（确定性阈值判定 → flags[]：成本敏感型>50%、传导弱<0.5/强>0.8、客户集中度>30%、收入依赖>50%、红线置顶；红线仅扫「近10年重大事件」的 title/desc）、`normalizeSensitivityMatrix(sc)`（结构化补全 ±5%/±10%/±20%/±30% 共 8 情景）、`analyzeCompanyDeep({symbol,stockName,industry,force,companyName,companyType})`。缓存 `data/ai_cache/{symbol}_companyDeep.json`；沿用 web/local 双模式 + factAnchor 复用（local 无限 TTL / 否则 SEMI_STATIC_TTL_MS 30 天）。依赖：`./config`、`./llm`、`./images`（attachImage）、`./factStore`（buildCompanyFactsContext）、`./shareholderData`（getCompanyProfile）。导出：`analyzeCompanyDeep, validateDeep, _toNum`。
+> 合并来源：原 `lib/ai/products.js`（产品与客户）、`lib/ai/company.js` 的 `analyzeCompany`/`analyzeSupplyChain`（简介 + 供应链）三个模块已删除，统一为单一 CFA 七段引擎。
 
-### 4.7 lib/ai/company.js（~390 行）
-`COMPANY_SYSTEM_PROMPT`(1007–1014)、`COMPANY_LOCAL_SYSTEM_PROMPT`(1017–1026)、`analyzeCompany(...)`(1028–1135)、`SUPPLY_SYSTEM_PROMPT`(1137–1146)、`SUPPLY_LOCAL_SYSTEM_PROMPT`(1149–1160)、`analyzeSupplyChain(...)`(1162–1273)、`HOLDERS_SYSTEM_PROMPT`(1275–1279)、`HOLDERS_LOCAL_SYSTEM_PROMPT`(1282–1290)、`buildLocalHoldersContext(symbol)`(1293–1315，内含对 `./shareholderData` 的函数内 require，原样保留)、`analyzeShareholdersAI(...)`(1317–1383)。依赖：config/llm/images/factStore/shareholderData。导出：`analyzeCompany, analyzeSupplyChain, analyzeShareholdersAI`。
+### 4.7 lib/ai/company.js（仅余股东 AI）
+`HOLDERS_SYSTEM_PROMPT`、`HOLDERS_LOCAL_SYSTEM_PROMPT`、`buildLocalHoldersContext(symbol)`（内含对 `./shareholderData` 的函数内 require，原样保留）、`analyzeShareholdersAI(...)`。依赖：config/llm/images/factStore/shareholderData。导出：`analyzeShareholdersAI`（`analyzeCompany`/`analyzeSupplyChain` 已迁出至 `companyDeep.js`，文件路径保留供股东模块使用）。
 
 ### 4.8 lib/ai/market.js（~210 行）
 `MARKET_OVERVIEW_TTL_MS`(1386)、`MARKET_OVERVIEW_PROMPT`(1387–1396)、`analyzeMarketOverview(...)`(1398–1468)、`INDUSTRY_INDEX_TTL_MS`(1471)、`safeName(s)`(1473–1475)、`industryIndexCacheFile(induCode, industryName)`(1476–1479)、`readIndustryIndexCache(induCode, industryName)`(1480–1488)、`INDUSTRY_INDEX_PROMPT`(1490–1499)、**`_industryIndexRunning`（状态⑥，本子模块唯一持有）**(1502)、`analyzeIndustryIndex(...)`(1504–1589)。依赖：config/llm。导出：`analyzeMarketOverview, analyzeIndustryIndex, readIndustryIndexCache`。
@@ -366,7 +367,7 @@ const config    = require('./ai/config');
 const cache     = require('./ai/cache');
 const llm       = require('./ai/llm');
 const augment   = require('./ai/augmentStock');
-const products  = require('./ai/products');
+const companyDeep = require('./ai/companyDeep');
 const company   = require('./ai/company');
 const market    = require('./ai/market');
 const research  = require('./ai/research');
@@ -376,9 +377,7 @@ const valuation = require('./ai/valuation');
 module.exports = {
   augmentStock: augment.augmentStock,
   analyzeAspects: augment.analyzeAspects,
-  analyzeProducts: products.analyzeProducts,
-  analyzeCompany: company.analyzeCompany,
-  analyzeSupplyChain: company.analyzeSupplyChain,
+  analyzeCompanyDeep: companyDeep.analyzeCompanyDeep,
   analyzeShareholdersAI: company.analyzeShareholdersAI,
   analyzeMarketOverview: market.analyzeMarketOverview,
   analyzeIndustryIndex: market.analyzeIndustryIndex,
@@ -430,7 +429,7 @@ graph TD
         llm[ai/llm]
         img[ai/images]
         aug[ai/augmentStock]
-        prod[ai/products]
+        cdeep[ai/companyDeep]
         comp[ai/company]
         mkt[ai/market]
         rsh[ai/research]

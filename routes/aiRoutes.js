@@ -9,16 +9,19 @@ const path = require('path');
 const fs = require('fs');
 const {
   analyzeMarketOverview, publicConfig, loadConfig, saveConfig, augmentStock,
-  analyzeAspects, readCache, analyzeProducts, analyzeCompany, analyzeValuation,
-  analyzeSupplyChain, analyzeResearchReports,
+  analyzeAspects, readCache, analyzeCompanyDeep, analyzeValuation,
+  analyzeResearchReports,
   analyzeAnnouncements, analyzeEarningsReport, analyzeIndustryIndex,
   readIndustryIndexCache, readEarningsCache,
 } = require('../lib/aiAugment');
-const { getCompanyProfile } = require('../lib/shareholderData');
 const factStore = require('../lib/factStore');
 const mx = require('../lib/miaoxiang');
 const { getIndustryIndexHistory } = require('../lib/industryIndexHistory');
+const { getSectorMarketCapHistory } = require('../lib/sectorMarketCapHistory');
 const { findPython } = require('../lib/pyRuntime');
+// 20260913d：行业指数运行状态侧车（running/error）与僵死阈值。
+// 直接 require 子模块，不经 aiAugment 门面 —— 门面导出基线（24 键）受 scripts/export-snapshot.js 守卫，不得增删。
+const { readIndustryIndexState, STALE_RUNNING_MS } = require('../lib/ai/market');
 
 const router = express.Router();
 
@@ -113,35 +116,13 @@ router.get('/api/ai/aspects/:symbol', (req, res) => {
   res.json({ success: true, cached: true, ...cached });
 });
 
-// 产品·客户：AI 联网结构化获取（含产品图片下载到本地缓存）
-router.post('/api/ai/products', async (req, res) => {
+// 公司深度分析（CFA 统一框架 · 20260914f）：合并原「公司综合介绍/供应链与成本/主要产品&客户」三模块为单一分析
+// 输出七段：①一句话定位与投资摘要 ②基本面画像 ③供应链与成本 ④客户与竞争 ⑤跨模块联动 ⑥风险提示 ⑦来源/缺失说明
+router.post('/api/ai/company-deep', async (req, res) => {
   try {
-    const { symbol, stockName, industry, force, companyType } = req.body || {};
+    const { symbol, stockName, industry, force, companyName, companyType } = req.body || {};
     if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL', message: '缺少股票代码' });
-    let f10Products = [];
-    try {
-      const prof = await getCompanyProfile(symbol);
-      f10Products = (prof && prof.mainProducts) || [];
-    } catch {}
-    const data = await analyzeProducts({ symbol, stockName, industry, force: !!force, f10Products, companyType });
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-router.get('/api/ai/products/:symbol', (req, res) => {
-  const symbol = String(req.params.symbol || '').trim();
-  if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL' });
-  const cached = readCache(symbol, '_products');
-  if (!cached) return res.json({ success: false, cached: false });
-  res.json({ success: true, cached: true, ...cached });
-});
-// 公司综合介绍：AI 联网结构化获取（含产品/服务图片）
-router.post('/api/ai/company', async (req, res) => {
-  try {
-    const { symbol, stockName, industry, force, companyName } = req.body || {};
-    if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL', message: '缺少股票代码' });
-    const data = await analyzeCompany({ symbol, stockName, industry, force: !!force, companyName });
+    const data = await analyzeCompanyDeep({ symbol, stockName, industry, force: !!force, companyName, companyType });
     res.json(data);
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -235,28 +216,11 @@ router.get('/api/ai/valuation/:symbol', async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-router.get('/api/ai/company/:symbol', (req, res) => {
+// 公司深度分析：GET 纯只读（仅返回有效缓存，不自动联网）；用户点「✨ AI 联网获取」才 POST 重算
+router.get('/api/ai/company-deep/:symbol', (req, res) => {
   const symbol = String(req.params.symbol || '').trim();
   if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL' });
-  const cached = readCache(symbol, '_company');
-  if (!cached) return res.json({ success: false, cached: false });
-  res.json({ success: true, cached: true, ...cached });
-});
-// 供应链与成本分析：AI 联网结构化获取（含原材料/供应商图片）
-router.post('/api/ai/supply', async (req, res) => {
-  try {
-    const { symbol, stockName, industry, force, companyName } = req.body || {};
-    if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL', message: '缺少股票代码' });
-    const data = await analyzeSupplyChain({ symbol, stockName, industry, force: !!force, companyName });
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-router.get('/api/ai/supply/:symbol', (req, res) => {
-  const symbol = String(req.params.symbol || '').trim();
-  if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL' });
-  const cached = readCache(symbol, '_supply');
+  const cached = readCache(symbol, '_companyDeep');
   if (!cached) return res.json({ success: false, cached: false });
   res.json({ success: true, cached: true, ...cached });
 });
@@ -402,9 +366,26 @@ router.get('/api/ai/industry-index/:symbol', (req, res) => {
   if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL' });
   const { induCode, induName, industry } = req.query;
   // 优先用东方财富行业代码定位缓存，否则退回行业名
-  const cached = readIndustryIndexCache(induCode, industry || induName);
-  if (!cached) return res.json({ success: false, cached: false });
-  res.json({ success: true, cached: true, ...cached });
+  const cacheName = industry || induName;
+  const cached = readIndustryIndexCache(induCode, cacheName);   // 主缓存 = 最近一次成功结果（永不被 running/error 覆盖）
+  const state = readIndustryIndexState(induCode, cacheName);    // 侧车 = running / error
+  const running = !!(state && state.status === 'running' && (Date.now() - (Number(state.startedAt) || 0)) < STALE_RUNNING_MS);
+  const lastError = (state && state.status === 'error') ? String(state.message || '') : '';
+
+  // ① 只要有成功内容就优先返回（即使后台正在刷新、或上次刷新失败）——彻底消除"打开页面内容消失"
+  if (cached && cached.status === 'done') {
+    return res.json({ success: true, cached: true, hasContent: true, status: 'done', refreshing: running, lastError, ...cached });
+  }
+  // ② 无内容 + 正在后台生成
+  if (running) {
+    return res.json({ success: true, cached: false, hasContent: false, status: 'running', startedAt: state.startedAt });
+  }
+  // ③ 无内容 + 上次失败
+  if (state && state.status === 'error') {
+    return res.json({ success: true, cached: false, hasContent: false, status: 'error', message: lastError || 'AI 获取失败', at: state.at });
+  }
+  // ④ 从未生成过
+  return res.json({ success: false, cached: false, hasContent: false });
 });
 
 // 行业指数历史行情（同花顺行业指数日线 OHLC，供行业分析页 K 线走势）
@@ -419,6 +400,27 @@ router.get('/api/industry-index-history/:symbol', async (req, res) => {
     const data = await getIndustryIndexHistory(industryName, {
       days: Math.min(Math.max(parseInt(days, 10) || 250, 30), 500),
       pythonPath: findPython(),
+    });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 板块成分股总市值「合计」日频走势（20260913d 新增）
+// 供行业分析页「板块总市值走势」卡片：BK 板块全部成分股总市值合计 + 当前个股自身市值对比。
+// 与 /api/stock-market-cap-history 同源（东方财富TTM），口径一致。
+router.get('/api/sector-market-cap-history/:sectorCode', async (req, res) => {
+  try {
+    const sectorCode = String(req.params.sectorCode || '').trim();
+    if (!sectorCode) return res.status(400).json({ success: false, error: 'NO_SECTOR' });
+    const { name, benchmark, benchmarkName, days, force } = req.query;
+    const data = await getSectorMarketCapHistory(sectorCode, {
+      sectorName: (name || '').trim(),
+      benchmark: (benchmark || '603288').trim(),
+      benchmarkName: (benchmarkName || '').trim(),
+      days: Math.min(Math.max(parseInt(days, 10) || 250, 30), 1000),
+      force: force === '1' || force === 'true',
     });
     res.json(data);
   } catch (err) {

@@ -64,11 +64,14 @@ const App = {
     }
     // 深度分析折叠分组（仅执行一次，重组 #deepContent 内的卡片）
     this.initDeepGroups();
+    // 20260914h：打开工作台即静默预热本地事实库（东财 F10：公司概况/经营范围/主营构成，
+    // 纯抓取零 LLM 费用），并秒显已存的信息分析资料——无需用户点击、不自动联网。
+    this._prefetchCompanyFacts();
     // 首页实时大盘概览
     this.loadMarketOverview();
     // 首页·大盘估值趋势（上证50 / 沪深300 / 科创50 近5年PE-TTM）
     this.loadIndexPeTrend();
-    // 首页·大盘技术分析（上证/深证/创业板指 六步技术面推演）
+    // 首页·大盘技术分析（上证/深证/创业板指 融合版六步 + 短线结构 + 外部变量）
     this.loadMarketTechnical();
     // 顶栏大盘行情状态栏（上证/深证/创业板/科创50/日经指数/恒生/纳斯达克/道琼斯）
     this.loadTopbarIndices();
@@ -131,7 +134,9 @@ const App = {
     }
     const marketTechnicalRefresh = document.getElementById('marketTechnicalRefresh');
     if (marketTechnicalRefresh) {
-      marketTechnicalRefresh.addEventListener('click', () => this.loadMarketTechnical(true));
+      marketTechnicalRefresh.addEventListener('click', () => {
+        this.loadMarketTechnical(true);
+      });
     }
     // 首页可见时每 60 秒自动刷新行情；离开首页则暂停
     setInterval(() => {
@@ -223,18 +228,12 @@ const App = {
     document.getElementById('refreshBtn').addEventListener('click', () => {
       if (this.currentSymbol) this.analyze(this.currentSymbol, this.currentData?.name);
     });
-    const productsAiBtn = document.getElementById('productsAiBtn');
-    if (productsAiBtn) productsAiBtn.addEventListener('click', () => this.loadProducts(true));
-    const productsRefresh = document.getElementById('productsRefresh');
-    if (productsRefresh) productsRefresh.addEventListener('click', () => this.loadProducts(true));
-    const companyIntroAiBtn = document.getElementById('companyIntroAiBtn');
-    if (companyIntroAiBtn) companyIntroAiBtn.addEventListener('click', () => this.loadCompanyIntro(true));
-    const companyIntroRefresh = document.getElementById('companyIntroRefresh');
-    if (companyIntroRefresh) companyIntroRefresh.addEventListener('click', () => this.loadCompanyIntro(true));
-    const supplyChainAiBtn = document.getElementById('supplyChainAiBtn');
-    if (supplyChainAiBtn) supplyChainAiBtn.addEventListener('click', () => this.loadSupplyChain(true));
-    const supplyChainRefresh = document.getElementById('supplyChainRefresh');
-    if (supplyChainRefresh) supplyChainRefresh.addEventListener('click', () => this.loadSupplyChain(true));
+    const companyDeepAiBtn = document.getElementById('companyDeepAiBtn');
+    if (companyDeepAiBtn) companyDeepAiBtn.addEventListener('click', () => this.loadCompanyDeep(true));
+    let companyDeepRefresh = document.getElementById('companyDeepRefresh');
+    // 20260914h：单按钮口径——「✨ AI 联网获取」/「🔄 重新搜索」由主按钮自适应，
+    // 原独立「🔄 重新搜索」按钮不再显示（功能与主按钮重复），仅保留兜底绑定以防旧缓存 HTML
+    if (companyDeepRefresh) companyDeepRefresh.style.display = 'none';
     const industryOverviewAiBtn = document.getElementById('industryOverviewAiBtn');
     if (industryOverviewAiBtn) industryOverviewAiBtn.addEventListener('click', () => this.loadIndustryBoardIndex(true));
     const industryOverviewRefresh = document.getElementById('industryOverviewRefresh');
@@ -255,9 +254,7 @@ const App = {
     });
     // 市场情绪拐点·首页重新检测
     const homeTpRefresh = document.getElementById('homeSentimentRefresh');
-    if (homeTpRefresh) homeTpRefresh.addEventListener('click', () => {
-      this.loadSentimentTurningPoint(true);
-    });
+    if (homeTpRefresh) homeTpRefresh.addEventListener('click', () => this.loadSentimentTurningPoint(true));
 
     // 个股近期热点（20260827c）：单按钮重新联网分析
     const htRefresh = document.getElementById('hotTopicRefreshBtn');
@@ -656,6 +653,13 @@ const App = {
     // 概览补充卡片：行业前景 / 股东户数变化 / 最大亮点雷点（异步加载，不随切换页面中断）
     if (this.currentSymbol) {
       setTimeout(() => this.loadOverviewExtras(data), 70);
+    }
+
+    // 20260914h：切换个股后同样静默预热本地事实库 + 秒显已存信息分析（会话内每股一次）
+    if (this.currentSymbol) {
+      setTimeout(() => {
+        try { this._prefetchCompanyFacts(); } catch (e) { console.error('Auto prefetchCompanyFacts failed:', e); }
+      }, 80);
     }
 
     // 全局自动加载：打开个股页后，后台并发拉取所有 tab 数据，无需用户切换到对应页面才触发
@@ -1213,9 +1217,11 @@ const App = {
           <div class="sd-sub-detail">${this._escapeHtml(sf.detail || '')}</div>
         </div>`;
       }).join('');
-      // 含子维度的因子：顶部一行「汇总取值」+ 子维度卡片网格 + 底部「小字来源/日期标注」
-      const summary = (f.value != null && String(f.value).trim() !== '')
-        ? `<div class="sd-factor-val-summary">${this._escapeHtml(String(f.value))}</div>` : '';
+      // 20260914i：移除顶部「汇总取值」白字行（用户要求）——
+      // 该行内容与下方子卡片里的红/绿着色文字完全重复（如「食品饮料▲中度 ｜ 原油(主连)▼轻微·合计50.0%」
+      // 与子卡的「▲利好·食品饮料·中度·剩105天」重复），且白字不携带方向语义、反而干扰阅读。
+      // 方向信息一律由子卡片的有色文字承载。
+      const summary = '';
       const caption = f.caption
         ? `<div class="sd-factor-caption">${this._escapeHtml(f.caption)}</div>` : '';
       return `${summary}<div class="sd-sub-grid">${cards}</div>${caption}`;
@@ -1608,7 +1614,12 @@ const App = {
     if (emptyEl) emptyEl.style.display = 'none';
 
     const a = data.analysis;
-    let html = '';
+    // 20260913f：股吧讨论热度/焦点帖（确定性摘要，与「舆情与讨论热度（个股）」因子同一数据源），
+    // 单独一行置顶展示，避免 LLM 综述遗漏或否认「无热议话题」时卡片信息缺失/与舆情卡打架。
+    const discStrip = (a.discussion && a.discussion.digest)
+      ? `<div class="ht-discussion"><span class="ht-disc-label">📌 股吧讨论热度</span><span class="ht-disc-text">${this.escapeHtml(a.discussion.digest)}</span></div>`
+      : '';
+    let html = discStrip;
 
     if (a.mode === 'priceChange') {
       // 模式一：当日异动归因（涨跌幅 ≥3%）
@@ -1904,8 +1915,8 @@ const App = {
   renderOverview(data) {
     const { history, technical, fundamental } = data;
 
-    // 公司概况（主要产品 / 客户 / 企业性质）—— 删除密集主营业务，替换为产品/客户简介+图
-    this.renderCompanyProfile(data, this.productsData);
+    // 公司概况（公司全称 / 企业性质 / 所属行业 / 控股股东 / 总部地点）
+    this.renderCompanyProfile(data);
 
     // Candlestick chart
     if (history.length > 0) {
@@ -1915,11 +1926,9 @@ const App = {
     // 期货关联走势面板（产品型公司，异步加载，不阻塞概览渲染）
     this.renderFuturesPanel(this.currentSymbol, data.name);
 
-    // 概览内嵌入的三块 AI 分析：产品/客户、公司综合介绍、供应链与成本（仅读缓存，不自动联网）
+    // 概览内嵌 AI 信息分析（CFA 统一框架，仅读缓存，不自动联网）
     if (this.currentSymbol) {
-      this.loadProducts(false);
-      this.loadCompanyIntro(false);
-      this.loadSupplyChain(false);
+      this.loadCompanyDeep(false);
     }
   },
 
@@ -1941,8 +1950,8 @@ const App = {
         <span class="cp-value">${value || '<span class="cp-empty">—</span>'}</span>
       </div>`;
 
-    // 注：产品/客户的「图文详情」统一由概览内的「🛍️ 主要产品 & 客户」卡片（renderProducts）展示，
-    // 公司概况卡此处不再重复展示「主要产品/主要客户」行——F10 常为空（无内容）且与下方卡片重复。
+    // 注：产品/客户/供应链/竞争的「图文详情」统一由概览内的「📊 信息分析」卡片
+    // （renderCompanyDeep）展示，公司概况卡此处不重复展示「主要产品/主要客户」行。
 
     el.innerHTML = `
       <div class="cp-grid">
@@ -2069,6 +2078,9 @@ const App = {
     const { longTerm, shortTerm, coordination, falsification, meta } = data;
     const metaEl = document.getElementById('paMeta');
     if (metaEl) metaEl.textContent = `K线 ${meta.range} · 日K ${meta.dailyBars} 根 / 月K ${meta.monthlyBars} 根 · ${meta.source}`;
+
+    // 20260914i：技术面准确率条（未来 5 个交易日口径，后端随 /api/price-action 一并返回）
+    this.renderTechFaceAccuracy(data.accuracy);
 
     // 顶部速览条
     const summaryEl = document.getElementById('paSummary');
@@ -2568,11 +2580,16 @@ const App = {
         this.loadIndustryAnalysis();
       } else if (this.industryData) {
         setTimeout(() => {
-          try { IndustryCharts.renderAll(this.industryData, this.industryBoardData, this.industryHistoryData, this.industryStockMarketCapData); }
+          try { IndustryCharts.renderAll(this.industryData, this.industryBoardData, this.industryHistoryData, this.industryStockMarketCapData, this._industryRenderOpts()); }
           catch (e) { console.error('Industry charts render error:', e); }
         }, 100);
         this.loadIndustryBoardIndex(false);
       }
+      // 20260913e：切到本页后补一次图表初始化/尺寸重算。
+      // 覆盖两类时序：① 数据在 tab 隐藏期间到达 → 图表被挂起，此处补初始化；
+      //               ② 图表曾在隐藏期被 echarts.init 退化成 100×100 → 此处 resize 复原。
+      setTimeout(() => { try { IndustryCharts.reflow(); } catch (e) { /* ignore */ } }, 80);
+      setTimeout(() => { try { IndustryCharts.reflow(); } catch (e) { /* ignore */ } }, 320);
     }
 
     // 股东分析（issue5）
@@ -2949,6 +2966,10 @@ const App = {
       this.industryLoadedSymbol = this.currentSymbol; // 标记已为当前股票加载
 
       // 行业板块指数 AI 分析 + 历史行情（K线）并行加载
+      // 20260913d：读取期间置 loading 标记 —— 避免 100ms 后的首次渲染先闪出"暂无 AI 分析"再被内容覆盖
+      if (!(this.industryBoardLoadedSymbol === this.currentSymbol && this.industryBoardData)) {
+        this.industryBoardLoading = true;
+      }
       this.loadIndustryBoardIndex(false);
       this.loadIndustryIndexHistory();
 
@@ -2956,7 +2977,7 @@ const App = {
       if (contentEl) contentEl.style.opacity = '1';
 
       setTimeout(() => {
-        try { IndustryCharts.renderAll(data, this.industryBoardData, this.industryHistoryData, this.industryStockMarketCapData); } catch (e) { console.error('Industry charts render error:', e); }
+        try { IndustryCharts.renderAll(data, this.industryBoardData, this.industryHistoryData, this.industryStockMarketCapData, this._industryRenderOpts()); } catch (e) { console.error('Industry charts render error:', e); }
       }, 100);
 
       this.toast('行业分析数据加载完成');
@@ -2981,14 +3002,18 @@ const App = {
 
     // 已加载且非强制刷新：直接渲染，无需重新查询
     if (!force && this.industryBoardLoadedSymbol === symbol && this.industryBoardData) {
+      this.industryBoardLoading = false;
       this._renderIndustryOverview();
       this._updateIndustryOverviewHeader(this.industryBoardData);
       return;
     }
 
     if (force) {
-      // 触发后台联网获取（fire-and-forget，不阻塞界面）；随后由轮询自动显示结果
-      this.industryBoardData = { status: 'running' };
+      // 触发后台联网获取（fire-and-forget，不阻塞界面）；随后由轮询自动显示结果。
+      // 20260913d：若已有内容，保留旧内容并标记 refreshing（刷新期间不清空，避免"内容消失"）
+      const prev = (this.industryBoardData && this.industryBoardData.status === 'done') ? this.industryBoardData : null;
+      this.industryBoardData = prev ? Object.assign({}, prev, { refreshing: true }) : { status: 'running' };
+      this.industryBoardLoading = false;
       this._renderIndustryOverview();
       fetch('/api/ai/industry-index', {
         method: 'POST',
@@ -3009,6 +3034,16 @@ const App = {
       const resp = await fetch(`/api/ai/industry-index/${encodeURIComponent(symbol)}?${q}`);
       const cached = await resp.json();
       if (this.currentSymbol !== symbol) return;
+      this.industryBoardLoading = false;
+      if (cached.success && cached.status === 'done') {
+        this.industryBoardData = cached;
+        this.industryBoardLoadedSymbol = symbol;
+        this._renderIndustryOverview();
+        this._updateIndustryOverviewHeader(cached);
+        // 后台正在刷新：继续轮询，完成后覆盖为最新内容
+        if (cached.refreshing) this.pollIndustryBoardIndex(pollParams);
+        return;
+      }
       if (cached.success && cached.status === 'running') {
         this.industryBoardData = cached;
         this._renderIndustryOverview();
@@ -3020,16 +3055,10 @@ const App = {
         this._renderIndustryOverview();
         return;
       }
-      if (cached.success) {
-        this.industryBoardData = cached;
-        this.industryBoardLoadedSymbol = symbol;
-        this._renderIndustryOverview();
-        this._updateIndustryOverviewHeader(cached);
-        return;
-      }
       this.industryBoardData = null;
       this._renderIndustryOverview();
     } catch (e) {
+      this.industryBoardLoading = false;
       this.industryBoardData = { status: 'error', message: e.message };
       this._renderIndustryOverview();
     }
@@ -3075,7 +3104,9 @@ const App = {
         if (attempts < maxAttempts) return;
       } catch (e) {
         if (attempts >= maxAttempts) {
-          this.industryBoardData = { status: 'error', message: '获取超时，请稍后点击右上角重新获取。' };
+          // 20260913d：超时也保留已有内容（只在完全无内容时才显示错误），避免刷新失败把上次分析顶掉
+          const prev = (this.industryBoardData && this.industryBoardData.status === 'done') ? this.industryBoardData : null;
+          this.industryBoardData = prev || { status: 'error', message: '获取超时，请稍后点击右上角重新获取。' };
           if (this.currentSymbol === params.symbol) this._renderIndustryOverview();
         }
       }
@@ -3096,12 +3127,17 @@ const App = {
     const symbol = this.currentSymbol;
     if (!symbol) return;
     this.industryStockMarketCapData = null; // 清空旧市值数据，避免切换股票时短暂显示上个股票
+    this.industrySectorCapData = null;      // 同上：清空板块总市值走势，避免残留上一只股票/板块
     const ind = this.industryData && this.industryData.industry;
     if (!ind) return;
     // 优先用同花顺 K 线专用板块（命中覆盖表时填充，如海天味业→食品加工制造），
     // 否则回退到归一化行业名（ind.name）。boardName 为空时不影响既有逻辑。
     const industryName = ind.boardName || (ind.name ? ind.name : (ind.induName || ''));
     if (!industryName) return;
+
+    // 20260913d：板块成分股总市值合计走势（按东方财富板块代码，如 BK1278）。
+    // 独立加载，失败仅隐藏该卡片，不影响上方 K 线。
+    this.loadSectorMarketCap();
 
     try {
       const q = new URLSearchParams({ industry: industryName, induName: ind.induName || '' }).toString();
@@ -3122,6 +3158,52 @@ const App = {
     }
   },
 
+  // 板块成分股总市值合计走势（20260913d 新增；含当前个股自身市值对比线）
+  async loadSectorMarketCap() {
+    const symbol = this.currentSymbol;
+    if (!symbol) return;
+    const ind = this.industryData && this.industryData.industry;
+    const induCode = ind && ind.induCode ? String(ind.induCode).trim() : '';
+    if (!induCode) { this.industrySectorCapData = null; this._renderSectorCap(); return; }
+    // 东方财富板块代码：induCode 形如 '1278' → 'BK1278'；已是 BK 开头则原样使用
+    const sectorCode = /^BK/i.test(induCode) ? induCode.toUpperCase() : ('BK' + induCode);
+    try {
+      const q = new URLSearchParams({
+        name: ind.induName || ind.name || '',
+        benchmark: symbol,
+        benchmarkName: (this.currentData && this.currentData.name) || '',
+        days: '250',
+      }).toString();
+      const resp = await fetch(`/api/sector-market-cap-history/${encodeURIComponent(sectorCode)}?${q}`);
+      const data = await resp.json();
+      if (this.currentSymbol !== symbol) return;
+      this.industrySectorCapData = data;
+      this._renderSectorCap();
+    } catch (e) {
+      if (this.currentSymbol !== symbol) return;
+      this.industrySectorCapData = { success: false, error: e.message };
+      this._renderSectorCap();
+    }
+  },
+
+  _renderSectorCap() {
+    try {
+      IndustryCharts.renderSectorMarketCap(this.industrySectorCapData, {
+        stockName: (this.currentData && this.currentData.name) || '',
+      });
+    } catch (e) {
+      console.error('Sector market cap chart error:', e);
+    }
+  },
+
+  // 行业分析卡片渲染参数：stockName 供 K 线图例标注；boardLoading 用于避免闪出"暂无"
+  _industryRenderOpts() {
+    return {
+      stockName: (this.currentData && this.currentData.name) || '',
+      boardLoading: !!this.industryBoardLoading,
+    };
+  },
+
   _renderIndustryOverview() {
     try {
       IndustryCharts.renderIndustryOverview(
@@ -3129,7 +3211,8 @@ const App = {
         this.industryBoardData,
         this.industryHistoryData,
         this.industryData && this.industryData.policy,
-        this.industryStockMarketCapData
+        this.industryStockMarketCapData,
+        this._industryRenderOpts()
       );
     } catch (e) {
       console.error('Industry overview render error:', e);
@@ -3265,7 +3348,21 @@ const App = {
     if (ibRefresh) ibRefresh.style.display = 'none';
     this.industryBoardLoadedSymbol = null;
     this.industryBoardData = null;
+    this.industryBoardLoading = false;
     this.industryHistoryData = null;
+    this.industryStockMarketCapData = null;
+    // 板块总市值走势卡片：隐藏并释放旧实例，避免残留上一只股票/板块的图
+    this.industrySectorCapData = null;
+    const scCard = document.getElementById('sectorCapCard');
+    if (scCard) scCard.style.display = 'none';
+    const scNote = document.getElementById('sectorCapNote');
+    if (scNote) scNote.innerHTML = '';
+    try {
+      if (window.Charts && Charts.instances && Charts.instances['sectorCapChart']) {
+        Charts.instances['sectorCapChart'].dispose();
+        delete Charts.instances['sectorCapChart'];
+      }
+    } catch (e) { /* ignore */ }
 
 
     // 评分追溯面板：关闭并取消卡片高亮，避免残留上一只股票的评分依据
@@ -3310,35 +3407,15 @@ const App = {
     // 期货关联面板：递增令牌，使上一只股票的迟到异步响应失效
     this.futuresToken = (this.futuresToken || 0) + 1;
 
-    // 产品·客户面板：复位，避免残留上一只股票的产品/客户
-    const pBody = document.getElementById('productsBody');
-    const pDate = document.getElementById('productsDate');
-    const pRef = document.getElementById('productsRefresh');
-    if (pBody) pBody.innerHTML = '<div class="ai-empty">正在检查产品/客户数据...</div>';
-    if (pDate) pDate.textContent = '';
-    if (pRef) pRef.style.display = 'none';
-    this.productsLoadedSymbol = null;
-    this.productsData = null;
-
-    // 公司综合介绍面板：复位
-    const ciBody = document.getElementById('companyIntroBody');
-    const ciDate = document.getElementById('companyIntroDate');
-    const ciRef = document.getElementById('companyIntroRefresh');
-    if (ciBody) ciBody.innerHTML = '<div class="ai-empty">正在检查已存的公司介绍资料...</div>';
-    if (ciDate) ciDate.textContent = '';
-    if (ciRef) ciRef.style.display = 'none';
-    this.companyIntroLoadedSymbol = null;
-    this.companyIntroData = null;
-
-    // 供应链与成本分析面板：复位
-    const scBody = document.getElementById('supplyChainBody');
-    const scDate = document.getElementById('supplyChainDate');
-    const scRef = document.getElementById('supplyChainRefresh');
-    if (scBody) scBody.innerHTML = '<div class="ai-empty">正在检查已存的供应链分析资料...</div>';
-    if (scDate) scDate.textContent = '';
-    if (scRef) scRef.style.display = 'none';
-    this.supplyLoadedSymbol = null;
-    this.supplyData = null;
+    // 信息分析面板（CFA 统一框架）：复位，避免残留上一只股票内容
+    const cdBody = document.getElementById('companyDeepBody');
+    const cdDate = document.getElementById('companyDeepDate');
+    if (cdBody) cdBody.innerHTML = '<div class="ai-empty">正在检查已存的信息分析资料...</div>';
+    if (cdDate) cdDate.textContent = '';
+    // 20260914h：按钮回默认态（无资料 → 「✨ AI 联网获取」）
+    this._setCompanyDeepButtons(false);
+    this.companyDeepLoadedSymbol = null;
+    this.companyDeepData = null;
   },
 
   // ---- AI 联网资料补全（issue：内嵌 AI 工具，补全本地未覆盖资料）----
@@ -3887,6 +3964,21 @@ const App = {
               <tbody>${scenRows}</tbody>
             </table>
           </div>
+          ${(j.sellExpRows && j.sellExpRows.length) ? `
+          <div class="vd-sec">
+            <div class="vd-sec-title">⑦ 销售费用显性调整模块（性质拆解 / SOTP 差异化 / Forward PE 费用效率 / EV-EBITDA 列示）</div>
+            <table class="vd-table">
+              <thead><tr><th>步骤 / 判定项</th><th>判定与算式</th></tr></thead>
+              <tbody>${j.sellExpRows.map(m => `<tr><td class="vd-label" style="white-space:nowrap;">${esc(m.label)}</td><td style="text-align:left;color:var(--text-primary);">${esc(m.value)}${m.source ? `<div class="vd-src" style="display:block;margin-top:2px;font-size:11px;">${esc(m.source)}</div>` : ''}</td></tr>`).join('')}</tbody>
+            </table>
+          </div>
+          <div class="vd-sec">
+            <div class="vd-sec-title">⑧ 销售费用情景测试（费用优化 / 基准 / 费用恶化）</div>
+            <table class="vd-table">
+              <thead><tr><th>情景</th><th>综合每股(元)</th><th>参数设定与传导</th></tr></thead>
+              <tbody>${(j.sellExpScenRows || []).map(m => `<tr><td class="vd-label">${esc(m.name)}</td><td class="vd-value">¥${fmt(m.value)}</td><td style="text-align:left;color:var(--text-secondary);font-size:12px;">${esc(m.note)}</td></tr>`).join('')}</tbody>
+            </table>
+          </div>` : ''}
           <div class="vd-formula">${esc(j.decisionNote || '')}</div>
           <div class="vd-foot">口径：六模型全部由确定性代码计算（动态系数按规则表自动判定、输入锁死 ⇒ 结果锁死，与 AI 模型无关）；假设项已在表中标注。【关键风险】${esc(j.riskNote || '')}</div>
         </div>`;
@@ -4496,146 +4588,77 @@ const App = {
       </div>`;
   },
 
-  // ---- 产品·客户（默认用 AI 联网获取；财报未覆盖时自动补全）----
-  async loadProducts(force = false) {
-    const symbol = this.currentSymbol;
-    const body = document.getElementById('productsBody');
-    if (!symbol || !body) return;
+  // ---- 信息分析（CFA 统一框架 · 20260914f）----
+  // 合并原「公司综合介绍 / 供应链与成本 / 主要产品&客户」三模块为单一分析：
+  // 七段输出（一句话定位与摘要 / 基本面画像 / 供应链与成本 / 客户与竞争 / 跨模块联动 / 风险提示 / 来源与缺失说明）。
 
-    // 已为该股票加载过（缓存命中或已分析）则不再重复请求
-    if (!force && this.productsLoadedSymbol === symbol && this.productsData) {
-      this.renderProducts(this.productsData);
+  // 20260914h：静默预热本地事实库（东财 F10：公司概况 / 经营范围 / 主营构成）。
+  // 纯数据抓取、零 LLM 费用，用于下次「✨ AI 联网获取」时作为补充上下文；
+  // 每只股票每个会话只预热一次，失败静默且解除标记以便下次重试。
+  _prefetchCompanyFacts() {
+    const symbol = this.currentSymbol;
+    if (!symbol) return;
+    this._factsPrefetched = this._factsPrefetched || {};
+    if (this._factsPrefetched[symbol]) return;
+    this._factsPrefetched[symbol] = true;
+    const name = this.currentData?.name || '';
+    fetch('/api/ai/prefetch-facts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol, stockName: name }),
+    }).then((r) => r.json()).then((d) => {
+      // 预热失败则解除标记，下次打开/切股再试
+      if (!d || d.success === false) this._factsPrefetched[symbol] = false;
+    }).catch(() => { this._factsPrefetched[symbol] = false; });
+  },
+
+  async loadCompanyDeep(force = false) {
+    const symbol = this.currentSymbol;
+    const body = document.getElementById('companyDeepBody');
+    if (!symbol || !body) return;
+    if (!force && this.companyDeepLoadedSymbol === symbol && this.companyDeepData) {
+      this.renderCompanyDeep(this.companyDeepData);
       return;
     }
-    if (force) body.innerHTML = '<div class="ai-empty">正在联网分析产品与客户，请稍候…</div>';
-
     try {
       if (!force) {
-        const resp = await fetch(`/api/ai/products/${encodeURIComponent(symbol)}`);
+        const resp = await fetch(`/api/ai/company-deep/${encodeURIComponent(symbol)}`);
         const cached = await resp.json();
-        if (this.currentSymbol !== symbol) return; // 已切换股票
-        if (cached.success && (cached.products?.length || cached.customers?.length || cached.summary)) {
-          this.productsData = cached;
-          this.productsLoadedSymbol = symbol;
-          this.renderProducts(cached);
-          this.renderCompanyProfile(this.currentData, cached);
+        if (this.currentSymbol !== symbol) return;
+        if (cached.success) {
+          this.companyDeepData = cached;
+          this.companyDeepLoadedSymbol = symbol;
+          this.renderCompanyDeep(cached);
           return;
         }
-        // 无缓存：不自动联网（避免每次打开个股都消耗额度），提示用户点击获取
-        body.innerHTML = '<div class="ai-empty">暂无已存的产品/客户数据，点击右上角「✨ AI 联网获取」即可联网分析（含产品图片与营收占比）。</div>';
+        // 无缓存：主按钮保持「✨ AI 联网获取」，隐藏「🔄 重新搜索」
+        this._setCompanyDeepButtons(false);
+        body.innerHTML = '<div class="ai-empty">暂无已存的信息分析资料。<br>简介类资料（基本面画像 / 供应链与成本 / 客户与竞争 / 重大事件）更新频率很低，'
+          + '生成一次后会<b>永久保存</b>在本机，之后每次打开工作台自动秒显、无需重复联网。<br>'
+          + '点击右上角「✨ AI 联网获取」即可联网生成。</div>';
         return;
       }
-      if (force) {
-        body.innerHTML = '<div class="ai-empty">正在联网分析产品与客户（含图片与营收占比），请稍候…</div>';
-        const resp = await fetch('/api/ai/products', {
+      body.innerHTML = '<div class="ai-loading"><div class="loading-spinner"></div><p>正在联网进行信息分析（CFA 七段框架，含产品/供应商/竞争对手图片），内容较长请稍候（约 3-4 分钟）…</p></div>';
+      const aiBtn = document.getElementById('companyDeepAiBtn');
+      if (aiBtn) { aiBtn.disabled = true; aiBtn.textContent = '⏳ 分析中…'; }
+      let data;
+      try {
+        const resp = await fetch('/api/ai/company-deep', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ symbol, force: true, companyType: this.currentData?.companyType?.type })
+          body: JSON.stringify({ symbol, force: true, companyName: this.currentData?.name, industry: this.currentData?.industry, companyType: this.currentData?.companyType?.type }),
         });
-        const data = await resp.json();
-        if (this.currentSymbol !== symbol) return;
-        if (data.success && (data.products?.length || data.customers?.length || data.summary)) {
-          this.productsData = data;
-          this.productsLoadedSymbol = symbol;
-          this.renderProducts(data);
-        } else if (!data.success && data.error === 'NO_KEY') {
-          body.innerHTML = '<div class="ai-empty">尚未配置 AI API Key，无法联网获取产品/客户。请先在「⚙️ AI 设置」中配置，或点击「✨ AI 联网获取」。</div>';
-        } else {
-          body.innerHTML = '<div class="ai-empty">联网获取失败：' + this.escapeHtml(data.message || data.error || '未知错误') + '</div>';
-        }
+        data = await resp.json();
+      } finally {
+        if (aiBtn) { aiBtn.disabled = false; }
+        // 按钮文案按是否已有资料自适应
+        this._setCompanyDeepButtons(!!(this.companyDeepData && this.companyDeepLoadedSymbol === symbol));
       }
-    } catch (e) {
-      if (force) body.innerHTML = '<div class="ai-empty">获取失败：' + this.escapeHtml(e.message) + '</div>';
-    }
-  },
-
-  renderProducts(data) {
-    const body = document.getElementById('productsBody');
-    if (!body) return;
-    const dateEl = document.getElementById('productsDate');
-    const rf = document.getElementById('productsRefresh');
-    if (dateEl && data.date) {
-      const d = new Date(data.date);
-      const pad = (n) => String(n).padStart(2, '0');
-      dateEl.textContent = '更新于 ' + `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-    }
-    if (rf) rf.style.display = '';
-    const products = data.products || [];
-    const customers = data.customers || [];
-    const imgOf = (p) => (p.imageLocal || (p.imageUrl && /^https?:\/\//.test(p.imageUrl) ? p.imageUrl : ''));
-    const importanceClass = (imp) => ({ '核心': 'core', '重要': 'major', '次要': 'minor' }[imp] || 'major');
-
-    const productCards = products.length ? products.map(p => {
-      const img = imgOf(p);
-      const pct = Number(p.revenueShare) || 0;
-      const imp = p.importance || '重要';
-      return `<div class="prod-card">
-        <div class="prod-img">
-          ${img ? `<img src="${this.escapeHtml(img)}" alt="${this.escapeHtml(p.name)}" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}
-          <span class="prod-ph">📦</span>
-          <span class="prod-imp prod-imp-${importanceClass(imp)}">${this.escapeHtml(imp)}</span>
-        </div>
-        <div class="prod-name">${this.escapeHtml(p.name)}</div>
-        <div class="prod-share">
-          <div class="ps-track"><div class="ps-fill" style="width:${Math.min(100, pct)}%"></div></div>
-          <span class="ps-num">营收占比 ${pct}%</span>
-        </div>
-        ${p.desc ? `<div class="prod-desc">${this.escapeHtml(p.desc)}</div>` : ''}
-      </div>`;
-    }).join('') : '<div class="ai-empty">暂无产品数据</div>';
-
-    const custRows = customers.length ? customers.map(c => `<div class="cust-row">
-      <span class="cust-name">${this.escapeHtml(c.name)}</span>
-      ${Number(c.revenueShare) ? `<span class="cust-share">营收占比 ${Number(c.revenueShare)}%</span>` : ''}
-      ${c.desc ? `<span class="cust-desc">${this.escapeHtml(c.desc)}</span>` : ''}
-    </div>`).join('') : '<div class="ai-empty">暂无客户数据</div>';
-
-    const staleNote = data.stale ? `<div class="mx-stale-note">⚠️ 本地事实已过期（最后更新 ${this.escapeHtml((data.fetchedAt || data.factMaxDate || '').toString().slice(0, 10) || '未知')}），点击「✨ AI 联网获取」可重新抓取最新数据</div>` : '';
-    body.innerHTML = `
-      ${staleNote}
-      ${data.summary ? `<div class="prod-summary">${this.escapeHtml(data.summary)}</div>` : ''}
-      <h4 class="prod-sub">主要产品（${products.length}）</h4>
-      <div class="prod-grid">${productCards}</div>
-      <h4 class="prod-sub">主要客户（${customers.length}）</h4>
-      <div class="cust-list">${custRows}</div>`;
-  },
-
-  // ---- 公司综合介绍（分析①：AI 联网获取，含产品服务图/实控人/近10年事件）----
-  async loadCompanyIntro(force = false) {
-    const symbol = this.currentSymbol;
-    const body = document.getElementById('companyIntroBody');
-    if (!symbol || !body) return;
-    if (!force && this.companyIntroLoadedSymbol === symbol && this.companyIntroData) {
-      this.renderCompanyIntro(this.companyIntroData);
-      return;
-    }
-    if (force) body.innerHTML = '<div class="ai-empty">正在联网分析公司综合介绍，请稍候…</div>';
-    try {
-      if (!force) {
-        const resp = await fetch(`/api/ai/company/${encodeURIComponent(symbol)}`);
-        const cached = await resp.json();
-        if (this.currentSymbol !== symbol) return;
-        if (cached.success) {
-          this.companyIntroData = cached;
-          this.companyIntroLoadedSymbol = symbol;
-          this.renderCompanyIntro(cached);
-          return;
-        }
-        body.innerHTML = '<div class="ai-empty">暂无已存的公司介绍资料，点击右上角「✨ AI 联网获取」即可联网生成（含办公地点、产品图、实控人、近10年事件）。</div>';
-        return;
-      }
-      body.innerHTML = '<div class="ai-empty">正在联网分析公司综合介绍（含图片），请稍候…</div>';
-      const resp = await fetch('/api/ai/company', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol, force: true, companyName: this.currentData?.name, industry: this.currentData?.industry }),
-      });
-      const data = await resp.json();
       if (this.currentSymbol !== symbol) return;
       if (data.success) {
-        this.companyIntroData = data;
-        this.companyIntroLoadedSymbol = symbol;
-        this.renderCompanyIntro(data);
+        this.companyDeepData = data;
+        this.companyDeepLoadedSymbol = symbol;
+        this.renderCompanyDeep(data);
       } else if (!data.success && data.error === 'NO_KEY') {
         body.innerHTML = '<div class="ai-empty">尚未配置 AI API Key，无法联网获取。请先在「⚙️ AI 设置」中配置。</div>';
       } else {
@@ -4646,140 +4669,291 @@ const App = {
     }
   },
 
-  renderCompanyIntro(data) {
-    const body = document.getElementById('companyIntroBody');
+  // 20260914h：信息分析卡片按钮状态自适应
+  // hasData=true → 主按钮「🔄 重新搜索」（强制重跑），隐藏副按钮
+  // hasData=false → 主按钮「✨ AI 联网获取」，隐藏副按钮
+  // 副按钮 companyDeepRefresh 保留在 DOM 中但不再单独显示，避免两按钮功能重复
+  _setCompanyDeepButtons(hasData) {
+    const aiBtn = document.getElementById('companyDeepAiBtn');
+    const rf = document.getElementById('companyDeepRefresh');
+    if (aiBtn) {
+      aiBtn.disabled = false;
+      aiBtn.textContent = hasData ? '🔄 重新搜索' : '✨ AI 联网获取';
+    }
+    if (rf) rf.style.display = 'none';
+  },
+
+  renderCompanyDeep(data) {
+    const body = document.getElementById('companyDeepBody');
     if (!body) return;
-    const dateEl = document.getElementById('companyIntroDate');
-    const rf = document.getElementById('companyIntroRefresh');
+    const dateEl = document.getElementById('companyDeepDate');
     if (dateEl && data.date) {
       const d = new Date(data.date);
       const pad = (n) => String(n).padStart(2, '0');
-      dateEl.textContent = '更新于 ' + `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+      const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+      // 20260914h：永久保存口径——明确告知「已永久保存，无需重复联网」
+      dateEl.textContent = `已保存 · 更新于 ${stamp}`;
     }
-    if (rf) rf.style.display = '';
-    const c = data;
-    const stat = (label, val) => `<div class="ci-stat"><span class="ci-stat-label">${this.escapeHtml(label)}</span><span class="ci-stat-val">${val ? this.escapeHtml(val) : '—'}</span></div>`;
-    const psImgs = (c.productsServices || []).map(p => {
-      const img = p.imageLocal || (p.imageUrl && /^https?:\/\//.test(p.imageUrl) ? p.imageUrl : '');
-      return `<div class="ci-prod">
-        <div class="ci-prod-img">${img ? `<img src="${this.escapeHtml(img)}" alt="${this.escapeHtml(p.name)}" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}<span class="ci-prod-ph">🏷️</span></div>
-        <div class="ci-prod-name">${this.escapeHtml(p.name)}</div>
-        ${p.desc ? `<div class="ci-prod-desc">${this.escapeHtml(p.desc)}</div>` : ''}
-      </div>`;
-    }).join('');
-    const brandChips = (c.brands || []).map(b => `<span class="ci-chip">${this.escapeHtml(b)}</span>`).join('');
-    const impactCls = (s) => /利好/.test(s) ? 'bull' : /利空/.test(s) ? 'bear' : 'neutral';
-    const events = (c.majorEvents || []).map(e => `<div class="ci-event">
-      <span class="ci-event-year">${this.escapeHtml(e.year)}</span>
-      <div class="ci-event-body">
-        <div class="ci-event-title">${this.escapeHtml(e.title)}</div>
-        ${e.desc ? `<div class="ci-event-desc">${this.escapeHtml(e.desc)}</div>` : ''}
-        ${e.impact ? `<div class="ci-event-impact ci-${impactCls(e.impact)}">${this.escapeHtml(e.impact)}</div>` : ''}
-      </div>
-    </div>`).join('');
-    body.innerHTML = `
-      ${c.officeLocation ? `<div class="ci-office">📍 办公地点：${this.escapeHtml(c.officeLocation)}</div>` : ''}
-      ${c.missionCulture ? `<div class="ci-block"><div class="ci-block-title">🎯 经营宗旨 / 企业文化</div><div class="ci-text">${this.escapeHtml(c.missionCulture)}</div></div>` : ''}
-      ${brandChips ? `<div class="ci-block"><div class="ci-block-title">🌟 旗下知名品牌</div><div class="ci-chips">${brandChips}</div></div>` : ''}
-      <div class="ci-stats">
-        ${stat('专利数量', c.patentCount)}
-        ${stat('员工人数', c.employeeCount)}
-        ${stat('高管平均薪酬', c.execAvgSalary)}
-      </div>
-      ${c.actualController ? `<div class="ci-block"><div class="ci-block-title">👤 实际控制人</div><div class="ci-text"><b>${this.escapeHtml(c.actualController)}</b>${c.actualControllerIntro ? ` — ${this.escapeHtml(c.actualControllerIntro)}` : ''}</div></div>` : ''}
-      ${psImgs ? `<div class="ci-block"><div class="ci-block-title">🛍️ 产品与服务</div><div class="ci-prod-grid">${psImgs}</div></div>` : ''}
-      ${events ? `<div class="ci-block"><div class="ci-block-title">📰 近10年重大事件（公司与行业）</div><div class="ci-events">${events}</div></div>` : ''}
-      ${c.summary ? `<div class="ci-summary">${this.escapeHtml(c.summary)}</div>` : ''}
-    `;
+    // 有资料 → 主按钮切为「🔄 重新搜索」
+    this._setCompanyDeepButtons(true);
+
+    const esc = (s) => this.escapeHtml(s == null ? '' : String(s));
+    const val = (s) => (s == null || s === '' ? '未披露' : esc(s));
+    const A = (arr) => (Array.isArray(arr) ? arr : []);
+    const imgOf = (o) => (o.imageLocal || '');
+    const secTitle = (t) => `<h4 class="cd-sec">${esc(t)}</h4>`;
+    const blockTitle = (t) => `<div class="cd-block-title">${esc(t)}</div>`;
+    // 文本块：颜色由内容语义决定（利好红 / 利空绿 / 风险黄），与全局口径一致
+    const textCls = (s) => {
+      const t = String(s || '');
+      if (/未披露|未检索到|待核实|未提供|未获取/.test(t)) return 'cd-muted';
+      if (/置顶|风险|处罚|诉讼|退市|违规|质押|下滑|承压/.test(t)) return 'cd-warn';
+      return '';
+    };
+
+    const bi = (data.profile && data.profile.basicInfo) || {};
+    const profile = data.profile || {};
+    const sc = data.supplyChain || {};
+    const comp = data.competition || {};
+
+    let html = '';
+
+    // ===== 置顶重大风险 =====
+    const flags = A(data.flags);
+    const dangerFlags = flags.filter(f => f.level === 'danger');
+    if ((data.topWarning && data.topWarning !== '无') || dangerFlags.length) {
+      const items = [];
+      if (data.topWarning && data.topWarning !== '无') items.push(data.topWarning);
+      dangerFlags.forEach(f => { if (!items.includes(f.text)) items.push(f.text); });
+      html += `<div class="cd-topwarn">⚠️ 置顶风险提示<div class="cd-topwarn-body">${items.map(t => `<div>${esc(t)}</div>`).join('')}</div></div>`;
+    }
+
+    // ===== 一、一句话定位与投资摘要 =====
+    html += secTitle('一、公司一句话定位与投资摘要');
+    html += `<div class="cd-oneliner">${esc(data.oneLiner || '未披露')}</div>`;
+    if (data.investmentSummary) html += `<div class="cd-summary">${esc(data.investmentSummary)}</div>`;
+    // 代码判定的确定性 flags（成本敏感型 / 传导强弱 / 客户集中 / 收入依赖 / 红线）
+    if (flags.length) {
+      html += '<div class="cd-flags">' + flags.map(f => `<span class="cd-flag cd-flag-${esc(f.level)}">${esc(f.text)}</span>`).join('') + '</div>';
+    }
+
+    // ===== 二、公司基本面画像 =====
+    html += secTitle('二、公司基本面画像');
+    const biRows = [
+      ['公司全称', bi.fullName], ['办公地点', bi.officeLocation], ['注册地址', bi.registeredAddress],
+      ['成立日期', bi.foundedDate], ['上市日期', bi.listedDate], ['所属行业', bi.industry],
+      ['员工人数', bi.employeeCount], ['高管人数', bi.execCount],
+      ['高管平均薪酬', bi.execAvgSalary + (bi.execSalaryBasis ? `（口径：${bi.execSalaryBasis}）` : '')],
+    ];
+    html += '<div class="cd-bi">' + biRows.map(([k, v]) => `<div class="cd-bi-row"><span class="cd-k">${esc(k)}</span><span class="cd-v">${val(v)}</span></div>`).join('') + '</div>';
+
+    // 产品与服务
+    const ps = A(profile.productsServices);
+    html += blockTitle('产品与服务');
+    if (ps.length) {
+      html += '<div class="cd-prod-grid">' + ps.map(p => {
+        const img = imgOf(p);
+        return `<div class="cd-prod">
+          <div class="cd-prod-img">${img ? `<img src="${esc(img)}" alt="${esc(p.name)}" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}<span class="cd-ph">🏷️</span></div>
+          <div class="cd-prod-name">${esc(p.name)}</div>
+          ${p.revenueShare ? `<div class="cd-prod-share">收入占比 ${esc(p.revenueShare)}</div>` : ''}
+          ${p.content ? `<div class="cd-prod-line"><b>服务内容：</b>${esc(p.content)}</div>` : ''}
+          ${p.scenario ? `<div class="cd-prod-line"><b>应用场景：</b>${esc(p.scenario)}</div>` : ''}
+          ${p.customerType ? `<div class="cd-prod-line"><b>主要客户类型：</b>${esc(p.customerType)}</div>` : ''}
+          ${p.imageNote ? `<div class="cd-imgnote">${esc(p.imageNote)}</div>` : ''}
+        </div>`;
+      }).join('') + '</div>';
+    } else html += '<div class="cd-muted">未披露</div>';
+
+    // 文化 · 品牌
+    const cul = profile.culture || {};
+    html += blockTitle('经营宗旨 / 企业文化 / 品牌');
+    const culRows = [['经营宗旨', cul.mission], ['企业文化', cul.culture], ['公司愿景', cul.vision], ['核心价值观', cul.values], ['商标情况', cul.trademarks]];
+    html += '<div class="cd-bi">' + culRows.map(([k, v]) => `<div class="cd-bi-row"><span class="cd-k">${esc(k)}</span><span class="cd-v">${val(v)}</span></div>`).join('') + '</div>';
+    if (A(cul.brands).length) html += '<div class="cd-chips">' + A(cul.brands).map(b => `<span class="cd-chip">${esc(b)}</span>`).join('') + '</div>';
+
+    // 专利创新
+    const pat = profile.patents || {};
+    html += blockTitle('专利与创新');
+    html += `<div class="cd-stat-row">
+      <div class="cd-stat"><span class="cd-stat-l">专利总数</span><span class="cd-stat-v">${val(pat.total)}</span></div>
+      <div class="cd-stat"><span class="cd-stat-l">发明专利占比</span><span class="cd-stat-v">${val(pat.inventionRatio)}</span></div>
+      <div class="cd-stat"><span class="cd-stat-l">近3年年均增速</span><span class="cd-stat-v">${val(pat.yoy3y)}</span></div>
+      <div class="cd-stat"><span class="cd-stat-l">行业分位</span><span class="cd-stat-v">${val(pat.industryPercentile)}</span></div>
+    </div>`;
+
+    // 实控人
+    const ctl = profile.controller || {};
+    html += blockTitle('实际控制人与治理');
+    html += `<div class="cd-bi">
+      <div class="cd-bi-row"><span class="cd-k">有无实控人</span><span class="cd-v">${val(ctl.hasController)}</span></div>
+      <div class="cd-bi-row"><span class="cd-k">姓名 / 类型</span><span class="cd-v">${val(ctl.name)}</span></div>
+      <div class="cd-bi-row"><span class="cd-k">持股比例</span><span class="cd-v">${val(ctl.holdingPct)}</span></div>
+      <div class="cd-bi-row"><span class="cd-k">控制路径</span><span class="cd-v">${val(ctl.controlPath)}</span></div>
+      <div class="cd-bi-row"><span class="cd-k">一致行动人</span><span class="cd-v">${A(ctl.concertParties).length ? esc(A(ctl.concertParties).join('、')) : '未披露'}</span></div>
+      <div class="cd-bi-row"><span class="cd-k">背景</span><span class="cd-v">${val(ctl.background)}</span></div>
+      <div class="cd-bi-row"><span class="cd-k">质押情况</span><span class="cd-v ${textCls(ctl.pledge)}">${val(ctl.pledge)}</span></div>
+      <div class="cd-bi-row"><span class="cd-k">潜在治理风险</span><span class="cd-v ${textCls(ctl.governanceRisk)}">${val(ctl.governanceRisk)}</span></div>
+      ${ctl.equityStructure ? `<div class="cd-bi-row"><span class="cd-k">股权结构特征</span><span class="cd-v">${esc(ctl.equityStructure)}</span></div>` : ''}
+    </div>`;
+
+    // 近10年重大事件时间线
+    const events = A(profile.majorEvents);
+    html += blockTitle('近10年重大事件雷达');
+    if (events.length) {
+      html += '<div class="cd-events">' + events.map(e => {
+        const lv = (e.impactLevel || '').includes('高') ? 'high' : (e.impactLevel || '').includes('低') ? 'low' : 'mid';
+        return `<div class="cd-event">
+          <span class="cd-ev-date">${esc(e.date || '')}</span>
+          <div class="cd-ev-body">
+            <div class="cd-ev-head"><span class="cd-ev-cat">${esc(e.category || '事件')}</span><span class="cd-ev-lv cd-ev-lv-${lv}">${esc(e.impactLevel || '中')}</span></div>
+            <div class="cd-ev-title">${esc(e.title)}</div>
+            ${e.desc ? `<div class="cd-ev-desc">${esc(e.desc)}</div>` : ''}
+            ${e.impactOn ? `<div class="cd-ev-impact">影响：${esc(e.impactOn)}</div>` : ''}
+          </div>
+        </div>`;
+      }).join('') + '</div>';
+    } else html += '<div class="cd-muted">未检索到</div>';
+
+    // ===== 三、供应链与成本 =====
+    html += secTitle('三、供应链与成本');
+    const posCls = /上游/.test(sc.chainPosition || '') ? 'up' : /下游/.test(sc.chainPosition || '') ? 'down' : /中游/.test(sc.chainPosition || '') ? 'mid' : 'neutral';
+    html += `<div class="cd-bi-row"><span class="cd-k">产业链位置</span><span class="cd-v"><span class="cd-pos cd-pos-${posCls}">${val(sc.chainPosition)}</span>${sc.positionBasis ? ` <span class="cd-muted">（${esc(sc.positionBasis)}）</span>` : ''}</span></div>`;
+
+    const mats = A(sc.materials);
+    html += blockTitle('主要原材料 / 服务与供应商');
+    if (mats.length) {
+      html += '<div class="cd-mats">' + mats.map(m => {
+        const img = imgOf(m);
+        return `<div class="cd-mat">
+          <div class="cd-mat-img">${img ? `<img src="${esc(img)}" alt="${esc(m.name)}" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}<span class="cd-ph">🔩</span></div>
+          <div class="cd-mat-info">
+            <div class="cd-mat-name">${esc(m.name)}</div>
+            ${m.desc ? `<div class="cd-mat-line">${esc(m.desc)}</div>` : ''}
+            <div class="cd-mat-line"><span class="cd-k2">前五大供应商</span>${val(m.supplierTop5)}</div>
+            <div class="cd-mat-line"><span class="cd-k2">采购占比</span>${val(m.procureShare)}</div>
+            <div class="cd-mat-line"><span class="cd-k2">供应内容</span>${val(m.supplyContent)}</div>
+            <div class="cd-mat-line"><span class="cd-k2">合作稳定性</span>${val(m.stability)}</div>
+            ${m.imageNote ? `<div class="cd-imgnote">${esc(m.imageNote)}</div>` : ''}
+          </div>
+        </div>`;
+      }).join('') + '</div>';
+    } else html += '<div class="cd-muted">未披露</div>';
+
+    // 成本传导与敏感性
+    html += blockTitle('成本传导与敏感性分析');
+    html += `<div class="cd-stat-row">
+      <div class="cd-stat"><span class="cd-stat-l">直接材料占营业成本</span><span class="cd-stat-v">${val(sc.directMaterialRatio)}</span></div>
+      <div class="cd-stat"><span class="cd-stat-l">成本传导系数</span><span class="cd-stat-v">${sc.conductionCoef == null ? '未披露' : esc(sc.conductionCoef)}</span></div>
+      <div class="cd-stat"><span class="cd-stat-l">毛利率敏感系数</span><span class="cd-stat-v">${sc.grossMarginSensitivity == null ? '未披露' : esc(sc.grossMarginSensitivity)}</span></div>
+    </div>`;
+    const smRows = A(sc.sensitivityMatrix);
+    if (smRows.length) {
+      html += `<div class="cd-table-wrap"><table class="cd-table">
+        <thead><tr><th>原材料价格变动</th><th>对毛利率影响</th><th>对净利润影响</th><th>对现金流影响</th></tr></thead><tbody>
+        ${smRows.map(r => `<tr><td>${esc(r.priceChange)}</td><td>${esc(r.grossMargin)}</td><td>${esc(r.netProfit)}</td><td>${esc(r.cashFlow)}</td></tr>`).join('')}
+        </tbody></table></div>`;
+    }
+    if (sc.sensitivityNote) html += `<div class="cd-note">${esc(sc.sensitivityNote)}</div>`;
+
+    // 成本控制方法
+    const cc = A(sc.costControl);
+    html += blockTitle('成本控制方法');
+    if (cc.length) {
+      html += '<div class="cd-ctrl">' + cc.map(c => `<div class="cd-ctrl-item"><span class="cd-ctrl-type">${esc(c.type || '方法')}</span><div><div>${esc(c.practice)}</div>${c.costImpact ? `<div class="cd-muted">成本影响：${esc(c.costImpact)}</div>` : ''}</div></div>`).join('') + '</div>';
+    } else html += '<div class="cd-muted">未披露</div>';
+
+    // 成本风险结论
+    const crlv = (sc.costRiskLevel || '').includes('高') ? 'high' : (sc.costRiskLevel || '').includes('低') ? 'low' : 'mid';
+    html += `<div class="cd-concl cd-concl-${crlv}"><b>成本风险等级：${val(sc.costRiskLevel)}</b>${sc.costRiskReason ? `<div>${esc(sc.costRiskReason)}</div>` : ''}</div>`;
+
+    // ===== 四、客户与竞争 =====
+    html += secTitle('四、客户与竞争格局');
+    // 客户
+    const custs = A(comp.customers);
+    html += blockTitle('主要客户与集中度');
+    if (custs.length) {
+      html += '<div class="cd-table-wrap"><table class="cd-table"><thead><tr><th>客户</th><th>收入占比</th><th>集中度</th><th>行业分位</th></tr></thead><tbody>'
+        + custs.map(c => `<tr><td>${esc(c.name)}</td><td>${esc(c.revenueShare)}</td><td>${esc(c.concentration)}</td><td>${esc(c.industryPercentile)}</td></tr>`).join('')
+        + '</tbody></table></div>';
+    } else html += '<div class="cd-muted">未披露</div>';
+
+    // 竞争对手
+    const comps = A(comp.competitors);
+    html += blockTitle('主要竞争对手');
+    if (comps.length) {
+      html += '<div class="cd-comps">' + comps.map(c => {
+        const img = imgOf(c);
+        return `<div class="cd-comp">
+          <div class="cd-comp-img">${img ? `<img src="${esc(img)}" alt="${esc(c.name)}" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}<span class="cd-ph">🏢</span></div>
+          <div class="cd-comp-name">${esc(c.name)}</div>
+          ${c.marketShare ? `<div class="cd-comp-line">市场份额：${esc(c.marketShare)}</div>` : ''}
+          <div class="cd-comp-tags">
+            ${c.productOverlap ? `<span class="cd-tag">产品重叠 ${esc(c.productOverlap)}</span>` : ''}
+            ${c.customerOverlap ? `<span class="cd-tag">客户重叠 ${esc(c.customerOverlap)}</span>` : ''}
+            ${c.regionOverlap ? `<span class="cd-tag">区域重叠 ${esc(c.regionOverlap)}</span>` : ''}
+            ${c.priceStrategy ? `<span class="cd-tag cd-tag-ps">${esc(c.priceStrategy)}</span>` : ''}
+          </div>
+          ${c.imageNote ? `<div class="cd-imgnote">${esc(c.imageNote)}</div>` : ''}
+        </div>`;
+      }).join('') + '</div>';
+    } else html += '<div class="cd-muted">未披露</div>';
+
+    // 竞争格局图谱
+    if (comp.landscapeGraph) html += `<div class="cd-block-title">竞争格局图谱</div><div class="cd-graph">${esc(comp.landscapeGraph)}</div>`;
+
+    // 对手价格变动影响模拟
+    const ws = comp.priceWarSimulation || {};
+    html += blockTitle('竞争对手价格变动影响模拟');
+    html += `<div class="cd-stat-row">
+      <div class="cd-stat"><span class="cd-stat-l">产品同质化</span><span class="cd-stat-v">${val(ws.homogeneity)}</span></div>
+      <div class="cd-stat"><span class="cd-stat-l">客户转换成本</span><span class="cd-stat-v">${val(ws.switchingCost)}</span></div>
+      <div class="cd-stat"><span class="cd-stat-l">品牌溢价</span><span class="cd-stat-v">${val(ws.brandPremium)}</span></div>
+      <div class="cd-stat"><span class="cd-stat-l">渠道粘性</span><span class="cd-stat-v">${val(ws.channelStickiness)}</span></div>
+    </div>`;
+    const scen = A(ws.scenarios);
+    if (scen.length) {
+      html += '<div class="cd-table-wrap"><table class="cd-table"><thead><tr><th>应对策略</th><th>收入变化</th><th>毛利率变化</th><th>净利润变化</th><th>市场份额变化</th></tr></thead><tbody>'
+        + scen.map(s => `<tr><td>${esc(s.strategy)}</td><td>${esc(s.revenue || '未提供')}</td><td>${esc(s.grossMargin || '未提供')}</td><td>${esc(s.netProfit || '未提供')}</td><td>${esc(s.marketShare || '未提供')}</td></tr>`).join('')
+        + '</tbody></table></div>';
+    }
+
+    // 竞争风险与定价权结论
+    const krlv = (comp.competitionRiskLevel || '').includes('高') ? 'high' : (comp.competitionRiskLevel || '').includes('低') ? 'low' : 'mid';
+    html += `<div class="cd-concl cd-concl-${krlv}"><b>竞争风险等级：${val(comp.competitionRiskLevel)}</b>${comp.pricingPower ? `<div>定价权判断：${esc(comp.pricingPower)}</div>` : ''}</div>`;
+    const rs = A(comp.riskSignals);
+    if (rs.length) html += '<div class="cd-block-title">建议关注的风险信号</div><ul class="cd-list cd-list-warn">' + rs.map(x => `<li>${esc(x)}</li>`).join('') + '</ul>';
+
+    // ===== 五、跨模块联动结论 =====
+    html += secTitle('五、跨模块联动结论');
+    html += `<div class="cd-summary">${val(data.linkage)}</div>`;
+
+    // ===== 六、风险提示 =====
+    html += secTitle('六、风险提示');
+    const rn = A(data.riskNotes);
+    html += rn.length ? '<ul class="cd-list cd-list-warn">' + rn.map(x => `<li>${esc(x)}</li>`).join('') + '</ul>' : '<div class="cd-muted">未提供</div>';
+
+    // ===== 七、数据来源、日期与缺失说明 =====
+    html += secTitle('七、数据来源、日期与缺失说明');
+    const ds = A(data.dataSources);
+    if (ds.length) {
+      html += '<div class="cd-table-wrap"><table class="cd-table"><thead><tr><th>结论/数据项</th><th>来源</th><th>日期</th></tr></thead><tbody>'
+        + ds.map(d => `<tr><td>${esc(d.item)}</td><td>${esc(d.source)}</td><td>${esc(d.date)}</td></tr>`).join('')
+        + '</tbody></table></div>';
+    }
+    const mn = A(data.missingNotes);
+    if (mn.length) html += '<ul class="cd-list">' + mn.map(x => `<li>${esc(x)}</li>`).join('') + '</ul>';
+
+    // 页脚：模式与来源
+    const modeNote = data.mode === 'local'
+      ? '本地事实模式（东财 F10 预下载事实 + 不联网模型纯推理，零联网费）'
+      : '联网模式（受网站访问限制，部分数据可能为公开信息推断）';
+    html += `<div class="cd-foot">分析引擎：证券分析师 CFA 框架（七段统一输出）· ${esc(modeNote)}${data.model ? ` · 模型：${esc(data.model)}` : ''} · 由代码判定确定性阈值（成本敏感型/传导强弱/客户集中度/收入依赖/置顶风险），AI 仅负责叙事。</div>`;
+
+    body.innerHTML = html;
   },
 
-  // ---- 供应链与成本分析（分析②：产业链位置/原材料价格/供应商/成本控制）----
-  async loadSupplyChain(force = false) {
-    const symbol = this.currentSymbol;
-    const body = document.getElementById('supplyChainBody');
-    if (!symbol || !body) return;
-    if (!force && this.supplyLoadedSymbol === symbol && this.supplyData) {
-      this.renderSupplyChain(this.supplyData);
-      return;
-    }
-    if (force) body.innerHTML = '<div class="ai-empty">正在联网分析供应链与成本，请稍候…</div>';
-    try {
-      if (!force) {
-        const resp = await fetch(`/api/ai/supply/${encodeURIComponent(symbol)}`);
-        const cached = await resp.json();
-        if (this.currentSymbol !== symbol) return;
-        if (cached.success) {
-          this.supplyData = cached;
-          this.supplyLoadedSymbol = symbol;
-          this.renderSupplyChain(cached);
-          return;
-        }
-        body.innerHTML = '<div class="ai-empty">暂无已存的供应链分析资料，点击右上角「✨ AI 联网获取」即可联网生成（含产业链位置、原材料价格、供应商、成本控制）。</div>';
-        return;
-      }
-      body.innerHTML = '<div class="ai-empty">正在联网分析供应链与成本（含图片），请稍候…</div>';
-      const resp = await fetch('/api/ai/supply', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol, force: true, companyName: this.currentData?.name, industry: this.currentData?.industry }),
-      });
-      const data = await resp.json();
-      if (this.currentSymbol !== symbol) return;
-      if (data.success) {
-        this.supplyData = data;
-        this.supplyLoadedSymbol = symbol;
-        this.renderSupplyChain(data);
-      } else if (!data.success && data.error === 'NO_KEY') {
-        body.innerHTML = '<div class="ai-empty">尚未配置 AI API Key，无法联网获取。请先在「⚙️ AI 设置」中配置。</div>';
-      } else {
-        body.innerHTML = '<div class="ai-empty">获取失败：' + this.escapeHtml(data.message || data.error || '未知错误') + '</div>';
-      }
-    } catch (e) {
-      if (force) body.innerHTML = '<div class="ai-empty">获取失败：' + this.escapeHtml(e.message) + '</div>';
-    }
-  },
 
-  renderSupplyChain(data) {
-    const body = document.getElementById('supplyChainBody');
-    if (!body) return;
-    const dateEl = document.getElementById('supplyChainDate');
-    const rf = document.getElementById('supplyChainRefresh');
-    if (dateEl && data.date) {
-      const d = new Date(data.date);
-      const pad = (n) => String(n).padStart(2, '0');
-      dateEl.textContent = '更新于 ' + `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-    }
-    if (rf) rf.style.display = '';
-    const posCls = /上游/.test(data.chainPosition) ? 'up' : /下游/.test(data.chainPosition) ? 'down' : /中游/.test(data.chainPosition) ? 'mid' : 'neutral';
-    const trendCls = (s) => /(上涨|上升|高位|增加|走高|涨价)/.test(s) ? 'bear' : /(下跌|回落|下行|下降|走低|减少|降价)/.test(s) ? 'bull' : 'neutral';
-    const mats = (data.materials || []).map(m => {
-      const img = m.imageLocal || (m.imageUrl && /^https?:\/\//.test(m.imageUrl) ? m.imageUrl : '');
-      return `<div class="sc-mat">
-        <div class="sc-mat-img">${img ? `<img src="${this.escapeHtml(img)}" alt="${this.escapeHtml(m.name)}" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}<span class="sc-mat-ph">📦</span></div>
-        <div class="sc-mat-info">
-          <div class="sc-mat-name">${this.escapeHtml(m.name)}</div>
-          ${m.desc ? `<div class="sc-mat-desc">${this.escapeHtml(m.desc)}</div>` : ''}
-          ${m.priceTrend ? `<div class="sc-mat-row"><span class="sc-k">价格趋势</span><span class="sc-v sc-${trendCls(m.priceTrend)}">${this.escapeHtml(m.priceTrend)}</span></div>` : ''}
-          ${m.impactOnCost ? `<div class="sc-mat-row"><span class="sc-k">对成本影响</span><span class="sc-v sc-${trendCls(m.impactOnCost)}">${this.escapeHtml(m.impactOnCost)}</span></div>` : ''}
-        </div>
-      </div>`;
-    }).join('');
-    const sups = (data.suppliers || []).map(s => {
-      const img = s.imageLocal || (s.imageUrl && /^https?:\/\//.test(s.imageUrl) ? s.imageUrl : '');
-      return `<div class="sc-sup">
-        <div class="sc-sup-img">${img ? `<img src="${this.escapeHtml(img)}" alt="${this.escapeHtml(s.name)}" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}<span class="sc-sup-ph">🏭</span></div>
-        <div class="sc-sup-info"><div class="sc-sup-name">${this.escapeHtml(s.name)}</div>${s.desc ? `<div class="sc-sup-desc">${this.escapeHtml(s.desc)}</div>` : ''}</div>
-      </div>`;
-    }).join('');
-    const ctrl = (data.costControl || []).map(c => `<li>${this.escapeHtml(c)}</li>`).join('');
-    body.innerHTML = `
-      ${data.chainPosition ? `<div class="sc-pos">产业链位置：<span class="sc-pos-badge sc-pos-${posCls}">${this.escapeHtml(data.chainPosition)}</span></div>` : ''}
-      ${mats ? `<div class="ci-block"><div class="ci-block-title">🔩 主要原材料 / 服务（含价格变动与成本影响）</div><div class="sc-mats">${mats}</div></div>` : ''}
-      ${sups ? `<div class="ci-block"><div class="ci-block-title">🏭 主要供应商 / 供应方</div><div class="sc-sups">${sups}</div></div>` : ''}
-      ${ctrl ? `<div class="ci-block"><div class="ci-block-title">💡 成本控制方法</div><ul class="sc-ctrl">${ctrl}</ul></div>` : ''}
-      ${data.summary ? `<div class="ci-summary">${this.escapeHtml(data.summary)}</div>` : ''}
-    `;
-  },
 
   escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({
@@ -4916,6 +5090,57 @@ const App = {
     });
   },
 
+  // ---- 20260914i：准确率检查展示（大盘技术分析 / 个股技术面）----
+  // 口径：命中＝方向一致，「震荡」以涨跌绝对值 ≤ 容差计；样本不足时诚实显示「样本积累中」，不伪造数字。
+  _accChip(label, rate, total, extra) {
+    if (rate == null || !total) {
+      return `<span class="mt-acc-chip muted"><span class="mac-label">${label}</span><span class="mac-value">样本积累中</span></span>`;
+    }
+    const cls = rate >= 60 ? 'good' : rate >= 45 ? 'mid' : 'bad';
+    return `<span class="mt-acc-chip ${cls}"><span class="mac-label">${label}</span><span class="mac-value">${rate}%</span><span class="mac-sub">${total} 次</span>${extra ? `<span class="mac-sub">${extra}</span>` : ''}</span>`;
+  },
+
+  renderMarketTechAccuracy(acc) {
+    const el = document.getElementById('marketTechAccuracy');
+    if (!el) return;
+    if (!acc || !acc.short) { el.innerHTML = ''; return; }
+    const s = acc.short, m = acc.mid, f = acc.fusion || {};
+    const chips = [
+      this._accChip('短期方向', s.accuracy, s.settledCount, s.pendingCount ? `待验证 ${s.pendingCount}` : ''),
+      this._accChip('中期方向', m.accuracy, m.settledCount, m.pendingCount ? `待验证 ${m.pendingCount}` : ''),
+      this._accChip('融合信号', f.accuracy, f.settledCount),
+    ].join('');
+    const warn = (s.overdueCount > 0)
+      ? `<span class="mt-acc-warn" title="目标日已过但数据未就绪，未能结算，会影响统计真实性">⚠️ ${s.overdueCount} 条过期未结算</span>` : '';
+    el.innerHTML = `
+      <div class="mt-acc-bar">
+        <span class="mt-acc-title">🎯 准确率检查</span>
+        ${chips}
+        <span class="mt-acc-note">${this.escapeHtml(acc.horizonLabel || '')} · 基准 ${this.escapeHtml(acc.benchmark || '')}</span>
+        ${warn}
+        <a class="mt-acc-link" href="accuracy.html?tab=market" target="_blank">明细 →</a>
+      </div>`;
+  },
+
+  renderTechFaceAccuracy(acc) {
+    const el = document.getElementById('techFaceAccuracy');
+    if (!el) return;
+    if (!acc) { el.innerHTML = ''; return; }
+    const chips = [
+      this._accChip('短期方向', acc.accuracy, acc.settledCount, acc.pendingCount ? `待验证 ${acc.pendingCount}` : ''),
+    ].join('');
+    const warn = (acc.overdueCount > 0)
+      ? `<span class="mt-acc-warn">⚠️ ${acc.overdueCount} 条过期未结算</span>` : '';
+    el.innerHTML = `
+      <div class="mt-acc-bar">
+        <span class="mt-acc-title">🎯 准确率检查</span>
+        ${chips}
+        <span class="mt-acc-note">${this.escapeHtml(acc.horizonLabel || '')}</span>
+        ${warn}
+        <a class="mt-acc-link" href="accuracy.html?tab=tech&symbol=${encodeURIComponent(acc.symbol || this.currentSymbol || '')}" target="_blank">明细 →</a>
+      </div>`;
+  },
+
   async loadMarketTechnical(force) {
     const container = document.getElementById('marketTechnicalBody');
     if (!container) return;
@@ -4939,6 +5164,10 @@ const App = {
         upd.textContent = `更新于 ${hh}:${mm}`;
       }
       container.dataset.loaded = '1';
+      // 20260914i：拉取准确率统计（独立接口，失败不影响主卡片）
+      fetch('/api/market-tech/records').then(r => r.json()).then(a => {
+        if (a && a.success) this.renderMarketTechAccuracy(a.accuracy);
+      }).catch(() => {});
     } catch (e) {
       console.error('loadMarketTechnical error:', e);
       if (!container.dataset.loaded) {
@@ -4959,6 +5188,10 @@ const App = {
         return `<div class="mt-index mt-index-error"><div class="mt-name">${this.escapeHtml(x.name)}</div><div class="mt-err">${this.escapeHtml(x.error)}</div></div>`;
       }
       const s1 = x.step1, s2 = x.step2, s3 = x.step3, s4 = x.step4, s5 = x.step5, s6 = x.step6;
+      const ss = x.shortStruct || {};
+      const ssDirCls = ss.direction === '看多' ? 'mt-dir-bull' : (ss.direction === '看空' ? 'mt-dir-bear' : 'mt-dir-flat');
+      const ssVolCls = ss.volumeEffective ? 'up' : 'down';
+      const ssOffCls = ss.offensiveConfirm ? 'up' : 'down';
       return `<div class="mt-index">
         <div class="mt-index-head">
           <span class="mt-name">${this.escapeHtml(x.name)}</span>
@@ -4994,12 +5227,81 @@ const App = {
           </div>
           <div class="mt-risk">⚠️ 风险提示：${this.escapeHtml(s6.risk)}</div>
         </div>
+        <div class="mt-short-foot">
+          <span class="mt-sf-title">短线结构：</span>
+          <span class="mt-dir ${ssDirCls}">${this.escapeHtml(ss.direction || '—')}</span>
+          <span class="${ss.aboveMA5 ? 'up' : 'down'}">${ss.aboveMA5 ? '站上5日' : '未站上5日'}</span>
+          <span class="${ssVolCls}">${this.escapeHtml(ss.volumeNature || '—')}</span>
+          <span class="${ssOffCls}">${ss.offensiveConfirm ? '已重新站上MA5(进攻确认)' : '进攻未确认'}</span>
+          <span class="mt-sf-anchor">防守锚(前低) ${ss.shortDefensive != null ? ss.shortDefensive : '—'}</span>
+        </div>
       </div>`;
     }).join('');
-    container.innerHTML = `<div class="mt-list">${cards}</div>`;
+
+    // ===== 融合决策块（§7 融合版单一输出，替代原「短线结构研判」独立模块）=====
+    const f = data.fused || {};
+    let fusedHtml = '';
+    if (f && f.fusionSignal) {
+      const fusionCls = ({ '强多':'fu-bull-strong','偏多':'fu-bull','震荡':'fu-flat','偏空':'fu-bear','强空':'fu-bear-strong','反弹':'fu-amber','回调风险':'fu-amber' })[f.fusionSignal] || 'fu-flat';
+      const stateCls = ({ '止跌转强':'fu-bull','破位风险':'fu-bear','弱势震荡':'fu-flat' })[f.state] || 'fu-flat';
+      const confCls = ({ '高':'fu-conf-high','中':'fu-conf-mid','低':'fu-conf-low' })[f.confidence] || 'fu-conf-mid';
+      const extBias = (f.external && f.external.bias) ? f.external.bias : '中性';
+      const extCls = extBias === '偏鹰' ? 'fu-ext-hawk' : (extBias === '偏鸽' ? 'fu-ext-dove' : 'fu-ext-neutral');
+      const a = f.anchors || {};
+      const anchorCell = (label, val, extra) => `<div class="mt-anchor"><span class="mt-anchor-label">${this.escapeHtml(label)}</span><span class="mt-anchor-val">${val == null ? '—' : val}${extra ? '<small>' + this.escapeHtml(extra) + '</small>' : ''}</span></div>`;
+      const anchorsHtml = `<div class="mt-anchors">
+        ${anchorCell('短期防守锚(前低)', a.shortDefensive, '上证')}
+        ${anchorCell('结构防守锚', a.structuralDefensive, '摆动低')}
+        ${anchorCell('中期支撑', a.midSupport)}
+        ${anchorCell('中期压力', a.midPressure)}
+        ${anchorCell('进攻确认', a.offensiveConfirm ? '✓ 已站上MA5' : '✗ 未站上')}
+      </div>`;
+      const vol = f.volume || {};
+      const volCls = vol.effective ? 'fu-vol-eff' : 'fu-vol-weak';
+      const pos = f.position || {};
+      const posRange = pos.finalText || (pos.finalRange ? pos.finalRange.join('–') + ' 成' : '—');
+      const listHtml = (arr, cls) => (arr || []).map(s => `<li class="${cls || ''}">${this.escapeHtml(s)}</li>`).join('');
+      const extNote = (f.external && f.external.note) || '';
+      const extDisc = (f.external && f.external.disclaimer) || '';
+      fusedHtml = `<div class="mt-fused">
+        <div class="mt-fused-head">
+          <span class="mt-block-title">🧩 大盘融合研判（技术 + 短线 + 外部）</span>
+          <span class="mt-fusion-badge ${fusionCls}">${this.escapeHtml(f.fusionSignal)}</span>
+          <span class="mt-state-badge ${stateCls}">${this.escapeHtml(f.state)}</span>
+          <span class="mt-conf-badge ${confCls}">置信度 ${this.escapeHtml(f.confidence || '—')}</span>
+          <span class="mt-reli-badge ${f.reliable ? 'ok' : 'warn'}">${f.reliable ? '信号可靠' : '可靠度下降'}</span>
+        </div>
+        ${anchorsHtml}
+        <div class="mt-fused-row">
+          <div class="mt-block"><div class="mt-block-title">量能辨析</div>
+            <span class="mt-vol-badge ${volCls}">${this.escapeHtml(vol.nature || '—')}</span>
+            <div class="mt-line">${this.escapeHtml(vol.detail || '')}</div>
+          </div>
+          <div class="mt-block"><div class="mt-block-title">外部变量</div>
+            <span class="mt-ext-badge ${extCls}">${this.escapeHtml(extBias)}</span>
+            <div class="mt-line">${this.escapeHtml(extNote)}</div>
+            <div class="mt-line mt-muted">${this.escapeHtml(extDisc)}</div>
+          </div>
+          <div class="mt-block"><div class="mt-block-title">仓位区间（非确定值）</div>
+            <div class="mt-pos-range ${pos.noAdd ? 'no-add' : ''}">${this.escapeHtml(posRange)}</div>
+            <div class="mt-line mt-muted">上限 ${pos.cap != null ? pos.cap : '—'} 成${pos.noAdd ? ' · 风控否决禁止加仓' : ''}</div>
+            <div class="mt-line mt-muted">中期中枢 ${this.escapeHtml(pos.midCenter || '—')} × 短线系数 ${this.escapeHtml(pos.shortCoef || '—')} × 外部系数 ${this.escapeHtml(pos.extCoef || '—')}</div>
+          </div>
+        </div>
+        <div class="mt-block mt-bias-block"><div class="mt-block-title">操作倾向</div><div class="mt-line">${this.escapeHtml(f.bias || '—')}</div></div>
+        <div class="mt-fused-cols">
+          <div class="mt-block"><div class="mt-block-title">关键信号</div><ul class="mt-sig-list">${listHtml(f.signals)}</ul></div>
+          <div class="mt-block mt-risk-block"><div class="mt-block-title">风险条件（按优先级）</div><ul class="mt-risk-list">${listHtml(f.risk, 'mt-risk-item')}</ul></div>
+        </div>
+        <div class="mt-block"><div class="mt-block-title">证据链（可解释）</div><ul class="mt-evi-list">${listHtml(f.evidenceChain)}</ul></div>
+        <div class="mt-resonance">🔗 共振：${this.escapeHtml((f.resonance && f.resonance.indicator) || '—')}｜周期共振「${this.escapeHtml((f.resonance && f.resonance.cycle) || '—')}」｜跨指数「${this.escapeHtml((f.resonance && f.resonance.cross) || '—')}」</div>
+      </div>`;
+    }
+
+    container.innerHTML = `<div class="mt-list">${cards}</div>${fusedHtml}`;
     if (note) {
       note.innerHTML = `<div class="mt-synthesis">${this.escapeHtml(data.synthesis || '')}</div>
-        <div class="mt-src">数据源：腾讯行情 K 线（日/周/月/30分）· 收盘后推演 · 分析期 ${this.escapeHtml(data.date || '')}</div>`;
+        <div class="mt-src">数据源：腾讯行情 K 线（日/周/月/30分）· 收盘后融合推演 · 分析期 ${this.escapeHtml(data.date || '')} · 外部变量：宏观快讯语义研判（非精确实时报价）</div>`;
     }
   },
 

@@ -6,7 +6,7 @@
   <title>股票投资分析工作台</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
-  <link rel="stylesheet" href="css/style.css?v=20260913c">
+  <link rel="stylesheet" href="css/style.css?v=20260915b">
   <script>
     // 启动时确保 URL 带 ?v= 参数（用于破坏静态资源缓存）。
     // 重要：版本号以 server.js 的 APP_VERSION 为准，由服务端重定向统一下发，
@@ -33,6 +33,7 @@
         <span class="tb-loading">大盘行情加载中…</span>
       </div>
       <button id="topbarCollapse" class="topbar-collapse" title="折叠 / 展开大盘行情">▾</button>
+      <a id="topbarAccuracyLink" class="topbar-acc-link" href="accuracy.html" title="查看判断准确率核对页">🎯 准确率</a>
     </div>
   </header>
 
@@ -130,6 +131,7 @@
             <div class="mo-head-actions">
               <span id="homeSentimentUpdated" class="mo-updated"></span>
               <button class="btn-journal-add" id="homeSentimentRefresh" title="重新检测">🔄 重新检测</button>
+              <a class="mt-acc-link topbar-acc-small" href="accuracy.html?tab=sentiment" title="查看情绪预警历史与事后验证">准确率核对 →</a>
               <button class="btn-collapse" data-collapse-target="homeSentimentPanel" title="折叠/展开">▾</button>
             </div>
           </div>
@@ -154,13 +156,15 @@
         <!-- 大盘技术分析（上证/深证/创业板指 收盘后六步技术面推演） -->
         <section class="home-card market-technical-card" id="marketTechnicalCard" data-collapsible="true">
           <div class="home-card-head">
-            <h3>🧭 大盘技术分析</h3>
+            <h3>🧭 大盘技术分析（融合版）</h3>
             <div class="mo-head-actions">
               <span id="marketTechnicalUpdated" class="mo-updated"></span>
               <button class="btn-journal-add" id="marketTechnicalRefresh" title="重新推演三大指数">🔄 刷新</button>
+              <a class="mt-acc-link topbar-acc-small" href="accuracy.html?tab=market" title="查看历史判断与事后验证">准确率核对 →</a>
               <button class="btn-collapse" data-collapse-target="marketTechnicalCard" title="折叠/展开">▾</button>
             </div>
           </div>
+          <div class="mt-accuracy" id="marketTechAccuracy"></div>
           <div id="marketTechnicalBody" class="market-technical-body">
             <div class="mo-loading">正在对三大指数进行收盘后技术面推演…</div>
           </div>
@@ -354,6 +358,7 @@
             <button class="ai-trigger-btn sameday-logic-btn" id="samedayLogicBtn" type="button">📊 查看判断逻辑</button>
             <div class="sameday-accuracy" id="samedayAccuracy"></div>
             <a href="judgments.html" target="_blank" id="samedayAllLink" class="sameday-all-link">📋 查看该股判断记录</a>
+            <a href="accuracy.html?tab=sameDay" target="_blank" class="sameday-all-link">🎯 准确率核对</a>
             <div class="sameday-logic" id="samedayLogic" style="display:none"></div>
           </div>
           <div class="score-card sameday-card" id="longtermCard">
@@ -398,48 +403,18 @@
               <div id="companyProfile" class="company-profile"></div>
             </div>
 
-            <!-- 公司综合介绍（分析①：AI 联网获取，含产品服务图/实控人/近10年事件） -->
-            <div class="chart-card large" id="companyIntroCard">
+            <!-- 公司深度分析（CFA 统一框架 · 20260914f：合并原「公司综合介绍/供应链与成本/主要产品&客户」三模块） -->
+            <div class="chart-card large" id="companyDeepCard">
               <div class="chart-header">
-                <h3>🏢 公司综合介绍</h3>
+                <h3>📊 信息分析</h3>
                 <div class="ai-head-actions">
-                  <span id="companyIntroDate" class="ai-date"></span>
-                  <button class="btn-journal-add" id="companyIntroAiBtn">✨ AI 联网获取</button>
-                  <button class="btn-text" id="companyIntroRefresh" style="display:none">🔄 重新搜索</button>
+                  <span id="companyDeepDate" class="ai-date"></span>
+                  <button class="btn-journal-add" id="companyDeepAiBtn">✨ AI 联网获取</button>
+                  <button class="btn-text" id="companyDeepRefresh" style="display:none">🔄 重新搜索</button>
                 </div>
               </div>
-              <div id="companyIntroBody" class="company-intro-body">
-                <div class="ai-empty">正在检查已存的公司介绍资料…</div>
-              </div>
-            </div>
-
-            <!-- 主要产品 & 客户（产品型公司分析核心，原独立页并入概览） -->
-            <div class="chart-card large" id="productsCard">
-              <div class="chart-header">
-                <h3>🛍️ 主要产品 &amp; 客户</h3>
-                <div class="ai-head-actions">
-                  <span id="productsDate" class="ai-date"></span>
-                  <button class="btn-journal-add" id="productsAiBtn">✨ AI 联网获取</button>
-                  <button class="btn-text" id="productsRefresh" style="display:none">🔄 重新搜索</button>
-                </div>
-              </div>
-              <div id="productsBody" class="products-body">
-                <div class="ai-empty">正在检查产品/客户数据…</div>
-              </div>
-            </div>
-
-            <!-- 供应链与成本分析（分析②：产业链位置/原材料价格/供应商/成本控制） -->
-            <div class="chart-card large" id="supplyChainCard">
-              <div class="chart-header">
-                <h3>🔗 供应链与成本分析</h3>
-                <div class="ai-head-actions">
-                  <span id="supplyChainDate" class="ai-date"></span>
-                  <button class="btn-journal-add" id="supplyChainAiBtn">✨ AI 联网获取</button>
-                  <button class="btn-text" id="supplyChainRefresh" style="display:none">🔄 重新搜索</button>
-                </div>
-              </div>
-              <div id="supplyChainBody" class="supply-chain-body">
-                <div class="ai-empty">正在检查已存的供应链分析资料…</div>
+              <div id="companyDeepBody" class="company-deep-body">
+                <div class="ai-empty">正在检查已存的信息分析资料…</div>
               </div>
             </div>
 
@@ -460,7 +435,8 @@
           <div id="tab-technical" class="tab-panel">
             <!-- 价格行为趋势推演（Price Action：价格包容一切 · 人性重复演绎） -->
             <div class="chart-card large pa-panel">
-              <h3>🎯 价格行为趋势推演<span class="pa-subtitle">价格包容一切 · 人性重复演绎</span></h3>
+              <h3>🎯 价格行为趋势推演<span class="pa-subtitle">价格包容一切 · 人性重复演绎</span><a class="mt-acc-link topbar-acc-small pa-acc-link" href="accuracy.html?tab=tech" title="查看该股历史判断与事后验证">准确率核对 →</a></h3>
+              <div class="mt-accuracy" id="techFaceAccuracy"></div>
               <div id="paMeta" class="pa-meta">数据加载中…</div>
               <div id="paSummary" class="pa-summary"></div>
               <div class="pa-grid">
@@ -856,6 +832,19 @@
                   <div class="ai-empty">正在加载行业信息…</div>
                 </div>
                 <div id="industryIndexChart" class="chart" style="height:420px;"></div>
+                <div id="industryIndexNote" class="sh-source"></div>
+              </div>
+
+              <!-- 板块总市值走势：所属板块全部成分股总市值合计 + 当前个股自身市值对比 -->
+              <div class="chart-card large" id="sectorCapCard" style="display:none;">
+                <div class="chart-header">
+                  <h3>📈 板块总市值走势 · <span id="sectorCapTitle">所属板块</span></h3>
+                  <div class="ai-head-actions">
+                    <span id="sectorCapDate" class="ai-date"></span>
+                  </div>
+                </div>
+                <div id="sectorCapChart" class="chart" style="height:420px;"></div>
+                <div id="sectorCapNote" class="sh-source"></div>
               </div>
 
               <!-- 政策前景 -->
@@ -1007,20 +996,20 @@
     <button class="err-close" id="errorBannerClose" title="关闭">✕</button>
   </div>
 
-  <script src="js/storage.js?v=20260913c"></script>
-  <script src="js/charts.js?v=20260913c"></script>
+  <script src="js/storage.js?v=20260915b"></script>
+  <script src="js/charts.js?v=20260915b"></script>
   <script src="js/deepCharts.js?v=20260906e"></script>
-  <script src="js/industryCharts.js?v=20260913c"></script>
-  <script src="js/capitalCharts.js?v=20260913c"></script>
-  <script src="js/notes.js?v=20260913c"></script>
-  <script src="js/shareholderCharts.js?v=20260913c"></script>
-  <script src="js/docStore.js?v=20260913c"></script>
-  <script src="js/export.js?v=20260913c"></script>
-  <script src="js/homeNews.js?v=20260913c"></script>
-  <script src="js/homeHotTopics.js?v=20260909m"></script>
-  <script src="js/homeMacro.js?v=20260913c"></script>
-  <script src="js/homeRank.js?v=20260913c"></script>
-  <script src="js/app.js?v=20260913c"></script>
+  <script src="js/industryCharts.js?v=20260915b"></script>
+  <script src="js/capitalCharts.js?v=20260915b"></script>
+  <script src="js/notes.js?v=20260915b"></script>
+  <script src="js/shareholderCharts.js?v=20260915b"></script>
+  <script src="js/docStore.js?v=20260915b"></script>
+  <script src="js/export.js?v=20260915b"></script>
+  <script src="js/homeNews.js?v=20260915b"></script>
+  <script src="js/homeHotTopics.js?v=20260915b"></script>
+  <script src="js/homeMacro.js?v=20260915b"></script>
+  <script src="js/homeRank.js?v=20260915b"></script>
+  <script src="js/app.js?v=20260915b"></script>
 
   <!-- AI 设置弹窗（20260902e：双模型 · 联网 / 本地分离） -->
   <div class="ai-modal-overlay hidden" id="aiSettingsModal">

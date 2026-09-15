@@ -5,10 +5,11 @@
  * 所有渲染均做防御，数据缺失时显示友好占位而非空白。
  */
 window.IndustryCharts = {
-  renderAll(data, boardData, historyData, stockMarketCapData) {
+  renderAll(data, boardData, historyData, stockMarketCapData, opts) {
     if (!data) return;
+    const o = Object.assign({ stockName: (data && data.name) || '', boardLoading: false }, opts || {});
     this.renderFutures(data.futures);
-    this.renderIndustryOverview(data.industry, boardData, historyData, data.policy, stockMarketCapData);
+    this.renderIndustryOverview(data.industry, boardData, historyData, data.policy, stockMarketCapData, o);
     this.renderPolicy(data.policy);
     this.renderCompanyReportList(data.companyReports, data.name);
     this.renderReportList(data.industryReports, data.industry && data.industry.induName);
@@ -73,16 +74,17 @@ window.IndustryCharts = {
   },
 
   // ---- 行业分析总览：归属 + 指数摘要 + 走势图表（合并卡片） ----
-  renderIndustryOverview(industry, boardData, historyData, policy, stockMarketCapData) {
+  renderIndustryOverview(industry, boardData, historyData, policy, stockMarketCapData, opts) {
     const body = document.getElementById('industryOverviewBody');
     if (!body) return;
+    const o = opts || {};
 
     // 1) 行业归属
     let html = '';
     if (!industry) {
       html = '<div class="data-empty">⚠️ 暂未获取到该股票所属行业信息（可能为港股/美股或非标准标的）。</div>';
       body.innerHTML = html;
-      this.renderIndustryIndexChart(historyData, stockMarketCapData);
+      this.renderIndustryIndexChart(historyData, stockMarketCapData, o);
       return;
     }
 
@@ -116,6 +118,11 @@ window.IndustryCharts = {
       const levelLine = boardData.currentLevel ? `<span class="ind-index-level">${this._escape(boardData.currentLevel)}</span>` : '';
       const asOfLine = boardData.asOf ? `<span class="ind-index-asof">数据截至 ${this._escape(boardData.asOf)}</span>` : '';
       const drivers = (boardData.keyDrivers || []).map(d => `<span class="ind-driver-chip">${this._escape(d)}</span>`).join('');
+      // 20260913d：后台刷新中 / 上次刷新失败 —— 都保留并展示上一次成功内容，仅在旁提示状态
+      const refreshingBadge = boardData.refreshing ? '<span class="ind-index-asof ind-refreshing">🔄 后台更新中…</span>' : '';
+      const lastErrorLine = boardData.lastError
+        ? `<div class="ind-overview-section"><div class="ind-overview-sub">⚠️ 上次更新失败</div><div class="ind-overview-text">${this._escape(boardData.lastError)}（下方仍为上一次成功获取的内容）</div></div>`
+        : '';
 
       html += `
         <div class="ind-overview-index">
@@ -126,7 +133,9 @@ window.IndustryCharts = {
               ${ytd ? `<span class="ind-index-ytd ind-${ytdClass}">年初至今 ${this._escape(ytd)}</span>` : ''}
             </div>
             ${asOfLine}
+            ${refreshingBadge}
           </div>
+          ${lastErrorLine}
           ${boardData.recentTrend ? `<div class="ind-overview-section"><div class="ind-overview-sub">📈 近期走势</div><div class="ind-overview-text">${this._escape(boardData.recentTrend)}</div></div>` : ''}
           ${drivers ? `<div class="ind-overview-section"><div class="ind-overview-sub">🧭 核心驱动</div><div class="ind-driver-chips">${drivers}</div></div>` : ''}
           ${boardData.outlook ? `<div class="ind-overview-section"><div class="ind-overview-sub">🔭 后市展望</div><div class="ind-overview-text">${this._escape(boardData.outlook)}</div></div>` : ''}
@@ -137,6 +146,9 @@ window.IndustryCharts = {
       html += `<div class="ind-overview-empty ai-loading">⏳ 正在后台联网获取行业指数分析，可切换页面/股票，完成后自动显示…</div>`;
     } else if (boardData && boardData.status === 'error') {
       html += `<div class="ind-overview-empty">⚠️ AI 联网分析获取失败：${this._escape(boardData.message || boardData.error || '未知错误')}，可点击右上角重新获取。</div>`;
+    } else if (o.boardLoading) {
+      // 20260913d：首次读取尚未返回 —— 显示"读取中"而非"暂无"，避免打开页面时内容短暂消失
+      html += `<div class="ind-overview-empty ai-loading">⏳ 正在读取行业指数分析…</div>`;
     } else {
       html += `<div class="ind-overview-empty">💡 暂无 AI 联网行业指数分析，点击右上角「✨ AI 联网获取」即可联网获取该行业代表指数的表现、驱动与展望。</div>`;
     }
@@ -144,7 +156,7 @@ window.IndustryCharts = {
     body.innerHTML = html;
 
     // 3) 行业指数走势图（独立渲染，不依赖 AI 分析）
-    this.renderIndustryIndexChart(historyData, stockMarketCapData);
+    this.renderIndustryIndexChart(historyData, stockMarketCapData, o);
   },
 
   _escape(s) {
@@ -157,11 +169,18 @@ window.IndustryCharts = {
   },
 
   // ---- 行业指数 K 线走势（蜡烛图 + 均线 + 成交量 + 当前个股市值双坐标轴） ----
-  renderIndustryIndexChart(historyData, stockMarketCapData) {
+  // 20260913d：① 图例显式标注 K 线代表哪个板块指数、市值线代表哪只个股；
+  //             ② 修复均线前期占位 '-' 在 tooltip 里显示 NaN；③ 图表下方补数据源与数据日期。
+  //             仅改标注与取值，图表样式/配色/布局不变（样式与内容解耦）。
+  renderIndustryIndexChart(historyData, stockMarketCapData, opts) {
     const el = document.getElementById('industryIndexChart');
     if (!el) return;
+    const noteEl = document.getElementById('industryIndexNote');
+    const stockName = (opts && opts.stockName) || '个股';
+
     if (!historyData || !historyData.success || !Array.isArray(historyData.data) || historyData.data.length === 0) {
       el.innerHTML = '<div class="data-empty" style="height:100%;display:flex;align-items:center;justify-content:center;">⚠️ 暂无行业指数走势图数据</div>';
+      if (noteEl) noteEl.textContent = '';
       return;
     }
 
@@ -173,6 +192,10 @@ window.IndustryCharts = {
     const ma10 = this._calcMA(10, raw);
     const ma20 = this._calcMA(20, raw);
     const ma60 = this._calcMA(60, raw);
+
+    // 图例显示名：K 线 = 实际绘制的板块指数；市值线 = 当前个股
+    const indexSeriesName = historyData.name ? `${historyData.name}指数` : '行业指数';
+    const capSeriesName = `${stockName}市值`;
 
     const upColor = '#F6465D';   // 涨红（全站统一）
     const downColor = '#0ECB81'; // 跌绿（全站统一）
@@ -202,8 +225,11 @@ window.IndustryCharts = {
     }
 
     const legendData = hasMarketCap
-      ? ['K线', 'MA5', 'MA10', 'MA20', 'MA60', '成交量', '个股市值']
-      : ['K线', 'MA5', 'MA10', 'MA20', 'MA60', '成交量'];
+      ? [indexSeriesName, 'MA5', 'MA10', 'MA20', 'MA60', '成交量', capSeriesName]
+      : [indexSeriesName, 'MA5', 'MA10', 'MA20', 'MA60', '成交量'];
+
+    // 数值格式化：均线前期为 '-' 占位，Number('-') 为 NaN —— 统一显示 '--' 而非 NaN
+    const num2 = (v) => { const n = Number(v); return isFinite(n) ? n.toFixed(2) : '--'; };
 
     this._initChart(el, 'industryIndexChart', {
       tooltip: {
@@ -213,25 +239,26 @@ window.IndustryCharts = {
         borderColor: '#2a2f3a',
         textStyle: { color: '#c9d1d9' },
         formatter: (params) => {
-          const candle = params.find(p => p.seriesName === 'K线');
+          const candle = params.find(p => p.seriesType === 'candlestick') || params.find(p => p.seriesName === indexSeriesName);
           if (!candle) return '';
           const d = candle.name;
           const [o, c, l, h] = candle.data;
           const vol = params.find(p => p.seriesName === '成交量');
-          const mc = params.find(p => p.seriesName === '个股市值');
+          const mc = params.find(p => p.seriesName === capSeriesName);
           const rows = [
-            `<div style="font-weight:600;margin-bottom:4px;">${d}</div>`,
-            `<div>开盘 <span style="float:right;margin-left:16px;">${o.toFixed(2)}</span></div>`,
-            `<div>收盘 <span style="float:right;margin-left:16px;">${c.toFixed(2)}</span></div>`,
-            `<div>最高 <span style="float:right;margin-left:16px;">${h.toFixed(2)}</span></div>`,
-            `<div>最低 <span style="float:right;margin-left:16px;">${l.toFixed(2)}</span></div>`,
+            `<div style="font-weight:600;margin-bottom:2px;">${d}</div>`,
+            `<div style="color:#9ca3af;margin-bottom:4px;">${this._escape(indexSeriesName)}</div>`,
+            `<div>开盘 <span style="float:right;margin-left:16px;">${num2(o)}</span></div>`,
+            `<div>收盘 <span style="float:right;margin-left:16px;">${num2(c)}</span></div>`,
+            `<div>最高 <span style="float:right;margin-left:16px;">${num2(h)}</span></div>`,
+            `<div>最低 <span style="float:right;margin-left:16px;">${num2(l)}</span></div>`,
           ];
           params.forEach(p => {
-            if (p.seriesName && p.seriesName.startsWith('MA')) {
-              rows.push(`<div>${p.seriesName} <span style="float:right;margin-left:16px;">${Number(p.data).toFixed(2)}</span></div>`);
+            if (p.seriesName && /^MA(5|10|20|60)$/.test(p.seriesName)) {
+              rows.push(`<div>${p.seriesName} <span style="float:right;margin-left:16px;">${num2(p.data)}</span></div>`);
             }
           });
-          if (mc && mc.data > 0) rows.push(`<div>个股市值 <span style="float:right;margin-left:16px;color:${mcColor};">${this._formatMarketCap(mc.data)}</span></div>`);
+          if (mc && Number(mc.data) > 0) rows.push(`<div>${this._escape(capSeriesName)} <span style="float:right;margin-left:16px;color:${mcColor};">${this._formatMarketCapExact(mc.data)}</span></div>`);
           if (vol) rows.push(`<div>成交量 <span style="float:right;margin-left:16px;">${this._formatVolume(vol.data)}</span></div>`);
           return rows.join('');
         },
@@ -267,7 +294,7 @@ window.IndustryCharts = {
       ],
       series: [
         {
-          name: 'K线', type: 'candlestick', data: values,
+          name: indexSeriesName, type: 'candlestick', data: values,
           itemStyle: { color: upColor, color0: downColor, borderColor: upColor, borderColor0: downColor },
         },
         { name: 'MA5', type: 'line', data: ma5, smooth: true, showSymbol: false, lineStyle: { width: 1, color: '#E6EDF3' } },
@@ -275,7 +302,7 @@ window.IndustryCharts = {
         { name: 'MA20', type: 'line', data: ma20, smooth: true, showSymbol: false, lineStyle: { width: 1, color: '#A855F7' } },
         { name: 'MA60', type: 'line', data: ma60, smooth: true, showSymbol: false, lineStyle: { width: 1, color: '#22C55E' } },
         ...(hasMarketCap ? [{
-          name: '个股市值',
+          name: capSeriesName,
           type: 'line',
           yAxisIndex: 2,
           data: mcSeries,
@@ -297,6 +324,157 @@ window.IndustryCharts = {
         },
       ],
     });
+
+    // 数据源 + 数据日期标注（规则一·数据一致性 / 规则二·数据最新性）
+    if (noteEl) {
+      const last = raw[raw.length - 1] || {};
+      const codeTxt = historyData.code ? `（${historyData.code}）` : '';
+      const mcLast = hasMarketCap && stockMarketCapData && Array.isArray(stockMarketCapData.data) && stockMarketCapData.data.length
+        ? stockMarketCapData.data[stockMarketCapData.data.length - 1] : null;
+      const mcTxt = mcLast ? ` · ${stockName}市值截至 ${mcLast.date}（${this._formatMarketCapExact(mcLast.marketCap)}）` : '';
+      noteEl.textContent = `数据源：${historyData.source || '同花顺·行业板块'} · ${historyData.name || ''}${codeTxt} 日线截至 ${last.date || '-'} · 共 ${raw.length} 个交易日${mcTxt}`;
+    }
+  },
+
+  // ---- 板块总市值走势（成分股总市值合计 + 当前个股自身市值对比） ----
+  // 口径说明：总市值是「每日单一数值」，没有开/收/高/低四个价，因此用折线/面积呈现走势，
+  //           而非蜡烛 K 线（K 线必须四价）。数据源与日期在卡片下方显式标注。
+  renderSectorMarketCap(data, opts) {
+    const card = document.getElementById('sectorCapCard');
+    if (!card) return;
+    const o = opts || {};
+    const stockName = o.stockName || '个股';
+
+    if (!data || !data.success || !Array.isArray(data.dates) || !data.dates.length) {
+      card.style.display = 'none';
+      return;
+    }
+    card.style.display = '';
+
+    const sectorLabel = data.sectorName ? `${data.sectorName}（${data.sectorCode}）` : (data.sectorCode || '所属板块');
+    const titleEl = document.getElementById('sectorCapTitle');
+    if (titleEl) titleEl.textContent = sectorLabel;
+    const dateEl = document.getElementById('sectorCapDate');
+    if (dateEl) dateEl.textContent = data.date ? `数据截至 ${data.date}` : '';
+
+    const dates = data.dates;
+    const total = data.total || [];
+    const bm = (data.benchmark && Array.isArray(data.benchmark.series) && data.benchmark.series.length) ? data.benchmark.series : null;
+
+    const totalName = '板块总市值（成分股合计）';
+    const bmName = `${stockName}市值`;
+    const ratioName = `${stockName}占板块比重`;
+
+    const ratio = total.map((v, i) => {
+      const b = bm ? bm[i] : null;
+      return (v > 0 && b != null && b > 0) ? Math.round(b / v * 10000) / 100 : null;
+    });
+    const hasRatio = ratio.some(v => v != null);
+
+    const totalColor = '#3B82F6';
+    const bmColor = '#F0B97B';
+    const ratioColor = '#A855F7';
+
+    const num2 = (v) => { const n = Number(v); return isFinite(n) ? n.toFixed(2) : '--'; };
+
+    const legendData = hasRatio ? [totalName, bmName, ratioName] : [totalName, bmName];
+
+    const chartEl = document.getElementById('sectorCapChart');
+    if (chartEl) {
+      this._initChart(chartEl, 'sectorCapChart', {
+        tooltip: {
+          trigger: 'axis',
+          axisPointer: { type: 'cross' },
+          backgroundColor: 'rgba(30,34,45,0.95)',
+          borderColor: '#2a2f3a',
+          textStyle: { color: '#c9d1d9' },
+          formatter: (params) => {
+            if (!params || !params.length) return '';
+            const rows = [`<div style="font-weight:600;margin-bottom:4px;">${params[0].name}</div>`];
+            params.forEach(p => {
+              if (p.seriesName === totalName) rows.push(`<div>${totalName} <span style="float:right;margin-left:16px;color:${totalColor};">${this._formatMarketCapExact(p.data)}</span></div>`);
+              else if (p.seriesName === bmName) rows.push(`<div>${bmName} <span style="float:right;margin-left:16px;color:${bmColor};">${p.data == null ? '--' : this._formatMarketCapExact(p.data)}</span></div>`);
+              else if (p.seriesName === ratioName) rows.push(`<div>${ratioName} <span style="float:right;margin-left:16px;color:${ratioColor};">${p.data == null ? '--' : Number(p.data).toFixed(2) + '%'}</span></div>`);
+            });
+            return rows.join('');
+          },
+        },
+        legend: { data: legendData, textStyle: { color: '#9ca3af' }, top: 4 },
+        grid: { left: '8%', right: hasRatio ? '20%' : (bm ? '13%' : '8%'), top: '44px', bottom: '70px' },
+        xAxis: {
+          type: 'category', data: dates, scale: true, boundaryGap: false,
+          axisLine: { lineStyle: { color: '#2a2f3a' } }, axisLabel: { color: '#9ca3af', fontSize: 10 }, splitLine: { show: false },
+        },
+        yAxis: [
+          {
+            type: 'value', scale: true, position: 'left', name: '板块总市值（亿元）', nameTextStyle: { color: totalColor, fontSize: 10 },
+            axisLine: { lineStyle: { color: totalColor } }, axisLabel: { color: totalColor, fontSize: 10, formatter: (v) => this._formatMarketCap(v) },
+            splitLine: { lineStyle: { color: '#2a2f3a' } },
+          },
+          ...(bm ? [{
+            type: 'value', position: 'right', scale: true, name: `${stockName}市值（亿元）`, nameTextStyle: { color: bmColor, fontSize: 10 },
+            offset: 0,
+            axisLine: { lineStyle: { color: bmColor } }, axisLabel: { color: bmColor, fontSize: 10, formatter: (v) => this._formatMarketCap(v) },
+            splitLine: { show: false },
+          }] : []),
+          ...(hasRatio ? [{
+            type: 'value', position: 'right', scale: true, name: '占板块比重（%）', nameTextStyle: { color: ratioColor, fontSize: 10 },
+            offset: 60,
+            axisLine: { lineStyle: { color: ratioColor } }, axisLabel: { color: ratioColor, fontSize: 10, formatter: (v) => v + '%' },
+            splitLine: { show: false },
+          }] : []),
+        ],
+        dataZoom: [
+          { type: 'inside', xAxisIndex: [0], start: Math.max(0, 100 - Math.round(180 / dates.length * 100)), end: 100 },
+          { type: 'slider', xAxisIndex: [0], show: true, bottom: 4, height: 16, borderColor: '#2a2f3a', fillerColor: 'rgba(127,168,201,0.25)', handleStyle: { color: '#7fa8c9' }, textStyle: { color: '#9ca3af' } },
+        ],
+        series: [
+          {
+            name: totalName, type: 'line', yAxisIndex: 0, data: total, smooth: true, showSymbol: false,
+            lineStyle: { width: 2, color: totalColor }, itemStyle: { color: totalColor },
+            areaStyle: { color: 'rgba(59,130,246,0.12)' },
+          },
+          ...(bm ? [{
+            name: bmName, type: 'line', yAxisIndex: 1, data: bm, smooth: true, showSymbol: false,
+            lineStyle: { width: 2, color: bmColor }, itemStyle: { color: bmColor },
+          }] : []),
+          ...(hasRatio ? [{
+            name: ratioName, type: 'line', yAxisIndex: 2, data: ratio, smooth: true, showSymbol: false,
+            lineStyle: { width: 1.5, color: ratioColor, type: 'dashed' }, itemStyle: { color: ratioColor },
+          }] : []),
+        ],
+      });
+    }
+
+    // 摘要 + 数据源/日期/覆盖度标注
+    const noteEl = document.getElementById('sectorCapNote');
+    if (noteEl) {
+      const n = total.length;
+      const lastTotal = total[n - 1];
+      const prevTotal = n > 1 ? total[n - 2] : null;
+      const totalChg = (prevTotal && prevTotal > 0) ? (lastTotal / prevTotal - 1) * 100 : null;
+      const lastBm = bm ? bm[n - 1] : null;
+      const prevBm = (bm && n > 1) ? bm[n - 2] : null;
+      const bmChg = (prevBm && prevBm > 0 && lastBm > 0) ? (lastBm / prevBm - 1) * 100 : null;
+      const lastRatio = ratio[n - 1];
+      const chgTxt = (v) => (v == null ? '—' : (v >= 0 ? `+${v.toFixed(2)}%` : `${v.toFixed(2)}%`));
+      const chgCls = (v) => (v == null ? '' : (v >= 0 ? 'up' : 'down'));
+      const missTxt = (Array.isArray(data.missing) && data.missing.length)
+        ? ` · 未纳入 ${data.missing.length} 只（${data.missing.map(m => `${m.name || ''}${m.code ? '(' + m.code + ')' : ''}`).join('、')}），因其无日频市值数据`
+        : '';
+      const capTxt = data.capped
+        ? ` · 成分股共 ${data.constituents} 只，按总市值降序取前 ${data.usedConstituents} 只合计`
+        : '';
+      noteEl.innerHTML = `
+        <div class="sector-cap-summary">
+          <div class="sector-cap-summary-item"><span class="sector-cap-summary-label">板块总市值合计</span><span class="sector-cap-summary-value">${this._formatMarketCapExact(lastTotal)}</span></div>
+          <div class="sector-cap-summary-item"><span class="sector-cap-summary-label">较前一交易日</span><span class="sector-cap-summary-value ${chgCls(totalChg)}">${chgTxt(totalChg)}</span></div>
+          <div class="sector-cap-summary-item"><span class="sector-cap-summary-label">${stockName}市值</span><span class="sector-cap-summary-value">${lastBm == null ? '—' : this._formatMarketCapExact(lastBm)}</span></div>
+          <div class="sector-cap-summary-item"><span class="sector-cap-summary-label">${stockName}较前一日</span><span class="sector-cap-summary-value ${chgCls(bmChg)}">${chgTxt(bmChg)}</span></div>
+          <div class="sector-cap-summary-item"><span class="sector-cap-summary-label">${stockName}占板块</span><span class="sector-cap-summary-value">${lastRatio == null ? '—' : lastRatio.toFixed(2) + '%'}</span></div>
+        </div>
+        <div>数据源：${data.source || '东方财富'} · 日线截至 ${data.date || '-'} · 共 ${dates.length} 个交易日 · 计入成分股 ${data.covered || 0}/${data.constituents || data.usedConstituents || 0} 只${missTxt}${capTxt}</div>`;
+    }
   },
 
   _calcMA(dayCount, data) {
@@ -321,6 +499,15 @@ window.IndustryCharts = {
     const v = Number(n) || 0;
     if (v >= 1e4) return (v / 1e4).toFixed(2) + '万亿';
     if (v >= 1) return v.toFixed(0) + '亿';
+    return v.toFixed(2) + '亿';
+  },
+
+  // 精确市值（用于 tooltip / 摘要等「读数」场景，保留 2 位小数，避免 1999.89 → "2000亿" 丢精度）
+  // 坐标轴刻度仍用 _formatMarketCap（紧凑易读）；两者分工：刻度求简洁、读数求精确。
+  _formatMarketCapExact(n) {
+    const v = Number(n);
+    if (!isFinite(v)) return '--';
+    if (Math.abs(v) >= 1e4) return (v / 1e4).toFixed(2) + '万亿';
     return v.toFixed(2) + '亿';
   },
 
@@ -391,6 +578,9 @@ window.IndustryCharts = {
   },
 
   // 统一初始化 ECharts（先释放旧实例），并把实例挂到 Charts.instances 以便 Tab 切换时 resize
+  // 20260913e：容器不可见时（tab 未激活 / 卡片 display:none）宽高为 0，
+  //   echarts.init 会退化成 100×100 默认尺寸 → 图表被压成小方块且之后不再恢复。
+  //   因此改为：不可见时先挂起 option，等容器真正有宽高后再初始化（轮询重试，最多约 9 秒）。
   _initChart(el, key, option) {
     try {
       if (el._chart) { el._chart.dispose(); el._chart = null; }
@@ -398,14 +588,62 @@ window.IndustryCharts = {
         Charts.instances[key].dispose();
         delete Charts.instances[key];
       }
-      const chart = echarts.init(el, 'softDark', { renderer: 'canvas' });
-      chart.setOption(option);
-      el._chart = chart;
-      if (window.Charts && Charts.instances) Charts.instances[key] = chart;
+      const doInit = (opt, k) => {
+        const chart = echarts.init(el, 'softDark', { renderer: 'canvas' });
+        chart.setOption(opt);
+        el._chart = chart;
+        if (window.Charts && Charts.instances) Charts.instances[k] = chart;
+      };
+      const measurable = () => el.clientWidth > 0 && el.clientHeight > 0;
+
+      if (measurable()) { doInit(option, key); return; }
+
+      // 容器尚不可见：缓存 option，等它出现宽高后再初始化
+      if (el._pendingInitTimer) { clearTimeout(el._pendingInitTimer); el._pendingInitTimer = null; }
+      el._pendingOption = option;
+      el._pendingKey = key;
+      let tries = 0;
+      const retry = () => {
+        if (el._pendingInitTimer == null) return;              // 已被取消
+        if (!document.body || !document.body.contains(el)) { el._pendingInitTimer = null; return; }
+        if (measurable()) {
+          el._pendingInitTimer = null;
+          const opt = el._pendingOption; const k = el._pendingKey || key;
+          el._pendingOption = null;
+          if (opt) this._initChart(el, k, opt);
+          return;
+        }
+        if (++tries > 60) {
+          // 9 秒内仍未变成可见（用户可能一直没切到本页）：停止轮询，但**保留 _pendingOption**，
+          // 交由切到行业 tab 时的 IndustryCharts.reflow() 补初始化，避免图表永久空白。
+          el._pendingInitTimer = null;
+          return;
+        }
+        el._pendingInitTimer = setTimeout(retry, 150);
+      };
+      el._pendingInitTimer = setTimeout(retry, 150);
     } catch (e) {
       console.error('Industry chart init error:', e);
       el.innerHTML = '<div class="data-empty">图表渲染失败。</div>';
     }
+  },
+
+  // tab 切到行业分析页时调用：对「已挂起」或「尺寸为 0」的图表补一次初始化/重算尺寸，
+  // 覆盖"数据比 tab 切换更晚到达"与"先隐藏后显示"两类时序。
+  reflow() {
+    ['industryIndexChart', 'sectorCapChart'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const w = el.clientWidth, h = el.clientHeight;
+      if (w <= 0 || h <= 0) return;
+      if (el._pendingOption) {
+        const opt = el._pendingOption; el._pendingOption = null;
+        if (el._pendingInitTimer) { clearTimeout(el._pendingInitTimer); el._pendingInitTimer = null; }
+        this._initChart(el, el._pendingKey || id, opt);
+      } else if (el._chart) {
+        try { el._chart.resize(); } catch (e) { /* ignore */ }
+      }
+    });
   },
 };
 

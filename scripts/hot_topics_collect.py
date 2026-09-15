@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """板块舆情热度周榜 · 每日数据采集器（由 lib/hotTopicsWeekly/index.js 调度，每日一次）
-三条通道：
-  1) 行情交叉验证输入：akshare stock_sector_fund_flow_rank(5日) —— 板块周涨幅 + 主力资金净流入
-  2) 社区讨论：东财股吧板块吧 list 页第 1 页（内嵌 article_list JSON）—— 每板块一次、限速、风控感知
-  3) 全网舆情文本：akshare 新浪财经 7x24 + 同花顺全球财经快讯（当日增量，周聚合时去重）
+四条通道：
+  1) 行情交叉验证输入：东财 push2delay clist 行业板块 5 日 —— 板块周涨幅 + 主力资金净流入（权威 BK 代码）
+  2) 社区讨论·主源：同花顺讨论 API（t.10jqka.com.cn，按板块代表性成分股归集）→ result['guba']
+  3) 社区讨论·补充源：东财股吧板块吧 list 页第 1 页（内嵌 article_list JSON，每板块 1 请求）→ result['gubaEm']
+     —— 东财为真实散户帖，且 bar 自带「板块总帖数」，可算 B 的真实帖数增量；触发「身份核实」立即熔断该通道
+  4) 全网舆情文本：akshare 新浪财经 7x24 + 同花顺全球财经快讯（当日增量，周聚合时去重）
 输出：data/hotTopics/daily/{date}.json（原子写入）
 辅助：--scan 模式做 bk 代码段枚举（结果写 data/hotTopics/bk_scan_extra.json，用后人工并入 sector_map）
-诚实降级：任何通道失败都记录 status，不阻塞其他通道；股吧触发「身份核实」风控立即停止当日该通道。
+开关：data/hotTopics/config.json 的 community 节（{em, ths, emIntervalSec, emFailStreakMax}，默认两源皆启用）
+诚实降级：任何通道失败都记录 status，不阻塞其他通道；两个社区源任一可用即非降级。
 """
 import sys, os, re, json, time, random, argparse, http.cookiejar, traceback
 from datetime import datetime, timedelta
@@ -34,6 +37,24 @@ def _p(rel):
 def load_sector_map(path):
     with open(path, 'r', encoding='utf-8') as f:
         return json.load(f)
+
+
+def load_community_cfg():
+    """读取 data/hotTopics/config.json 的 community 节（缺省：两源皆启用）。
+    键：em(东财股吧开关) / ths(同花顺讨论开关) / emIntervalSec(东财抓取间隔) / emFailStreakMax(东财连续失败熔断阈值)。
+    与 Node 侧 lib/hotTopicsWeekly/config.js 共用同一份用户配置。"""
+    defaults = {'em': True, 'ths': True, 'emIntervalSec': 1.2, 'emFailStreakMax': 8}
+    try:
+        with open(_p('data/hotTopics/config.json'), 'r', encoding='utf-8') as f:
+            cfg = json.load(f)
+        c = cfg.get('community') or {}
+        out = dict(defaults)
+        for k in defaults:
+            if k in c:
+                out[k] = c[k]
+        return out
+    except Exception:
+        return defaults
 
 
 def make_session(cookie_path):
@@ -415,6 +436,51 @@ def collect_guba_ths(boards, members, min_interval):
     return {'status': status, 'boards': boards_data, 'okCount': ok_cnt, 'total': total, 'mapCount': total}
 
 
+def collect_guba_em(boards, cfg):
+    """东财股吧「板块吧」第 1 页（20260913h 恢复为第二社区源）：每板块 1 请求，内嵌 article_list（真实散户帖）。
+    返回结构与 collect_guba_ths 一致（便于引擎统一归集）：
+      {status, boards:{code:{bar_name,count,posts}}, okCount, total, mapCount}
+    与同花顺的语义差异（重要）：count = **板块总帖数**（bar 的 count 字段，如半导体 72561），
+    故引擎可据此算 B 的「帖数真实增量」；posts 为当页采样帖（约 80 条）。
+    风控：命中「身份核实」或连续失败 >= emFailStreakMax → 立即熔断（status='challenge'），不阻塞主流程。
+    东财为 bk 板块代码（1 板块=1 请求），无需借助成分股。"""
+    interval = max(float(cfg.get('emIntervalSec', 1.2)), 0.8)
+    streak_max = int(cfg.get('emFailStreakMax', 8))
+    session = make_session(_p('data/hotTopics/em_cookies.txt'))
+    boards_data = {}
+    ok_cnt = 0
+    total = len(boards)
+    fail_streak = 0
+    challenged = False
+    for i, b in enumerate(boards):
+        code = b.get('code')
+        if not code:
+            continue
+        if fail_streak >= streak_max:
+            challenged = True
+            break
+        ok, data, ch = fetch_guba_board(session, code)
+        if ch:
+            challenged = True
+            break
+        if ok and data:
+            boards_data[code] = {
+                'bar_name': data.get('bar_name') or b.get('name'),
+                'count': data.get('count'),
+                'posts': data.get('posts') or [],
+            }
+            if data.get('posts'):
+                ok_cnt += 1
+            fail_streak = 0
+        else:
+            fail_streak += 1
+        if i < total - 1:
+            time.sleep(interval + random.uniform(0, 0.3))
+    save_cookies(session, _p('data/hotTopics/em_cookies.txt'))
+    status = 'challenge' if challenged else ('ok' if ok_cnt > 0 else 'empty')
+    return {'status': status, 'boards': boards_data, 'okCount': ok_cnt, 'total': total, 'mapCount': total}
+
+
 def update_sector_map(promoted, removed):
     """采集成功日：候选板块自动校正进 sector_map（原子写）。"""
     if not promoted and not removed:
@@ -513,17 +579,35 @@ def main():
         result['errors'].append('market: ' + str(e)[:160])
     code_set = {r['code'] for r in result['market'].get('rows', []) if r.get('code')}
     name_by_code = {r['code']: r['name'] for r in result['market'].get('rows', []) if r.get('code')}
-    # 2) 社区讨论（同花顺讨论 API 替代东财股吧，绕过验证码墙，20260910）
+    # 2) 社区讨论（双源：同花顺讨论 API 为主源 + 东财股吧板块吧为补充源；任一可用即非降级）
+    comm_cfg = load_community_cfg()
+    boards = []
     try:
         m = load_sector_map(_p('data/hotTopics/sector_map.json'))
         boards = [b for b in m.get('boards', [])]
-        members = build_members(boards, _p('data/hotTopics/sector_members.json'))
-        result['guba'] = collect_guba_ths(boards, members, args.interval)
-        result['guba']['mapCount'] = len(boards)
-        result['guba']['memberTotal'] = sum(len(v) for v in members.values())
     except Exception as e:
-        result['guba'] = {'status': 'error', 'boards': {}, 'okCount': 0}
-        result['errors'].append('guba: ' + str(e)[:160])
+        result['errors'].append('sector_map: ' + str(e)[:160])
+    # 2a) 同花顺讨论 API（按板块代表性成分股归集）
+    if comm_cfg.get('ths', True):
+        try:
+            members = build_members(boards, _p('data/hotTopics/sector_members.json'))
+            result['guba'] = collect_guba_ths(boards, members, args.interval)
+            result['guba']['mapCount'] = len(boards)
+            result['guba']['memberTotal'] = sum(len(v) for v in members.values())
+        except Exception as e:
+            result['guba'] = {'status': 'error', 'boards': {}, 'okCount': 0, 'mapCount': len(boards)}
+            result['errors'].append('guba(ths): ' + str(e)[:160])
+    else:
+        result['guba'] = {'status': 'disabled', 'boards': {}, 'okCount': 0, 'mapCount': len(boards)}
+    # 2b) 东财股吧板块吧（真实散户帖 + 板块总帖数；1 板块 1 请求，带风控熔断）
+    if comm_cfg.get('em', True):
+        try:
+            result['gubaEm'] = collect_guba_em(boards, comm_cfg)
+        except Exception as e:
+            result['gubaEm'] = {'status': 'error', 'boards': {}, 'okCount': 0, 'mapCount': len(boards)}
+            result['errors'].append('guba(em): ' + str(e)[:160])
+    else:
+        result['gubaEm'] = {'status': 'disabled', 'boards': {}, 'okCount': 0, 'mapCount': len(boards)}
     # 3) 舆情文本
     try:
         result['news'] = collect_news()
@@ -535,6 +619,8 @@ def main():
         'market': result['market'].get('status'), 'marketRows': len(result['market'].get('rows', [])),
         'guba': result['guba'].get('status'), 'gubaOk': result['guba'].get('okCount', 0),
         'gubaTotal': result['guba'].get('mapCount', 0),
+        'gubaEm': result.get('gubaEm', {}).get('status'), 'gubaEmOk': result.get('gubaEm', {}).get('okCount', 0),
+        'gubaEmTotal': result.get('gubaEm', {}).get('mapCount', 0),
         'news': result['news'].get('status'), 'newsItems': len(result['news'].get('items', [])),
     }
     tmp = out_path + '.tmp'

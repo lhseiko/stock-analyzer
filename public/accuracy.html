@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>分析准确率检查 · 大盘技术分析 / 个股技术面 / 短期行情判断 / 市场情绪提醒</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="stylesheet" href="css/style.css?v=20260915b">
+  <!-- 本页是独立长页，覆盖主工作台全局的 html,body{overflow:hidden} 以恢复滚动 -->
+  <style>
+    html, body { height: auto !important; overflow-y: auto !important; overflow-x: hidden; }
+    .acc-page { min-height: 100vh; padding: 0 18px 40px; }
+    .acc-toolbar { position: sticky; top: 0; z-index: 20; background: var(--bg-primary);
+      padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .acc-tabs { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+    .acc-tab { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border);
+      background: transparent; color: var(--text-primary); cursor: pointer; font-size: 13px; }
+    .acc-tab.active { background: rgba(240,185,123,0.14); border-color: #F0B97B; color: #F0B97B; font-weight: 600; }
+    .acc-kpis { display: flex; flex-wrap: wrap; gap: 12px; margin: 12px 0; }
+    .acc-kpi { flex: 1 1 150px; padding: 12px 14px; border-radius: 8px; background: var(--bg-card, #161B22);
+      border: 1px solid var(--border); }
+    .acc-kpi .k-label { font-size: 12px; color: #8B949E; }
+    .acc-kpi .k-value { font-size: 22px; font-weight: 700; font-family: ui-monospace, Consolas, monospace; margin-top: 4px; }
+    .acc-kpi .k-sub { font-size: 11px; color: #6E7681; margin-top: 2px; }
+    .acc-kpi.good .k-value { color: #F6465D; }
+    .acc-kpi.mid .k-value { color: #F0B97B; }
+    .acc-kpi.bad .k-value { color: #0ECB81; }
+    .acc-kpi.na .k-value { color: #6E7681; font-size: 16px; }
+    .acc-hint { font-size: 12px; color: #8B949E; margin: 10px 0; line-height: 1.7; }
+    .acc-hint code { background: rgba(255,255,255,0.06); padding: 1px 5px; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <div class="acc-page">
+    <header class="jd-header">
+      <div class="jd-title">🎯 分析准确率检查</div>
+      <div class="jd-actions">
+        <button id="settleBtn" class="btn-primary" title="拉取最新行情结算历史判断，再刷新统计">🔄 结算并刷新</button>
+        <button id="reloadBtn" class="btn-secondary">↻ 重新加载</button>
+        <a href="index.html" class="btn-text">🏠 返回工作台</a>
+      </div>
+    </header>
+
+    <div id="loadingOverlay" class="loading-overlay hidden">
+      <div class="loading-spinner"></div>
+      <p id="loadingText">正在加载准确率数据…</p>
+    </div>
+
+    <div class="acc-toolbar">
+      <div class="acc-tabs">
+        <button class="acc-tab active" data-tab="market">🧭 大盘技术分析</button>
+        <button class="acc-tab" data-tab="tech">🎯 个股技术面</button>
+        <button class="acc-tab" data-tab="sameDay">📊 短期行情判断</button>
+        <button class="acc-tab" data-tab="sentiment">📡 市场情绪提醒</button>
+      </div>
+      <div id="techSymbolBar" style="display:none; margin-bottom:10px;">
+        <input type="text" id="symbolInput" class="jd-filter" placeholder="输入股票代码（如 601318）查该股技术面准确率" autocomplete="off" style="max-width:320px;">
+        <button id="symbolQueryBtn" class="btn-secondary">查询该股</button>
+      </div>
+      <div id="sameDaySymbolBar" style="display:none; margin-bottom:10px;">
+        <input type="text" id="sdSymbolInput" class="jd-filter" placeholder="输入股票代码（如 601318）查该股短期判断准确率" autocomplete="off" style="max-width:320px;">
+        <button id="sdSymbolQueryBtn" class="btn-secondary">查询该股</button>
+      </div>
+    </div>
+
+    <!-- 大盘技术分析 -->
+    <section id="marketPanel">
+      <div class="acc-hint">
+        结算口径：<b>短期方向</b> = <code>step6.shortTerm.direction</code> 对照<b>次日</b>上证指数收盘方向；
+        <b>中期方向</b> = <code>step6.midTerm.direction</code> 对照<b>20 个交易日</b>后收盘方向；
+        <b>融合信号</b> = <code>fused.fusionSignal</code> 按次日口径结算。
+        命中＝方向一致，「震荡」以涨跌绝对值 ≤ <span id="flatTol">0.5</span>% 计。
+      </div>
+      <div class="acc-kpis" id="marketKpis"></div>
+      <div class="acc-hint" id="marketCalib"></div>
+      <section class="home-card">
+        <div class="home-card-head"><h3>逐条记录（最新在前）</h3><span id="marketCount" class="mo-updated"></span></div>
+        <div id="marketRecords" class="acc-body"></div>
+      </section>
+    </section>
+
+    <!-- 个股技术面 -->
+    <section id="techPanel" style="display:none;">
+      <div class="acc-hint">
+        结算口径：<code>shortTerm.direction</code>（上行/下行/震荡偏上/震荡偏下/冲高回落/超跌反弹）归一化为 涨/跌/震荡，
+        对照<b>未来 5 个交易日</b>累计涨跌。<br>
+        ⚠️ 本页与「短期行情判断」的 <code>technicalShort</code> 因子<b>口径不同</b>：后者用次日涨跌验证个股整体判断，
+        本页用 5 日累计验证<b>技术面模块自身</b>的方向，两者互不干扰。
+      </div>
+      <div class="acc-kpis" id="techKpis"></div>
+      <section class="home-card" id="techBySymbolCard">
+        <div class="home-card-head"><h3>各股技术面准确率</h3><span id="techCount" class="mo-updated"></span></div>
+        <div id="techBySymbol" class="acc-body"></div>
+      </section>
+      <section class="home-card" id="techRecordsCard" style="display:none;">
+        <div class="home-card-head"><h3 id="techRecordsTitle">逐条记录</h3></div>
+        <div id="techRecords" class="acc-body"></div>
+      </section>
+    </section>
+
+    <!-- 短期行情判断 -->
+    <section id="sameDayPanel" style="display:none;">
+      <div class="acc-hint">
+        结算口径：当日个股短期涨跌判断（<code>dir</code> ∈ 涨/跌/震荡）对照<b>目标交易日</b>实际收盘方向。
+        含两种口径：<code>intraday</code>（今日后续：判断时刻价 → 当日收盘）与
+        <code>nextday</code>（下一交易日：今日收盘 → 次日收盘）。<br>
+        命中＝方向一致，「震荡」以涨跌绝对值 ≤ 1.0% 计。数据源与「个股页 · 短期行情判断」卡片同源，为本项目准确率统计的主口径。
+      </div>
+      <div class="acc-kpis" id="sdKpis"></div>
+      <div class="acc-hint" id="sdCalib"></div>
+      <section class="home-card" id="sdBySymbolCard">
+        <div class="home-card-head"><h3>各股短期判断准确率</h3><span id="sdCount" class="mo-updated"></span></div>
+        <div id="sdBySymbol" class="acc-body"></div>
+      </section>
+      <section class="home-card" id="sdRecordsCard" style="display:none;">
+        <div class="home-card-head"><h3 id="sdRecordsTitle">逐条记录</h3></div>
+        <div id="sdRecords" class="acc-body"></div>
+      </section>
+    </section>
+
+    <!-- 市场情绪提醒 -->
+    <section id="sentimentPanel" style="display:none;">
+      <div class="acc-hint">
+        结算口径：<b>仅对「预警 / 强烈预警」且带明确方向</b>（看涨 / 看跌）的情绪拐点判断留档
+        （「无」「关注」以及方向为「震荡」的日期不留档 —— 没有明确判断就无从验证），
+        对照<b>次日上证指数</b>实际涨跌。<br>
+        命中＝次日方向与预警方向一致；次日涨跌幅 ≤ <span id="sentFlatTol">0.5</span>% 视为震荡，此时方向性预警记为<b>未命中</b>。
+      </div>
+      <div class="acc-kpis" id="sentKpis"></div>
+      <section class="home-card">
+        <div class="home-card-head"><h3>逐条记录（最新在前）</h3><span id="sentCount" class="mo-updated"></span></div>
+        <div id="sentRecords" class="acc-body"></div>
+      </section>
+    </section>
+  </div>
+
+  <script src="js/accuracy.js?v=20260915b"></script>
+</body>
+</html>

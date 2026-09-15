@@ -135,15 +135,14 @@ classDiagram
         +analyzeAspects(opts)$ Promise
         +buildAugmentContext(symbol, name)$ Promise
     }
-    class ai_products {
-        <<lib/ai/products.js>>
-        +analyzeProducts(opts)$ Promise
-        +buildProductsContext(segment)$ Object
+    class ai_companyDeep {
+        <<lib/ai/companyDeep.js>>
+        +analyzeCompanyDeep(opts)$ Promise
+        +validateDeep(parsed)$ Array
+        +normalizeSensitivityMatrix(sc)$ Array
     }
     class ai_company {
         <<lib/ai/company.js>>
-        +analyzeCompany(opts)$ Promise
-        +analyzeSupplyChain(opts)$ Promise
         +analyzeShareholdersAI(opts)$ Promise
         +buildLocalHoldersContext(symbol)$ Promise
     }
@@ -180,7 +179,7 @@ classDiagram
     DeepAnalysisFacade ..> deep_dividends : 分红7键
     DeepAnalysisFacade ..> deep_research : 文档/分部/研报/公告4键
     AiAugmentFacade ..> ai_augmentStock
-    AiAugmentFacade ..> ai_products
+    AiAugmentFacade ..> ai_companyDeep
     AiAugmentFacade ..> ai_company
     AiAugmentFacade ..> ai_market
     AiAugmentFacade ..> ai_research
@@ -214,8 +213,8 @@ classDiagram
     ai_augmentStock --> ai_config
     ai_augmentStock --> ai_llm
     ai_augmentStock --> ai_earnings : _reportDateToLabel/_detectCitedYear
-    ai_products --> ai_llm
-    ai_products --> ai_images
+    ai_companyDeep --> ai_llm
+    ai_companyDeep --> ai_images
     ai_company --> ai_llm
     ai_company --> ai_images
     ai_market --> ai_llm

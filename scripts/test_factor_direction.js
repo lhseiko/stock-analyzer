@@ -27,7 +27,8 @@ function extractFn(src, name) {
 
 const SRC = fs.readFileSync(path.join(__dirname, '..', 'lib', 'sameDayJudgment.js'), 'utf8');
 const STOCK_SRC = fs.readFileSync(path.join(__dirname, '..', 'lib', 'stockData.js'), 'utf8');
-const NAMES = ['round', 'avg', 'formatWan', 'factorFuturesShort',
+const NAMES = ['round', 'avg', 'formatWan', 'localDate', 'latestQuarterEnd', // 20260913f：报告期标注依赖
+  'factorFuturesShort',
   'shortDirectionToSignal', // 20260905d/20260905e：大盘及行业板块短期走势因子依赖 helper
   'factorMarketShort', 'factorHoldings', 'factorSectorLimit', '_computeTurnoverChange'];
 const sandbox = {};
@@ -78,6 +79,27 @@ check('无股东数据但有回购', factorHoldings({ topShareholders: [] }, { o
 check('板块跌停潮', factorSectorLimit({ ok: true, limitUpRatio: 0, limitDownRatio: 0.2, limitUp: 0, limitDown: 1, total: 5, boardName: 'X' }).signal, 'neg');
 check('板块涨停潮', factorSectorLimit({ ok: true, limitUpRatio: 0.2, limitDownRatio: 0, limitUp: 1, limitDown: 0, total: 5, boardName: 'X' }).signal, 'pos');
 
+// 20260913f：数据报告期标注（用户反馈「小卡片没有标注日期」）——因子 caption 与两个子卡片都必须带报告期
+const holdersDated = (endDate) => new Array(10).fill(0).map((_, i) => ({ name: '股东' + i, holdAmount: 1e8, changeAmount: i < 6 ? 5e6 : -5e6, endDate }));
+const hLast = factorHoldings({ topShareholders: holdersDated('2026-06-30') }, { ok: false, count: 0 });
+const subCount = (hLast.subFactors || []).find(s => s.name === '增减持家数') || {};
+const subNet = (hLast.subFactors || []).find(s => s.name === '十大股东净变动') || {};
+const qExpect = latestQuarterEnd();
+const isQ = /^\d{4}-\d{2}-\d{2}$/.test(qExpect) && /-(03-31|06-30|09-30|12-31)$/.test(qExpect) && qExpect <= new Date().toISOString().slice(0, 10);
+if (isQ) pass++; else fail++;
+console.log(`[${isQ ? 'PASS' : 'FAIL'}] latestQuarterEnd() = ${qExpect}（必须是 ≤ 今天的季度末）`);
+const capOk = /数据报告期/.test(hLast.caption || '') && /2026-06-30/.test(hLast.caption || '') && /东方财富 F10/.test(hLast.caption || '');
+if (capOk) pass++; else fail++;
+console.log(`[${capOk ? 'PASS' : 'FAIL'}] 因子 caption 含报告期+来源：${hLast.caption}`);
+const subOk = /数据报告期\s*2026-06-30/.test(subCount.detail || '') && /数据报告期\s*2026-06-30/.test(subNet.detail || '');
+if (subOk) pass++; else fail++;
+console.log(`[${subOk ? 'PASS' : 'FAIL'}] 「增减持家数」「十大股东净变动」子卡片均带报告期`);
+// 非最新季报期必须显式标注（数据最新性规则：过期必须标注）
+const hOld = factorHoldings({ topShareholders: holdersDated('2026-03-31') }, { ok: false, count: 0 });
+const oldFlag = /非最新季报期/.test(hOld.caption || '');
+if (oldFlag) pass++; else fail++;
+console.log(`[${oldFlag ? 'PASS' : 'FAIL'}] 旧报告期显式标注「非最新季报期」：${hOld.caption}`);
+
 console.log('\n===== 4) 大盘及行业板块 =====');
 check('大盘与行业齐跌', factorMarketShort({ cn: [{ changePct: -2 }, { changePct: -2 }] }, { ok: true, boardChange: -2, upCount: 1, downCount: 9 }).signal, 'neg');
 check('大盘与行业齐涨', factorMarketShort({ cn: [{ changePct: 2 }, { changePct: 2 }] }, { ok: true, boardChange: 2, upCount: 9, downCount: 1 }).signal, 'pos');
@@ -99,6 +121,25 @@ for (const [sig, exp, desc] of mapCases) {
   const ok = got === exp;
   if (ok) pass++; else fail++;
   console.log(`[${ok ? 'PASS' : 'FAIL'}] ${desc} → impactScore=${got}（${impactLabel(got)}）`);
+}
+
+console.log('\n===== 6) 专属因子子维度方向（20260913f）=====');
+// 海天「CPI·食品烟酒及在外餐饮」：子维度必须各按自身数值定方向，
+// 不得沿用因子总信号（否则环比 +0.3% 上行=利好 会被总信号带成「利空」）。
+const dFactor = require('../lib/dedicatedFactor');
+const cpiSubs = dFactor.computeSubSignals('food_cpi_haitian', { yoy: -0.7, mom: 0.3 });
+check('CPI 同比 -0.7%（下行）子信号', cpiSubs.yoy, 'neg');
+check('CPI 环比 +0.3%（上行）子信号', cpiSubs.mom, 'pos');
+check('CPI 因子总信号仍为加权合成 -0.1', dFactor.computeSignal('food_cpi_haitian', { yoy: -0.7, mom: 0.3 }), -0.1);
+const cpiMapYoy = toImpactScore(cpiSubs.yoy), cpiMapMom = toImpactScore(cpiSubs.mom);
+check('CPI 同比显示为「利空」', cpiMapYoy, 'neg');
+check('CPI 环比显示为「利好」', cpiMapMom, 'pos');
+const cpiCard = dFactor.getDedicatedFactorsForSymbol('603288', 'short')[0];
+if (cpiCard) {
+  const momCard = (cpiCard.subFactors || []).find(s => s.key === 'mom') || {};
+  const ok2 = momCard.signal > 0 && /上行\s*→\s*利好/.test(momCard.detail || '');
+  if (ok2) pass++; else fail++;
+  console.log(`[${ok2 ? 'PASS' : 'FAIL'}] 因子卡片环比子维度方向正确（signal=${momCard.signal}）：${momCard.detail}`);
 }
 
 console.log(`\n===== 汇总：${pass} 通过 / ${fail} 失败 =====`);

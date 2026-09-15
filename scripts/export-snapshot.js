@@ -3,9 +3,15 @@
  * export-snapshot.js —— 门面导出基线快照工具（巨型文件拆分重构的验收基准）
  *
  * 用途：
- *   按插入序 dump lib/deepAnalysis.js（13 键）与 lib/aiAugment.js（24 键）
+ *   按插入序 dump lib/deepAnalysis.js（13 键）与 lib/aiAugment.js（21 键）
  *   两个门面的 module.exports 键名 + 键序 + typeof，与 scripts/export-baseline.json
  *   逐键比对。拆分过程的每一步都必须零差异。
+ *
+ * 变更记录：
+ *   20260913：aiAugment 24 → 23 键。删除「股东户数 AI 解读」模块时一并移除了门面上的
+ *             analyzeShareholdersAI 导出（该删除为有意为之），基线随之刷新。
+ *   20260914f：aiAugment 23 → 21 键。删除「公司综合介绍/供应链与成本/主要产品&客户」三个
+ *             独立模块，合并为单一 analyzeCompanyDeep（-3 +1 = -2），基线随之刷新。
  *
  * 行为：
  *   1. 生成当前快照写入 scripts/export-snapshot.out（每次覆盖，供 git diff）。
@@ -26,7 +32,7 @@ const BASELINE_PATH = path.join(__dirname, 'export-baseline.json');
 /** 被快照的门面清单：count 为设计文档规定的导出键数 */
 const TARGETS = [
   { name: 'deepAnalysis', modPath: path.join(__dirname, '..', 'lib', 'deepAnalysis.js'), expect: 13 },
-  { name: 'aiAugment', modPath: path.join(__dirname, '..', 'lib', 'aiAugment.js'), expect: 24 },
+  { name: 'aiAugment', modPath: path.join(__dirname, '..', 'lib', 'aiAugment.js'), expect: 21 },
 ];
 
 /** 按插入序 dump 一个门面的导出键名与 typeof（不排序——键序本身是基线的一部分） */

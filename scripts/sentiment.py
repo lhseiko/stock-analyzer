@@ -357,7 +357,7 @@ def fetch_market_comment(symbol, name):
     up_col = _col_local(df, '上升')
     focus_col = _col_local(df, '关注指数')
 
-    # ---- 市场级聚合 ----
+    # ---- 市场级聚合（主源：东财股吧全市场）----
     scores = df[score_col].dropna().astype(float).tolist() if score_col else []
     avg_score = float(sum(scores) / len(scores)) if scores else 0.0
     ups = 0
@@ -372,6 +372,48 @@ def fetch_market_comment(symbol, name):
     score_signal = max(-1.0, min(1.0, (avg_score - 60) / 10 * 0.3))
     heat_signal = max(-1.0, min(1.0, (up_ratio - 0.5) * 2))
     market_heat = round(0.5 * score_signal + 0.5 * heat_signal, 3)
+
+    # ---- 交叉源（同花顺热榜 / 雪球关注榜）：best-effort，失败降级，对冲东财单一源噪声 ----
+    # 目的：东财股吧综合得分由散户自评、口径不透明，单一源偏差大；引入两个独立平台的
+    # 市场级广度信号做交叉验证，降低单一平台噪声（A 方案）。
+    th_signal = None
+    xq_signal = None
+    try:
+        th_rows = _th_hot_list()
+        if th_rows:
+            th_pos = sum(1 for r in th_rows if (r.get('rise') or 0) > 0)
+            th_ratio = th_pos / len(th_rows)
+            # 热榜中上涨占比：>0.5 偏热，<0.5 偏冷
+            th_signal = max(-1.0, min(1.0, (th_ratio - 0.5) * 2))
+    except Exception:
+        th_signal = None
+    try:
+        xq_rows = _xueqiu_follow_list()
+        xq_rets = [r.get('pct') for r in xq_rows if isinstance(r.get('pct'), (int, float))]
+        if xq_rets:
+            xq_avg = sum(xq_rets) / len(xq_rets)
+            # 高关注股平均涨跌幅：±1.5% 映射到 ±1
+            xq_signal = max(-1.0, min(1.0, xq_avg / 1.5))
+    except Exception:
+        xq_signal = None
+
+    sources_used = ['东财股吧']
+    has_th = th_signal is not None
+    has_xq = xq_signal is not None
+    if has_th:
+        sources_used.append('同花顺热榜')
+    if has_xq:
+        sources_used.append('雪球关注榜')
+    cross_n = (1 if has_th else 0) + (1 if has_xq else 0)
+    if cross_n > 0:
+        # 东财 0.6 为主，每个可用交叉源平分剩余 0.4，降低单一平台噪声
+        cross_w = 0.4 / cross_n
+        blended = 0.6 * market_heat
+        if has_th:
+            blended += cross_w * th_signal
+        if has_xq:
+            blended += cross_w * xq_signal
+        market_heat = round(blended, 3)
 
     # ---- 个股维度 ----
     sym_score = sym_rise = sym_focus = None
@@ -419,8 +461,15 @@ def fetch_market_comment(symbol, name):
         'symbolSignal': round(symbol_signal, 3),
         'signal': signal,
         'ok': True,
+        # ---- C 方案：时效 / 覆盖标注 + 缺失剔除支撑字段 ----
+        'valid': True,                       # 市场热度是否成功计算（False 时 MSI 自动剔除该分量）
+        'sampleCount': len(df),              # 东财股吧聚合样本数（全市场个股数）
+        'coverage': ' + '.join(sources_used),  # 实际参与融合的数据源清单
+        'updatedAt': time.strftime('%Y-%m-%d %H:%M', time.localtime()),  # 数据抓取时间戳
+        'thSignal': round(th_signal, 3) if th_signal is not None else None,  # 同花顺交叉源信号
+        'xqSignal': round(xq_signal, 3) if xq_signal is not None else None,  # 雪球交叉源信号
         'samples': samples,
-        'note': f'东财股吧舆情聚合·市场热度+个股({symbol or "全市场"})',
+        'note': f'股吧舆情聚合（{len(sources_used)}源融合）·市场热度+个股({symbol or "全市场"})',
     }
 
 

@@ -17,6 +17,9 @@ const { getMacroIndicators } = require('./lib/macroData');
 const { getMarketRank } = require('./lib/marketRank');
 const { getIndexPETrend } = require('./lib/indexPETrend');
 const { getMarketTechnical } = require('./lib/marketTechnical'); // 首页·大盘技术分析（三大指数六步推演）
+// 20260914i：两个技术分析模块的「准确率检查」——独立落盘 + 事后结算（不污染个股 judgements 统计）
+const marketTechJudgment = require('./lib/marketTechJudgment');
+const techFaceJudgment = require('./lib/techFaceJudgment');
 const { deepAnalysis, getLocalDocuments, loadDividendSeries, persistDividends, fetchDividends, normalizeSymbol } = require('./lib/deepAnalysis');
 const { analyzeCapitalFlow } = require('./lib/capitalFlow');
 const { classifyCompanyType } = require('./lib/companyType');
@@ -50,6 +53,8 @@ const reportSync = require('./lib/reportSync'); // 20260821f：财报事件→�
 // 20260823p：全市场情绪指数 + 市场情绪拐点检测（启发式检测器 + 自适应学习）
 const MSI = require('./lib/marketSentimentIndex');
 const { getTurningPointState, labelAndLearn } = require('./lib/sentimentTurningPoint');
+// 20260914i：市场情绪提醒的准确率记录与事后验证（仅对有方向预警的日期留档，次日上证判命中）
+const sentimentAccuracy = require('./lib/sentimentAccuracy');
 // 本地 SQLite 数据层（node:sqlite，零额外依赖）：分红时序 / 标量五要素 / 分析快照，支撑三规则落地
 const db = require('./lib/db');
 // 20260903f 降费：本地事实库（研报/公告/概况/主营预下载，供不联网模型做纯推理）
@@ -77,7 +82,7 @@ app.use('/api', (req, res, next) => {
 
 // 入口 HTML 强制带版本号重定向：旧服务器曾允许缓存 index.html，浏览器可能一直用旧副本。
 // 每次访问 / 或 /index.html 都重定向到带 ?v= 的版本，确保一定拉取最新前端（无需用户手动硬刷新）。
-const APP_VERSION = '20260913c'; // 20260913c：删除股东分析页「🏛️ 机构持仓数量变化」模块（该卡由「十大股东中的机构户数」按报告期统计，信息价值低且与「机构持仓变化」重复）——前端卡片/渲染/小结项与后端 fetchInstitutionTrend + institutionTrend 字段一并移除（所有个股生效）；20260913b：删除「股东户数 AI 解读」全链路；股东分析各卡片补数据来源+报告期；修复十大股东取到临时公告日（长江电力 2026-08-22 仅1行）导致最新期不是 6-30 的 bug（只认季度末）；机构持仓变化图默认显示最近12期；20260912a：首页「基金行业配置名单（全市场）」重建——改为全市场权益类基金（股票/混合/指数/QDII，按母基金去重 ~1万只）最新报告期前十大重仓股，按【持仓市值(万元)加总】排名；后台增量采集+磁盘缓存(按季度)+进度展示（替代旧「头部15只基金」矩阵）；20260911d：修复首页行业卡片（7日涨跌提醒/资金流向）在60s定时整块 innerHTML 重渲染后丢失/重复的竞态——改为同步从缓存渲染进 .mo-tiles-reminder 槽位与 #moCapitalFlow 容器，异步 fetcher 仅就地 replace；20260911c：首页行业卡片小字标注申万层级（一级/二级/三级）；20260911b：顶栏大盘行情状态栏将北证50替换为日经指数（东方财富 100.N225）；20260911a：首页行业板块涨/跌幅前5 改用东方财富口径
+const APP_VERSION = '20260915b'; // 20260915a：公司概况与 sameDay 行业板块因子统一用 sectorIdentity 精确行业（修 688660 电气风电被 F10 CSRC 错配为通用设备）+ companyDeep 长文本卡片截断修复（chart-card max-height 4000px→99999px）+ 信息分析配图禁用 Wikimedia Commons 兜底（避免产品/竞争对手图片全部不相关）；20260914j：事件驱动修行业误配（智能家居补贴不再归食品饮料）+ 权重重设（重大40%/中度12%/轻微3%，封顶40%）+ 删除卡片外重复白字 + 准确率页新增「短期行情判断」「市场情绪提醒」两个 tab；20260914i：大盘技术分析 + 个股技术面新增「准确率检查」（每日留档 + 事后验证 + 卡片内嵌 + 独立核对页 accuracy.html）；20260914h：信息分析（CFA 七段）改为「固定联网模型 + 永久缓存」并补齐本地资料自动加载；20260914g：信息分析卡片改名（「公司深度分析（CFA）」→「信息分析」）+ 联网超时 60s→240s；20260914f：三模块合并为单一 companyDeep.js（七段统一输出）；20260914e：大盘技术分析六步 + 短线结构研判合并为 lib/marketTechnical.js 融合引擎（七步推演，移除 /api/short-term-market）。
 app.use((req, res, next) => {
   if ((req.path === '/' || req.path === '/index.html') && req.query.v !== APP_VERSION) {
     return res.redirect(`/index.html?v=${APP_VERSION}`);
@@ -178,9 +183,72 @@ app.get('/api/price-action/:symbol', async (req, res) => {
     if (!data || data.error) {
       return res.json({ success: false, error: (data && data.error) || '价格行为推演失败' });
     }
-    res.json({ success: true, symbol, ...data });
+    // 20260914i：落盘当日技术面方向判断（未来 5 个交易日口径），供准确率检查事后结算。
+    // 与「短期行情判断」的 technicalShort 因子互不干扰——本模块只认「技术面自身方向 vs 后续价格」。
+    let accuracy = null;
+    try {
+      const sym = normalizeSymbol ? normalizeSymbol(symbol) : symbol;
+      techFaceJudgment.recordDailyJudgment(sym, data, { name: (req.query.name || '') });
+      accuracy = techFaceJudgment.computeAccuracy(sym);
+    } catch (e) {}
+    res.json({ success: true, symbol, accuracy, ...data });
   } catch (err) {
     console.error('PriceAction error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 20260914i：个股技术面 · 准确率检查
+app.get('/api/tech-face/records', async (req, res) => {
+  try {
+    const symbol = req.query.symbol ? (normalizeSymbol ? normalizeSymbol(req.query.symbol) : req.query.symbol) : null;
+    if (symbol) {
+      if (req.query.settle === '1') await techFaceJudgment.settleSymbol(symbol);
+      const records = techFaceJudgment.readAll(symbol);
+      const accuracy = techFaceJudgment.computeAccuracy(symbol, records);
+      return res.json({ success: true, mode: 'symbol', symbol, accuracy, records: records.slice().reverse() });
+    }
+    if (req.query.settle === '1') await techFaceJudgment.settleAll();
+    const accuracy = techFaceJudgment.computeGlobalAccuracy();
+    // 全局模式返回各股汇总（按已结算样本数降序），逐条明细请带 ?symbol=
+    const dirFiles = require('fs').readdirSync(techFaceJudgment.DIR).filter(f => f.endsWith('.json'));
+    const bySymbol = dirFiles.map(f => {
+      const s = f.replace(/\.json$/, '');
+      const a = techFaceJudgment.computeAccuracy(s);
+      return { ...a, name: (techFaceJudgment.readAll(s).slice(-1)[0] || {}).name || '' };
+    }).sort((a, b) => (b.settledCount || 0) - (a.settledCount || 0));
+    res.json({ success: true, mode: 'global', accuracy, bySymbol });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+app.post('/api/tech-face/settle', async (req, res) => {
+  try {
+    const symbol = req.body && req.body.symbol;
+    const r = symbol ? await techFaceJudgment.settleSymbol(symbol) : await techFaceJudgment.settleAll();
+    res.json({ success: true, ...r });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ---- 市场情绪提醒 · 准确率（20260914i）----
+// 情绪拐点预警的历史记录 + 准确率；?settle=1 先结算（拉上证 K 线）
+app.get('/api/sentiment-accuracy/records', async (req, res) => {
+  try {
+    if (req.query.settle === '1') await sentimentAccuracy.settleAll();
+    const records = sentimentAccuracy.getAllRecords();
+    res.json({ success: true, accuracy: sentimentAccuracy.computeAccuracy(records), records });
+  } catch (err) {
+    console.error('[SentimentAccuracy] records error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+app.post('/api/sentiment-accuracy/settle', async (req, res) => {
+  try {
+    const r = await sentimentAccuracy.settleAll();
+    res.json({ success: true, ...r });
+  } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -559,9 +627,32 @@ app.get('/api/market-technical', async (req, res) => {
   try {
     const force = req.query.refresh === '1' || req.query.force === '1';
     const result = await getMarketTechnical({ force });
+    // 20260914i：落盘当日方向判断（短期=次日 / 中期=20交易日），供准确率检查事后结算。
+    // 成交后（marketClosed）才落盘，避免盘中把「未定方向」当成收盘判断记入。
+    try { if (marketClosed(new Date())) marketTechJudgment.recordDailyJudgment(result); } catch (e) {}
     res.json(result);
   } catch (err) {
     console.error('[MarketTechnical] route error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 20260914i：大盘技术分析 · 准确率检查（逐条记录 / 统计 / 手动结算）
+app.get('/api/market-tech/records', async (req, res) => {
+  try {
+    if (req.query.settle === '1') await marketTechJudgment.settleAll();
+    const records = marketTechJudgment.getAllRecords();
+    const accuracy = marketTechJudgment.computeAccuracy(records);
+    res.json({ success: true, accuracy, records: records.slice().reverse() });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+app.post('/api/market-tech/settle', async (req, res) => {
+  try {
+    const r = await marketTechJudgment.settleAll();
+    res.json({ success: true, ...r });
+  } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -691,7 +782,15 @@ app.get('/api/sentiment-turning-point', async (req, res) => {
   try {
     const force = req.query.refresh === '1' || req.query.force === '1';
     const state = await getTurningPointState({ refresh: force });
-    res.json({ success: true, ...state });
+    // 20260914i：情绪预警准确率留档（仅「预警/强烈预警 + 明确方向」才记；失败不影响主接口）
+    let accuracy = null;
+    try {
+      if (state && state.detection) {
+        sentimentAccuracy.recordDailyJudgment(state.detection, { baseDate: state.detection.date });
+      }
+      accuracy = sentimentAccuracy.computeAccuracy();
+    } catch (e) { /* best-effort */ }
+    res.json({ success: true, ...state, accuracy });
   } catch (err) {
     console.error('[SentimentTP] error:', err.message);
     res.status(500).json({ success: false, error: err.message });
@@ -1704,7 +1803,28 @@ async function runAutoReview() {
     return { reviewed: 0, note: '增强复核失败: ' + e.message };
   });
   // 5) 个股近期热点已改为「打开个股页时 AI 联网按涨跌幅自动分析、按交易日缓存」，无需盘后快照。
-  return { acc, impactReview, learning, cnscraper, msiNote };
+  // 6) 20260914i：两个技术分析模块的准确率结算（大盘技术分析 + 个股技术面），
+  //    独立于个股短期判断的 settleAll，互不干扰；失败不阻断主流程。
+  let techAcc = null;
+  try {
+    const mtSettle = await marketTechJudgment.settleAll();
+    const tfSettle = await techFaceJudgment.settleAll();
+    // 20260914i：市场情绪提醒也纳入准确率结算
+    let sentSettle = null;
+    try { sentSettle = await sentimentAccuracy.settleAll(); } catch (e2) { sentSettle = null; }
+    techAcc = {
+      marketTech: { changed: mtSettle.changed, shortRate: mtSettle.accuracy.short.accuracy, shortSettled: mtSettle.accuracy.short.settledCount, midRate: mtSettle.accuracy.mid.accuracy, midSettled: mtSettle.accuracy.mid.settledCount },
+      techFace: { changed: tfSettle.changed },
+      sentiment: sentSettle ? { changed: sentSettle.settled, rate: sentSettle.accuracy.accuracy, settled: sentSettle.accuracy.settledCount } : null,
+    };
+    console.log('  [结算·技术分析] 大盘技术分析 短期命中率 ' + (mtSettle.accuracy.short.accuracy == null ? '—' : mtSettle.accuracy.short.accuracy + '%') +
+      `（已结算 ${mtSettle.accuracy.short.settledCount} 条）/ 中期 ${(mtSettle.accuracy.mid.accuracy == null ? '—' : mtSettle.accuracy.mid.accuracy + '%')}` +
+      `（已结算 ${mtSettle.accuracy.mid.settledCount} 条）；个股技术面 新结算 ${tfSettle.changed} 条` +
+      (sentSettle ? `；市场情绪提醒 新结算 ${sentSettle.settled} 条，命中率 ${sentSettle.accuracy.accuracy == null ? '—' : sentSettle.accuracy.accuracy + '%'}` : ''));
+  } catch (e) {
+    console.error('  [结算·技术分析] 失败:', e.message);
+  }
+  return { acc, impactReview, learning, cnscraper, msiNote, techAcc };
 }
 
 // cn-financial-scraper 后台增强复核：对最近误判个股拉取定期报告解读（东财财报规则引擎）

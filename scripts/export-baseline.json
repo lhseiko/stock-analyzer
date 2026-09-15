@@ -63,19 +63,7 @@
       "type": "function"
     },
     {
-      "key": "analyzeProducts",
-      "type": "function"
-    },
-    {
-      "key": "analyzeCompany",
-      "type": "function"
-    },
-    {
-      "key": "analyzeSupplyChain",
-      "type": "function"
-    },
-    {
-      "key": "analyzeShareholdersAI",
+      "key": "analyzeCompanyDeep",
       "type": "function"
     },
     {

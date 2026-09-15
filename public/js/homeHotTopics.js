@@ -1,5 +1,6 @@
-/* 首页「板块舆情热度周榜」卡片 —— 调用后端 /api/home-hot-topics（20260909m 重构）
+/* 首页「板块舆情热度周榜」卡片 —— 调用后端 /api/home-hot-topics（20260913h 双社区源）
  * 五指标(A 舆情曝光/B 社区讨论/C 韭菜讨论/D 舆情情感/E 社区情感) + 三路交叉验证 + 情绪标签 + 告警。
+ * 社区讨论为双源合并去重：东方财富股吧板块吧（gubaEm）+ 同花顺讨论 API（guba）；两源任一可用即不降级。
  * 热度≠涨跌预测；NLP 词典法存在误差；全部口径以后端 footnotes 为准。 */
 const HomeHotTopics = (() => {
   let loading = false;
@@ -82,7 +83,7 @@ const HomeHotTopics = (() => {
       ? '<div class="htw-notice">🔄 后台正在重新采集今日数据，本列表先用已保存数据计算；完成后自动更新。</div>'
       : '';
     const degradeHtml = degrade
-      ? '<div class="htw-notice htw-notice-warn">⚠️ 东财股吧通道受限，社区类指标(B/E)缺失，当前为降级口径：综合分 = 舆情曝光×0.8 + 舆情情感×0.2。</div>'
+      ? '<div class="htw-notice htw-notice-warn">⚠️ 社区讨论通道（东方财富股吧 + 同花顺讨论）当日均不可用，社区类指标(B/E)缺失，当前为降级口径：综合分 = 舆情曝光×0.8 + 舆情情感×0.2。</div>'
       : '';
 
     if (!rows.length) {
@@ -96,7 +97,7 @@ const HomeHotTopics = (() => {
       : '';
     const srcChips = [
       `<span class="htw-chip">舆情快讯: ${escapeHtml(src.news || '--')}</span>`,
-      `<span class="htw-chip">东财股吧: ${escapeHtml(src.guba || '--')}（${escapeHtml(src.gubaBoards || '--')}）</span>`,
+      `<span class="htw-chip">社区讨论: 东财股吧 ${escapeHtml(src.gubaEm || '--')}（${escapeHtml(src.gubaEmBoards || '--')}）· 同花顺 ${escapeHtml(src.guba || '--')}（${escapeHtml(src.gubaBoards || '--')}）</span>`,
       `<span class="htw-chip">5日资金流: ${escapeHtml(src.market || '--')}</span>`,
     ].join('');
     const foot = ((data.footnotes || []).map(f => `<div class="htw-foot-line">${escapeHtml(f)}</div>`)).join('');
