@@ -5,6 +5,23 @@
 const CapitalCharts = {
   instances: {},
 
+  // 20260916：统一的容错 init —— ECharts（本地 vendor/echarts.min.js）缺失/未就绪时不再抛错中断
+  // 整个 renderAll，只在该容器内提示，其余图表继续渲染。
+  _safeInit(id) {
+    const el = document.getElementById(id);
+    if (!el) return null;
+    if (typeof echarts === 'undefined') {
+      el.innerHTML = '<div class="data-empty">⚠️ 图表库（ECharts）未加载成功，请检查网络后刷新页面。</div>';
+      return null;
+    }
+    try { return echarts.init(el, 'softDark'); }
+    catch (e) {
+      console.error('Capital chart init error:', id, e);
+      el.innerHTML = `<div class="data-empty">图表渲染失败（${(e && e.message) || e}）。</div>`;
+      return null;
+    }
+  },
+
   disposeAll() {
     Object.values(this.instances).forEach(c => { try { c.dispose(); } catch {} });
     this.instances = {};
@@ -92,7 +109,8 @@ const CapitalCharts = {
       ? '<span style="display:inline-block;margin-left:8px;padding:2px 8px;border-radius:4px;background:rgba(245,158,11,0.15);color:#cdab74;font-size:11px;">估算数据</span>'
       : '';
 
-    const chart = echarts.init(el, 'softDark');
+    const chart = this._safeInit('capMoneyFlowChart');
+    if (!chart) return;
     this.instances.moneyFlow = chart;
 
     const dates = daily.map(d => d.date);
@@ -197,7 +215,8 @@ const CapitalCharts = {
   renderOBV(vi) {
     const el = document.getElementById('capOBVChart');
     if (!el || !vi) return;
-    const chart = echarts.init(el, 'softDark');
+    const chart = this._safeInit('capOBVChart');
+    if (!chart) return;
     this.instances.obv = chart;
 
     const s = vi.series;
@@ -216,7 +235,8 @@ const CapitalCharts = {
   renderVR(vi) {
     const el = document.getElementById('capVRChart');
     if (!el || !vi) return;
-    const chart = echarts.init(el, 'softDark');
+    const chart = this._safeInit('capVRChart');
+    if (!chart) return;
     this.instances.vr = chart;
 
     const s = vi.series;
@@ -241,7 +261,8 @@ const CapitalCharts = {
   renderVolume(vi) {
     const el = document.getElementById('capVolumeChart');
     if (!el || !vi) return;
-    const chart = echarts.init(el, 'softDark');
+    const chart = this._safeInit('capVolumeChart');
+    if (!chart) return;
     this.instances.volume = chart;
 
     const s = vi.series;
@@ -270,7 +291,8 @@ const CapitalCharts = {
       return;
     }
 
-    const chart = echarts.init(el, 'softDark');
+    const chart = this._safeInit('capMarginChart');
+    if (!chart) return;
     this.instances.margin = chart;
 
     const data = margin.data;

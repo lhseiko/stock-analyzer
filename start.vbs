@@ -28,6 +28,10 @@ WScript.Sleep 800
 ' which is why the user saw two identical web pages on every double click.
 WshShell.Environment("PROCESS")("PORT") = "3005"
 WshShell.Environment("PROCESS")("SA_NO_AUTO_OPEN") = "1"
+' SA_NO_BG_AI=1 disables the two background LLM scheduled tasks (event scan + dedicated-factor
+' monthly trigger) so the Qwen LLM endpoint is only hit on explicit user action — stops silent
+' Aliyun billing when the app runs unattended. To re-enable background AI, delete the line below.
+WshShell.Environment("PROCESS")("SA_NO_BG_AI") = "1"
 cmd = q & nodeExe & q & " " & q & target & q
 WshShell.Run cmd, 0, False
 

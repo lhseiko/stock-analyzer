@@ -14,6 +14,7 @@ const { getPriceActionSnapshot } = require('./lib/priceActionHub');
 const { getNews, getHotNews } = require('./lib/newsSearch');
 const { getMacroNews } = require('./lib/macroNews');
 const { getMacroIndicators } = require('./lib/macroData');
+const { getUsMacroEvents } = require('./lib/usMacroEvents');
 const { getMarketRank } = require('./lib/marketRank');
 const { getIndexPETrend } = require('./lib/indexPETrend');
 const { getMarketTechnical } = require('./lib/marketTechnical'); // 首页·大盘技术分析（三大指数六步推演）
@@ -26,7 +27,7 @@ const { classifyCompanyType } = require('./lib/companyType');
 const { fetchFuturesCorrelation, getFuturesMeta } = require('./lib/futuresData');
 const { industryAnalysis } = require('./lib/industryAnalysis');
 const { getShareholdersData, getCompanyProfile } = require('./lib/shareholderData');
-const { getJudgmentWithAccuracy, settleAll, settleSymbol, getAllRecords, filterBySymbol, computeAccuracy, getLearningState, preOpenRecomputeAll, localDate } = require('./lib/sameDayJudgment');
+const { getJudgmentWithAccuracy, settleAll, settleSymbol, getAllRecords, filterBySymbol, computeAccuracy, getLearningState, preOpenRecomputeAll, localDate, marketClosed } = require('./lib/sameDayJudgment');
 const { getMarketSentiment } = require('./lib/sentiment');
 const { getSectorTrend } = require('./lib/sectorTrend');
 const { getSectorLimitStats } = require('./lib/sectorLimitStats');
@@ -55,6 +56,10 @@ const MSI = require('./lib/marketSentimentIndex');
 const { getTurningPointState, labelAndLearn } = require('./lib/sentimentTurningPoint');
 // 20260914i：市场情绪提醒的准确率记录与事后验证（仅对有方向预警的日期留档，次日上证判命中）
 const sentimentAccuracy = require('./lib/sentimentAccuracy');
+// 20260917d：首页「市场情绪提醒」卡片升级为「大盘量能情绪分析模型」（10 因子 · 确定性计算 · 自学习）
+const marketEmotionModel = require('./lib/marketEmotionModel');
+const { getMarketEmotionData } = require('./lib/marketEmotionData');
+const { computeMacroFactors } = require('./lib/macroSentimentFactors');
 // 本地 SQLite 数据层（node:sqlite，零额外依赖）：分红时序 / 标量五要素 / 分析快照，支撑三规则落地
 const db = require('./lib/db');
 // 20260903f 降费：本地事实库（研报/公告/概况/主营预下载，供不联网模型做纯推理）
@@ -66,6 +71,9 @@ const eventRoutes = require('./routes/eventRoutes'); // 20260907a：三联动·�
 const dedicatedFactorRoutes = require('./routes/dedicatedFactor'); // 20260911：专属因子路由
 // Python 解释器探测器移至 lib/pyRuntime.js（AI 行业指数 / 研报下载 / 板块拥挤度回补共用）
 const { findPython } = require('./lib/pyRuntime');
+// 20260917g：localDate 统一来自 lib/sameDayJudgment（其内部已委托 lib/localDate.js，按北京时区）。
+// 不再单独 require 以免重名；此前 server.js 用 new Date().toISOString().slice(0,10) 取日期，
+// 在 UTC+8 每天 00:00–07:59 会取到前一天。
 
 const app = express();
 const PORT = process.env.PORT || 3005;
@@ -82,7 +90,7 @@ app.use('/api', (req, res, next) => {
 
 // 入口 HTML 强制带版本号重定向：旧服务器曾允许缓存 index.html，浏览器可能一直用旧副本。
 // 每次访问 / 或 /index.html 都重定向到带 ?v= 的版本，确保一定拉取最新前端（无需用户手动硬刷新）。
-const APP_VERSION = '20260915b'; // 20260915a：公司概况与 sameDay 行业板块因子统一用 sectorIdentity 精确行业（修 688660 电气风电被 F10 CSRC 错配为通用设备）+ companyDeep 长文本卡片截断修复（chart-card max-height 4000px→99999px）+ 信息分析配图禁用 Wikimedia Commons 兜底（避免产品/竞争对手图片全部不相关）；20260914j：事件驱动修行业误配（智能家居补贴不再归食品饮料）+ 权重重设（重大40%/中度12%/轻微3%，封顶40%）+ 删除卡片外重复白字 + 准确率页新增「短期行情判断」「市场情绪提醒」两个 tab；20260914i：大盘技术分析 + 个股技术面新增「准确率检查」（每日留档 + 事后验证 + 卡片内嵌 + 独立核对页 accuracy.html）；20260914h：信息分析（CFA 七段）改为「固定联网模型 + 永久缓存」并补齐本地资料自动加载；20260914g：信息分析卡片改名（「公司深度分析（CFA）」→「信息分析」）+ 联网超时 60s→240s；20260914f：三模块合并为单一 companyDeep.js（七段统一输出）；20260914e：大盘技术分析六步 + 短线结构研判合并为 lib/marketTechnical.js 融合引擎（七步推演，移除 /api/short-term-market）。
+const APP_VERSION = '20260918a'; // 20260918a：删除个股「短期行情判断」中「行业板块」因子的「板块成分」子卡片（用户 2026-09-18 截图要求）。该子卡片 signal=0、纯展示且父因子 detail 已含「成分 N 家」，属冗余重复，不直接参与评分，移除不影响方向/权重/得分。属展示布局调整（_hashFactorStructure 仅哈希 FACTOR_KEYS+DEFAULT_WEIGHTS、不含子因子名，不自动捕获），已手动 +1 LAYOUT_VERSION 强制重算旧判断缓存。前端 subFactors 通用循环渲染，无需改 app.js。 20260917l：修「中国平安(601318)个股亮点/雷点**长时间无法获取**」（用户 2026-09-17 20:18 截图：卡片停在「AI 正在联网重新分析…」+ 计数 0/0）。根因（服务端日志实证）：`lib/ai/llm.js` 的 `callLLM` 内部最多会**串行**发起 4 次 `postLLM`（① 妙想事实纯推理 → ② 外部搜索通道纯推理 → ③ 外部通道失败后的纯推理 → ④ 内置 enable_search），每次都用同一个 `timeoutMs` 各自做硬超时；本任务传 240s，单股最坏 ≈4×240s≈16 分钟无响应，用户侧表现就是「长时间拿不到」。601318 恰好踩中该路径（日志 `[search:mcp] 调用失败，本次仅做纯推理…：大模型请求超时（240000ms 无响应）`），而其它的股（600460/600909/000783）同期均秒级命中缓存成功，故只有这一只「永远转圈」。修复（四处，均为隔离修改）：①【核心】`lib/ai/llm.js` 新增**可选**「整链路总耗时预算」`opts.overallBudgetMs`（配套可单测纯函数 `createBudget`）：受预算约束后每次 `postLLM` 只允许用 `min(timeoutMs, 剩余预算)`，剩余不足 5s 即**秒级抛错**（`err.budgetExhausted=true`），不再无限串行等待；**不传该参数时 `enabled=false / leftMs()=Infinity / timeoutFor()=原值`，行为与历史版本完全一致**，故 companyDeep/valuation/earnings/research/announcements 等既有调用方零影响。②【接线】`lib/ai/augmentStock.js` 的 `analyzeAspects` 传 `overallBudgetMs: 300000`（单次仍可跑满 240s，累计超 300s 快速失败）。③【兜底】`analyzeAspects` 失败时若本地已有历史成功结果，直接返回并标记 `stale:true`（新增字段，向后兼容），避免用户看到空白卡片。④【等待体验】`public/js/notes.js` 的 `generateAspects` 补三件事：状态栏每秒刷新「已等待 N 秒」（不再像卡死）、客户端 330s `AbortController` 硬超时（比后端预算多 30s 余量）、超时/失败给出可执行提示；并对 `stale` 回退显示「本次超时/失败，已回退上一次成功结果（时间）」。另修：`lib/macroNews.js` 的 `_localDate` 未定义回归（该文件只导入了 `localDate` 无别名，`localToday()` 却调用 `_localDate()` → 每次调用抛 `ReferenceError: _localDate is not defined`，首页宏观新闻长期取不到）→ 改回 `localDate()`。 20260917k：亮点/雷点「只累积、需手动清理」口径正式落地 + 🤖 AI 徽标修复（用户 2026-09-17 明确选择「只累积、需手动清理」，否决「生成时自动替换旧 AI 条目」方案）——背景：上一条(20260917j)排查中发现 `add()` 漏拷 `ai` 字段，导致 ①🤖 AI 徽标永不显示、②`generateAspects` 里「生成前先清除本股旧 AI 条目」的过滤条件 `n.ai === true` 永远匹配不到（所以实际表现一直是「只追加不清旧」，但属于**意外的**行为）。本次把该行为**显式化并锁定**：①【口径锁定】`generateAspects` **删除**「先清除旧 AI 条目」整段逻辑，改为只统计 `existingAi` 数（不删任何数据），AI 状态提示改为「该股原有 N 条 AI 条目已保留，如需精简可点『🧹 清理重复』」—— 即用户要的「只累积、需手动清理」；代码注释写明「若将来要改回自动替换，必须先征得用户同意」，并新增断言防止回退。②【徽标修复】`renderNoteCard` 的 🤖 判定改为 `note.ai === true || note.type === 'ai'`，使**历史条目也立即恢复显示** 🤖（`data/notes.json` 中 34 条 AI 条目本就有 `type:'ai'`，**无需数据迁移**）。③【字段补全】`add()` 补落 `ai: note.ai === true`，让今后数据自带真实来源标记（**仅用于展示/追溯，不用于自动删除**）。回归测试 `scripts/test_notes_scope_switch.js` 扩展至 **34/34**：新增 §7（历史条目徽标 + 手动录入不误标）、§8（**口径锁定**：生成后原有亮点/雷点一条未删、仅 +1 新增；新条目 `ai` 已落盘）。只改 `public/js/notes.js` 一个文件（隔离修改，服务端 `/api/notes` 契约与 `data/notes.json` 结构均未变）。 20260917j：修「个股亮点/雷点不随个股页面切换」（用户 2026-09-17 截图反馈：页面为华安证券 600909，卡片却全是士兰微 600460 的内容）——根因：`public/js/notes.js` 的 AI 生成 fetch 明确「不随标签页/个股切换取消」（原注释即如此设计），等待期间用户切到别的个股后，回调里的 `this.renderStock(旧symbol)` 会把 `#stockNotesContainer` 刷成上一只股票的亮点/雷点，且此后不会再被纠正（该容器仅在 activeTab==='journal' 时重渲染）。实测吻合：`data/notes.json` 中 600460 恰为 3 亮点 + 5 雷点（= 截图计数），600909 为 0 条，证明容器停留在 600460 的渲染结果。修复（症状级 + 机制级双保险）：①【机制】`notes.js` 新增防串股守卫 `_currentStockCode()/_isCurrentStock()/renderStockIfCurrent()`，凡「目标股票未必等于当前展示股票」的重渲染一律走守卫 —— 覆盖 `generateAspects`（3 处回调 + AI 状态条 + 按钮复位）、`setAsMain`、`confirmDelete`、`saveForm`；非当前股票一律丢弃，不再污染其他个股页面（`renderStock` 本身不加守卫，保持既有契约）。②【症状】`app.js` 的 `analyze()` 在 `window.currentStock` 赋值处（当前个股唯一变更点）立即用新个股重渲染亮点/雷点，不再依赖「恰好停在 journal tab」；③ `generateAspects` 的并发锁由「全局单锁」改为「按股票隔离」（原先 A 股在跑时切到 B 股点生成会被静默 return，按钮看着可用却没反应，同属「不跟随个股切换」）；④ 切股后即使 AI 回调抵达，也只在仍停留该股页面时才刷新 AI 状态条与按钮，避免改到别的股票的界面。新增回归测试 `scripts/test_notes_scope_switch.js`（25/25，用最小 DOM 桩驱动真实 notes.js；含「裸 renderStock 确实会覆盖当前页」的旧行为复现对照，证明守卫是承重的）。注：本次只改前端 2 个文件，`/api/notes` 返回全量由前端按 scope 过滤的既有契约未变（隔离修改）。 20260917i：个股页「短期判断」卡片重组（用户 2026-09-17 要求，5 卡 → 7 因子重构）——①「市场情绪与消息面」改名「大盘」：删除「消息情绪（大盘）」「涨跌停比」两个子因子**及其底层逻辑**，同位置新增「市场情绪提醒」子因子（**直接引用首页判断**：读 data/market-emotion 落盘，同源不重算，非二次计算），并迁入原「大盘及行业板块短期走势」下的「大盘短期走势」；保留「内幕抢跑预警」「全网舆情」。②「板块涨跌停占比」改名「行业板块」（key sectorLimit 不变）：迁入「板块消息」与原「行业板块」因子（**改名为「行业短期走势」**），保留涨停/跌停占比、板块成分。③「大盘及行业板块短期走势」**整卡删除**（原因子 key market 移除）。④「财报解读」「舆情与讨论热度（个股）」两因子迁入「个股短期动向」。⑤ 权重处理：删除 market 后其余 7 因子**等比放大至 Σ=1.0000**；被迁入的子因子**参与评分**（子权重 MARKET_SHORT_SUB_W / SECTOR_TREND_SUB_W / SECTOR_NEWS_SUB_W / LIMIT_SUB_W / EMOTION_SUB_W / STOCK_SENT_SUB_W / EARN_SUB_W / SHORT_DIR_SUB_W），各 factor* 函数一律引用 W_* 常量、不再内嵌字面量。⑥ 缓存失效：LAYOUT_VERSION → 20260917i；因子结构变化（market 移除）由 _hashFactorStructure() **自动捕获**（SCHEMA_VERSION=h1f4df388-20260917i）→ 旧 data/judgments/*.json 判「旧 schema」强制重算，重启即生效。配套改动：lib/marketEmotionModel.js 新增导出 readLatestJudgment() 并补写记录字段 tendencyKey/coreDriver/advice/riskTip（供个股页单源引用首页结论）；public/js/app.js _renderSameDayLogicHtml 的 FACTOR_ORDER 去掉 market 并重排。E2E 实测（603288 海天味业）：7 基础因子 + 事件驱动共 8 因子、权重合计 100.0000%、「大盘」内含「市场情绪提醒=看跌·预警」与首页 /api/sentiment-turning-point 结论一致。回归全绿：test_factor_direction 41/41（新增第 4 节拆分校验）、test_local_date 12/12、test_tz_smoke 23/23、test_market_emotion 31/31、test_news_time 19/19、test_hot_topics_consistency 11/11、test_shareholder_period 10/10、test_sanxi_selling_expense 32/32、test_news_sector_scoring 17/17、test_event_weight_sentiment_acc 31/31；6 个文件 node --check 通过。顺带修掉 scripts/test_factor_direction.js 两处测试基建缺陷：'localDate' 与 require 解构重名导致 SyntaxError（源码里它是委托壳且引用未注入的 _localDate）、FACTOR_NAME 未注入沙箱导致 ReferenceError。 20260917h：修「今日财经热点」卡片数据源与时间口径（2026-09-17 抓真实响应核对后执行）——(1)【数据源已下线、静默失败】旧接口 https://newsapi.eastmoney.com/kuaixun/v1/getlist 实测返回 404，lib/newsSearch.js fetchKuaixunNews() 因 axios 抛错被 try/catch 吞掉、**永远返回 []**，卡片实际长期靠 fetchEastmoneyContentNews 兜底撑着；现改走 https://np-listapi.eastmoney.com/comm/web/getFastNewsList（client=web&biz=web_724&fastColumn=102），响应结构 data.fastNewsList[]。(2)【时间字段口径修正】新接口条目**没有** datetime 字段，实际是 showTime（北京墙钟字符串 "YYYY-MM-DD HH:mm:ss"）＋ realSort（微秒级**真 epoch**，实测 1789642048033848；/1e6 后按 Asia/Shanghai 渲染与 showTime 逐条一致）；旧代码把真 epoch 交给 `new Date(ts).toISOString()` 渲染 → toISOString 输出 UTC，展示时间比北京时间**早 8 小时**；现新增 normalizeNewsTime() 统一归一化（兼容北京墙钟字符串、ISO-T、以及秒/毫秒/微秒三种精度 epoch；脏字符串一律返回空串，避免垃圾字符被当时间展示），一律按北京时间渲染。(3)【原文深链缺失】新接口不含 url，现用 code 合成 https://finance.eastmoney.com/a/{code}.html（实测 200 可访问），卡片条目恢复可点击跳原文。(4)【摘要去重】新接口 summary 常以「【标题】正文」开头重复标题，现自动剥掉该前缀。返回对象字段仍为 { title, summary, source, url, date }，**下游卡片/影响标注模块无需改动**（隔离修改）。新增回归测试 scripts/test_news_time.js（19/19，含「旧 UTC 渲染提前 8 小时」的 bug 复现对照）；scripts/test_local_date.js 12/12、scripts/test_tz_smoke.js 23/23、scripts/test_market_emotion.js 31/31 均通过。 20260917g：全项目统一「中国自然日」日期口径，修掉 UTC 跨日错位（新增 lib/localDate.js + 回归测试 scripts/test_local_date.js 12/12、scripts/test_market_emotion.js 31/31）——根因：`new Date().toISOString().slice(0,10)` 取的是 **UTC 日期**，在 UTC+8 下每天北京时间 00:00–07:59 会比北京日期晚一天，导致交易台账/事件/缓存 的「今天」写成昨天（记录错位、幂等失效），估值基准日、板块快照日期、新闻日期也整体前移一天；白天 08:00 后两者一致，故长期隐蔽。新增 lib/localDate.js（Intl + Asia/Shanghai + formatToParts，hourCycle h23，**不依赖宿主机时区**；提供 localDate / localDateTime / localCompact / localDateFromTs；月/毫秒时间戳自动识别）。已改造 20 个文件：lib/eventEngine.js(4)、lib/factStore.js、lib/hotTopics.js(3，含 ctime 秒级时间戳→北京日)、lib/marketTechnical.js、lib/sectorCapitalFlow.js(2)、lib/stockData.js(4，含东财 beg/end 的 YYYYMMDD 参数)、lib/sentimentTurningPoint.js、lib/deep/conclusion.js、lib/deep/research.js(3，含把原本手写 +8h 的等价写法统一)、lib/cnscraperAdapter.js、lib/ai/valuation.js、server.js、scripts/test_factor_direction.js，以及 3 只个股估值模型的「估值基准日」(海天603288/华安600909/新洋丰000902)。同时把 4 处既有的手写 localDate 实现（sameDayJudgment / marketSentimentIndex / marketEmotionModel / macroNews.localToday）统一委托给 lib/localDate.js——scripts/test_local_date.js 用 2000 个采样点证明委托前后**逐点等价**（UTC+8 宿主机），故不改变既有行为。**刻意未改**：lib/stockData.js:985 的 Yahoo 日线日期（美股日线时间戳按 UTC 表示才是正确交易日）、以及全部 `date: new Date().toISOString()` 形式的绝对时间戳（本就是瞬时值，非日历日）。20260917f：修「股吧讨论热度（散户情绪）」因子三处问题（由用户确认后执行，回归测试 31/31 通过）——(1)【修陈旧值静默使用】server.js readMsiHeat() 会回退到「最后一条含 marketHeat 的记录」，而 marketEmotionModel.calcDiscussionHeat 只取数值、不比对日期，遇到 MSI 当天缺 marketHeat（实测缺 2026-09-10 / 09-16）就把上一天的旧值当"今天"用，且不打 spec §九 的滞后折扣；现新增 tradingLagDays()（以上证 bars 日期为交易日历）：同日=正常、滞后 1~2 个交易日=打 8 折并标「⏱ 数据滞后 N 个交易日」、滞后 ≥3 个交易日（LAG_DEGRADE_DAYS）=降级归零并分摊、日期缺失=按剔除处理（不再静默当今日）；快照 upsertSnapshot 也只在 lagDays===0 时记 heat，避免把旧值挂到新日期污染分位历史。(2)【补回来源标注】lib/marketSentimentIndex.js recordDailySnapshot 原先只持久化 {key,label,signal,weight}，把 value/detail 丢掉，导致任何「读序列」的消费方都拿不到数据源/样本数/更新时间/看多占比；现一并持久化，readMsiHeat() 透传，卡片「股吧讨论热度」明细恢复完整来源标注（兜底实时抓取路径也补齐同样格式）。(3)【分位样本交易日过滤】热度历史里混有非交易日读数（实测 series.json 26 条里 7 条是周末），会稀释历史分位；现用上证 bars 的日期白名单过滤，并在明细标注「已滤除 N 个非交易日样本」。另：marketEmotionModel 新增 SA_MSI_SERIES 环境变量出口，使回归测试不再读取生产 series.json（完全隔离）。20260917e：修复「大盘量能情绪模型」两处权重硬约束漏洞（scripts/test_market_emotion.js 22/22 通过）——(1) computeWeights 原样采用 state.weights 里自学习后的常驻权重，未做 5%~30% 夹紧；(2) 因子降级后的「按比例分摊」（spec §八.4）只做普通归一，会把已顶到 30% 上限的因子再次顶出（实测量能活跃度被摊到 34.47%）。修复：新增有界缩放 scaleBounded（等比缩放 + 溢出量按比例转嫁给仍自由的因子），computeWeights 与降级分摊两处统一走它；非常驻因子激活时若事件残留 {status:'dormant',weight:0} 则回落基准权重（原逻辑会把刚激活的因子压成 0）；可用因子过少导致 5%~30% 区间装不下 100% 时按需平移边界，并在 dataNote 诚实标注「权重被迫越界 · 本日结论置信度偏低」。20260917d：首页「市场情绪提醒」卡片逻辑模型整体升级为「大盘量能情绪分析模型（完整版）」——新增 lib/marketEmotionModel.js（10 因子确定性计算引擎：量能活跃度/市场宽度与极端情绪/量价配合度/大盘涨跌势头/融资余额/主力资金流向/股吧讨论热度(反向)/避险情绪 8 常驻 + 国内宏观/美国宏观 2 非常驻；含动态权重归一化、非常驻 0.8/日衰减、自学习(20次样本门槛·>60%上调<45%下调·常驻权重5%~30%边界)、极端值剔除+双基准(20日均量+1年分位)、市场风格自适应、数据源异常自检与权重分摊、月度健康度报告、极端行情熔断、月末/季末修正、T+1/T+3/T+5 准确率台账）+ lib/marketEmotionData.js（数据采集层：scripts/market_emotion.py 一次取全上证量价/涨跌家数涨跌停/融资余额5日/大盘主力净额/成交额换手率集中度/美元离岸人民币/中债10年）+ 前端 _renderEmotionPanel 按「情绪总分/短期倾向/核心驱动/量能状态/操作建议/风险提示」六行结论渲染；个股页 /api/sentiment-turning-point/:symbol 仍走原拐点检测逻辑不受影响。20260917c：修复「大盘技术分析准确率只停留在 9/15」——根因是 server.js 的 /api/market-technical 路由里调用了 marketClosed() 但**从未从 sameDayJudgment 导入该函数**，命中 ReferenceError 后被外层 catch(e){} 静默吞掉，导致「收盘后落盘当日判断」常年不写文件（data/market-tech/ 仅剩早期手工写入的 2026-09-14.json）；同时原实现只在「用户打开首页」时才落盘、无定时器兜底。修复：(1) 补上 marketClosed 导入；(2) 路由落盘失败改为显式 console.error 不再静默；(3) 新增每交易日 15:30 后自动落盘任务（不依赖用户打开页面），与个股结算调度同源。已实测路由与调度器两条路径均能写入 2026-09-17.json。20260917b：在 20260917a 基础上，进一步修复「个别股亮点/雷点长时间无法获取/卡死」——(1) lib/ai/llm.js postLLM（大模型调用）同样强制 adapter:'http' + 手动 setTimeout 兜底（原无 adapter 导致命中 fetch adapter 静默丢弃 timeout，卡到 60s 才以「timeout of 60000ms exceeded」报错，且被 mxQuery 外层 try/catch 误标为妙想失败）；(2) 亮点/雷点 timeoutMs 由 60s 放宽至 240s（qwen3.5-35b-a3b 实测单股 90~133s），与 companyDeep 一致；(3) 分离「妙想抓取」与「大模型推理」的异常捕获，LLM 超时不再误报为妙想失败。20260917a：修复两处 AI 配置/联网稳定性问题 —— (1) lib/miaoxiang.js 妙想（东财）请求改用 axios 直连 + 强制 adapter:'http' + 手动 setTimeout 竞速兜底 15s（本环境全局 fetch 是 axios 多填实现、自带 60s 内部超时且忽略 AbortSignal，axios 命中 https 会切 fetch adapter 导致 timeout 被静默丢弃、请求卡到 60s 才以「timeout of 60000ms exceeded」绕过 try/catch），妙想慢/不通即 15s 内快速失败并回退阿里百炼 MCP 搜索，根治「AI 生成亮点/雷点」永久卡「分析中…」；(2) 前端 openAISettings 打开前强制重新拉取服务端配置，修复偶发误显示「尚未配置 API Key / 内置联网搜索」（init 时 loadAIConfig 未 await 完成导致 this.aiConfig 为旧值）。20260916h：修复新洋丰（000902）顶部「综合估值评级」卡片口径 —— lib/deep/conclusion.js 原缺 000902 分支（9 个 if(sym===) 里没它），导致掉入通用「PE估值带」逻辑，产出 ¥13.26~¥24.84 / 中枢 ¥19.05，与下方专属卡（16.93 / 13.38~20.43）打架；现补上 xinyangfeng000902 分支（方法 chips 改为 正常化PE(锚)/PB-ROE交叉/DCF参考/磷矿资源期权(独立)/三情景加权），顶部卡与专属卡口径统一。20260916g：新增新洋丰（000902）专属「永久逻辑」估值引擎——正常化盈利为锚（禁单一年份PE）+ 分部估值(A正常化PE75%/B PB-ROE15%/C DCF10%/D磷矿资源期权独立/E磷酸铁期权) + 三情景 + 敏感性 + 四项失效预警，确定性计算无LLM；前端 app.js 增加 xinyangfeng 卡片分支并登记 _isDedicated。20260916e：修复「图表渲染失败」——ECharts 由 CDN(jsdelivr) 改为本地随包加载（public/vendor/echarts.min.js，CDN 仅作回退），根治国内网络下 CDN 被墙/超时导致所有图表报「图表渲染失败」；industryCharts _initChart 增加「图库未就绪时轮询等待 + 缺失时给可诊断提示」；capitalCharts 5 处裸 echarts.init 加 _safeInit 容错（不再因图库缺失中断整页渲染）；/js/capitalCharts.js 纳入缓存破坏。20260916d：个股亮点/雷点 AI 财务数字治理 —— 给 analyzeAspects 注入与「基本面」卡片同源的东方财富 F10 权威财务快照（资产负债率/毛利率/净利率/营收同比/归母净利及同比/流动比率），并新增后置数字校验：AI 输出的资产负债率绝对数值若与权威值偏差 > 1 个百分点，直接修正为权威值，杜绝凭空编造（如新洋丰 000902 资产负债率被写成 48.60%，实际 39.76%）。20260916c：后台计费治理 —— (A) 新增后台 AI 总开关 SA_NO_BG_AI（start.vbs 默认置 1），禁用两个后台 LLM 定时任务（事件驱动扫描 eventEngine + 专属因子月度触发），用户手动点开个股页的 AI 功能不受影响；(B) 封堵 callLLM 静默回退暗道：searchMode 为 mcp/volc/baidu 外部通道且失败/无 Key 时，不再升级 LLM 内置 enable_search（不再绕过免费 MCP 额度自行上网），统一降级纯推理。20260916b：个股亮点/雷点（含投资心得/大盘记录）数据改为服务端持久化（data/notes.json），不再仅存 localStorage —— 硬刷新清缓存 / 代码更新都不会丢失手动录入数据；并移除每次加载时的「内容相似自动去重」，避免误删手动条目（清理重复改由「🧹 清理重复」按钮手动触发）。20260916a：行业分析页「板块总市值走势」统一模板 —— 每只个股分别与所属申万一级/二级/三级行业板块总市值做双坐标走势比对（三张图，无三级板块自动省略）；新增 GET /api/stock-sector-levels/:symbol（东财个股所属板块 slist spt=3 + parseSwSectorName 归类一/二/三级）。20260915d：宏观情绪两因子并入市场情绪统一权重池（国内0.10/美国0.10，原6因子压缩至80%），共同决定短期倾向；移除独立区块；20260915c：每日宏观卡片新增社零/固定资产投资实时抓取（工业增加值无活源→降级占位）+ 国际经济事件卡片（FOMC 9/17 等策划式）+ 市场情绪提醒新增两个非常驻宏观因子小卡片（国内经济/美国经济，等权 0.5，指数相悖则权重归0）；20260915a：公司概况与 sameDay 行业板块因子统一用 sectorIdentity 精确行业（修 688660 电气风电被 F10 CSRC 错配为通用设备）+ companyDeep 长文本卡片截断修复（chart-card max-height 4000px→99999px）+ 信息分析配图禁用 Wikimedia Commons 兜底（避免产品/竞争对手图片全部不相关）；20260914j：事件驱动修行业误配（智能家居补贴不再归食品饮料）+ 权重重设（重大40%/中度12%/轻微3%，封顶40%）+ 删除卡片外重复白字 + 准确率页新增「短期行情判断」「市场情绪提醒」两个 tab；20260914i：大盘技术分析 + 个股技术面新增「准确率检查」（每日留档 + 事后验证 + 卡片内嵌 + 独立核对页 accuracy.html）；20260914h：信息分析（CFA 七段）改为「固定联网模型 + 永久缓存」并补齐本地资料自动加载；20260914g：信息分析卡片改名（「公司深度分析（CFA）」→「信息分析」）+ 联网超时 60s→240s；20260914f：三模块合并为单一 companyDeep.js（七段统一输出）；20260914e：大盘技术分析六步 + 短线结构研判合并为 lib/marketTechnical.js 融合引擎（七步推演，移除 /api/short-term-market）。
 app.use((req, res, next) => {
   if ((req.path === '/' || req.path === '/index.html') && req.query.v !== APP_VERSION) {
     return res.redirect(`/index.html?v=${APP_VERSION}`);
@@ -93,7 +101,7 @@ app.use((req, res, next) => {
 // 关键前端资源：强制 ?v= 与 APP_VERSION 一致，避免浏览器沿用旧版本
 // 用户反复反馈「页面像旧版数据」时，多数是因为老 URL 命中 etag 304 后还返回缓存的旧 JS。
 // 这里主动 redirect 到带正确版本号的 URL，配合 Cache-Control: no-store 一起兜底。
-const FRONTEND_BUST_FILES = new Set(['/js/app.js', '/css/style.css']);
+const FRONTEND_BUST_FILES = new Set(['/js/app.js', '/css/style.css', '/js/industryCharts.js', '/js/notes.js', '/js/capitalCharts.js']);
 app.use((req, res, next) => {
   if (FRONTEND_BUST_FILES.has(req.path)) {
     const v = req.query.v;
@@ -371,7 +379,18 @@ app.get('/api/macro-data', async (req, res) => {
     res.json({ success: true, ...data });
   } catch (err) {
     console.error('Macro data error:', err);
-    res.status(500).json({ success: false, error: err.message, indicators: [], date: new Date().toISOString().slice(0, 10), available: 0, total: 5 });
+    res.status(500).json({ success: false, error: err.message, indicators: [], date: localDate(), available: 0, total: 5 });
+  }
+});
+
+// 首页「每日宏观 & 政策」—— 美国经济数据 / 事件（策划式事件卡片）
+app.get('/api/us-macro-events', async (req, res) => {
+  try {
+    const events = getUsMacroEvents();
+    res.json({ success: true, events, updated: new Date().toISOString() });
+  } catch (err) {
+    console.error('US macro events error:', err);
+    res.status(500).json({ success: false, error: err.message, events: [] });
   }
 });
 
@@ -629,7 +648,9 @@ app.get('/api/market-technical', async (req, res) => {
     const result = await getMarketTechnical({ force });
     // 20260914i：落盘当日方向判断（短期=次日 / 中期=20交易日），供准确率检查事后结算。
     // 成交后（marketClosed）才落盘，避免盘中把「未定方向」当成收盘判断记入。
-    try { if (marketClosed(new Date())) marketTechJudgment.recordDailyJudgment(result); } catch (e) {}
+    try {
+      if (marketClosed(new Date())) marketTechJudgment.recordDailyJudgment(result);
+    } catch (e) { console.error('[MarketTechnical] 落盘判断失败:', e && e.message); }
     res.json(result);
   } catch (err) {
     console.error('[MarketTechnical] route error:', err.message);
@@ -776,23 +797,72 @@ app.get('/api/sector-limit/:symbol', async (req, res) => {
   }
 });
 
-// ---- 全市场情绪拐点（启发式检测器 + 自适应学习）----
-// 首页全局预警条用：全市场级，不依赖个股
+// ---- 全市场情绪（20260917d：升级为「大盘量能情绪分析模型」）----
+// 首页全局预警条用：全市场级，不依赖个股。10 因子确定性计算，无 LLM。
+function readMsiHeat() {
+  try {
+    const series = MSI.readSeries();
+    for (let i = series.length - 1; i >= 0; i--) {
+      const c = (series[i].components || []).find(x => x.key === 'marketHeat');
+      if (c && typeof c.signal === 'number') {
+        // 20260917f：连同 value/detail（数据源、样本数、更新时间、看多占比）一起带出，
+        // 并在找不到「今日」热度时如实返回其真实日期，由模型侧判定时效（不再静默当成今天）。
+        return { marketHeat: c.signal, date: series[i].date, value: c.value || '', detail: c.detail || '' };
+      }
+    }
+  } catch (e) {}
+  return null;
+}
+
+async function buildHomeMarketEmotion(refresh) {
+  const data = await getMarketEmotionData({ refresh });
+  // 股吧讨论热度：优先取 MSI 序列（收盘后由 runAutoReview 落盘，免请求路径上再跑 60s 抓取）
+  let heat = readMsiHeat();
+  if (!heat) {
+    try {
+      const sent = await getMarketSentiment('601318', '中国平安');
+      const ms = sent && sent.marketSentiment;
+      if (ms && ms.ok && typeof ms.marketHeat === 'number') {
+        const rd = (x) => Math.round(x * 100) / 100;
+        heat = {
+          marketHeat: ms.marketHeat,
+          date: data.date,
+          value: `热度 ${rd(ms.marketHeat)}`,
+          detail: `讨论综合得分 ${ms.marketAvgScore != null ? ms.marketAvgScore : '—'}、看多占比 ${ms.marketUpRatio != null ? Math.round(ms.marketUpRatio * 100) + '%' : '—'}（数据源：${ms.coverage || '东财股吧'}${typeof ms.sampleCount === 'number' ? `，样本 ${ms.sampleCount} 只` : ''}${ms.updatedAt ? `，更新于 ${ms.updatedAt}` : ''}）`,
+        };
+      }
+    } catch (e) { /* best-effort */ }
+  }
+  if (heat) data.discussionHeat = heat;
+  let macro = [];
+  try {
+    const shHistory = ((data.index && data.index.bars) || []).map(b => ({ date: b.date, close: b.close }));
+    macro = await computeMacroFactors({ shHistory });
+  } catch (e) { console.error('[MarketEmotion] 宏观因子计算失败:', e && e.message); }
+  return marketEmotionModel.computeMarketEmotion({ data, macroFactors: macro });
+}
+
 app.get('/api/sentiment-turning-point', async (req, res) => {
   try {
     const force = req.query.refresh === '1' || req.query.force === '1';
-    const state = await getTurningPointState({ refresh: force });
-    // 20260914i：情绪预警准确率留档（仅「预警/强烈预警 + 明确方向」才记；失败不影响主接口）
+    const emo = await buildHomeMarketEmotion(force);
+    // 20260914i 兼容：把新模型的「短期倾向」留档到既有准确率台账（口径=次日上证涨跌，容差 ±0.5%）
     let accuracy = null;
     try {
-      if (state && state.detection) {
-        sentimentAccuracy.recordDailyJudgment(state.detection, { baseDate: state.detection.date });
-      }
+      const abs = Math.abs(emo.totalScore);
+      const level = abs >= 0.5 ? '强烈预警' : abs >= 0.2 ? '预警' : '关注';
+      sentimentAccuracy.recordDailyJudgment({
+        level,
+        impliedDir: emo.tendency,
+        zScore: emo.totalScore,
+        extremeZ: null,
+        reasons: [{ text: `情绪总分 ${emo.totalScore}，${emo.coreDriver}；${emo.volumeState}` }],
+      }, { baseDate: emo.baselineDate });
       accuracy = sentimentAccuracy.computeAccuracy();
     } catch (e) { /* best-effort */ }
-    res.json({ success: true, ...state, accuracy });
+    res.json({ success: true, ...emo, accuracy });
   } catch (err) {
-    console.error('[SentimentTP] error:', err.message);
+    console.error('[MarketEmotion] error:', err && err.stack ? err.stack : err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -1274,6 +1344,43 @@ app.post('/api/journal/verify', async (req, res) => {
   }
 });
 
+// ---- Notes persistence（服务端单一权威源，20260916b）----
+// 投资心得 / 大盘记录 / 个股亮点雷点 全部落盘到 data/notes.json，
+// 避免仅存 localStorage 在「硬刷新清缓存 / 代码更新」时被清空导致手动录入数据丢失。
+// 前端以服务端为权威源，但会合并本地独有（离线录入未上送）的条目并回写，确保不丢数据。
+const NOTES_FILE = path.join(__dirname, 'data', 'notes.json');
+function readNotesFile() {
+  try {
+    if (!fs.existsSync(NOTES_FILE)) return [];
+    const raw = fs.readFileSync(NOTES_FILE, 'utf8');
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) {
+    console.error('[Notes] read failed:', e.message);
+    return [];
+  }
+}
+function writeNotesFile(arr) {
+  const dir = path.dirname(NOTES_FILE);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(NOTES_FILE, JSON.stringify(arr, null, 2));
+}
+// 读取全部笔记（前端初始化时拉取，作为权威源）
+app.get('/api/notes', (req, res) => {
+  res.json({ success: true, notes: readNotesFile() });
+});
+// 全量同步（前端本地改动后整体回写；单用户场景下等价于 localStorage 的落盘动作）
+app.post('/api/notes/sync', (req, res) => {
+  try {
+    const body = req.body || {};
+    const notes = Array.isArray(body.notes) ? body.notes : [];
+    writeNotesFile(notes);
+    res.json({ success: true, count: notes.length });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 // Extract verifiable claims from note text
 function extractClaims(content, title) {
   const text = `${title} ${content}`;
@@ -1752,6 +1859,10 @@ function openBrowser(url) {
 let _lastSettleDate = null;
 let _lastPreOpenSlot = '';
 let _preOpenRunning = false;
+// 20260917：大盘技术分析「当日判断」每日落盘守卫（避免同一天重复计算）
+let _lastMarketTechRecord = '';
+// 20260917d：大盘量能情绪模型「当日判断」每日落盘守卫
+let _lastMarketEmotionRecord = '';
 
 // 自学习自动复核：结算判断 → 归因不准确部分 → 自动复核新闻影响 → 自动更正权重。
 // 全部在后台自动运行，无需人工干预。
@@ -2008,6 +2119,29 @@ function startDailySettlementScheduler() {
           .then(logAutoReview)
           .catch(e => console.error('  [结算] 每日定时结算失败:', e.message));
       }
+      // —— 20260917：每交易日收盘后自动落盘「大盘技术分析」当日判断（不依赖用户打开页面）——
+      // 修复：原实现只在「用户打开首页调用 /api/market-technical」时才落盘，若不打开该页就永远缺记录
+      //（且 route 内 marketClosed 未导入 → 静默异常 → 长期无任何记录）。此处改为每日 15:30 后自动落盘一次。
+      if (_lastMarketTechRecord !== today) {
+        _lastMarketTechRecord = today;
+        getMarketTechnical({ force: true })
+          .then((mt) => {
+            if (mt && mt.date === today) {
+              const r = marketTechJudgment.recordDailyJudgment(mt);
+              console.log(`  [大盘技术] 每日判断已落盘：${r ? r.baseDate : '跳过（数据不足）'}`);
+            } else {
+              console.log('  [大盘技术] 当日K线未更新（非交易日/数据延迟），跳过落盘');
+            }
+          })
+          .catch((e) => console.error('  [大盘技术] 每日落盘失败:', e && e.message));
+      }
+      // —— 20260917d：每交易日收盘后自动落盘「大盘量能情绪模型」当日判断（不依赖用户打开页面）——
+      if (_lastMarketEmotionRecord !== today) {
+        _lastMarketEmotionRecord = today;
+        buildHomeMarketEmotion(true)
+          .then((emo) => console.log(`  [情绪模型] 每日判断已落盘：${emo.date} 情绪总分 ${emo.totalScore}（${emo.tendency}）`))
+          .catch((e) => console.error('  [情绪模型] 每日落盘失败:', e && e.message));
+      }
       // —— 15:30 收盘补写守卫：当日拥挤度记录缺失时自动补写（20260909n，幂等，记录已存在时秒回）——
       ensureSectorCrowdingToday('每分钟检查').catch(() => {});
     }
@@ -2032,6 +2166,10 @@ function startDailySettlementScheduler() {
 // 20260907a：三联动·事件驱动定时扫描
 // 在 9:00 / 12:30 / 15:30 / 21:00 触发一次新闻扫描，更新活跃事件库并作废受影响个股的短期判断缓存。
 function startEventScheduler() {
+  if (process.env.SA_NO_BG_AI === '1') {
+    console.log('  [事件] 后台 AI 总开关(SA_NO_BG_AI=1)已启用，跳过事件定时扫描（不再自动调用 LLM，停止后台静默计费）');
+    return;
+  }
   let lastSlot = '';
   setInterval(() => {
     const now = new Date();
@@ -2069,6 +2207,10 @@ async function eventEngineScanOnce() {
 // 每小时检查一次；仅在国家统计局 CPI 发布窗口(8~13日)内、且当月未尝试、且配置了 AI Key 时，
 // 触发联网检索最新一期 CPI 并落库；窗口外 / 当月已尝试 / 无 Key → 静默跳过，不影响启动与运行。
 function startDedicatedFactorScheduler() {
+  if (process.env.SA_NO_BG_AI === '1') {
+    console.log('  [专属因子] 后台 AI 总开关(SA_NO_BG_AI=1)已启用，跳过专属因子月度定时触发（不再自动调用 LLM，停止后台静默计费）');
+    return;
+  }
   setInterval(() => {
     const now = new Date();
     const dom = now.getDate();

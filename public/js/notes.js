@@ -12,19 +12,23 @@ const Notes = {
   notes: [],
 
   init() {
-    this.load();
+    // 1) 同步读取本地缓存，立即渲染（保证首屏即有内容，无需等待服务端）
+    this.loadLocal();
     this.renderHome();
+    // 2) 服务端 reconciliation（权威源）：拉取已存笔记并合并本地独有条目，回写服务端
+    //    这样手动录入的数据落盘到服务器，硬刷新清缓存 / 代码更新都不会丢失。
+    this.syncFromServer();
   },
 
-  load() {
+  // 仅同步读取 localStorage 并做 id 归一化（不做内容去重 —— 避免误删手动录入的相似条目）
+  loadLocal() {
     try {
       const data = localStorage.getItem(this.STORAGE_KEY);
       this.notes = data ? JSON.parse(data) : [];
     } catch (e) {
       this.notes = [];
     }
-    // 归一化：保证每条笔记 id 唯一
-    // 修复早期 AI 生成在同毫秒内共享 id 导致「删一个删全部」的问题
+    // 归一化：仅保证每条笔记 id 唯一（修复早期 AI 同毫秒共享 id），不删除任何内容
     const seen = new Set();
     let changed = false;
     for (const n of this.notes) {
@@ -34,26 +38,51 @@ const Notes = {
       }
       seen.add(n.id);
     }
-    // 内容去重（精确 + 中文近义）：同一 (scope, aspect) 下内容相同或高度相似的笔记只保留首条，
-    // 清除早期累积的重复亮点/雷点（含 AI 多次生成导致的"措辞不同但意思重复"）。
-    const seenSim = [];
-    const deduped = [];
-    for (const n of this.notes) {
-      const scope = this._normScope(this._normalize(n).scope);
-      const aspect = n.aspect || '';
-      const c = String(n.content || '').trim().toLowerCase();
-      let dup = false;
-      if (c) {
-        for (const s of seenSim) {
-          if (s.scope === scope && s.aspect === aspect && this._shouldConsolidate(c, s.c)) { dup = true; break; }
-        }
+    if (changed) this.persistLocal();
+  },
+
+  // 服务端 reconciliation：以服务端为权威源，但保留本地独有（离线录入未上送）的条目并回写，确保不丢数据
+  async syncFromServer() {
+    try {
+      const resp = await fetch('/api/notes');
+      const data = await resp.json();
+      const serverNotes = Array.isArray(data.notes) ? data.notes : [];
+      const byId = new Map();
+      serverNotes.forEach(n => { if (n && n.id) byId.set(n.id, n); });
+      let changed = false;
+      for (const n of this.notes) {
+        if (n && n.id && !byId.has(n.id)) { byId.set(n.id, n); changed = true; } // 本地独有 → 合并并回写服务端
       }
-      if (dup) { changed = true; continue; }
-      if (c) seenSim.push({ scope, aspect, c });
-      deduped.push(n);
+      this.notes = Array.from(byId.values());
+      // 始终用最新结果刷新本地镜像
+      this.persistLocal();
+      if (changed) await this.pushToServer(); // 把离线录入的条目落盘到服务端
+      this.renderHome();
+      if (window.currentStock && window.currentStock.code) {
+        this.renderStock(window.currentStock.code, window.currentStock.name);
+      }
+    } catch (e) {
+      // 服务端不可达 → 保留本地缓存（离线可用），不阻断界面
+      console.warn('[Notes] 服务端同步失败，使用本地缓存：', e && e.message);
     }
-    if (deduped.length !== this.notes.length) this.notes = deduped;
-    if (changed) this.save();
+  },
+
+  // 仅写入 localStorage（离线兜底 / 本地镜像）
+  persistLocal() {
+    try { localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.notes)); } catch (e) { /* ignore */ }
+  },
+
+  // 回写服务端（best-effort，不阻塞界面；失败时本地仍保留）
+  async pushToServer() {
+    try {
+      await fetch('/api/notes/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes: this.notes }),
+      });
+    } catch (e) {
+      console.warn('[Notes] 服务端写入失败（本地已保存）：', e && e.message);
+    }
   },
 
   // 生成唯一 id：时间戳 + 自增序号 + 随机串，确保同步循环内也不会碰撞
@@ -129,12 +158,10 @@ const Notes = {
     return !!k && k.length >= 4 && this._similarityCN(a, b) >= 0.3;
   },
 
+  // 落盘：本地镜像 + 服务端（服务端为权威源，本地为离线兜底）
   save() {
-    try {
-      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.notes));
-    } catch (e) {
-      console.error('Notes save failed:', e);
-    }
+    this.persistLocal();
+    this.pushToServer();
   },
 
   // 兼容旧笔记：旧数据无 scope 字段，按有无 stockCode 推断
@@ -152,6 +179,30 @@ const Notes = {
     return String(s).replace(/^(sh|sz|bj)/i, '').toLowerCase();
   },
 
+  // ---------- 防「串股」守卫（20260917j）----------
+  // 背景（用户反馈）：切换到别的个股后，「个股亮点/雷点」仍显示上一只股票的内容。
+  // 根因：AI 生成的 fetch 不随个股切换取消（见 generateAspects 注释），等待期间若切到别的股票，
+  //       回调里的 this.renderStock(旧symbol) 会把 #stockNotesContainer 刷成上一只股票的亮点/雷点；
+  //       另外 setAsMain / confirmDelete / saveForm 也都是按「条目自己的 scope」重渲染，
+  //       一旦画面上还残留着别的股票的卡片，点一下就会把当前页刷成那只股票。
+  // 统一约定：凡「目标股票未必等于当前展示股票」的重渲染，一律走 renderStockIfCurrent()。
+  _currentStockCode() {
+    const w = (typeof window !== 'undefined') ? window : null;
+    const code = w && w.currentStock ? w.currentStock.code : '';
+    return code ? this._normScope(code) : '';
+  },
+  // 目标股票是否就是当前正在展示的那只股票
+  isCurrentStock(symbol) {
+    const cur = this._currentStockCode();
+    return !!cur && cur === this._normScope(symbol);
+  },
+  // 仅当目标股票仍是当前股票时才重渲染；否则丢弃，避免污染其他个股页面。返回是否实际渲染。
+  renderStockIfCurrent(symbol, name) {
+    if (!this.isCurrentStock(symbol)) return false;
+    this.renderStock(symbol, name);
+    return true;
+  },
+
   add(note) {
     const newNote = {
       id: this._genId(),
@@ -164,6 +215,9 @@ const Notes = {
       content: note.content || '',
       tags: note.tags || [],
       type: note.type || 'experience',
+      // 20260917j：此前漏拷 ai 标记 → 数据里 AI 条目没有 ai 字段，🤖 徽标永不显示。
+      // 现显式落盘该标记（仅用于「展示」与「来源追溯」，**不用于自动删除** —— 见 generateAspects）。
+      ai: note.ai === true,
       verification: { status: 'pending', result: null, probability: null, lastChecked: null, details: null },
     };
     this.notes.unshift(newNote);
@@ -394,40 +448,76 @@ const Notes = {
   },
 
   // AI 联网分析并自动写入个股亮点/雷点（issue：东方财富类亮点雷点分析自动化）
-  // 注意：此 fetch 不绑定标签页生命周期，切换页面后会在后台继续，返回结果通过 snAiStatus 展示。
-  // 时效性：每次点击都强制联网重新分析最新公开数据，并先清除本股票已存的 AI 生成亮点/雷点，
-  // 避免旧的过期内容堆积；用户手动录入的亮点/雷点不受影响。
+  // 注意：此 fetch 不绑定标签页生命周期，切换页面后会在后台继续；但返回结果**只在用户仍停留该股页面时**
+  //      才落到界面（见下方 isCurrentStock / renderStockIfCurrent —— 否则会把当前页刷成别的股票的内容）。
+  // 时效性：每次点击都强制联网重新分析最新公开数据（force:true 绕过后端 TTL 缓存）。
+  // ⚠️ 口径（用户 2026-09-17 明确决定）：**只累积、需手动清理** —— **不再**「先清除本股票已存的
+  //      AI 生成亮点/雷点」，历史条目一律保留；用户手动录入的条目同样不受影响。
+  //      需精简时点卡片上的「🧹 清理重复」。
+  // ⚠️ 等待体验（20260917l）：后端整链路预算 300s（内部最坏会串行重试多次模型调用），用户侧表现为
+  //      「长时间无法获取」。这里补三件事：① 状态栏显示已等待秒数（有进度感，不再像卡死）；
+  //      ② 客户端 330s 硬超时并 abort（比后端预算多 30s 余量）；③ 超时/失败给可执行提示，不再无限转圈。
   async generateAspects(symbol, name) {
-    if (this._aiAspectsPending) return;
-    this._aiAspectsPending = true;
+    // 20260917j：进行中的生成请求按「股票」隔离。原先是全局单锁 —— A 股还在跑时切到 B 股点生成
+    // 会被直接 return（按钮看着可用、点了没反应），同属「不跟随个股切换」的问题。
+    if (this._aiPendingMap == null) this._aiPendingMap = {};
+    if (this._aiAbortMap == null) this._aiAbortMap = {};
+    if (this._aiTickMap == null) this._aiTickMap = {};
+    const pendingKey = this._normScope(symbol);
+    if (this._aiPendingMap[pendingKey]) return;
+    this._aiPendingMap[pendingKey] = true;
     const btn = document.getElementById('snAiBtn');
     if (btn) { btn.disabled = true; btn.textContent = '⏳ AI 分析中...'; }
-    this.setAiStatus('<span class="sn-status loading">⏳ AI 正在联网重新分析最新公开数据（年报/公告/新闻），切换页面不会中断...</span>');
+
+    // ① 等待计时：每秒刷新「已等待 N 秒」，让用户看到任务仍在推进（而不是以为卡死）
+    const t0 = Date.now();
+    const renderWaiting = () => {
+      const sec = Math.round((Date.now() - t0) / 1000);
+      const tip = sec >= 90 ? '（模型推理较慢，通常 1~3 分钟、最长约 5 分钟）' : '（通常 1~3 分钟，切换页面不会中断）';
+      this.setAiStatus('<span class="sn-status loading">⏳ AI 正在联网重新分析最新公开数据（年报/公告/新闻），已等待 ' + sec + ' 秒' + tip + '...</span>');
+    };
+    renderWaiting();
+    // 计时器按「股票」登记；只在用户仍停在该股页面时刷新状态栏（防串股，同 20260917j 口径）
+    this._aiTickMap[pendingKey] = setInterval(() => { if (this.isCurrentStock(symbol)) renderWaiting(); }, 1000);
+
+    // ② 客户端硬超时（后端总预算 300s + 30s 余量）：到点 abort，避免无限转圈
+    const CLIENT_TIMEOUT_MS = 330000;
+    const ac = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    this._aiAbortMap[pendingKey] = ac;
+    const killTimer = setTimeout(() => { try { if (ac) ac.abort(); } catch (err) {} }, CLIENT_TIMEOUT_MS);
+    // 停止计时（幂等，可重复调用）
+    const stopTick = () => {
+      if (this._aiTickMap[pendingKey]) { clearInterval(this._aiTickMap[pendingKey]); delete this._aiTickMap[pendingKey]; }
+    };
+
     try {
-      // 1) 先清除本股票已存的 AI 生成亮点/雷点（时间敏感，刷新旧内容）
+      // 1) 统计该股已有的 AI 条目数 —— **只统计、不删除**。
+      //    ⚠️ 口径（用户 2026-09-17 明确决定）：亮点/雷点采取「只累积、需手动清理」，
+      //    因此这里**不做**「生成前先清除旧的 AI 条目」。若将来有人想改回自动替换，
+      //    必须先征得用户同意 —— 目前是刻意保留历史条目的。
+      //    需精简时走卡片上的「🧹 清理重复」（dedupeAll：按 内容/近义 去重，同股同类型内保留一条）。
       const nsym = this._normScope(symbol);
-      const cleared = this.notes.filter(n =>
+      const existingAi = this.notes.filter(n =>
         this._normScope(this._normalize(n).scope) === nsym &&
         (n.aspect === 'highlight' || n.aspect === 'risk') &&
-        n.ai === true
+        (n.ai === true || n.type === 'ai')
       ).length;
-      this.notes = this.notes.filter(n =>
-        !(this._normScope(this._normalize(n).scope) === nsym &&
-          (n.aspect === 'highlight' || n.aspect === 'risk') &&
-          n.ai === true)
-      );
-      this.save();
 
       // 2) 强制联网重新分析，不使用任何缓存（force:true 绕过后端 TTL 缓存）
       const resp = await fetch('/api/ai/aspects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ symbol, stockName: name, force: true }),
+        signal: ac ? ac.signal : undefined,
       });
       const data = await resp.json();
-      this.renderStock(symbol, name);
+      stopTick(); // 已拿到结果 → 停掉「已等待 N 秒」计时，避免它覆盖下方结果提示
+      // 20260917j：等待期间用户可能已切到别的个股 —— 只在目标股票仍是当前股票时才重画，
+      // 否则会把新股票的页面刷成上一只股票的内容（用户反馈的「亮点/雷点不随个股切换」）。
+      const stillCurrent = this.isCurrentStock(symbol);
+      this.renderStockIfCurrent(symbol, name);
       if (!data.success) {
-        this.setAiStatus('<span class="sn-status error">❌ AI 生成失败：' + this.escapeHtml(data.message || data.error || '未知错误') + '</span>', 8000);
+        if (stillCurrent) this.setAiStatus('<span class="sn-status error">❌ AI 生成失败：' + this.escapeHtml(data.message || data.error || '未知错误') + '</span>', 8000);
         return;
       }
       const stockName = name || data.stockName || symbol;
@@ -449,21 +539,42 @@ const Notes = {
       };
       addList(data.highlights, 'highlight');
       addList(data.risks, 'risk');
-      this.renderStock(symbol, stockName);
-      if (added === 0) {
-        const tail = cleared ? `（已清除 ${cleared} 条旧 AI 记录，但新分析与现有内容重复，故未新增）。` : '。';
-        this.setAiStatus('<span class="sn-status info">ℹ️ 联网分析完成，但内容与现有记录重复，未新增' + tail + '</span>', 6000);
-      } else {
-        const clearedNote = cleared ? `（已先清除 ${cleared} 条旧 AI 记录）` : '';
-        this.setAiStatus('<span class="sn-status success">✅ AI 已联网重新分析并写入 ' + added + ' 条亮点/雷点（基于最新公开数据）' + clearedNote + '。可在卡片上点「验证」核验。</span>', 6000);
+      // 新条目已照常落盘（归该股名下，切回来还能看到）；但只有用户仍停留在该股页面时才刷新界面，
+      // 否则会把当前页（另一只股票）刷成这只股票的内容。
+      this.renderStockIfCurrent(symbol, stockName);
+      // 历史条目一律保留（只累积）；提示里说明「可手动清理」，避免用户以为生成=覆盖
+      const keepNote = existingAi > 0 ? `（该股原有 ${existingAi} 条 AI 条目已保留，如需精简可点「🧹 清理重复」）` : '';
+      if (this.isCurrentStock(symbol)) {
+        if (data.stale) {
+          // 后端本次生成超时/失败 → 回退上一次成功结果（只累积口径不变，前端照常去重）
+          const prevTime = data.date ? new Date(data.date).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '未知时间';
+          this.setAiStatus('<span class="sn-status info">⚠️ 本次联网分析超时/失败，已回退显示上一次成功结果（' + prevTime + '）。可稍后重试以获取最新分析。</span>', 10000);
+        } else if (added === 0) {
+          this.setAiStatus('<span class="sn-status info">ℹ️ 联网分析完成，但新内容与现有记录重复，未新增。' + keepNote + '</span>', 7000);
+        } else {
+          this.setAiStatus('<span class="sn-status success">✅ AI 已联网重新分析并写入 ' + added + ' 条亮点/雷点（基于最新公开数据）。已保留历史条目，' + (keepNote || '如需精简可点「🧹 清理重复」。') + '可在卡片上点「验证」核验。</span>', 7000);
+        }
       }
     } catch (e) {
-      this.renderStock(symbol, name);
-      this.setAiStatus('<span class="sn-status error">❌ AI 生成失败：' + this.escapeHtml(e.message) + '</span>', 8000);
+      stopTick();
+      const aborted = !!(e && (e.name === 'AbortError' || /abort/i.test(String((e && e.message) || ''))));
+      if (this.isCurrentStock(symbol)) {
+        this.renderStock(symbol, name);
+        const sec = Math.round((Date.now() - t0) / 1000);
+        this.setAiStatus(aborted
+          ? '<span class="sn-status error">❌ AI 分析超时（已等待 ' + sec + ' 秒，上限约 5.5 分钟）：模型服务可能繁忙。原有条目已保留，建议稍后重试。</span>'
+          : '<span class="sn-status error">❌ AI 生成失败：' + this.escapeHtml(e.message) + '</span>', 10000);
+      }
     } finally {
-      this._aiAspectsPending = false;
-      const b = document.getElementById('snAiBtn');
-      if (b) { b.disabled = false; b.textContent = '✨ AI 生成亮点/雷点'; }
+      clearTimeout(killTimer);
+      stopTick();
+      delete this._aiAbortMap[pendingKey];
+      this._aiPendingMap[pendingKey] = false;
+      // 仅当用户仍在该股页面时才复位按钮，避免误改其他个股的按钮状态
+      if (this.isCurrentStock(symbol)) {
+        const b = document.getElementById('snAiBtn');
+        if (b) { b.disabled = false; b.textContent = '✨ AI 生成亮点/雷点'; }
+      }
     }
   },
 
@@ -471,7 +582,9 @@ const Notes = {
     const date = new Date(note.date).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
     const badge = note.aspect === 'highlight' ? '<span class="sn-tag hl">亮点</span>'
                 : note.aspect === 'risk' ? '<span class="sn-tag rk">雷点</span>' : '';
-    const aiTag = note.ai ? '<span class="sn-tag ai">🤖 AI</span>' : '';
+    // 20260917j：兼容历史数据 —— 早期 AI 条目漏存 ai 字段（但 type === 'ai'），
+    // 两者都识别，使历史条目也能立即恢复显示 🤖 AI 徽标。
+    const aiTag = (note.ai === true || note.type === 'ai') ? '<span class="sn-tag ai">🤖 AI</span>' : '';
     const ver = this.getVerificationBadge(note.verification);
     const scopeLabel = note.scope === 'global' ? '💡 投资心得'
                      : note.scope === 'market' ? '🌐 大盘记录'
@@ -598,7 +711,8 @@ const Notes = {
     this.closeForm();
     this.renderHome();
     this.refreshScopeModal();
-    if (stockCode) this.renderStock(stockCode, stockName);
+    // 20260917j：保存的条目可能属于别的股票（如编辑画面上残留的旧卡片），只在该股为当前股票时重渲染。
+    if (stockCode) this.renderStockIfCurrent(stockCode, stockName);
   },
 
   closeForm() {
@@ -613,7 +727,7 @@ const Notes = {
       this.remove(id);
       this.renderHome();
       this.refreshScopeModal();
-      if (scope && scope !== 'global' && scope !== 'market') this.renderStock(scope, note.stockName);
+      if (scope && scope !== 'global' && scope !== 'market') this.renderStockIfCurrent(scope, note.stockName);
     }
   },
 
@@ -635,9 +749,12 @@ const Notes = {
     this.save();
     // 重渲染当前股票 + 触发概览最大亮点/雷点卡片刷新
     if (note.scope && note.scope !== 'global' && note.scope !== 'market') {
-      this.renderStock(note.scope, note.stockName);
+      // 20260917j：按条目自己的 scope 重渲染前先校验它是否仍是当前股票，避免画面上残留的旧卡片
+      // 被点击后把当前页刷成另一只股票（与 AI 生成回调同一类问题）。
+      this.renderStockIfCurrent(note.scope, note.stockName);
       // 触发 App._loadAspectBrief：用股票代码 + 当前名称（App 那边有 currentSymbol/currentData）
-      if (window.App && typeof App._loadAspectBrief === 'function') {
+      // 仅在仍停留该股页面时刷新概览卡，否则会改到别的股票的最大亮点/雷点卡片。
+      if (this.isCurrentStock(note.scope) && window.App && typeof App._loadAspectBrief === 'function') {
         try { App._loadAspectBrief(note.scope, note.stockName); } catch (e) { console.warn('refresh aspect card failed', e); }
       }
       this.setAiStatus('<span class="sn-status success">⭐ 已将此条设为该股的最大' + (note.aspect === 'highlight' ? '亮点' : '雷点') + '，概览卡已同步刷新。</span>', 4000);

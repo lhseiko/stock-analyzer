@@ -3605,6 +3605,8 @@ body {
 .sector-cap-summary-value { font-weight: 700; color: var(--text-primary); }
 .sector-cap-summary-value.up { color: var(--red); }
 .sector-cap-summary-value.down { color: var(--green); }
+/* 板块总市值走势卡片：申万层级角标（一级/二级/三级） */
+.sector-cap-level { display: inline-block; padding: 1px 7px; margin-right: 2px; font-size: 11px; font-weight: 600; line-height: 1.5; border-radius: 8px; color: var(--accent); background: rgba(240,185,123,0.14); border: 1px solid rgba(240,185,123,0.4); vertical-align: middle; }
 
 /* ================= 错误分析与自我进化面板 ================= */
 .learn-body { display: flex; flex-direction: column; gap: 14px; padding: 4px 0; }
@@ -3698,7 +3700,49 @@ body {
 .macro-ind .mi-metric b { color: var(--text-primary); font-weight: 600; font-variant-numeric: tabular-nums; }
 .macro-ind .mi-interp { font-size: 12px; line-height: 1.55; color: var(--text-secondary); border-top: 1px dashed var(--border); padding-top: 6px; }
 .macro-ind .mi-src { font-size: 10.5px; color: var(--text-muted); }
-@media (max-width: 560px) { .macro-data { grid-template-columns: 1fr; } }
+.macro-ind.mi-unavailable { border-style: dashed; border-color: rgba(240,185,123,.5); background: repeating-linear-gradient(135deg, var(--bg-elevated), var(--bg-elevated) 10px, rgba(240,185,123,.04) 10px, rgba(240,185,123,.04) 20px); }
+.macro-ind.mi-unavailable .mi-num { color: var(--text-muted); }
+.macro-ind .mi-badge { align-self: flex-start; font-size: 10.5px; font-weight: 700; color: #F0B97B; background: rgba(240,185,123,.14); border: 1px solid rgba(240,185,123,.4); padding: 1px 8px; border-radius: 6px; }
+
+/* ---- 国际经济数据 & 事件（策划式事件卡片）---- */
+.macro-us-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.macro-us-card { display: flex; flex-direction: column; gap: 5px; padding: 10px 12px; border-radius: 10px; background: var(--bg-elevated); border: 1px solid var(--border); border-left: 3px solid var(--text-muted); }
+.macro-us-card.ev-bear { border-left-color: var(--green); }
+.macro-us-card.ev-cond { border-left-color: #F0B97B; }
+.macro-us-card.ev-neu { border-left-color: var(--text-muted); }
+.macro-us-card .mu-head { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+.macro-us-card .mu-title { font-size: 12.5px; font-weight: 700; color: var(--text-primary); }
+.macro-us-card .mu-badge { font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 6px; white-space: nowrap; }
+.macro-us-card.ev-bear .mu-badge { color: var(--green); background: rgba(14,203,129,.14); }
+.macro-us-card.ev-cond .mu-badge { color: #F0B97B; background: rgba(240,185,123,.14); }
+.macro-us-card.ev-neu .mu-badge { color: var(--text-muted); background: rgba(148,163,184,.14); }
+.macro-us-card .mu-meta { display: flex; gap: 10px; flex-wrap: wrap; font-size: 11px; color: var(--text-muted); }
+.macro-us-card .mu-cat { color: var(--text-secondary); }
+.macro-us-card .mu-summary { font-size: 12px; line-height: 1.55; color: var(--text-secondary); }
+.macro-us-card .mu-note { font-size: 10.5px; color: var(--text-muted); font-style: italic; }
+
+/* ---- 市场情绪提醒 · 宏观情绪因子（非常驻 · 自学习）---- */
+.tp-macro-block { margin-top: 8px; }
+.tp-macro-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.tp-macro-card { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 10px; background: var(--bg-elevated); border: 1px solid var(--border); }
+.tp-macro-card.dormant { border-style: dashed; border-color: rgba(148,163,184,.5); opacity: .85; }
+.tp-macro-head { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+.tp-macro-name { font-size: 12.5px; font-weight: 700; color: var(--text-primary); }
+.tp-macro-dormant { font-size: 10px; font-weight: 700; color: var(--text-muted); background: rgba(148,163,184,.16); padding: 1px 7px; border-radius: 6px; }
+.tp-macro-sig { font-size: 12px; font-weight: 700; }
+.tp-macro-sig.pos { color: var(--red); }
+.tp-macro-sig.neg { color: var(--green); }
+.tp-macro-sig.neu { color: var(--text-muted); }
+.tp-macro-w { font-size: 11.5px; color: var(--text-secondary); }
+.tp-macro-detail { font-size: 11.5px; line-height: 1.55; color: var(--text-secondary); }
+.tp-macro-src { font-size: 10.5px; color: var(--text-muted); }
+.tp-macro-note { margin-top: 6px; font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+
+@media (max-width: 560px) {
+  .macro-data { grid-template-columns: 1fr; }
+  .macro-us-grid { grid-template-columns: 1fr; }
+  .tp-macro-grid { grid-template-columns: 1fr; }
+}
 
 /* ================= 首页「基金重仓行业配置矩阵」卡片 ================= */
 .rank-card .rank-body { display: flex; flex-direction: column; gap: 12px; padding: 4px 0; }
@@ -3911,6 +3955,25 @@ body {
 
 .tp-block-title { font-size: 13px; font-weight: 600; color: var(--text-primary); margin: 14px 0 8px; padding-left: 9px; border-left: 3px solid var(--accent); }
 .tp-reasons-block, .tp-learn-block, .tp-sens-block { margin-bottom: 6px; }
+
+/* ---- 20260917d：大盘量能情绪分析模型（首页「市场情绪提醒」卡片）---- */
+.tp-status-row.tp-emo.bull { border-left-color: var(--red); }
+.tp-status-row.tp-emo.bear { border-left-color: var(--green); }
+.tp-status-row.tp-emo.flat { border-left-color: var(--text-muted); }
+.tp-emo-lines { margin: 4px 0 12px; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; background: var(--bg-card); }
+.tp-emo-line { display: flex; align-items: flex-start; gap: 12px; padding: 9px 14px; border-bottom: 1px solid var(--border); }
+.tp-emo-line:last-child { border-bottom: none; }
+.tp-emo-k { flex: 0 0 74px; font-size: 12.5px; color: var(--text-muted); }
+.tp-emo-v { flex: 1; font-size: 13.5px; color: var(--text-primary); line-height: 1.55; word-break: break-word; }
+.tp-emo-sub { font-size: 11.5px; color: var(--text-muted); margin-left: 6px; }
+.tp-emo-lines .pos, .tp-emo-v.pos { color: var(--red); }
+.tp-emo-lines .neg, .tp-emo-v.neg { color: var(--green); }
+.tp-emo-lines .neu, .tp-emo-v.neu { color: var(--text-primary); }
+.tp-emo-v.tp-emo-warn { color: var(--orange); font-weight: 600; }
+.tp-emo-v.tp-emo-risk { color: var(--orange); }
+.tp-comp.tp-comp-degraded { opacity: 0.72; border-style: dashed; }
+.tp-comp-detail.tp-emo-warn { color: var(--orange); }
+.tp-sample-note.tp-emo-warn { color: var(--orange); }
 
 /* 20260914e：大盘技术分析融合版（七步推演单一融合输出，替代原「短线结构研判」独立模块） */
 /* —— 每只指数卡片底部：紧凑短线结构读数 —— */

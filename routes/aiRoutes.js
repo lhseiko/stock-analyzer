@@ -18,6 +18,7 @@ const factStore = require('../lib/factStore');
 const mx = require('../lib/miaoxiang');
 const { getIndustryIndexHistory } = require('../lib/industryIndexHistory');
 const { getSectorMarketCapHistory } = require('../lib/sectorMarketCapHistory');
+const { resolveStockSectorLevels } = require('../lib/stockSectorLevels');
 const { findPython } = require('../lib/pyRuntime');
 // 20260913d：行业指数运行状态侧车（running/error）与僵死阈值。
 // 直接 require 子模块，不经 aiAugment 门面 —— 门面导出基线（24 键）受 scripts/export-snapshot.js 守卫，不得增删。
@@ -420,6 +421,23 @@ router.get('/api/sector-market-cap-history/:sectorCode', async (req, res) => {
       benchmark: (benchmark || '603288').trim(),
       benchmarkName: (benchmarkName || '').trim(),
       days: Math.min(Math.max(parseInt(days, 10) || 250, 30), 1000),
+      force: force === '1' || force === 'true',
+    });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 个股所属「申万一级/二级/三级」行业板块解析（20260916 新增）
+// 供行业分析页「板块总市值走势」统一模板：每只个股分别与所属一级/二级/三级行业板块做市值走势比对（三张图）。
+router.get('/api/stock-sector-levels/:symbol', async (req, res) => {
+  try {
+    const symbol = String(req.params.symbol || '').trim();
+    if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL' });
+    const { name, force } = req.query;
+    const data = await resolveStockSectorLevels(symbol, {
+      name: (name || '').trim(),
       force: force === '1' || force === 'true',
     });
     res.json(data);

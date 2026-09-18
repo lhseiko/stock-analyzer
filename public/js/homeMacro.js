@@ -56,7 +56,10 @@ const MacroNews = (() => {
       `<div class="mi-metric"><span>${escapeHtml(m.label)}</span><b>${escapeHtml(m.value)}</b></div>`).join('') + `</div>`;
   }
   function indCard(ind) {
-    return `<div class="macro-ind">
+    const unav = ind.unavailable ? ' mi-unavailable' : '';
+    const badge = ind.unavailable ? `<div class="mi-badge">数据源暂未提供最新值</div>` : '';
+    return `<div class="macro-ind${unav}">
+      ${badge}
       <div class="mi-head">
         <span class="mi-name">${escapeHtml(ind.name)}</span>
         <span class="mi-period">${escapeHtml(ind.period || '')}</span>
@@ -71,13 +74,23 @@ const MacroNews = (() => {
       <div class="mi-src">来源：${escapeHtml(ind.source || '')}</div>
     </div>`;
   }
+  function evCard(ev) {
+    const cls = ev.impact === 'bearish' ? 'ev-bear' : (ev.impact === 'conditional' ? 'ev-cond' : 'ev-neu');
+    const badge = ev.impact === 'bearish' ? '偏空' : (ev.impact === 'conditional' ? '方向待定' : '中性');
+    return `<div class="macro-us-card ${cls}">
+      <div class="mu-head"><span class="mu-title">${escapeHtml(ev.title)}</span><span class="mu-badge">${badge}</span></div>
+      <div class="mu-meta"><span class="mu-cat">${escapeHtml(ev.category || '')}</span><span class="mu-date">${escapeHtml(ev.dateZh || ev.dateUs || '')}</span></div>
+      <div class="mu-summary">${escapeHtml(ev.summary || '')}</div>
+      ${ev.note ? `<div class="mu-note">${escapeHtml(ev.note)}</div>` : ''}
+    </div>`;
+  }
   function renderData(macroData) {
     if (!macroData || !macroData.indicators || !macroData.indicators.length) {
       return `<div class="ai-empty">${escapeHtml((macroData && macroData.error) || '重要经济数据暂不可达，请稍后刷新。')}</div>`;
     }
     return `<div class="macro-data">${macroData.indicators.map(indCard).join('')}</div>`;
   }
-  function render(newsData, macroData) {
+  function render(newsData, macroData, usEvents) {
     const body = document.getElementById('macroBody');
     if (!body) return;
     const updated = (newsData && newsData.updated) ? new Date(newsData.updated)
@@ -106,7 +119,14 @@ const MacroNews = (() => {
       }).join('');
       html += `<div class="macro-groups">${groups}</div>`;
     }
-    html += `<div class="macro-note">📌 经济数据来源：${escapeHtml((macroData && macroData.source) || '东方财富数据中心')}；动态来源：${escapeHtml((newsData && newsData.source) || '东方财富 7×24 快讯')}。每日自动采集（按自然日缓存），仅供研究参考，不构成投资建议。</div>`;
+
+    // 3) 国际经济数据 & 事件（策划式事件卡片，引用每日宏观 & 政策同源展示）
+    const usEvs = (usEvents && usEvents.length) ? usEvents : [];
+    if (usEvs.length) {
+      html += `<div class="macro-sec-head">🌍 国际经济数据 & 事件</div>`;
+      html += `<div class="macro-us-grid">${usEvs.map(evCard).join('')}</div>`;
+    }
+    html += `<div class="macro-note">📌 经济数据来源：${escapeHtml((macroData && macroData.source) || '东方财富数据中心')}；动态来源：${escapeHtml((newsData && newsData.source) || '东方财富 7×24 快讯')}；美国宏观事件为策划式预告（非自动抓取）。每日自动采集（按自然日缓存），仅供研究参考，不构成投资建议。</div>`;
     body.innerHTML = html;
   }
   async function load(force) {
@@ -125,15 +145,18 @@ const MacroNews = (() => {
     try {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 15000);
-      const [newsResp, dataResp] = await Promise.all([
+      const [newsResp, dataResp, usResp] = await Promise.all([
         fetch('/api/macro-news' + (force ? '?refresh=1' : ''), { cache: 'no-store', signal: ctrl.signal }),
         fetch('/api/macro-data' + (force ? '?refresh=1' : ''), { cache: 'no-store', signal: ctrl.signal }),
+        fetch('/api/us-macro-events' + (force ? '?refresh=1' : ''), { cache: 'no-store', signal: ctrl.signal }),
       ]);
       clearTimeout(timer);
       const newsData = await newsResp.json();
       let macroData = null;
       try { macroData = await dataResp.json(); } catch (e) { macroData = null; }
-      render(newsData, macroData);
+      let usEvents = [];
+      try { const u = await usResp.json(); usEvents = (u && u.events) || []; } catch (e) { usEvents = []; }
+      render(newsData, macroData, usEvents);
     } catch (e) {
       if (body) body.innerHTML = `<div class="ai-empty">宏观数据采集失败：${escapeHtml(e.message)}</div>`;
     } finally {

@@ -6,7 +6,7 @@
   <title>股票投资分析工作台</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
-  <link rel="stylesheet" href="css/style.css?v=20260915b">
+  <link rel="stylesheet" href="css/style.css?v=20260918a">
   <script>
     // 启动时确保 URL 带 ?v= 参数（用于破坏静态资源缓存）。
     // 重要：版本号以 server.js 的 APP_VERSION 为准，由服务端重定向统一下发，
@@ -22,7 +22,14 @@
       } catch (e) {}
     })();
   </script>
-  <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+  <!-- ECharts 5.4.3：优先加载本地随包文件（不依赖外网，彻底避免 CDN 被墙/超时导致的「图表渲染失败」）；
+       本地文件缺失时才回退到 CDN。onerror 回退保证任何一端可用即能出图。 -->
+  <script src="vendor/echarts.min.js"></script>
+  <script>
+    if (typeof echarts === 'undefined') {
+      document.write('<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"><\/script>');
+    }
+  </script>
 </head>
 <body>
   <!-- 顶栏：大盘行情状态栏（上证/深证/创业板/科创50/日经指数/恒生/纳斯达克/道琼斯），支持折叠 -->
@@ -835,17 +842,9 @@
                 <div id="industryIndexNote" class="sh-source"></div>
               </div>
 
-              <!-- 板块总市值走势：所属板块全部成分股总市值合计 + 当前个股自身市值对比 -->
-              <div class="chart-card large" id="sectorCapCard" style="display:none;">
-                <div class="chart-header">
-                  <h3>📈 板块总市值走势 · <span id="sectorCapTitle">所属板块</span></h3>
-                  <div class="ai-head-actions">
-                    <span id="sectorCapDate" class="ai-date"></span>
-                  </div>
-                </div>
-                <div id="sectorCapChart" class="chart" style="height:420px;"></div>
-                <div id="sectorCapNote" class="sh-source"></div>
-              </div>
+              <!-- 板块总市值走势（统一模板）：个股市值 vs 所属申万一级/二级/三级行业板块总市值，双坐标三张图
+                   （由 IndustryCharts.renderSectorCapGroup 动态生成；无对应三级板块时省略第三张） -->
+              <div id="sectorCapGroup"></div>
 
               <!-- 政策前景 -->
               <div class="chart-card large" id="indPolicy"></div>
@@ -996,20 +995,20 @@
     <button class="err-close" id="errorBannerClose" title="关闭">✕</button>
   </div>
 
-  <script src="js/storage.js?v=20260915b"></script>
-  <script src="js/charts.js?v=20260915b"></script>
+  <script src="js/storage.js?v=20260915d"></script>
+  <script src="js/charts.js?v=20260915d"></script>
   <script src="js/deepCharts.js?v=20260906e"></script>
-  <script src="js/industryCharts.js?v=20260915b"></script>
-  <script src="js/capitalCharts.js?v=20260915b"></script>
-  <script src="js/notes.js?v=20260915b"></script>
-  <script src="js/shareholderCharts.js?v=20260915b"></script>
-  <script src="js/docStore.js?v=20260915b"></script>
-  <script src="js/export.js?v=20260915b"></script>
-  <script src="js/homeNews.js?v=20260915b"></script>
-  <script src="js/homeHotTopics.js?v=20260915b"></script>
-  <script src="js/homeMacro.js?v=20260915b"></script>
-  <script src="js/homeRank.js?v=20260915b"></script>
-  <script src="js/app.js?v=20260915b"></script>
+  <script src="js/industryCharts.js?v=20260915d"></script>
+  <script src="js/capitalCharts.js?v=20260915d"></script>
+  <script src="js/notes.js?v=20260918a"></script>
+  <script src="js/shareholderCharts.js?v=20260915d"></script>
+  <script src="js/docStore.js?v=20260915d"></script>
+  <script src="js/export.js?v=20260915d"></script>
+  <script src="js/homeNews.js?v=20260915d"></script>
+  <script src="js/homeHotTopics.js?v=20260915d"></script>
+  <script src="js/homeMacro.js?v=20260915d"></script>
+  <script src="js/homeRank.js?v=20260915d"></script>
+  <script src="js/app.js?v=20260918a"></script>
 
   <!-- AI 设置弹窗（20260902e：双模型 · 联网 / 本地分离） -->
   <div class="ai-modal-overlay hidden" id="aiSettingsModal">

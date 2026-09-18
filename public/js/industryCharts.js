@@ -336,14 +336,42 @@ window.IndustryCharts = {
     }
   },
 
+  // ---- 板块总市值走势「三图骨架」：按个股所属一级/二级/三级行业板块生成卡片 ----
+  // 统一模板（20260916）：所有个股一律生成三张（无三级板块则两张）。
+  // levelsPayload = { symbol, name, levels: [{ swLevel, sectorCode, sectorName }] }
+  // 数据到达后由 renderSectorMarketCap(data, { suffix }) 逐张填充。
+  renderSectorCapGroup(levelsPayload, opts) {
+    const box = document.getElementById('sectorCapGroup');
+    if (!box) return;
+    const levels = (levelsPayload && Array.isArray(levelsPayload.levels)) ? levelsPayload.levels : [];
+    if (!levels.length) { box.innerHTML = ''; return; }
+    const sfxOf = (lv) => ({ '一级': 'L1', '二级': 'L2', '三级': 'L3' }[lv] || ('L' + lv));
+    box.innerHTML = levels.map((lv) => {
+      const sfx = sfxOf(lv.swLevel);
+      return `
+        <div class="chart-card large" id="sectorCapCard-${sfx}" style="display:none;">
+          <div class="chart-header">
+            <h3>📈 板块总市值走势 · <span class="sector-cap-level">${lv.swLevel}</span> <span id="sectorCapTitle-${sfx}">所属板块</span></h3>
+            <div class="ai-head-actions">
+              <span id="sectorCapDate-${sfx}" class="ai-date"></span>
+            </div>
+          </div>
+          <div id="sectorCapChart-${sfx}" class="chart" style="height:420px;"></div>
+          <div id="sectorCapNote-${sfx}" class="sh-source"></div>
+        </div>`;
+    }).join('');
+  },
+
   // ---- 板块总市值走势（成分股总市值合计 + 当前个股自身市值对比） ----
   // 口径说明：总市值是「每日单一数值」，没有开/收/高/低四个价，因此用折线/面积呈现走势，
   //           而非蜡烛 K 线（K 线必须四价）。数据源与日期在卡片下方显式标注。
+  // 20260916：统一模板 —— 每只个股按所属申万一级/二级/三级行业板块各渲染一张（suffix 区分 id）。
   renderSectorMarketCap(data, opts) {
-    const card = document.getElementById('sectorCapCard');
-    if (!card) return;
     const o = opts || {};
+    const suffix = o.suffix || 'main';
     const stockName = o.stockName || '个股';
+    const card = document.getElementById(`sectorCapCard-${suffix}`);
+    if (!card) return;
 
     if (!data || !data.success || !Array.isArray(data.dates) || !data.dates.length) {
       card.style.display = 'none';
@@ -351,10 +379,11 @@ window.IndustryCharts = {
     }
     card.style.display = '';
 
-    const sectorLabel = data.sectorName ? `${data.sectorName}（${data.sectorCode}）` : (data.sectorCode || '所属板块');
-    const titleEl = document.getElementById('sectorCapTitle');
+    const lvLabel = o.swLevel ? ` · ${o.swLevel}` : '';
+    const sectorLabel = data.sectorName ? `${data.sectorName}（${data.sectorCode}）${lvLabel}` : (data.sectorCode || '所属板块');
+    const titleEl = document.getElementById(`sectorCapTitle-${suffix}`);
     if (titleEl) titleEl.textContent = sectorLabel;
-    const dateEl = document.getElementById('sectorCapDate');
+    const dateEl = document.getElementById(`sectorCapDate-${suffix}`);
     if (dateEl) dateEl.textContent = data.date ? `数据截至 ${data.date}` : '';
 
     const dates = data.dates;
@@ -379,9 +408,9 @@ window.IndustryCharts = {
 
     const legendData = hasRatio ? [totalName, bmName, ratioName] : [totalName, bmName];
 
-    const chartEl = document.getElementById('sectorCapChart');
+    const chartEl = document.getElementById(`sectorCapChart-${suffix}`);
     if (chartEl) {
-      this._initChart(chartEl, 'sectorCapChart', {
+      this._initChart(chartEl, `sectorCapChart-${suffix}`, {
         tooltip: {
           trigger: 'axis',
           axisPointer: { type: 'cross' },
@@ -447,7 +476,7 @@ window.IndustryCharts = {
     }
 
     // 摘要 + 数据源/日期/覆盖度标注
-    const noteEl = document.getElementById('sectorCapNote');
+    const noteEl = document.getElementById(`sectorCapNote-${suffix}`);
     if (noteEl) {
       const n = total.length;
       const lastTotal = total[n - 1];
@@ -583,6 +612,26 @@ window.IndustryCharts = {
   //   因此改为：不可见时先挂起 option，等容器真正有宽高后再初始化（轮询重试，最多约 9 秒）。
   _initChart(el, key, option) {
     try {
+      // 20260916：ECharts 尚未就绪（脚本仍在下载/被拦截）时，不要直接判为失败——
+      // 挂起 option 轮询等待，`echarts` 一出现即初始化，避免 CDN 慢就永久空白。
+      if (typeof echarts === 'undefined') {
+        el._pendingOption = option; el._pendingKey = key;
+        if (el._pendingEchartsTimer) return;
+        let tries = 0;
+        el._pendingEchartsTimer = setInterval(() => {
+          if (typeof echarts !== 'undefined') {
+            clearInterval(el._pendingEchartsTimer); el._pendingEchartsTimer = null;
+            const opt = el._pendingOption; el._pendingOption = null;
+            if (opt) this._initChart(el, el._pendingKey || key, opt);
+            return;
+          }
+          if (++tries > 100) { // ~10s 仍未就绪：给出可诊断的提示（而非笼统的「渲染失败」）
+            clearInterval(el._pendingEchartsTimer); el._pendingEchartsTimer = null;
+            if (!el._chart) el.innerHTML = '<div class="data-empty">⚠️ 图表库（ECharts）未加载成功，请检查网络后刷新页面。</div>';
+          }
+        }, 100);
+        return;
+      }
       if (el._chart) { el._chart.dispose(); el._chart = null; }
       if (window.Charts && Charts.instances && Charts.instances[key]) {
         Charts.instances[key].dispose();
@@ -624,22 +673,26 @@ window.IndustryCharts = {
       el._pendingInitTimer = setTimeout(retry, 150);
     } catch (e) {
       console.error('Industry chart init error:', e);
-      el.innerHTML = '<div class="data-empty">图表渲染失败。</div>';
+      // 区分「图库缺失」与「真正的渲染错误」，给出可定位的提示
+      const libMissing = (typeof echarts === 'undefined');
+      el.innerHTML = libMissing
+        ? '<div class="data-empty">⚠️ 图表库（ECharts）未加载成功，请检查网络后刷新页面。</div>'
+        : `<div class="data-empty">图表渲染失败（${(e && e.message) || e}）。</div>`;
     }
   },
 
   // tab 切到行业分析页时调用：对「已挂起」或「尺寸为 0」的图表补一次初始化/重算尺寸，
   // 覆盖"数据比 tab 切换更晚到达"与"先隐藏后显示"两类时序。
   reflow() {
-    ['industryIndexChart', 'sectorCapChart'].forEach((id) => {
-      const el = document.getElementById(id);
-      if (!el) return;
+    // 20260916：改为遍历行业页内所有图表容器，兼容动态生成的一/二/三级板块市值图（id 带 suffix）。
+    const nodes = document.querySelectorAll('#industryContent .chart');
+    nodes.forEach((el) => {
       const w = el.clientWidth, h = el.clientHeight;
       if (w <= 0 || h <= 0) return;
       if (el._pendingOption) {
         const opt = el._pendingOption; el._pendingOption = null;
         if (el._pendingInitTimer) { clearTimeout(el._pendingInitTimer); el._pendingInitTimer = null; }
-        this._initChart(el, el._pendingKey || id, opt);
+        this._initChart(el, el._pendingKey || el.id, opt);
       } else if (el._chart) {
         try { el._chart.resize(); } catch (e) { /* ignore */ }
       }

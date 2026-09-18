@@ -536,6 +536,13 @@ const App = {
     this.resetTransientPanels();
     // Update current stock info for journal
     window.currentStock = { code: symbol, name: name };
+    // 20260917j：切股后立即用新个股重渲染「个股亮点/雷点」（数据取自 Notes 本地镜像）。
+    // 修复用户反馈「亮点/雷点不随个股页面切换」：此前只在该 tab 为 journal 时才重渲染，
+    // 且 AI 生成的异步回调会用旧 symbol 重画，导致容器长期停留在上一只股票。
+    // 此处是「当前个股」唯一变更点，在此重渲染可确保内容始终跟随当前个股。
+    if (typeof Notes !== 'undefined' && document.getElementById('stockNotesContainer')) {
+      Notes.renderStock(symbol, name);
+    }
     // Update DocStore stock info
     DocStore.setStock(symbol, name);
     DeepCharts.disposeAll();
@@ -1013,12 +1020,97 @@ const App = {
     }
   },
 
-  // 首页情绪拐点完整面板（不含个股敏感度）
+  // 首页情绪面板（20260917d：大盘量能情绪分析模型 / 旧版情绪拐点检测器）
   renderHomeTpPanel(data, symbol) {
     // 若用户已离开首页，丢弃旧请求
     const empty = document.getElementById('emptyState');
     if (empty && empty.classList.contains('hidden')) return;
+    if (data && data.model === 'volume-emotion-v1') { this._renderEmotionPanel(data); return; }
     this._renderTpPanelInto({ panelId: 'homeSentimentPanel', bodyId: 'homeSentimentBody', updatedId: 'homeSentimentUpdated' }, data, symbol, { guardSymbol: false, hideSensitivity: true });
+  },
+
+  // ============ 首页·大盘量能情绪分析模型（20260917d，10 因子确定性计算）============
+  _renderEmotionPanel(data) {
+    const panel = document.getElementById('homeSentimentPanel');
+    const body = document.getElementById('homeSentimentBody');
+    const updated = document.getElementById('homeSentimentUpdated');
+    if (!body) return;
+    if (panel) panel.style.display = '';
+    if (updated) updated.textContent = '更新于 ' + new Date().toLocaleTimeString('zh-CN');
+
+    const score = (typeof data.totalScore === 'number') ? data.totalScore : null;
+    const scoreCls = score == null ? 'flat' : score >= 0.2 ? 'bull' : score <= -0.2 ? 'bear' : 'flat';
+    const dirCls = data.tendencyKey === 'bull' ? 'pos' : data.tendencyKey === 'bear' ? 'neg' : 'neu';
+    const detailOpen = this._isTpDetailOpen();
+    const esc = (s) => this.escapeHtml(s == null ? '' : String(s));
+
+    let html = '';
+    html += `<div class="tp-status-row tp-emo ${scoreCls}">`;
+    html += `<span class="tp-status-badge">情绪总分 ${score != null ? score : '—'}</span>`;
+    html += `<span class="tp-status-dir">短期倾向：<b class="${dirCls}">${esc(data.tendency || '中性')}</b></span>`;
+    html += `<span class="tp-status-idx">量能状态：${esc(data.volumeState || '—')}</span>`;
+    if (data.circuit) html += `<span class="tp-status-z">⛔ 极端行情熔断</span>`;
+    html += `</div>`;
+    html += `<button class="tp-detail-toggle" data-action="toggle-tp-detail">${detailOpen ? '▾ 隐藏详情' : '▸ 展开详情'}</button>`;
+
+    // —— §十 最终输出：六行结论（始终可见）——
+    const line = (k, v, cls) => `<div class="tp-emo-line"><span class="tp-emo-k">${k}</span><span class="tp-emo-v ${cls || ''}">${v}</span></div>`;
+    html += `<div class="tp-emo-lines">`;
+    html += line('情绪总分', `${score != null ? score : '—'}<span class="tp-emo-sub">（范围 −1 ~ 1，越接近 1 越乐观）</span>`);
+    html += line('短期倾向', `<b class="${dirCls}">${esc(data.tendency || '中性')}</b>`);
+    html += line('核心驱动', esc(data.coreDriver || '—'));
+    html += line('量能状态', esc(data.volumeState || '—'));
+    html += line('操作建议', esc(data.advice || '—'), data.circuit ? 'tp-emo-warn' : '');
+    html += line('风险提示', esc(data.riskTip || '—'), 'tp-emo-risk');
+    html += `</div>`;
+
+    html += `<div class="tp-detail-body ${detailOpen ? '' : 'collapsed'}">`;
+
+    // 因子网格（与后端同源，数值一致）
+    const fs = Array.isArray(data.factors) ? data.factors : [];
+    if (fs.length) {
+      html += `<div class="tp-block-title">因子明细（8 常驻 + 2 非常驻 · 得分 × 权重计入总分）</div>`;
+      html += '<div class="tp-comp-grid">';
+      fs.forEach(f => {
+        const sig = (typeof f.score === 'number') ? f.score : 0;
+        const sigCls = sig > 0.03 ? 'tp-sig-bull' : sig < -0.03 ? 'tp-sig-bear' : 'tp-sig-flat';
+        const signTxt = (sig >= 0 ? '+' : '') + sig.toFixed(2);
+        html += `<div class="tp-comp${f.degraded ? ' tp-comp-degraded' : ''}">`;
+        html += `<div class="tp-comp-label">${esc(f.name)}<span class="tp-comp-w">占${f.weight != null ? f.weight.toFixed(1) : '—'}%</span></div>`;
+        html += `<div class="tp-comp-sig ${sigCls}">${signTxt}</div>`;
+        html += `<div class="tp-comp-value">${esc(f.value || '')}</div>`;
+        html += `<div class="tp-comp-detail">${esc(f.detail || '')}</div>`;
+        if (f.degraded) html += `<div class="tp-comp-detail tp-emo-warn">⚠ ${esc(f.reason || '数据不可用')} → 权重已归零并按比例分摊</div>`;
+        else if (f.lagged) html += `<div class="tp-comp-detail tp-emo-warn">⏱ 热度数据滞后${f.lagDays != null ? ` ${f.lagDays} 个交易日` : '（日期未知）'} → 权重按规则打 8 折</div>`;
+        html += `</div>`;
+      });
+      html += '</div>';
+    }
+
+    // 自学习 + 准确率台账
+    const acc = data.accuracy || {};
+    const ll = Array.isArray(data.learnLog) ? data.learnLog : [];
+    html += '<div class="tp-learn-block">';
+    html += '<div class="tp-block-title">越用越准（自动学习）</div>';
+    html += `<div class="tp-learn-line">权重自学习：需累计 <b>20</b> 次以上预测样本后才自动调整（命中率 &gt;60% 上调、&lt;45% 下调，常驻因子权重恒定在 <b>5%~30%</b>）；${ll.length ? `本次调整 ${ll.length} 项：${ll.map(x => `${esc(x.name)} ${x.from}%→${x.to}%`).join('、')}` : '当前样本不足，权重保持固定（只记录不调整）'}</div>`;
+    if (acc.totalRecords != null) {
+      html += `<div class="tp-learn-line">准确率台账：已记录 <b>${acc.totalRecords}</b> 条预测，已结算 <b>${acc.settledCount}</b> 条`;
+      if (acc.accuracy != null) html += `，命中率 <b>${acc.accuracy}%</b>`;
+      html += `（口径：${esc(acc.horizonLabel || 'T+1 / T+3 / T+5')}）</div>`;
+    }
+    if (data.health && data.health.report) {
+      const hr = data.health.report;
+      html += `<div class="tp-learn-line">模型健康度（${esc(hr.month)}）：结算 ${hr.settledCount} 条${hr.accuracy != null ? `，准确率 ${hr.accuracy}%` : ''}${(hr.failedFactors || []).length ? `；⚠ ${esc(hr.failedFactors.join('；'))}` : ''}</div>`;
+    }
+    html += '</div>';
+
+    if (data.dataNote) html += `<div class="tp-sample-note tp-emo-warn">数据缺口：${esc(data.dataNote)}</div>`;
+    if (data.sampleNote) html += `<div class="tp-sample-note">${esc(data.sampleNote)}</div>`;
+    if (Array.isArray(data.issues) && data.issues.length) html += `<div class="tp-sample-note tp-emo-warn">数据自检：${esc(data.issues.map(i => i.msg).join('；'))}</div>`;
+    html += `<div class="tp-source-note">数据来源：${esc(data.source || '')}｜基准日 ${esc(data.baselineDate || data.date || '')}｜规则：大盘量能情绪分析模型（完整版）。</div>`;
+    html += `</div>`;
+
+    body.innerHTML = html;
   },
 
   _renderTpPanelInto(ids, data, symbol, opts) {
@@ -1238,7 +1330,8 @@ const App = {
     // 20260905f：类型级一致性，所有个股按 FACTOR_KEYS 规范顺序（与 lib/sameDayJudgment.js 一致），
     // 一级排序=规范顺序，二级排序=贡献分绝对值降序（保证可视化稳定性，贡献大的优先）。
     // 这样无论两只股票数据是否相同，渲染顺序都一致（用户可对照同位置比较）。
-    const FACTOR_ORDER = { sentiment: 0, capital: 1, futures: 2, market: 3, holdings: 4, sectorLimit: 5, seesaw: 6, technicalShort: 7 };
+    // 20260917i：因子重组后同步——删除 market（原「大盘及行业板块短期走势」），其余顺序保持
+    const FACTOR_ORDER = { sentiment: 0, capital: 1, futures: 2, holdings: 3, sectorLimit: 4, seesaw: 5, technicalShort: 6 };
     const sorted = all.slice().sort((a, b) => {
       const oa = (FACTOR_ORDER[a.key] != null) ? FACTOR_ORDER[a.key] : 999;
       const ob = (FACTOR_ORDER[b.key] != null) ? FACTOR_ORDER[b.key] : 999;
@@ -3127,7 +3220,6 @@ const App = {
     const symbol = this.currentSymbol;
     if (!symbol) return;
     this.industryStockMarketCapData = null; // 清空旧市值数据，避免切换股票时短暂显示上个股票
-    this.industrySectorCapData = null;      // 同上：清空板块总市值走势，避免残留上一只股票/板块
     const ind = this.industryData && this.industryData.industry;
     if (!ind) return;
     // 优先用同花顺 K 线专用板块（命中覆盖表时填充，如海天味业→食品加工制造），
@@ -3158,42 +3250,63 @@ const App = {
     }
   },
 
-  // 板块成分股总市值合计走势（20260913d 新增；含当前个股自身市值对比线）
+  // 板块成分股总市值合计走势「统一模板」（20260916 重构）
+  // 流程：解析个股所属申万一级/二级/三级行业板块 → 生成三张卡片骨架 → 并行取各层级板块市值走势 → 逐张填充。
+  // 无对应三级板块时自动省略第三张（后端 levels 只回有数据的层级）。所有个股同口径执行。
   async loadSectorMarketCap() {
     const symbol = this.currentSymbol;
     if (!symbol) return;
-    const ind = this.industryData && this.industryData.industry;
-    const induCode = ind && ind.induCode ? String(ind.induCode).trim() : '';
-    if (!induCode) { this.industrySectorCapData = null; this._renderSectorCap(); return; }
-    // 东方财富板块代码：induCode 形如 '1278' → 'BK1278'；已是 BK 开头则原样使用
-    const sectorCode = /^BK/i.test(induCode) ? induCode.toUpperCase() : ('BK' + induCode);
+    const stockName = (this.currentData && this.currentData.name) || '';
+    this._resetSectorCap(); // 复位容器/实例，避免残留上一只股票
     try {
-      const q = new URLSearchParams({
-        name: ind.induName || ind.name || '',
-        benchmark: symbol,
-        benchmarkName: (this.currentData && this.currentData.name) || '',
-        days: '250',
-      }).toString();
-      const resp = await fetch(`/api/sector-market-cap-history/${encodeURIComponent(sectorCode)}?${q}`);
-      const data = await resp.json();
+      const q0 = stockName ? ('?name=' + encodeURIComponent(stockName)) : '';
+      const lvResp = await fetch(`/api/stock-sector-levels/${encodeURIComponent(symbol)}${q0}`);
+      const lvData = await lvResp.json();
       if (this.currentSymbol !== symbol) return;
-      this.industrySectorCapData = data;
-      this._renderSectorCap();
+      const levels = (lvData && Array.isArray(lvData.levels)) ? lvData.levels : [];
+      if (!levels.length) return;
+
+      // 1) 生成一/二/三级三张卡片骨架（无三级则两张）
+      IndustryCharts.renderSectorCapGroup(lvData, { stockName });
+
+      const suffixOf = (lv) => ({ '一级': 'L1', '二级': 'L2', '三级': 'L3' }[lv] || ('L' + lv));
+      // 2) 并行取各层级板块总市值走势，各自到达即渲染（渐进呈现，互不阻塞）
+      await Promise.all(levels.map(async (lv) => {
+        try {
+          const q = new URLSearchParams({
+            name: lv.sectorName || '',
+            benchmark: symbol,
+            benchmarkName: stockName,
+            days: '250',
+          }).toString();
+          const resp = await fetch(`/api/sector-market-cap-history/${encodeURIComponent(lv.sectorCode)}?${q}`);
+          const data = await resp.json();
+          if (this.currentSymbol !== symbol) return;
+          IndustryCharts.renderSectorMarketCap(data, {
+            suffix: suffixOf(lv.swLevel),
+            stockName,
+            swLevel: lv.swLevel,
+          });
+        } catch (e) {
+          console.error('Sector market cap chart error:', lv && lv.swLevel, e);
+        }
+      }));
     } catch (e) {
-      if (this.currentSymbol !== symbol) return;
-      this.industrySectorCapData = { success: false, error: e.message };
-      this._renderSectorCap();
+      console.error('loadSectorMarketCap error:', e);
     }
   },
 
-  _renderSectorCap() {
+  // 复位板块总市值走势容器：清空卡片骨架 + 释放一/二/三级图表实例
+  _resetSectorCap() {
+    const box = document.getElementById('sectorCapGroup');
+    if (box) box.innerHTML = '';
     try {
-      IndustryCharts.renderSectorMarketCap(this.industrySectorCapData, {
-        stockName: (this.currentData && this.currentData.name) || '',
-      });
-    } catch (e) {
-      console.error('Sector market cap chart error:', e);
-    }
+      if (window.Charts && Charts.instances) {
+        ['sectorCapChart-L1', 'sectorCapChart-L2', 'sectorCapChart-L3'].forEach((k) => {
+          if (Charts.instances[k]) { Charts.instances[k].dispose(); delete Charts.instances[k]; }
+        });
+      }
+    } catch (e) { /* ignore */ }
   },
 
   // 行业分析卡片渲染参数：stockName 供 K 线图例标注；boardLoading 用于避免闪出"暂无"
@@ -3351,18 +3464,8 @@ const App = {
     this.industryBoardLoading = false;
     this.industryHistoryData = null;
     this.industryStockMarketCapData = null;
-    // 板块总市值走势卡片：隐藏并释放旧实例，避免残留上一只股票/板块的图
-    this.industrySectorCapData = null;
-    const scCard = document.getElementById('sectorCapCard');
-    if (scCard) scCard.style.display = 'none';
-    const scNote = document.getElementById('sectorCapNote');
-    if (scNote) scNote.innerHTML = '';
-    try {
-      if (window.Charts && Charts.instances && Charts.instances['sectorCapChart']) {
-        Charts.instances['sectorCapChart'].dispose();
-        delete Charts.instances['sectorCapChart'];
-      }
-    } catch (e) { /* ignore */ }
+    // 板块总市值走势（一/二/三级三图）：清空骨架并释放实例，避免残留上一只股票的图
+    this._resetSectorCap();
 
 
     // 评分追溯面板：关闭并取消卡片高亮，避免残留上一只股票的评分依据
@@ -3446,7 +3549,10 @@ const App = {
 
   // 20260902d：双模型设置 —— 联网模型（modelWeb）/ 本地模型（modelLocal）/ useCustomProtocol
   // 20260903n：新增联网搜索方式回填（此前未回填，重开弹窗会被重置为 builtin）+ 火山/百度 Key 字段
-  openAISettings() {
+  async openAISettings() {
+    // 20260917：打开前强制重新拉取服务端最新配置，避免 init 时 loadAIConfig() 未 await 完成
+    // 导致 this.aiConfig 为 undefined/旧值，从而误显示「尚未配置 API Key」「内置联网搜索」。
+    try { await this.loadAIConfig(); } catch {}
     const cfg = this.aiConfig || { provider: 'qwen', modelWeb: '', modelLocal: '', hasKey: false, useCustomProtocol: true };
     document.getElementById('aiProvider').value = cfg.provider || 'qwen';
     document.getElementById('aiModelWeb').value = cfg.modelWeb || '';
@@ -3620,10 +3726,10 @@ const App = {
     } catch {}
   },
 
-  // 20260908l/p/q/r：该标的是否走专属确定性估值模型（601318 平安 / 券商 / 688289 圣湘 / 603288 海天 / 600460 士兰 / 600909 华安 / 000783 长江）
+  // 20260908l/p/q/r + 20260916g：该标的是否走专属确定性估值模型（601318 平安 / 券商 / 688289 圣湘 / 603288 海天 / 600460 士兰 / 600909 华安 / 000783 长江 / 300319 麦捷 / 688660 电气风电 / 000902 新洋丰）
   _isDedicated(sym) {
     const bare = String(sym || '').replace(/^(sh|sz|bj)/i, '');
-    return bare === '601318' || bare === '688289' || bare === '603288' || bare === '600460' || bare === '600909' || bare === '000783' || bare === '300319' || bare === '688660' || !!(this._brokerSymbols && this._brokerSymbols.has(sym));
+    return bare === '601318' || bare === '688289' || bare === '603288' || bare === '600460' || bare === '600909' || bare === '000783' || bare === '300319' || bare === '688660' || bare === '000902' || !!(this._brokerSymbols && this._brokerSymbols.has(sym));
   },
 
   async runValuationAI(force) {
@@ -4233,6 +4339,115 @@ const App = {
             </table>
           </div>
           <div class="vd-foot">口径：全部由确定性代码计算（输入锁死 ⇒ 结果锁死，与 AI 模型无关）；模型自动适配最新报告期与实时行情。【核心风险】${esc(j.riskNote || '')}</div>
+        </div>`;
+      body.classList.add('dedicated-valuation');
+      return;
+    }
+    // ===== 20260916g：新洋丰（000902）专属「永久逻辑」估值引擎卡片 =====
+    // 布局 = 平安统一模板（vd-card 骨架）；内容 = 正常化盈利锚 → 分部估值(A正常化PE/B PB-ROE/C DCF/D磷矿期权/E磷酸铁) → 三情景 → 敏感性 → 监控指标 → 交叉验证 → 失效预警。确定性计算。
+    if (j && j.dedicated && j.xinyangfeng) {
+      const btn = document.getElementById('valuationAiBtn');
+      if (btn) btn.textContent = '🧮 专属估值模型';
+      if (dateEl) dateEl.textContent = (j.reportLabel ? j.reportLabel + ' · ' : '') + '确定性计算（无 AI 参与）';
+      const ratingMap = { '低估': 'vd-rating-low', '合理': 'vd-rating-mid', '高估': 'vd-rating-high', '需人工复核': 'vd-rating-mid', '无法评级': 'vd-rating-mid' };
+      const ratingCls = ratingMap[j.rating] || 'vd-rating-mid';
+      const esc = (s) => this.escapeHtml(s == null ? '' : String(s));
+      const frStrip = (j.freshnessRows && j.freshnessRows.length) ? (() => {
+        const stale = j.freshnessRows.filter(f => f.stale);
+        const items = j.freshnessRows.map(f => esc(f.label) + ' ' + esc(f.asOf) + '（' + f.ageDays + '天）' + (f.stale ? '⚠️' : ''));
+        return '<div class="vd-note">⏱ 数据时效：' + items.join(' · ') + (stale.length ? '　⚠️ ' + stale.length + ' 项超龄，请复核更新' : '　✅ 全部在有效期内') + '</div>';
+      })() : '';
+      const alertStrip = (j.alerts && j.alerts.length) ? '<div class="vd-note">⚠️ ' + j.alerts.map(a => esc(a)).join('；') + '</div>' : '';
+      const fmt = (x) => (x == null || x === '' ? 'N/A' : Number(x).toFixed(2));
+      const fmtRange = (r) => (r && r.length === 2) ? `${fmt(r[0])} ~ ${fmt(r[1])}` : 'N/A';
+      const kv = (arr, cls) => (arr || []).map(m => `
+        <tr class="${cls || ''}"><td class="vd-label" style="white-space:nowrap;">${esc(m.label)}</td><td style="text-align:left;color:var(--text-primary);">${esc(m.value)}</td>${m.source ? '<td class="vd-src">' + esc(m.source) + '</td>' : ''}</tr>`).join('');
+      const nvRows = (arr) => (arr || []).map(m => `
+        <tr><td class="vd-label" style="white-space:nowrap;">${esc(m.name)}</td><td style="text-align:left;color:var(--text-primary);">${esc(m.value)}</td></tr>`).join('');
+      const failRows = (j.failRows || []).map(m => `
+        <tr><td class="vd-label" style="white-space:nowrap;">${esc(m.id)}</td><td style="text-align:left;color:var(--text-primary);">${esc(m.text)}</td><td class="vd-src" style="white-space:nowrap;">${esc(m.status)}${m.threshold != null ? '（阈值 ' + esc(m.threshold) + '）' : ''}</td></tr>`).join('');
+      body.innerHTML = `
+        <div class="vd-card">
+          <div class="vd-head">
+            <span class="vd-title">⚡ ${esc(j.stockName || '')}（${esc(j.symbol || '')}）专属「永久逻辑」估值引擎</span>
+            <span class="vd-badge ${ratingCls}">${esc(j.rating || 'N/A')}</span>
+          </div>
+          <div class="vd-intervals">
+            <div class="vd-iv"><span>综合中枢（三情景加权）/ 当前股价</span><b>¥${fmt(j.fairValueCenter)} / ${j.currentPrice != null ? '¥' + fmt(j.currentPrice) : 'N/A'}</b></div>
+            <div class="vd-iv"><span>综合区间（悲观 ~ 乐观）</span><b>${fmtRange(j.fairValueRange)}</b></div>
+            <div class="vd-iv"><span>保守目标价（安全边际后）/ 上行空间</span><b>¥${fmt(j.conservativeTarget)} / ${j.upside != null ? j.upside + '%' : 'N/A'}</b></div>
+          ${frStrip}
+          ${alertStrip}
+          </div>
+          <div class="vd-sec">
+            <div class="vd-sec-title">① 估值基准与数据来源</div>
+            <table class="vd-table vd-src-table">
+              <thead><tr><th>项目</th><th>数值</th><th>来源</th></tr></thead>
+              <tbody>${kv(j.reportHeadRows)}</tbody>
+            </table>
+          </div>
+          <div class="vd-sec">
+            <div class="vd-sec-title">② 关键参数表（锚：正常化盈利）</div>
+            <table class="vd-table">
+              <tbody>${kv(j.diagRows)}</tbody>
+            </table>
+            <div class="vd-formula">${esc(j.decisionNote || '')}</div>
+          </div>
+          <div class="vd-sec">
+            <div class="vd-sec-title">③ 正常化盈利计算过程（禁止单一年份 PE）</div>
+            <table class="vd-table">
+              <tbody>${kv(j.normRows)}</tbody>
+            </table>
+          </div>
+          <div class="vd-sec">
+            <div class="vd-sec-title">④ 分部估值结果（A 正常化PE / B PB-ROE / C DCF / D 磷矿期权 / E 磷酸铁期权）</div>
+            <table class="vd-table">
+              <tbody>${kv(j.sotpRows)}</tbody>
+            </table>
+          </div>
+          <div class="vd-sec">
+            <div class="vd-sec-title">⑤ 三情景估值表（悲观 / 基准 / 乐观）</div>
+            <table class="vd-table">
+              <tbody>${nvRows(j.scenRows)}</tbody>
+            </table>
+          </div>
+          <div class="vd-sec">
+            <div class="vd-sec-title">⑥ 敏感性分析（占比×PE / 自给率×增厚 / 原料价×毛利率）</div>
+            <table class="vd-table">
+              <tbody>${nvRows(j.sensRows)}</tbody>
+            </table>
+          </div>
+          <div class="vd-sec">
+            <div class="vd-sec-title">⑦ 关键监控指标（阈值与方向）</div>
+            <table class="vd-table">
+              <tbody>${kv(j.monitorRows)}</tbody>
+            </table>
+            <div class="vd-sec-sub">关键假设汇总表（变量取值依据）</div>
+            <table class="vd-table">
+              <tbody>${kv(j.assumpRows)}</tbody>
+            </table>
+            <div class="vd-sec-sub">数据出处补充</div>
+            <table class="vd-table vd-src-table">
+              <thead><tr><th>项目</th><th>数值</th><th>来源</th></tr></thead>
+              <tbody>${kv(j.coreRows)}</tbody>
+            </table>
+          </div>
+          <div class="vd-sec">
+            <div class="vd-sec-title">⑧ 交叉验证与模型失效预警</div>
+            <table class="vd-table">
+              <tbody>${kv(j.xvalRows)}</tbody>
+            </table>
+            <table class="vd-table vd-src-table">
+              <thead><tr><th>编号</th><th>失效条件</th><th>状态</th></tr></thead>
+              <tbody>${failRows}</tbody>
+            </table>
+            <div class="vd-formula">${esc(j.modelFailureNote || '')}</div>
+          </div>
+          <div class="vd-sec">
+            <div class="vd-sec-title">⑨ 当前估值水位</div>
+            <div class="vd-formula">${esc(j.positionNote || '')}</div>
+          </div>
+          <div class="vd-foot">口径：全部由确定性代码计算（输入锁死 ⇒ 结果锁死，与 AI 模型无关）；本模型逻辑框架永久不变、参数按最新财报与公告动态更新。【关键风险】${esc(j.riskNote || '')}</div>
         </div>`;
       body.classList.add('dedicated-valuation');
       return;
