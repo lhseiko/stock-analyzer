@@ -122,12 +122,16 @@ function read(p) { return fs.readFileSync(path.join(__dirname, '..', p), 'utf8')
 
   console.log('\n===== §8 部署守卫：版本戳与缓存破坏 =====');
   const serverSrc = read('server.js');
-  ok("APP_VERSION = '20260918a'", /APP_VERSION = '20260918a'/.test(serverSrc));
+  // 版本戳守卫（20260919d 改）：原写法硬编码具体版本号，每次升版本都会失效（需手工同步测试）。
+  // 改为校验「前后端版本戳一致」这一不变量 —— 永不随版本号过期。
+  const avm = serverSrc.match(/APP_VERSION = '([^']+)'/);
+  const APP_V = avm ? avm[1] : '';
+  ok('server.js 存在 APP_VERSION 常量', !!APP_V);
   ok('server.js 无 `[truncated]` 残留（此前被截断标记污染）', !serverSrc.includes('[truncated]'));
   const idxSrc = read('public/index.html');
-  ok('index.html app.js?v=20260918a', /js\/app\.js\?v=20260918a/.test(idxSrc));
-  ok('index.html notes.js?v=20260918a', /js\/notes\.js\?v=20260918a/.test(idxSrc));
-  ok('index.html style.css?v=20260918a', /css\/style\.css\?v=20260918a/.test(idxSrc));
+  ok('index.html app.js?v= 与 APP_VERSION 一致（' + APP_V + '）', !!APP_V && idxSrc.includes('js/app.js?v=' + APP_V));
+  ok('index.html style.css?v= 与 APP_VERSION 一致（' + APP_V + '）', !!APP_V && idxSrc.includes('css/style.css?v=' + APP_V));
+  ok('index.html notes.js 带版本戳', /js\/notes\.js\?v=\d{8}[a-z]/.test(idxSrc));
   ok('/js/notes.js 在缓存破坏名单内', /FRONTEND_BUST_FILES[\s\S]{0,300}\/js\/notes\.js/.test(serverSrc));
 
   console.log('\n===== §9 macroNews 回归：_localDate 未定义已修 =====');

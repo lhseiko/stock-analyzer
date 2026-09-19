@@ -1071,40 +1071,21 @@ const DeepCharts = {
   },
 
   // ---- 第4/5节：分产品 / 分地区 主营构成（近5年折线）----
-  // 对最新一年若仅有部分报告期（如一季报/中报/三季报），使用 TTM 滚动累计还原全年口径：
-  // TTM = 当年部分 + 上年年报 - 上年同期部分，确保与历史年报口径可比。
-  _getSegmentItemsWithTTM(seg, year, key) {
-    const base = seg.byYear[year] && seg.byYear[year][key] ? seg.byYear[year][key] : [];
-    const all = seg.allPeriods;
-    if (!all || year !== seg.years[seg.years.length - 1]) return { items: base, isTTM: false };
-    const yearData = all[year];
-    if (!yearData || !yearData[key]) return { items: base, isTTM: false };
-    const periods = yearData[key].slice().sort((a, b) => (b.reportDate || '').localeCompare(a.reportDate || ''));
-    const latest = periods[0];
-    if (!latest || latest.stage === 'FY') return { items: base, isTTM: false };
-    const prevYear = String(parseInt(year, 10) - 1);
-    const prevData = all[prevYear];
-    if (!prevData || !prevData[key]) return { items: base, isTTM: false };
-    const prevFY = prevData[key].find(p => p.stage === 'FY');
-    const prevSame = prevData[key].find(p => p.stage === latest.stage);
-    if (!prevFY || !prevSame) return { items: base, isTTM: false };
-    const ttmItems = [];
-    for (const cur of latest.items) {
-      const fy = prevFY.items.find(i => i.name === cur.name);
-      const same = prevSame.items.find(i => i.name === cur.name);
-      if (!fy || !same) continue;
-      const income = cur.income + fy.income - same.income;
-      const cost = cur.cost + fy.cost - same.cost;
-      ttmItems.push({
-        ...cur,
-        income,
-        cost,
-        grossMargin: income > 0 ? Math.round((1 - cost / income) * 10000) / 100 : null,
-        reportName: (cur.reportName || latest.reportName || '') + ' (TTM)',
-      });
-    }
-    return ttmItems.length ? { items: ttmItems, isTTM: true, reportName: latest.reportName } : { items: base, isTTM: false };
+  // 20260919e：口径改为「逐年取该年最新报告期的原始披露值」，与东方财富「主营构成」页面完全一致。
+  //   原实现会对末年做 TTM 滚动还原（当年部分 + 上年年报 - 上年同期部分），用户侧与东方财富对不上：
+  //     ① TTM 产出东财从未公布的数值——新洋丰 精细化工 2026 显示 9.49 亿，东财披露为 6.19 亿；
+  //     ② 更严重：某项若在上年同期不存在（披露口径发生变化），该项会被 `continue` 静默丢弃，
+  //        而只要还有任意一项算得出来，函数就返回这份「残缺清单」——
+  //        主力分部因此凭空消失显示为 0：新洋丰 磷复肥 2026 = 0，实际 103.56 亿、占营收 91.8%。
+  //   现口径与东财页面同源同值，不再做任何滚动还原。
+  _getSegmentYearItems(seg, year, key) {
+    const items = (seg.byYear[year] && seg.byYear[year][key]) || [];
+    const sample = items.find(i => i.reportName) || items[0] || {};
+    return { items, period: sample.reportName || '' };
   },
+  // 「其中:xxx」是上一条的【子项明细】（如 其他(补充) 的其中项），不是独立分部。
+  // 东财「主营构成」页面同样不把其中项作为独立行展示，这里做前端兜底过滤（防旧缓存）。
+  _isSegmentSubItem(n) { return /^其中\s*[:：]/.test(String(n == null ? '' : n)); },
 
   _renderSegment(elId, seg, typeFilter) {
     const el = document.getElementById(elId);
@@ -1121,17 +1102,24 @@ const DeepCharts = {
       el.innerHTML = '<div class="data-empty">⚠️ 该维度（' + typeFilter + '）构成数据暂无。</div>';
       return;
     }
-    // 按年取数（最新一年优先 TTM）
+    // 按年取数：每年取该年最新报告期的原始披露值（不再做 TTM 还原）
     const yearItems = {};
-    let hasTTM = false;
+    const periods = {};
     for (const y of displayYears) {
-      const r = this._getSegmentItemsWithTTM(seg, y, key);
+      const r = this._getSegmentYearItems(seg, y, key);
       yearItems[y] = r.items;
-      if (r.isTTM) hasTTM = true;
+      periods[y] = r.period;
     }
-    const nameSet = new Set();
-    displayYears.forEach(y => (yearItems[y] || []).forEach(p => p.name && nameSet.add(p.name)));
-    const names = Array.from(nameSet).slice(0, 8);
+    // 按「各年最大收入」排序取前 8 项：原实现按「首次出现顺序」截断，会把 2023/2024 的主力业务
+    // （常规复合肥 / 新型复合肥）挤出榜单，只留早期的小业务，误导性极强。
+    const maxIncome = new Map();
+    displayYears.forEach(y => (yearItems[y] || []).forEach(p => {
+      if (!p.name || this._isSegmentSubItem(p.name)) return;
+      const v = p.income || 0;
+      if (!maxIncome.has(p.name) || v > maxIncome.get(p.name)) maxIncome.set(p.name, v);
+    }));
+    const allNames = Array.from(maxIncome.entries()).sort((a, b) => b[1] - a[1]).map(e => e[0]);
+    const names = allNames.slice(0, 8);
     if (names.length === 0) {
       el.innerHTML = '<div class="data-empty">⚠️ 该维度构成数据为空。</div>';
       return;
@@ -1143,7 +1131,8 @@ const DeepCharts = {
       itemStyle: { color: palette[i % palette.length] },
       data: displayYears.map(y => {
         const item = (yearItems[y] || []).find(p => p.name === n);
-        return item ? Math.round((item.income || 0) / 1e8 * 100) / 100 : 0;
+        // 该年未按此名称披露 → null（曲线断开）。绝不可用 0：会被误读为「该业务营收为零」。
+        return item ? Math.round((item.income || 0) / 1e8 * 100) / 100 : null;
       }),
     }));
     el.innerHTML = '';
@@ -1155,9 +1144,15 @@ const DeepCharts = {
       el.parentElement.appendChild(note);
     }
     if (note) {
-      note.textContent = '说明：同一年仅取最新报告期；' +
-        (hasTTM ? '最末年已按 TTM 滚动累计还原（当年部分+上年年报-上年同期部分），便于与历史年报口径比较。' : '') +
-        '不同年份披露口径可能变化，旧业务名称在新口径年份显示为 0。';
+      const lastY = displayYears[displayYears.length - 1];
+      const lastP = periods[lastY] || '';
+      const isMid = /中报|半年|一季|三季/.test(lastP);
+      note.textContent = '说明：口径与东方财富「主营构成」一致，每年取该年最新报告期（' +
+        displayYears.map(y => y + (periods[y] ? periods[y].replace(/^\d{4}/, '') : '')).join(' / ') + '）。' +
+        (isMid ? '注意：' + lastY + ' 年该点取「' + lastP + '」（部分期）数据，非全年，与历史年报不可直接比规模。' : '') +
+        '某年份未按该业务名称披露时曲线断开（留空，不填 0）——不同年份披露颗粒度可能变化，' +
+        '例如「常规复合肥＋新型复合肥＋磷肥」与「磷复肥」实为同一业务的不同拆分口径。' +
+        (allNames.length > 8 ? ' 图例仅显示收入规模前 8 项业务（共 ' + allNames.length + ' 项）。' : '');
     }
     const chart = this.get(elId);
     chart.setOption({
