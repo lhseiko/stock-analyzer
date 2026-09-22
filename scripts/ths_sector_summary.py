@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 调用 akshare 获取同花顺行业板块一览（实时涨跌排名 + 板块总成交额）。
-输出 JSON 数组，每个元素包含：code, name, changePct, amount(亿元), upCount, downCount, leader。
+输出 JSON 数组，每个元素包含：code, name, changePct, amount(亿元), netInflow(主力净流入,亿元), upCount, downCount, leader。
 """
 import json
 import sys
@@ -42,11 +42,18 @@ def main():
             up = int(row['上涨家数']) if pd_notna(row['上涨家数']) else 0
             down = int(row['下跌家数']) if pd_notna(row['下跌家数']) else 0
             leader = str(row['领涨股']).strip() if pd_notna(row['领涨股']) else ''
+            # 净流入：同花顺行业板块主力净流入（单位：亿元），供板块资金流向备用源使用
+            net_raw = row['净流入'] if pd_notna(row['净流入']) else 0.0
+            try:
+                net_yi = float(net_raw)
+            except (ValueError, TypeError):
+                net_yi = 0.0
             records.append({
                 "code": '',
                 "name": name,
                 "changePct": change,
                 "amount": round(amount_yi, 2),   # 板块当日总成交额（亿元）
+                "netInflow": round(net_yi, 2),    # 板块当日主力净流入（亿元）
                 "upCount": up,
                 "downCount": down,
                 "leader": leader,

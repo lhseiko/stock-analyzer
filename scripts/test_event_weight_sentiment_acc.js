@@ -41,11 +41,30 @@ t('地缘/战争仍可到 major（保住重大通道）', () => {
 });
 t('原油冲击上限降到 8%（原 20%）', () => assert.strictEqual(ee.OIL_MAX_WEIGHT, 0.08));
 t('原油权重系数降到 0.01（原 0.02）', () => assert.strictEqual(ee.OIL_WEIGHT_PER_PCT, 0.01));
-t('配置版本已升到 20260914i', () => assert.strictEqual(cfg.version, '20260914i'));
+// ★ 20260921l（用户要求）：原油主连数据影响由 3 天改为 1 天
+t('原油冲击有效期 = 1 天（原 3 天）', () => assert.strictEqual(ee.OIL_DECAY_DAYS, 1));
+t('轻微级 decayShortDays 跟随原油改为 1 天', () => {
+  assert.strictEqual(ee.defaultConfig().gradeRanges.minor.decayShortDays, 1);
+  assert.strictEqual(cfg.gradeRanges.minor.decayShortDays, 1);
+});
+t('原油合成事件的 decayShortDays/remainingDays 必须 == OIL_DECAY_DAYS（防止漏改硬编码）', () => {
+  // buildCrudeShockEvent 依赖缓存；直接做源码断言，避免联网与缓存状态耦合
+  const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'lib', 'eventEngine.js'), 'utf8');
+  assert.ok(/decayShortDays:\s*OIL_DECAY_DAYS/.test(src), 'decayShortDays 应引用 OIL_DECAY_DAYS 而非硬编码');
+  assert.ok(/remainingDays:\s*OIL_DECAY_DAYS/.test(src), 'remainingDays 应引用 OIL_DECAY_DAYS 而非硬编码');
+  assert.ok(!/decayShortDays:\s*3\b/.test(src), '不得残留 decayShortDays: 3 硬编码');
+});
+t('1 天期衰减：半天剩一半、满 1 天归零', () => {
+  const DAY = 86400000, now = Date.now();
+  const base = 0.052;
+  assert.strictEqual(ee.effectiveWeight(base, 1, now - DAY * 0.5, now), base * 0.5);
+  assert.strictEqual(ee.effectiveWeight(base, 1, now - DAY, now), 0);
+});
+t('配置版本已升到 20260921l', () => assert.strictEqual(cfg.version, '20260921l'));
 t('配置迁移：磁盘版本落后时代码会强制刷新（防「改了代码不生效」）', () => {
   // loadConfig 内部实现：version 不一致 → 用 defaultConfig 覆盖三组结构性配置
   const def = ee.defaultConfig();
-  assert.strictEqual(def.version, '20260914i');
+  assert.strictEqual(def.version, '20260921l');
   assert.strictEqual(def.gradeRanges.moderate.fixedWeightShort, 0.12);
   assert.strictEqual(def.maxCombinedEventWeight, 0.4);
 });

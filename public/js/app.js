@@ -3089,6 +3089,7 @@ const App = {
       }
       this.loadIndustryBoardIndex(false);
       this.loadIndustryIndexHistory();
+      this.loadIndustryProsperity();
 
       if (loadingEl) loadingEl.classList.add('hidden');
       if (contentEl) contentEl.style.opacity = '1';
@@ -3274,6 +3275,34 @@ const App = {
     }
   },
 
+  // 行业景气度：行业总营收(TTM) vs 总市值 双轴走势（服务端按申万二级行业全量汇总）
+  // 独立加载，失败仅隐藏卡片，不影响上方 K 线与其他模块。所有个股同口径执行。
+  async loadIndustryProsperity() {
+    const symbol = this.currentSymbol;
+    if (!symbol) return;
+    const stockName = (this.currentData && this.currentData.name) || '';
+    // 先复位，避免切换股票时短暂显示上一只股票
+    try { this._resetIndustryProsperity(); } catch (e) { /* ignore */ }
+    try {
+      const q = stockName ? ('?name=' + encodeURIComponent(stockName)) : '';
+      const resp = await fetch(`/api/industry-prosperity/${encodeURIComponent(symbol)}${q}`);
+      const data = await resp.json();
+      if (this.currentSymbol !== symbol) return;
+      this.industryProsperityData = data;
+      if (data && data.success) {
+        IndustryCharts.renderIndustryProsperity(data, { stockName });
+      } else {
+        // 非 A 股 / 无申万二级 / 无数据：隐藏卡片
+        const card = document.getElementById('indProsperityCard');
+        if (card) card.style.display = 'none';
+      }
+    } catch (e) {
+      console.error('loadIndustryProsperity error:', e);
+      const card = document.getElementById('indProsperityCard');
+      if (card) card.style.display = 'none';
+    }
+  },
+
   // 板块成分股总市值合计走势「统一模板」（20260916 重构）
   // 流程：解析个股所属申万一级/二级/三级行业板块 → 生成三张卡片骨架 → 并行取各层级板块市值走势 → 逐张填充。
   // 无对应三级板块时自动省略第三张（后端 levels 只回有数据的层级）。所有个股同口径执行。
@@ -3331,6 +3360,19 @@ const App = {
         });
       }
     } catch (e) { /* ignore */ }
+  },
+
+  // 复位行业景气度卡片：隐藏容器 + 释放图表实例，避免残留上一只股票
+  _resetIndustryProsperity() {
+    const card = document.getElementById('indProsperityCard');
+    if (card) card.style.display = 'none';
+    try {
+      if (window.Charts && Charts.instances && Charts.instances['indProsperityChart']) {
+        Charts.instances['indProsperityChart'].dispose();
+        delete Charts.instances['indProsperityChart'];
+      }
+    } catch (e) { /* ignore */ }
+    this.industryProsperityData = null;
   },
 
   // 行业分析卡片渲染参数：stockName 供 K 线图例标注；boardLoading 用于避免闪出"暂无"
@@ -3490,6 +3532,8 @@ const App = {
     this.industryStockMarketCapData = null;
     // 板块总市值走势（一/二/三级三图）：清空骨架并释放实例，避免残留上一只股票的图
     this._resetSectorCap();
+    // 行业景气度卡片：隐藏容器 + 释放实例，避免残留上一只股票
+    this._resetIndustryProsperity();
 
 
     // 评分追溯面板：关闭并取消卡片高亮，避免残留上一只股票的评分依据
@@ -3928,8 +3972,8 @@ const App = {
       body.classList.add('dedicated-valuation');
       return;
     }
-    // ===== 20260908t：华安证券（600909）动态估值框架 V2.0 卡片 =====
-    // 布局 = 平安统一模板（vd-card 骨架）；内容 = 守门员自检 + 口径分离 + PB60/SOTP30/PE10 + 评级与对比 + 风险监测。
+    // ===== 20260908t→20260922b/c：华安证券（600909）动态估值框架 V3.0 卡片（指令9：SOTP 权重自适应 + 影子股模式） =====
+    // 布局 = 平安统一模板（vd-card 骨架）；内容 = 守门员自检 + 口径分离 + PB/SOTP/PE 动态加权（指令9）+ 评级与对比 + 风险监测；权重/模式随指令9实时计算动态渲染。
     if (j && j.dedicated && j.huaan) {
       const btn = document.getElementById('valuationAiBtn');
       if (btn) btn.textContent = '🧮 专属估值模型';
@@ -3937,6 +3981,12 @@ const App = {
       const ratingMap = { '低估': 'vd-rating-low', '合理': 'vd-rating-mid', '高估': 'vd-rating-high', '需人工复核': 'vd-rating-mid', '无法评级': 'vd-rating-mid' };
       const ratingCls = ratingMap[j.rating] || 'vd-rating-mid';
       const esc = (s) => this.escapeHtml(s == null ? '' : String(s));
+      // 指令9：权重/模式/标题随实时计算动态渲染（不再写死 V2.0 固定权重）
+      const hVer = j.version || 'V3.0';
+      const sd = j.sotpDynamic || {};
+      const sdModeLabel = { shadow: '影子股模式', elevated: '显著参股模式', normal: '常规模式' }[sd.mode] || '';
+      const sdW = sd.weights || { pb: 0.6, sotp: 0.3, pe: 0.1 };
+      const wLabel = `PB ${Math.round(sdW.pb * 100)}% + SOTP ${Math.round(sdW.sotp * 100)}% + PE ${Math.round(sdW.pe * 100)}%`;
       const frStrip = (j.freshnessRows && j.freshnessRows.length) ? (() => {
         const stale = j.freshnessRows.filter(f => f.stale);
         const items = j.freshnessRows.map(f => esc(f.label) + ' ' + esc(f.asOf) + '（' + f.ageDays + '天）' + (f.stale ? '⚠️' : ''));
@@ -3957,11 +4007,11 @@ const App = {
       body.innerHTML = `
         <div class="vd-card">
           <div class="vd-head">
-            <span class="vd-title">🛡️ ${esc(j.stockName || '')}（${esc(j.symbol || '')}）动态估值框架 V2.0</span>
+            <span class="vd-title">🛡️ ${esc(j.stockName || '')}（${esc(j.symbol || '')}）动态估值框架 ${esc(hVer)}${sdModeLabel ? ' · ' + esc(sdModeLabel) : ''}</span>
             <span class="vd-badge ${ratingCls}">${esc(j.rating || 'N/A')}</span>
           </div>
           <div class="vd-intervals">
-            <div class="vd-iv"><span>综合目标价（PB 60% + SOTP 30% + PE 10%）/ 当前股价</span><b>¥${fmt(j.fairValueCenter)} / ${j.currentPrice != null ? '¥' + fmt(j.currentPrice) : 'N/A'}</b></div>
+            <div class="vd-iv"><span>综合目标价（${wLabel}）/ 当前股价</span><b>¥${fmt(j.fairValueCenter)} / ${j.currentPrice != null ? '¥' + fmt(j.currentPrice) : 'N/A'}</b></div>
             <div class="vd-iv"><span>买入触发线（&lt;0.9×目标价） ~ 减持触发线（&gt;1.05×目标价）</span><b>${fmtRange(j.fairValueRange)}</b></div>
           ${frStrip}
           </div>
@@ -3981,7 +4031,7 @@ const App = {
             </table>
           </div>
           <div class="vd-sec">
-            <div class="vd-sec-title">③ 估值过程明细表（指令2：PB 60% / SOTP 30% / PE 10%）</div>
+            <div class="vd-sec-title">③ 估值过程明细表（指令2 / 指令9：权重 ${wLabel}）</div>
             <table class="vd-table vd-src-table">
               <thead><tr><th>步骤</th><th>算式与结果</th><th>来源</th></tr></thead>
               <tbody>${detailRows}</tbody>
@@ -4602,24 +4652,49 @@ const App = {
       const fmtRange = (r) => (r && r.length === 2) ? `${fmt(r[0])} ~ ${fmt(r[1])}` : 'N/A';
       const coreRows = (j.coreRows || []).map(m => `
         <tr><td class="vd-label" style="white-space:nowrap;">${esc(m.label)}</td><td style="text-align:left;color:var(--text-primary);">${esc(m.value)}</td><td class="vd-src">${esc(m.source)}</td></tr>`).join('');
-      const matrixRows = (j.matrixRows || []).map(m => `
-        <tr class="${m.method.indexOf('综合') === 0 ? 'vd-seg-total' : ''}"><td class="vd-label">${esc(m.method)}</td><td class="vd-value">${m.low == null ? '—' : '¥' + fmt(m.low)}</td><td class="vd-value">${m.mid == null ? '—' : '¥' + fmt(m.mid)}</td><td class="vd-value">${m.high == null ? '—' : '¥' + fmt(m.high)}</td><td style="text-align:left;color:var(--text-secondary);font-size:12px;">${esc(m.note)}</td></tr>`).join('');
+      // 20260922e 补丁F：矩阵行支持 emph（估值体系重构警告行 → 红字粗体 + 淡红底，置顶）
+      const matrixRows = (j.matrixRows || []).map(m => {
+        const warn = !!m.emph;
+        const cls = warn ? 'vd-mat-warn' : (m.method.indexOf('综合') === 0 ? 'vd-seg-total' : '');
+        const trSt = warn ? ' style="background:rgba(246,70,93,0.10);"' : '';
+        const cellSt = warn ? ' style="color:#F6465D;font-weight:700;"' : '';
+        const noteSt = warn ? ' style="text-align:left;color:#F6465D;font-weight:600;font-size:12px;"' : ' style="text-align:left;color:var(--text-secondary);font-size:12px;"';
+        return `<tr class="${cls}"${trSt}><td class="vd-label"${cellSt}>${esc(m.method)}</td><td class="vd-value"${cellSt}>${m.low == null ? '—' : '¥' + fmt(m.low)}</td><td class="vd-value"${cellSt}>${m.mid == null ? '—' : '¥' + fmt(m.mid)}</td><td class="vd-value"${cellSt}>${m.high == null ? '—' : '¥' + fmt(m.high)}</td><td${noteSt}>${esc(m.note)}</td></tr>`;
+      }).join('');
       const sotpRows = (j.sotpRows || []).map(m => `
         <tr><td class="vd-label" style="white-space:nowrap;">${esc(m.label)}</td><td style="text-align:left;color:var(--text-primary);">${esc(m.value)}</td><td class="vd-src">${esc(m.source)}</td></tr>`).join('');
       const sensRows = (j.sensRows || []).map(m => `
         <tr><td class="vd-label" style="white-space:nowrap;">${esc(m.label)}</td><td style="text-align:left;color:var(--text-primary);font-variant-numeric:tabular-nums;">¥${esc(m.value)}</td></tr>`).join('');
       const riskRows = (j.riskLights || []).map(m => `
         <tr><td class="vd-label" style="white-space:nowrap;">${esc(m.label)}</td><td style="text-align:left;color:var(--text-primary);">${esc(m.light)}</td></tr>`).join('');
+      // 20260922e 补丁F：区间标签改为由模型输出动态生成（原硬编码「BVPS × PB 1.33/1.40/1.50」已失效）
+      const pF = j.patchF || {};
+      const rangeLabel = pF.boundaryFixed
+        ? `目标价区间（动态锚基准 × ${Number(pF.downMult || 0.75).toFixed(2)} ~ × ${Number(pF.upMult || 1.2).toFixed(2)}，补丁F 强制外扩）`
+        : '目标价区间（极端悲观 PB 10%分位 ~ 极端乐观 PB 90%分位）';
+      const fStrip = pF.anchorBreached ? '<div class="vd-note" style="color:#F6465D;font-weight:600;">🔴 估值体系重构警告：' + esc(pF.reframeNote || '') + '</div>' : '';
+      // 20260922f 补丁G：动态锚跌破历史50%分位 → 周期底部估值体系防御提示条
+      const pG = j.patchG || {};
+      const gStrip = pG.anchorFloorActive
+        ? '<div class="vd-note" style="color:#F0B97B;font-weight:600;">🛡️ 补丁G·周期底部估值体系防御：' + esc(pG.anchorFloorNote || '') + '（估值底线 = 近5年真实50%分位 ' + Number(pG.floorPb || 0).toFixed(3) + ' 倍 → ¥' + fmt(pG.floorPrice) + '）</div>'
+        : '';
+      // 20260922g 补丁G·规则4：长周期均值锚（1.33倍）→ 乐观复苏情景（仅备注，不参与主模型；双闸门未满足则不展示）
+      const vStrip = (pG.recovery && pG.recovery.active)
+        ? '<div class="vd-note" style="color:#8AB4F8;font-weight:600;">🌟 乐观复苏情景（仅备注，不参与主模型）：' + esc(pG.recovery.note || '') + '</div>'
+        : '';
       body.innerHTML = `
         <div class="vd-card">
           <div class="vd-head">
-            <span class="vd-title">⚡ ${esc(j.stockName || '')}（${esc(j.symbol || '')}）专属 PB-ROE 动态估值引擎</span>
+            <span class="vd-title">⚡ ${esc(j.stockName || '')}（${esc(j.symbol || '')}）专属 PB-ROE 动态估值引擎 ${esc(j.version || '')}</span>
             <span class="vd-badge ${ratingCls}">${esc(j.rating || 'N/A')}</span>
           </div>
           <div class="vd-intervals">
-            <div class="vd-iv"><span>目标价区间（BVPS × PB 1.33/1.40/1.50 三维锚定）</span><b>${fmtRange(j.fairValueRange)}</b></div>
+            <div class="vd-iv"><span>${esc(rangeLabel)}</span><b>${fmtRange(j.fairValueRange)}</b></div>
             <div class="vd-iv"><span>中枢目标价 / 当前股价</span><b>¥${fmt(j.fairValueCenter)} / ${j.currentPrice != null ? '¥' + fmt(j.currentPrice) : 'N/A'}</b></div>
           ${frStrip}
+          ${fStrip}
+          ${gStrip}
+          ${vStrip}
           </div>
           <div class="vd-sec">
             <div class="vd-sec-title">① 核心假设与数据出处</div>
@@ -5703,7 +5778,8 @@ const App = {
     try {
       const resp = await fetch('/api/sector-capital-flow');
       const data = await resp.json();
-      if (!data || data.success === false) return;
+      if (!data) return;
+      // 即使 success===false（数据源不可用）也缓存并渲染，展示友好空态而非整块空白
       this.lastCapitalFlow = data;
       this.updateCapitalFlowDom();
     } catch (e) {
@@ -5716,6 +5792,14 @@ const App = {
   // 由缓存生成行业资金流向卡片 HTML（与 renderMarketOverview 共用，避免重复拼接逻辑）
   buildCapitalFlowHtml(data) {
     if (!data) return '';
+    // 数据源不可用（东财与同花顺备用源均失败）：渲染友好空态，避免整块空白
+    if (data.ok === false) {
+      const errMsg = data.error ? this.escapeHtml(data.error) : '未知错误';
+      return `<div class="mo-row mo-capital-flow">
+        <div class="mo-row-head"><span class="mo-flag">💰</span><span class="mo-row-name">行业板块资金流向</span><span class="mo-src mo-src-warn">数据源暂不可用</span></div>
+        <div class="mo-tiles"><span class="mo-empty">⚠️ 资金流向获取失败：${errMsg}。已尝试东方财富与同花顺备用源仍不可用，请稍后刷新重试。</span></div>
+      </div>`;
+    }
     const fmtPct = (n) => (n === null || n === undefined || isNaN(n)) ? '—' : (n >= 0 ? '+' : '') + n.toFixed(2) + '%';
     const fmtNet = (n) => {
       if (n === null || n === undefined || isNaN(n)) return '—';
@@ -5823,10 +5907,10 @@ const App = {
   renderMarketOverview(data) {
     // 四个分组各自占一行（国内股指 / 涨幅前5 / 跌幅前5 / 美国股指），组内横向排列
     const groups = [
-      { key: 'cn', country: '中国指数', flag: '🇨🇳', cls: 'mo-cn', aiKey: 'cn' },
+      { key: 'cn', country: '中国指数', flag: '🇨🇳', cls: 'mo-cn', aiKey: 'cn', source: data.indexSource, isEm: data.indexIsEastmoney },
       { key: 'sectorsUp', country: '行业板块涨幅前5', flag: '📈', cls: 'mo-up', aiKey: 'gainers', source: data.panelSource || data.sectorSource, isEm: data.panelIsEastmoney != null ? data.panelIsEastmoney : data.sectorIsEastmoney, reminderSlot: 'up' },
       { key: 'sectorsDown', country: '行业板块跌幅前5', flag: '📉', cls: 'mo-down', aiKey: 'losers', source: data.panelSource || data.sectorSource, isEm: data.panelIsEastmoney != null ? data.panelIsEastmoney : data.sectorIsEastmoney, reminderSlot: 'down' },
-      { key: 'us', country: '美国指数', flag: '🇺🇸', cls: 'mo-us', aiKey: null },
+      { key: 'us', country: '美国指数', flag: '🇺🇸', cls: 'mo-us', aiKey: null, source: data.indexSource, isEm: data.indexIsEastmoney },
     ];
     const fmt = (n) => (n === null || n === undefined || isNaN(n)) ? '--' : n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const fmtPct = (n) => (n === null || n === undefined || isNaN(n)) ? '--' : (n >= 0 ? '+' : '') + n.toFixed(2) + '%';

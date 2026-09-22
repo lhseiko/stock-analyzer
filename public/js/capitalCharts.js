@@ -58,7 +58,7 @@ const CapitalCharts = {
     const signalClass = {
       '放量上涨': 'cap-positive',
       '量价齐升': 'cap-positive',
-      '显著上涨': 'cap-positive',
+      '大涨平量': 'cap-neutral',
       '温和上涨': 'cap-positive',
       '缩量上涨': 'cap-negative',
       '地量上涨': 'cap-neutral',
@@ -407,7 +407,7 @@ const CapitalCharts = {
     } else {
       if (vi?.volumePrice) {
         const vpSig = vi.volumePrice.signal;
-        if (['放量上涨', '量价齐升', '显著上涨', '温和上涨'].includes(vpSig)) bs += 2;
+        if (['放量上涨', '量价齐升', '温和上涨'].includes(vpSig)) bs += 2;
         else if (['缩量回调'].includes(vpSig)) bs += 1;
         else if (['缩量上涨', '温和回调', '地量上涨', '地量回调', '缩量下跌', '地量下跌'].includes(vpSig)) br += 1;
         else if (['放量下跌', '量价齐跌', '显著下跌'].includes(vpSig)) br += 2;

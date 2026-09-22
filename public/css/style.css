@@ -3629,6 +3629,11 @@ body {
 .sector-cap-summary-value { font-weight: 700; color: var(--text-primary); }
 .sector-cap-summary-value.up { color: var(--red); }
 .sector-cap-summary-value.down { color: var(--green); }
+/* 行业景气度卡片：景气度判读 + 口径提示 */
+.ind-prosperity-verdict { margin: 6px 0; padding: 6px 10px; border-radius: 6px; font-size: 12.5px; line-height: 1.6; background: rgba(240,185,123,0.08); border-left: 3px solid var(--accent); }
+.ind-prosperity-verdict.up { color: var(--red); border-left-color: var(--red); background: rgba(246,70,93,0.08); }
+.ind-prosperity-verdict.down { color: var(--green); border-left-color: var(--green); background: rgba(14,203,129,0.08); }
+.ind-prosperity-caveats { margin: 4px 0; font-size: 12px; color: #d6a04a; line-height: 1.6; }
 /* 板块总市值走势卡片：申万层级角标（一级/二级/三级） */
 .sector-cap-level { display: inline-block; padding: 1px 7px; margin-right: 2px; font-size: 11px; font-weight: 600; line-height: 1.5; border-radius: 8px; color: var(--accent); background: rgba(240,185,123,0.14); border: 1px solid rgba(240,185,123,0.4); vertical-align: middle; }
 

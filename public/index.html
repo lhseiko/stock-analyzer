@@ -6,7 +6,7 @@
   <title>股票投资分析工作台</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
-  <link rel="stylesheet" href="css/style.css?v=20260919g">
+  <link rel="stylesheet" href="css/style.css?v=20260922g">
   <script>
     // 启动时确保 URL 带 ?v= 参数（用于破坏静态资源缓存）。
     // 重要：版本号以 server.js 的 APP_VERSION 为准，由服务端重定向统一下发，
@@ -838,8 +838,21 @@
                 <div id="industryOverviewBody" class="industry-overview-body">
                   <div class="ai-empty">正在加载行业信息…</div>
                 </div>
-                <div id="industryIndexChart" class="chart" style="height:420px;"></div>
-                <div id="industryIndexNote" class="sh-source"></div>
+              </div>
+
+              <!-- 行业景气度（20260920a 新增）：个股所属申万二级行业内「全部公司」的
+                   总营收（TTM 滚动12个月合计）与总市值（报告期末合计）双坐标折线对比；
+                   卡片下方标注行业公司数量 / 覆盖度 / 同比与背离判读 / 数据源。
+                   由 IndustryCharts.renderIndustryProsperity 渲染，无数据时整卡隐藏。 -->
+              <div class="chart-card large" id="indProsperityCard" style="display:none;">
+                <div class="chart-header">
+                  <h3>🌡️ 行业景气度 · <span id="indProsperityIndustry">所属行业</span></h3>
+                  <div class="ai-head-actions">
+                    <span id="indProsperityDate" class="ai-date"></span>
+                  </div>
+                </div>
+                <div id="indProsperityChart" class="chart" style="height:420px;"></div>
+                <div id="indProsperityNote" class="sh-source"></div>
               </div>
 
               <!-- 板块总市值走势（统一模板）：个股市值 vs 所属申万一级/二级/三级行业板块总市值，双坐标三张图
@@ -997,7 +1010,7 @@
 
   <script src="js/storage.js?v=20260915d"></script>
   <script src="js/charts.js?v=20260915d"></script>
-  <script src="js/deepCharts.js?v=20260919g"></script>
+  <script src="js/deepCharts.js?v=20260920a"></script>
   <script src="js/industryCharts.js?v=20260915d"></script>
   <script src="js/capitalCharts.js?v=20260915d"></script>
   <script src="js/notes.js?v=20260918b"></script>
@@ -1008,7 +1021,7 @@
   <script src="js/homeHotTopics.js?v=20260915d"></script>
   <script src="js/homeMacro.js?v=20260915d"></script>
   <script src="js/homeRank.js?v=20260915d"></script>
-  <script src="js/app.js?v=20260919g"></script>
+  <script src="js/app.js?v=20260922g"></script>
 
   <!-- AI 设置弹窗（20260902e：双模型 · 联网 / 本地分离） -->
   <div class="ai-modal-overlay hidden" id="aiSettingsModal">

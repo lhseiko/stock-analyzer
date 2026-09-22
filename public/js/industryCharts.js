@@ -506,6 +506,146 @@ window.IndustryCharts = {
     }
   },
 
+  // ---- 行业景气度：行业总营收(TTM) vs 行业总市值，双坐标轴折线 ----
+  // 数据来自服务端 /api/industry-prosperity/:symbol（东方财富业绩报表+估值明细按申万二级全量汇总）。
+  // 左轴 = 总营收(TTM, 亿元)，右轴 = 总市值(亿元)，x = 报告期标签；卡片下方标注行业公司数等。
+  renderIndustryProsperity(data, opts) {
+    const card = document.getElementById('indProsperityCard');
+    if (!card) return;
+
+    // 失败 / 无数据：隐藏卡片，不残留上一只股票
+    if (!data || !data.success || !Array.isArray(data.periodLabels) || !data.periodLabels.length) {
+      card.style.display = 'none';
+      return;
+    }
+    card.style.display = '';
+
+    const o = opts || {};
+    const stockName = o.stockName || (data.stockName || '');
+    const industryName = (data.industry && data.industry.sectorName) || '';
+    const titleEl = document.getElementById('indProsperityIndustry');
+    if (titleEl) titleEl.textContent = industryName || '所属行业';
+    const dateEl = document.getElementById('indProsperityDate');
+    if (dateEl) dateEl.textContent = data.date ? `数据截至 ${data.date}` : '';
+
+    const labels = data.periodLabels;
+    const revenue = (data.revenueTTM || []).map(v => (v == null ? null : Number(v)));
+    const mcap = (data.marketCap || []).map(v => (v == null ? null : Number(v)));
+    const single = (data.revenueSingle || []).map(v => (v == null ? null : Number(v)));
+    const revYoY = data.latest && data.latest.revenueTTMYoY;
+    const mcYoY = data.latest && data.latest.marketCapYoY;
+
+    const revName = '行业总营收（TTM，亿元）';
+    const mcName = '行业总市值（亿元）';
+    const revColor = '#4ADE80';
+    const mcColor = '#60A5FA';
+    const num2 = (v) => { const n = Number(v); return isFinite(n) ? n.toFixed(2) : '--'; };
+
+    const chartEl = document.getElementById('indProsperityChart');
+    if (chartEl) {
+      this._initChart(chartEl, 'indProsperityChart', {
+        tooltip: {
+          trigger: 'axis',
+          axisPointer: { type: 'cross' },
+          backgroundColor: 'rgba(30,34,45,0.95)',
+          borderColor: '#2a2f3a',
+          textStyle: { color: '#c9d1d9' },
+          formatter: (params) => {
+            if (!params || !params.length) return '';
+            const idx = params[0].dataIndex;
+            const p = labels[idx] || '';
+            const rows = [`<div style="font-weight:600;margin-bottom:4px;">${p}</div>`];
+            params.forEach((pp) => {
+              if (pp.seriesName === revName) {
+                rows.push(`<div>${revName} <span style="float:right;margin-left:16px;color:${revColor};">${num2(pp.data)}</span></div>`);
+                if (single[idx] != null) rows.push(`<div style="color:#9ca3af;font-size:11px;">　└ 单季营收：<span style="float:right;margin-left:16px;color:${revColor};">${num2(single[idx])}</span></div>`);
+              } else if (pp.seriesName === mcName) {
+                rows.push(`<div>${mcName} <span style="float:right;margin-left:16px;color:${mcColor};">${num2(pp.data)}</span></div>`);
+                const md = (data.mcapDates && data.mcapDates[idx]) ? data.mcapDates[idx] : '';
+                if (md) rows.push(`<div style="color:#9ca3af;font-size:11px;">　└ 市值交易日：<span style="float:right;margin-left:16px;">${md}</span></div>`);
+              }
+            });
+            // 同比（仅最新一期展示，与 4 个报告期前比较 = 年距）
+            if (idx === labels.length - 1) {
+              if (revYoY != null) rows.push(`<div style="margin-top:2px;">营收(TTM) 同比 <span style="float:right;margin-left:16px;color:${revYoY >= 0 ? revColor : mcColor};">${revYoY >= 0 ? '+' : ''}${revYoY}%</span></div>`);
+              if (mcYoY != null) rows.push(`<div>总市值 同比 <span style="float:right;margin-left:16px;color:${mcYoY >= 0 ? revColor : mcColor};">${mcYoY >= 0 ? '+' : ''}${mcYoY}%</span></div>`);
+            }
+            return rows.join('');
+          },
+        },
+        legend: { data: [revName, mcName], textStyle: { color: '#9ca3af' }, top: 4 },
+        grid: { left: '10%', right: '12%', top: '44px', bottom: '70px' },
+        xAxis: {
+          type: 'category', data: labels, scale: true, boundaryGap: false,
+          axisLine: { lineStyle: { color: '#2a2f3a' } }, axisLabel: { color: '#9ca3af', fontSize: 10, rotate: labels.length > 8 ? 35 : 0 }, splitLine: { show: false },
+        },
+        yAxis: [
+          {
+            type: 'value', scale: true, position: 'left', name: '总营收(TTM，亿元)', nameTextStyle: { color: revColor, fontSize: 10 },
+            axisLine: { lineStyle: { color: revColor } }, axisLabel: { color: revColor, fontSize: 10, formatter: (v) => this._formatMarketCap(v) },
+            splitLine: { lineStyle: { color: '#2a2f3a' } },
+          },
+          {
+            type: 'value', scale: true, position: 'right', name: '总市值(亿元)', nameTextStyle: { color: mcColor, fontSize: 10 },
+            axisLine: { lineStyle: { color: mcColor } }, axisLabel: { color: mcColor, fontSize: 10, formatter: (v) => this._formatMarketCap(v) },
+            splitLine: { show: false },
+          },
+        ],
+        dataZoom: [
+          { type: 'inside', xAxisIndex: [0], start: 0, end: 100 },
+          { type: 'slider', xAxisIndex: [0], show: true, bottom: 4, height: 16, borderColor: '#2a2f3a', fillerColor: 'rgba(127,168,201,0.25)', handleStyle: { color: '#7fa8c9' }, textStyle: { color: '#9ca3af' } },
+        ],
+        series: [
+          {
+            name: revName, type: 'line', yAxisIndex: 0, data: revenue, smooth: true, showSymbol: true, symbolSize: 5,
+            lineStyle: { width: 2, color: revColor }, itemStyle: { color: revColor }, connectNulls: false,
+          },
+          {
+            name: mcName, type: 'line', yAxisIndex: 1, data: mcap, smooth: true, showSymbol: true, symbolSize: 5,
+            lineStyle: { width: 2, color: mcColor }, itemStyle: { color: mcColor }, connectNulls: false,
+          },
+        ],
+      });
+    }
+
+    // 卡片下方注释：行业公司总数 / 覆盖度 / 景气度判读 / 口径提示 / 来源
+    const noteEl = document.getElementById('indProsperityNote');
+    if (noteEl) {
+      const l = data.latest || {};
+      const verdict = data.verdict;
+      const toneCls = (t) => ({ bull: 'up', bear: 'down', neutral: '' }[t] || '');
+      const companyCount = data.industryCompanyCount != null ? data.industryCompanyCount : (data.universeCount || 0);
+      const chgTxt = (v) => (v == null ? '—' : (v >= 0 ? `+${v.toFixed(2)}%` : `${v.toFixed(2)}%`));
+
+      const summary = [];
+      summary.push(`<div class="sector-cap-summary-item"><span class="sector-cap-summary-label">所属行业</span><span class="sector-cap-summary-value">${this._escape(industryName)}（申万二级）</span></div>`);
+      summary.push(`<div class="sector-cap-summary-item"><span class="sector-cap-summary-label">行业公司总数</span><span class="sector-cap-summary-value">${companyCount} 家</span></div>`);
+      summary.push(`<div class="sector-cap-summary-item"><span class="sector-cap-summary-label">最新期覆盖</span><span class="sector-cap-summary-value">营收 ${data.coveredRevenue || 0} / 市值 ${data.coveredMarketCap || 0} 家</span></div>`);
+      if (l.revenueTTM != null) summary.push(`<div class="sector-cap-summary-item"><span class="sector-cap-summary-label">${l.label || '最新期'} 总营收(TTM)</span><span class="sector-cap-summary-value">${num2(l.revenueTTM)} 亿</span></div>`);
+      if (l.marketCap != null) summary.push(`<div class="sector-cap-summary-item"><span class="sector-cap-summary-label">${l.label || '最新期'} 总市值</span><span class="sector-cap-summary-value">${num2(l.marketCap)} 亿</span></div>`);
+
+      const verdictHtml = verdict
+        ? `<div class="ind-prosperity-verdict ${toneCls(verdict.tone)}">🌡️ ${this._escape(verdict.tag)}：${this._escape(verdict.text)}</div>`
+        : '';
+
+      const caveats = Array.isArray(data.caveats) ? data.caveats : [];
+      const caveatHtml = caveats.length
+        ? `<div class="ind-prosperity-caveats">⚠️ ${caveats.map(c => this._escape(c)).join(' ')}</div>`
+        : '';
+
+      const missingHtml = (Array.isArray(data.missing) && data.missing.length)
+        ? `<div class="ind-prosperity-caveats">未纳入合计 ${data.missing.length} 家：${data.missing.map(m => this._escape(m.name || m.code || '')).join('、')}</div>`
+        : '';
+
+      noteEl.innerHTML = `
+        <div class="sector-cap-summary">${summary.join('')}</div>
+        ${verdictHtml}
+        ${caveatHtml}
+        ${missingHtml}
+        <div>数据源：${this._escape(data.source || '东方财富')} · 数据截至 ${data.date || '-'} · 同比基准为 4 个报告期前（年距）</div>`;
+    }
+  },
+
   _calcMA(dayCount, data) {
     const result = [];
     for (let i = 0; i < data.length; i++) {

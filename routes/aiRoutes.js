@@ -19,6 +19,7 @@ const mx = require('../lib/miaoxiang');
 const { getIndustryIndexHistory } = require('../lib/industryIndexHistory');
 const { getSectorMarketCapHistory } = require('../lib/sectorMarketCapHistory');
 const { resolveStockSectorLevels } = require('../lib/stockSectorLevels');
+const { getIndustryProsperity } = require('../lib/industryProsperity');
 const { findPython } = require('../lib/pyRuntime');
 // 20260913d：行业指数运行状态侧车（running/error）与僵死阈值。
 // 直接 require 子模块，不经 aiAugment 门面 —— 门面导出基线（24 键）受 scripts/export-snapshot.js 守卫，不得增删。
@@ -439,6 +440,28 @@ router.get('/api/stock-sector-levels/:symbol', async (req, res) => {
     const data = await resolveStockSectorLevels(symbol, {
       name: (name || '').trim(),
       force: force === '1' || force === 'true',
+    });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 行业景气度（20260920a 新增）
+// 供个股页「行业分析」tab 下方独立卡片：个股所属**申万二级行业**内全部公司的
+// 「总营收（TTM 滚动12个月合计）」vs「总市值（报告期末合计）」双坐标走势对比。
+// 数据源：东方财富业绩报表 RPT_LICO_FN_CPD（按 PUBLISHNAME=申万二级行业名 全量汇总）
+//        + 东方财富估值明细 RPT_VALUEANALYSIS_DET（按 BOARD_NAME 同行业口径）
+//        + 板块成分股（行业公司总数）。口径已在 lib/industryProsperity.js 内逐项标注。
+router.get('/api/industry-prosperity/:symbol', async (req, res) => {
+  try {
+    const symbol = String(req.params.symbol || '').trim();
+    if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL' });
+    const { name, force, periods } = req.query;
+    const data = await getIndustryProsperity(symbol, {
+      name: (name || '').trim(),
+      force: force === '1' || force === 'true',
+      periods: parseInt(periods, 10) || undefined,
     });
     res.json(data);
   } catch (err) {
