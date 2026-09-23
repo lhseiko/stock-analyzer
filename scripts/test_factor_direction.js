@@ -35,7 +35,7 @@ const NAMES = ['round', 'avg', 'formatWan', 'latestQuarterEnd', // 20260913f：�
   'shortDirectionToSignal', // 20260905d/20260905e：大盘及行业板块短期走势因子依赖 helper
   // 20260917i：原 factorMarketShort 因子已按用户要求删除，改为两个拆分后的子因子 helper
   'computeMarketShortSub', 'computeSectorTrendSub', 'computeSectorNewsSub',
-  'factorHoldings', 'factorSectorLimit', '_computeTurnoverChange'];
+  'factorHoldings', 'factorSectorLimit', '_computeTurnoverChange', 'detectForcedReduction', '_forcedMatchName'];
 const sandbox = {};
 // 20260917i：因子/子因子权重常量（W_* / *_SUB_W）随函数一并注入沙箱（源码中因子函数已改为引用常量）
 const CONST_DECLS = (SRC.match(/^const (?:W_[A-Z_]+|[A-Z_]+_SUB_W) = [\d.]+;.*$/gm) || []).join('\n');

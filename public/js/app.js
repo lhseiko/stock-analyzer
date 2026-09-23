@@ -15,6 +15,7 @@ const METRIC_HELP = {
   '净利率': { title: '净利率', body: '净利率 = 净利润 ÷ 营业收入，扣除税费、利息、费用后的真实盈利能力。<br>· 比毛利率更综合，受费用率、减值等影响。' },
   '营收增长': { title: '营收增长', body: '同期营业收入同比增速（YoY）。<br>· 反映业务扩张速度，&gt;15% 通常视为高成长；<br>· 负增长一般偏利空（金融/周期类需结合行业阶段看）。' },
   '利润增长': { title: '利润增长', body: '同期净利润同比增速（YoY）。<br>· 比营收增长更关键，需警惕"增收不增利"。' },
+  '扣非净利润增长': { title: '扣非净利润增长', body: '扣非归母净利润同比增长（YoY）——剔除政府补助、资产处置、公允价值变动等<b>非经常性损益</b>后的归母净利润增速。<br>· 比「利润增长」更能反映<b>主营业务的真实盈利趋势</b>；<br>· 若扣非增速显著低于归母增速，说明利润中含较多一次性收益，需警惕；<br>· 来源：东方财富 F10 主要指标 KCFJCXSYJLRTZ（与左卡、深度分析同源）。' },
   '资产负债率': { title: '资产负债率 · 信号算法详解', body: '<b>一、取数来源（两个口径，已自动识别）</b><br>· <b>A 股</b>：取东方财富 F10 资产负债表「资产负债率 ZCFZL」，单位是 <b>%</b>（如 89.88 表示 89.88%）。本工具已加 <code>debtMetricPct</code> 标记；<br>· <b>港股 / 美股</b>：取「带息债 ÷ 所有者权益」<b>比值</b>（无单位小数，如 0.27）。<br><br><b>二、信号判定步骤（evaluateSignals）</b><br>第 1 步：读取数值 d = 资产负债率（A股用% / 港股美股用比值）；<br>第 2 步：判断是否金融业（银行/保险/证券等）→ 直接判 <b>中性</b>（高负债是经营常态，不红不绿）；<br>第 3 步：非金融业，按口径分档：<br>&nbsp;&nbsp;▸ A股（%）：<b>＞70%</b> → 利空(绿)；<b>＜40%</b> → 利好(红)；40%~70% 合理区间不提示；<br>&nbsp;&nbsp;▸ 港股/美股（比值）：<b>＞2</b> → 利空(绿)；<b>＜0.5</b> → 利好(红)；中间不提示。<br><br><b>三、健康评分里的算法（fundamentalAnalysis）</b><br>同口径分档累加（满分 25 再按权重缩放）：A股 资产负债率 ＜40% 加12、40%~70% 加9、70%~90% 加5、＞90% 不加分；金融业 80%~96% 视为正常加10。<br><br><b>四、颜色与边界</b><br>红=利好、绿=利空，仅适用于<b>非金融</b>公司；金融业一律中性。例：中国平安 89.88%→中性；贵州茅台（A股，约 20%出头）→利好(红)。' },
   '流动比率': { title: '流动比率', body: '流动比率 = 流动资产 ÷ 流动负债，衡量短期偿债能力。<br>· &gt;2 较安全，&lt;1 可能短期资金紧张；<br>· 不同行业合理区间差异大（如零售天然较低）。' },
   '股息率': { title: '股息率', body: '股息率 = 每股分红 ÷ 股价（年化）。<br>· 红利型公司（银行、电力、煤炭等）看重此指标；<br>· 高股息率通常偏利好，但需警惕"分红不可持续"。' },
@@ -1752,6 +1753,36 @@ const App = {
       html += `</div>`;
     }
 
+    // 20260923h：投资者问答子卡（沪市→上证e互动 / 深市→巨潮互动易，与「个股近期热点」同一数据源）
+    // 无问答/获取失败时如实标注原因，不静默隐藏（诚实降级）
+    const irm = a.irmQa;
+    if (irm) {
+      if (irm.ok && Array.isArray(irm.posts) && irm.posts.length) {
+        const shownAnswered = irm.posts.filter(p => p.answered).length;
+        const total = Number(irm.count) || irm.posts.length;
+        const cntTxt = `${irm.posts.length} 条问答` +
+          (shownAnswered ? `，其中 ${shownAnswered} 条已回复` : '（暂未获回复）') +
+          (total > irm.posts.length ? `（平台近期共 ${total} 条）` : '') +
+          (irm.unansweredList ? '·均为未回复提问' : '');
+        const srcTag = irm.source ? `<span class="ht-irm-src">${this.escapeHtml(irm.source)}</span>` : '';
+        html += `<div class="ht-irm"><div class="ht-irm-head">💬 投资者问答 ${srcTag}<span class="ht-irm-count">${cntTxt}</span></div><div class="ht-irm-list">`;
+        irm.posts.forEach(p => {
+          const time = p.askTime ? `<span class="ht-irm-time">${this.escapeHtml(p.askTime)}</span>` : '';
+          html += `<div class="ht-irm-item">
+            <div class="ht-irm-q"><span class="ht-irm-q-tag">问</span>${this.escapeHtml(p.question || '')}${time}</div>
+            ${p.answer
+              ? `<div class="ht-irm-a"><span class="ht-irm-a-tag">答</span>${this.escapeHtml(p.answer)}</div>`
+              : `<div class="ht-irm-a ht-irm-a-none"><span class="ht-irm-a-tag">答</span>公司暂未回复</div>`}
+          </div>`;
+        });
+        html += `</div></div>`;
+      } else if (irm.note) {
+        const srcTag = irm.source ? `<span class="ht-irm-src">${this.escapeHtml(irm.source)}</span>` : '';
+        html += `<div class="ht-irm"><div class="ht-irm-head">💬 投资者问答 ${srcTag}</div>`
+          + `<div class="ht-irm-note">${this.escapeHtml(irm.note)}</div></div>`;
+      }
+    }
+
     analysisEl.innerHTML = html;
   },
 
@@ -2449,18 +2480,26 @@ const App = {
       ? `去年同期(TTM同口径) ${priorRoeTtm.toFixed(2)}%`
       : (priorRoeJQ != null ? `去年同期(同期加权) ${priorRoeJQ.toFixed(2)}%` : null);
     // 扣非净利润同比：与营收/归母同源，取自东财 ZYZBAjaxNew 主要指标（zyzbHistory.KCFJCXSYJLRTZ）
+    // ★ 20260923m 修复：去年同期原先取 `zyzb[zyzb.length - 2]`（降序序列的倒数第二项 ≈ 接近最早的一期），
+    //   与上方 priorYoy / priorRevenueYoy / priorProfitYoy 的「去年同期·同报告期」口径不一致。
+    //   实证 长江证券 000783：最新期 2026-06-30 扣非同比 +84.93%，去年同期应为 2025-06-30 的 +123.28%；
+    //   旧写法却取到 2024-09-30 的 +21.06% → 左卡显示「去年同期 21.06%」，而右卡「指标分析」/「判定依据」
+    //   显示「去年同期 123.3%」，同一只股票同一指标两处打架。
+    //   现统一改用 priorYoy（同上「去年同月日报告期」精确匹配），与 lib/metricAnalysis.js `samePeriodPair`、
+    //   lib/analysis.js `samePeriodYoY`、lib/fundamentalScore.js `yoyPair` 三处保持同一口径。
     const parsePct = (v) => { const n = parseFloat(v); return (v == null || isNaN(n)) ? null : n; };
-    const curDedYoy = zyzb.length ? parsePct(zyzb[0].KCFJCXSYJLRTZ) : null;
-    const priorDedYoy = zyzb.length >= 2 ? parsePct(zyzb[zyzb.length - 2].KCFJCXSYJLRTZ) : null;
+    const priorDedYoy = priorYoy ? parsePct(priorYoy.KCFJCXSYJLRTZ) : null;
     // 数据期标注：报表指标引用具体财报期；估值类为 TTM；股息率为历史分红（均非财报期）
     const stmtPeriod = finLabel ? '财报 ' + finLabel : '';
     const valPeriod = 'TTM';
     const divPeriod = 'TTM·分红';
     const ocflowPeriod = ocfLabel ? '财报 ' + ocfLabel : stmtPeriod;
     const rows = [
-      ['市盈率(PE·TTM)', m.pe?.toFixed(2), `PE(TTM) · 总市值 ÷ 近12个月归母净利（滚动12个月，随行情每日更新，不绑定财报期） · 来源：${qf.peSource || '行情数据'}`, { indKey: 'pe', pctKey: 'pe' }, valPeriod],
-      ['市净率(PB)', m.pb?.toFixed(2), `PB · 股价 ${priceDate} ÷ 每股净资产${finLabel ? '(财报 ' + finLabel + ')' : ''} · 来源：${qf.pbSource || '行情数据'}`, { indKey: 'pb', pctKey: 'pb' }, valPeriod],
-      [(qf.psSource && String(qf.psSource).indexOf('PS_TTM') >= 0) ? '市销率(PS·TTM)' : '市销率(PS)', m.ps?.toFixed(2), (qf.psSource && String(qf.psSource).indexOf('PS_TTM') >= 0) ? `PS(TTM) · 总市值 ÷ 近12个月营收（滚动12个月，随行情更新） · 来源：${qf.psSource || '东方财富估值(PS_TTM)'}` : `PS · 总市值 ÷ 最新一期营收（财报 ${finLabel}，单期口径非TTM） · 来源：${qf.psSource || '本地计算'}`, { indKey: null, pctKey: 'ps' }, (qf.psSource && String(qf.psSource).indexOf('PS_TTM') >= 0) ? valPeriod : stmtPeriod],
+      // ★ 20260923l：估值三项由 `m.pe?.toFixed(2)` 改为「真值判定」——与右卡「指标分析」统一 0/-- 口径
+      //   （0 的 PE/PB/PS 不是可信数值，属兜底哨兵 → 显示 `--` 而非 `0.00`）。
+      ['市盈率(PE·TTM)', m.pe ? m.pe.toFixed(2) : '--', `PE(TTM) · 总市值 ÷ 近12个月归母净利（滚动12个月，随行情每日更新，不绑定财报期） · 来源：${qf.peSource || '行情数据'}`, { indKey: 'pe', pctKey: 'pe' }, valPeriod],
+      ['市净率(PB)', m.pb ? m.pb.toFixed(2) : '--', `PB · 股价 ${priceDate} ÷ 每股净资产${finLabel ? '(财报 ' + finLabel + ')' : ''} · 来源：${qf.pbSource || '行情数据'}`, { indKey: 'pb', pctKey: 'pb' }, valPeriod],
+      [(qf.psSource && String(qf.psSource).indexOf('PS_TTM') >= 0) ? '市销率(PS·TTM)' : '市销率(PS)', m.ps ? m.ps.toFixed(2) : '--', (qf.psSource && String(qf.psSource).indexOf('PS_TTM') >= 0) ? `PS(TTM) · 总市值 ÷ 近12个月营收（滚动12个月，随行情更新） · 来源：${qf.psSource || '东方财富估值(PS_TTM)'}` : `PS · 总市值 ÷ 最新一期营收（财报 ${finLabel}，单期口径非TTM） · 来源：${qf.psSource || '本地计算'}`, { indKey: null, pctKey: 'ps' }, (qf.psSource && String(qf.psSource).indexOf('PS_TTM') >= 0) ? valPeriod : stmtPeriod],
       ['PEG', m.peg > 0 ? m.peg.toFixed(2) : '--', 'PEG · 当前行情数据源未提供该字段（PE(TTM)÷盈利增速），本工具不做估算，避免展示无依据数值', { indKey: null, pctKey: null }, '--'],
       ['ROE', m.roe ? m.roe.toFixed(2) + '%' : '--',
         qf.roeTtm != null
@@ -2479,9 +2518,9 @@ const App = {
         { indKey: null, pctKey: 'netMargin' }, qf.netMarginTtm != null ? valPeriod : stmtPeriod],
       ['营收增长', m.revenueGrowth ? m.revenueGrowth.toFixed(2) + '%' : '--', `营收同比增长 · 来源：${qf.reportSource || '东方财富财报'}${finLabel ? ' · 财报 ' + finLabel : ''}`, { indKey: null, pctKey: 'revenueGrowth', prior: priorRevenueYoy != null ? `去年同期 ${priorRevenueYoy.toFixed(2)}%` : null }, stmtPeriod],
       ['利润增长', m.profitGrowth ? m.profitGrowth.toFixed(2) + '%' : '--', `归母净利润同比增长 · 来源：${qf.reportSource || '东方财富财报'}${finLabel ? ' · 财报 ' + finLabel : ''}`, { indKey: null, pctKey: 'profitGrowth', prior: priorProfitYoy != null ? `去年同期 ${priorProfitYoy.toFixed(2)}%` : null }, stmtPeriod],
-      ['扣非净利润增长', m.deductedProfitGrowth != null ? m.deductedProfitGrowth.toFixed(2) + '%' : '--', `扣非归母净利润同比增长 · 来源：东方财富财报${finLabel ? ' · 财报 ' + finLabel : ''}`, { indKey: null, pctKey: null, prior: priorDedYoy != null ? `去年同期 ${priorDedYoy.toFixed(2)}%` : null }, stmtPeriod],
-      ['资产负债率', m.debtToEquity != null ? m.debtToEquity.toFixed(2) + (m.debtMetricPct ? '%' : '') : '--', `资产负债率 · 来源：${qf.reportSource || '东方财富财报'}${finLabel ? ' · 财报 ' + finLabel : ''}`, { indKey: null, pctKey: 'debtToEquity' }, stmtPeriod],
-      ['流动比率', m.currentRatio?.toFixed(2), `流动比率 · 来源：${qf.reportSource || '东方财富财报'}${finLabel ? ' · 财报 ' + finLabel : ''}`, { indKey: null, pctKey: 'currentRatio' }, stmtPeriod],
+      ['扣非净利润增长', m.deductedProfitGrowth ? m.deductedProfitGrowth.toFixed(2) + '%' : '--', `扣非归母净利润同比增长 · 来源：东方财富财报${finLabel ? ' · 财报 ' + finLabel : ''}`, { indKey: null, pctKey: null, prior: priorDedYoy != null ? `去年同期 ${priorDedYoy.toFixed(2)}%` : null }, stmtPeriod],
+      ['资产负债率', m.debtToEquity ? m.debtToEquity.toFixed(2) + (m.debtMetricPct ? '%' : '') : '--', `资产负债率 · 来源：${qf.reportSource || '东方财富财报'}${finLabel ? ' · 财报 ' + finLabel : ''}`, { indKey: null, pctKey: 'debtToEquity' }, stmtPeriod],
+      ['流动比率', m.currentRatio ? m.currentRatio.toFixed(2) : '--', `流动比率 · 来源：${qf.reportSource || '东方财富财报'}${finLabel ? ' · 财报 ' + finLabel : ''}`, { indKey: null, pctKey: 'currentRatio' }, stmtPeriod],
       ['股息率(TTM)', m.dividendYield ? m.dividendYield.toFixed(2) + '%' : '--', '股息率(TTM) = 近12个月已实施除息的每股分红合计 ÷ 当前股价（滚动12个月口径；无近12个月分红记录时回退最近完整年度） · 来源：东方财富分红数据', { indKey: null, pctKey: null }, divPeriod],
       ['每股经营现金流', m.operatingCashFlowPerShare ? m.operatingCashFlowPerShare.toFixed(2) : '--', `每股经营现金流 = 经营现金流净额 ÷ 总股本${ocfLabel ? ' · 财报 ' + ocfLabel : ''} · 来源：${qf.operatingCashFlowSource || '东方财富财报'}`, { indKey: null, pctKey: null }, ocflowPeriod],
     ];
@@ -2821,7 +2860,7 @@ const App = {
   ensureDeepSkeleton() {
     const content = document.getElementById('deepContent');
     if (!content) return;
-    const hasSkeleton = document.getElementById('deepResearchReports') || document.getElementById('deepAnnouncements');
+    const hasSkeleton = document.getElementById('deepResearchReports') || document.getElementById('deepAnnouncements') || document.getElementById('cninfoAnnouncements');
     if (hasSkeleton) return;
     if (this._deepSkeletonHTML) {
       content.innerHTML = this._deepSkeletonHTML;
@@ -2931,7 +2970,7 @@ const App = {
       { id: 'group-dividend', title: '💰 分红分析',
         nodes: [cardOf('deepDividend'), cardOf('deepDividendBar'), cardOf('deepDivYield')] },
       { id: 'group-research', title: '📚 研报与重要公告',
-        nodes: [cardOf('deepResearchReports'), cardOf('deepAnnouncements')] },
+        nodes: [cardOf('deepResearchReports'), cardOf('deepAnnouncements'), cardOf('cninfoAnnouncements')] },
       { id: 'group-insurance', title: '🏦 保险公司专属分析', hidden: true,
         nodes: [helper('deepInsuranceAnalysis')] },
     ];

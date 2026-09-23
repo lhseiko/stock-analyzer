@@ -1460,6 +1460,49 @@ const DeepCharts = {
     this._bindAiTrigger(el, 'announcements', symbol, stockName);
   },
 
+  // ---- 第25b节：官方公告（巨潮资讯，确定性数据，非 AI 总结）----
+  loadCninfoAnnouncements(symbol, stockName) {
+    const el = document.getElementById('cninfoAnnouncements');
+    if (!el || !symbol) return;
+    el.innerHTML = '<div class="loading-spinner">⏳ 正在加载官方公告…</div>';
+    fetch('/api/announcements/' + encodeURIComponent(symbol))
+      .then(r => r.json())
+      .then(data => {
+        if (this._symbol !== symbol) return; // 股票已切换，丢弃过期响应
+        if (data && data.ok && Array.isArray(data.items) && data.items.length) {
+          this.renderCninfoAnnouncements(data, symbol, stockName);
+        } else if (data && data.ok && (!data.items || !data.items.length)) {
+          el.innerHTML = '<div class="mx-empty">近一年未发现官方公告（或数据源暂未返回）。</div>';
+        } else {
+          const msg = (data && data.error) || '未知错误';
+          el.innerHTML = '<div class="mx-error">官方公告加载失败：' + this.escapeHtml(msg)
+            + '。请稍后重试。</div>';
+        }
+      })
+      .catch(e => {
+        el.innerHTML = '<div class="mx-error">官方公告加载失败：' + this.escapeHtml(e.message) + '</div>';
+      });
+  },
+
+  renderCninfoAnnouncements(data, symbol, stockName) {
+    const el = document.getElementById('cninfoAnnouncements');
+    if (!el) return;
+    const items = (data.items || []).slice(0, 30);
+    const rows = items.map(a => {
+      const title = this.escapeHtml(a.title || '');
+      const type = a.type ? '<span class="annc-type">' + this.escapeHtml(a.type) + '</span>' : '';
+      const date = a.date ? '<span class="annc-date">' + this.escapeHtml(a.date) + '</span>' : '';
+      const link = a.url
+        ? ' <a href="' + this.escapeHtml(a.url) + '" target="_blank" rel="noopener noreferrer" class="annc-link">原文↗</a>'
+        : '';
+      return '<li class="annc-item">' + type + ' <span class="annc-title">' + title + '</span>'
+        + link + ' ' + date + '</li>';
+    }).join('');
+    const src = data.orgId ? ('巨潮 orgId ' + this.escapeHtml(String(data.orgId))) : '巨潮资讯';
+    el.innerHTML = '<ul class="annc-list">' + rows + '</ul>'
+      + '<div class="mx-summary-foot">来源：巨潮资讯官方公告（' + src + '）· 近一年 · 确定性数据，非 AI 总结</div>';
+  },
+
   // 绑定「重新联网总结 / 重试」按钮
   _bindAiTrigger(container, type, symbol, stockName) {
     const btn = container.querySelector('.ai-trigger-btn');
@@ -1595,6 +1638,7 @@ const DeepCharts = {
     safe('productGrossMargin', () => this.renderProductGrossMargin(sections.productGrossMargin));
     safe('researchReports', () => this.renderResearchReports(sections.researchAI, this._symbol, this._stockName));
     safe('announcements', () => this.renderAnnouncements(sections.announcementAI, this._symbol, this._stockName));
+    safe('cninfoAnnouncements', () => this.loadCninfoAnnouncements(this._symbol, this._stockName));
     safe('earningsReport', () => this.renderEarningsReport(sections.earningsReport, this._symbol, this._stockName));
     safe('conclusion', () => this.renderConclusion(sections.conclusion));
     safe('revenueCost', () => this.renderRevenueCost(sections.revenueCostData));

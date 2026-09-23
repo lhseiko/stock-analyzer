@@ -6,10 +6,13 @@
   2) 社区讨论·主源：同花顺讨论 API（t.10jqka.com.cn，按板块代表性成分股归集）→ result['guba']
   3) 社区讨论·补充源：东财股吧板块吧 list 页第 1 页（内嵌 article_list JSON，每板块 1 请求）→ result['gubaEm']
      —— 东财为真实散户帖，且 bar 自带「板块总帖数」，可算 B 的真实帖数增量；触发「身份核实」立即熔断该通道
-  4) 全网舆情文本：akshare 新浪财经 7x24 + 同花顺全球财经快讯（当日增量，周聚合时去重）
+  4) 全网舆情文本：akshare 新浪财经 7x24 + 同花顺全球财经快讯 + 华尔街见闻 7x24 + 财联社电报（当日增量，周聚合时去重）
+     —— 后两者 20260923 新增，均走独立域名（api-one.wallstcn.com / www.cls.cn），与 akshare 两源互为备份；
+        财联社用本地签名 md5(sha1(排序 query))，零 key、零登录。
 输出：data/hotTopics/daily/{date}.json（原子写入）
 辅助：--scan 模式做 bk 代码段枚举（结果写 data/hotTopics/bk_scan_extra.json，用后人工并入 sector_map）
 开关：data/hotTopics/config.json 的 community 节（{em, ths, emIntervalSec, emFailStreakMax}，默认两源皆启用）
+     及 news 节（{sina, ths, wscn, cls} 四路快讯源开关，默认全启用）
 诚实降级：任何通道失败都记录 status，不阻塞其他通道；两个社区源任一可用即非降级。
 """
 import sys, os, re, json, time, random, argparse, http.cookiejar, traceback
@@ -48,6 +51,24 @@ def load_community_cfg():
         with open(_p('data/hotTopics/config.json'), 'r', encoding='utf-8') as f:
             cfg = json.load(f)
         c = cfg.get('community') or {}
+        out = dict(defaults)
+        for k in defaults:
+            if k in c:
+                out[k] = c[k]
+        return out
+    except Exception:
+        return defaults
+
+
+def load_news_cfg():
+    """读取 data/hotTopics/config.json 的 news 节（缺省：四路快讯源皆启用，20260923）。
+    键：sina(新浪财经 7x24) / ths(同花顺全球财经快讯) / wscn(华尔街见闻 7x24) / cls(财联社电报)。
+    新增源默认开启；任一源失败仅自身返回空，不影响其他源（诚实降级）。"""
+    defaults = {'sina': True, 'ths': True, 'wscn': True, 'cls': True}
+    try:
+        with open(_p('data/hotTopics/config.json'), 'r', encoding='utf-8') as f:
+            cfg = json.load(f)
+        c = cfg.get('news') or {}
         out = dict(defaults)
         for k in defaults:
             if k in c:
@@ -231,28 +252,114 @@ def collect_market():
     return {'status': 'empty', 'rows': []}
 
 
-def collect_news():
-    import akshare as ak
+# ---------- 全网舆情文本·补充两源（20260923，独立域名互为备份） ----------
+WSCN_LIVES_URL = 'https://api-one.wallstcn.com/apiv1/content/lives'
+CLS_ROLL_URL = 'https://www.cls.cn/v1/roll/get_roll_list'
+
+
+def fetch_wallstreetcn(limit=30, channel='a-stock-channel'):
+    """华尔街见闻 7x24 快讯（api-one.wallstcn.com，独立域名、无需鉴权）。
+    ⚠️ channel 取 'a-stock-channel'（A 股 7×24）而**非** 'global-channel'：本模块 A 指标要按板块关键词
+    归属，A 股频道命中率高；全球频道多为海外宏观/大宗（实测如「德国国债收益率」），基本无法归属到
+    A 股板块，只会抬高条数基数却不产生区分度。
+    返回 [{source,title,text,time}]；失败返回 []（不抛异常）。"""
+    try:
+        r = requests.get(WSCN_LIVES_URL,
+                         params={'channel': channel, 'client': 'pc', 'limit': limit},
+                         headers={'User-Agent': UA, 'Referer': 'https://wallstreetcn.com/live/global'},
+                         timeout=12, proxies=THS_PROXIES)
+        if r.status_code != 200:
+            return []
+        payload = r.json()
+        if not isinstance(payload, dict) or payload.get('code') != 20000:
+            return []
+        out = []
+        for it in ((payload.get('data') or {}).get('items') or []):
+            text = (it.get('content_text') or '').strip()
+            if not text:
+                continue
+            ts = it.get('display_time')
+            t = datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S') if ts else ''
+            out.append({'source': '华尔街见闻',
+                        'title': (it.get('title') or '').strip() or text[:40],
+                        'text': text, 'time': t})
+        return out
+    except Exception:
+        return []
+
+
+def fetch_cls_telegraph(page_size=30):
+    """财联社电报（v1 API + 本地签名 md5(sha1(字典序 query))，零 key、零登录）。
+    ⚠️ 签名必须对「拼好的 query 串」计算，故走完整 URL 拼装、不用 requests 的 params 重编码。
+    返回 [{source,title,text,time}]；失败返回 []（不抛异常）。"""
+    try:
+        import hashlib
+        params = {'appName': 'CailianpressWeb', 'os': 'web', 'sv': '7.7.5',
+                  'last_time': '', 'refresh_type': '1', 'rn': str(page_size)}
+        qs = '&'.join('%s=%s' % (k, params[k]) for k in sorted(params))
+        sign = hashlib.md5(hashlib.sha1(qs.encode()).hexdigest().encode()).hexdigest()
+        r = requests.get('%s?%s&sign=%s' % (CLS_ROLL_URL, qs, sign),
+                         headers={'User-Agent': UA, 'Referer': 'https://www.cls.cn/'},
+                         timeout=12, proxies=THS_PROXIES)
+        if r.status_code != 200:
+            return []
+        payload = r.json()
+        if not isinstance(payload, dict) or str(payload.get('errno')) != '0':
+            return []
+        out = []
+        for it in ((payload.get('data') or {}).get('roll_data') or []):
+            title = (it.get('title') or '').strip()
+            text = re.sub(r'<[^>]+>', '', it.get('content') or '').strip()
+            if not (title or text):
+                continue
+            ts = it.get('ctime')
+            t = datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S') if ts else ''
+            out.append({'source': '财联社', 'title': title or text[:40],
+                        'text': text or title, 'time': t})
+        return out
+    except Exception:
+        return []
+
+
+def collect_news(cfg=None):
+    """全网舆情文本（四路快讯源，任一失败不阻塞其他源）。
+    cfg: load_news_cfg() 结果（{sina, ths, wscn, cls}），缺省全开。
+    ⚠️ 口径提示：每增一路源都会抬高 A（曝光）的条数基数，而 A 为 Min-Max 归一化 → 榜单名次随之变化。"""
+    cfg = cfg or {}
     items = []
-    try:
-        df = ak.stock_info_global_sina()
-        for _, r in df.iterrows():
-            d = {str(k): ('' if r[k] is None else str(r[k]).strip()) for k in df.columns}
-            t = d.get('时间', '')
-            items.append({'source': '新浪财经', 'title': (d.get('内容') or '')[:40], 'text': d.get('内容', ''), 'time': t})
-        if items:
-            items[-1]['_last'] = 1
-    except Exception:
-        pass
-    time.sleep(0.6)
-    try:
-        df = ak.stock_info_global_ths()
-        for _, r in df.iterrows():
-            d = {str(k): ('' if r[k] is None else str(r[k]).strip()) for k in df.columns}
-            items.append({'source': '同花顺', 'title': d.get('标题') or (d.get('内容') or '')[:40],
-                          'text': d.get('内容', ''), 'time': d.get('时间', '')})
-    except Exception:
-        pass
+    ak = None
+    if cfg.get('sina', True) or cfg.get('ths', True):
+        try:
+            import akshare as ak  # noqa: F811
+        except Exception:
+            ak = None
+    if cfg.get('sina', True) and ak is not None:
+        try:
+            df = ak.stock_info_global_sina()
+            for _, r in df.iterrows():
+                d = {str(k): ('' if r[k] is None else str(r[k]).strip()) for k in df.columns}
+                t = d.get('时间', '')
+                items.append({'source': '新浪财经', 'title': (d.get('内容') or '')[:40], 'text': d.get('内容', ''), 'time': t})
+            if items:
+                items[-1]['_last'] = 1
+        except Exception:
+            pass
+        time.sleep(0.6)
+    if cfg.get('ths', True) and ak is not None:
+        try:
+            df = ak.stock_info_global_ths()
+            for _, r in df.iterrows():
+                d = {str(k): ('' if r[k] is None else str(r[k]).strip()) for k in df.columns}
+                items.append({'source': '同花顺', 'title': d.get('标题') or (d.get('内容') or '')[:40],
+                              'text': d.get('内容', ''), 'time': d.get('时间', '')})
+        except Exception:
+            pass
+    if cfg.get('wscn', True):
+        time.sleep(0.4)
+        items.extend(fetch_wallstreetcn())
+    if cfg.get('cls', True):
+        time.sleep(0.4)
+        items.extend(fetch_cls_telegraph())
     return {'status': 'ok' if items else 'empty', 'items': items}
 
 
@@ -581,6 +688,7 @@ def main():
     name_by_code = {r['code']: r['name'] for r in result['market'].get('rows', []) if r.get('code')}
     # 2) 社区讨论（双源：同花顺讨论 API 为主源 + 东财股吧板块吧为补充源；任一可用即非降级）
     comm_cfg = load_community_cfg()
+    news_cfg = load_news_cfg()
     boards = []
     try:
         m = load_sector_map(_p('data/hotTopics/sector_map.json'))
@@ -610,7 +718,7 @@ def main():
         result['gubaEm'] = {'status': 'disabled', 'boards': {}, 'okCount': 0, 'mapCount': len(boards)}
     # 3) 舆情文本
     try:
-        result['news'] = collect_news()
+        result['news'] = collect_news(news_cfg)
     except Exception as e:
         result['news'] = {'status': 'error', 'items': []}
         result['errors'].append('news: ' + str(e)[:160])

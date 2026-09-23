@@ -5,7 +5,14 @@ data/stock_analyzer.db-wal
 
 # 临时/缓存
 *.log
+scripts/_*.txt
+scripts/_*.js
+scripts/_out_*.log
 .DS_Store
+
+# Python 字节码缓存（由 scripts/*.py 运行时生成，非源码）
+__pycache__/
+*.pyc
 
 # 依赖（体积大，按 package.json 重建，勿入库）
 node_modules/

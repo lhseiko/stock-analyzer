@@ -6,7 +6,7 @@
   <title>股票投资分析工作台</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
-  <link rel="stylesheet" href="css/style.css?v=20260922g">
+  <link rel="stylesheet" href="css/style.css?v=20260922l">
   <script>
     // 启动时确保 URL 带 ?v= 参数（用于破坏静态资源缓存）。
     // 重要：版本号以 server.js 的 APP_VERSION 为准，由服务端重定向统一下发，
@@ -743,6 +743,12 @@
                 <div id="deepAnnouncements" class="annc-panel"></div>
               </div>
 
+              <!-- 第25b节：官方公告（巨潮资讯，确定性数据，非 AI） -->
+              <div class="chart-card large">
+                <h3>🏛️ 官方公告（巨潮资讯 · 确定性数据）</h3>
+                <div id="cninfoAnnouncements" class="annc-panel"></div>
+              </div>
+
               <!-- 第4节补充：细分产品/业务毛利率（营收占比 · 成本占比 · 毛利率） -->
               <div class="chart-card large product-margin-card">
                 <h3>🧮 细分产品 / 业务毛利率（营收占比 · 成本占比 · 毛利率）</h3>
@@ -1021,7 +1027,7 @@
   <script src="js/homeHotTopics.js?v=20260915d"></script>
   <script src="js/homeMacro.js?v=20260915d"></script>
   <script src="js/homeRank.js?v=20260915d"></script>
-  <script src="js/app.js?v=20260922g"></script>
+  <script src="js/app.js?v=20260922l"></script>
 
   <!-- AI 设置弹窗（20260902e：双模型 · 联网 / 本地分离） -->
   <div class="ai-modal-overlay hidden" id="aiSettingsModal">

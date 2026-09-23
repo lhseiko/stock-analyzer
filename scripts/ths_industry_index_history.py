@@ -47,9 +47,9 @@ except Exception:
 # ---------------------------------------------------------------
 # 20260911 修复：本机网络阻断 d.10jqka.com.cn:443（ConnectTimeout），
 # 但同一主机 80 端口可达。akshare 源码写死 https://d.10jqka.com.cn/v4/line/...
-# 因此这里对 requests.get 打一个「仅该主机」的 scheme 降级补丁：
-# 先按原样请求 https，失败（超时/连接被拒）再自动改用 http 重试。
-# 只影响该主机的 URL，其他请求（板块列表 q.10jqka.com.cn 等）完全不受影响。
+# 因此这里对 requests.get 打一个「仅该主机」的 scheme 补丁：
+# 优先直连 80（http，可达、不碰被墙的 443，避免每次白等 ~12s 超时），
+# 仅当 80 也失败时回退 443 作兼容。其他请求（板块列表 q.10jqka.com.cn 等）完全不受影响。
 # ---------------------------------------------------------------
 import requests as _requests
 # 本机系统代理(HTTP_PROXY=127.0.0.1:xxxxx)会挂起/阻断同花顺请求（项目既有教训）：
@@ -64,11 +64,13 @@ def _get_with_ths_fallback(url, *args, **kwargs):
     kwargs.setdefault('timeout', 12)
     kwargs['proxies'] = {'http': None, 'https': None}   # 强制直连
     if isinstance(url, str) and url.startswith('https://d.10jqka.com.cn/'):
+        http_url = 'http://' + url[len('https://'):]
         try:
-            return _orig_get(url, *args, **kwargs)
+            # 443 被本机网络阻断：优先直连 80（可达），跳过必然超时的 443 尝试
+            return _orig_get(http_url, *args, **kwargs)
         except Exception:
-            # 443 被本机网络阻断时自动降级 80（同主机 http 可达）
-            return _orig_get('http://' + url[len('https://'):], *args, **kwargs)
+            # 80 万一也被封时回退 443，保留兼容性
+            return _orig_get(url, *args, **kwargs)
     return _orig_get(url, *args, **kwargs)
 
 

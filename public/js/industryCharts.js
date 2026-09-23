@@ -384,7 +384,7 @@ window.IndustryCharts = {
     const titleEl = document.getElementById(`sectorCapTitle-${suffix}`);
     if (titleEl) titleEl.textContent = sectorLabel;
     const dateEl = document.getElementById(`sectorCapDate-${suffix}`);
-    if (dateEl) dateEl.textContent = data.date ? `数据截至 ${data.date}` : '';
+    if (dateEl) dateEl.textContent = data.date ? `数据截至 ${data.date}${data.stale ? '（快照）' : ''}` : '';
 
     const dates = data.dates;
     const total = data.total || [];
@@ -502,7 +502,8 @@ window.IndustryCharts = {
           <div class="sector-cap-summary-item"><span class="sector-cap-summary-label">${stockName}较前一日</span><span class="sector-cap-summary-value ${chgCls(bmChg)}">${chgTxt(bmChg)}</span></div>
           <div class="sector-cap-summary-item"><span class="sector-cap-summary-label">${stockName}占板块</span><span class="sector-cap-summary-value">${lastRatio == null ? '—' : lastRatio.toFixed(2) + '%'}</span></div>
         </div>
-        <div>数据源：${data.source || '东方财富'} · 日线截至 ${data.date || '-'} · 共 ${dates.length} 个交易日 · 计入成分股 ${data.covered || 0}/${data.constituents || data.usedConstituents || 0} 只${missTxt}${capTxt}</div>`;
+        <div>数据源：${data.source || '东方财富'} · 日线截至 ${data.date || '-'} · 共 ${dates.length} 个交易日 · 计入成分股 ${data.covered || 0}/${data.constituents || data.usedConstituents || 0} 只${missTxt}${capTxt}</div>
+        ${data.stale ? `<div class="sector-cap-stale">⚠ ${data.staleReason || '板块成分股数据源暂不可用'}；上图为最近一次成功快照（日线截至 ${data.date || '-'}），非实时，数据源恢复后自动更新。</div>` : ''}`;
     }
   },
 

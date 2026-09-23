@@ -16,10 +16,14 @@
   4) 市场级舆情（二期新增）：东方财富股吧全市场情绪聚合
        - stock_comment_em()  返回全市场 5000+ 只个股的股吧热度
          （综合得分 / 上升 / 关注指数），既给个股舆情，也聚合出市场热度
+  5) 投资者问答（20260923h 新增，个股维度，供「个股近期热点」投资者问答子卡）
+       - 沪市(60/68/900)：上证e互动 sns.sseinfo.com（交易所官方平台，需先定位公司 uid）
+       - 深市(00/30/200)：巨潮互动易 irm.cninfo.com.cn（两步：查 orgId → 取问答列表）
 
 合规说明：以上接口均为 akshare 对公开财经数据接口的二次封装，用于个人研究；
 不直爬雪球/股吧（强反爬 + ToS 风险），仅消费 akshare 聚合结果。
-输出单一 JSON（stdout），四个子模块各自独立 try，失败仅该子模块 ok=false。
+投资者问答仅取交易所官方平台的公开问答（免登录、低频、不采集提问者昵称等个人信息）。
+输出单一 JSON（stdout），各子模块各自独立 try，失败仅该子模块 ok=false。
 
 中文字符串统一 UTF-8 输出，避免 Windows 控制台 GBK 乱码。
 """
@@ -497,12 +501,21 @@ def _th_hot_list():
         out = []
         for it in rows:
             try:
+                rc = it.get('hot_rank_chg')
+                try:
+                    rc = int(rc or 0)
+                except Exception:
+                    rc = 0
+                tag = it.get('tag') or {}
                 out.append({
                     'code': str(it.get('code', '')).strip(),
                     'order': int(it.get('order', 0) or 0),
                     'rate': float(it.get('rate', 0) or 0),
                     'rise': float(it.get('rise_and_fall', 0) or 0),
                     'name': str(it.get('name', '')),
+                    'rankChg': rc,                                                     # 排名变化（正=上升）
+                    'concepts': [str(x) for x in (tag.get('concept_tag') or [])][:6],   # 命中概念标签（同花顺人工运营）
+                    'popTag': str(tag.get('popularity_tag') or ''),                    # 人气标签（如「持续上榜」）
                 })
             except Exception:
                 continue
@@ -520,13 +533,27 @@ def fetch_tonghuashun_hot(symbol, name=''):
     rows = _th_hot_list()
     hit = next((r for r in rows if r['code'] == str(symbol)), None)
     if hit:
+        chg = hit.get('rankChg') or 0
+        if chg > 0:
+            chgTxt = '·较昨日 ↑%d' % chg
+        elif chg < 0:
+            chgTxt = '·较昨日 ↓%d' % (-chg)
+        else:
+            chgTxt = '·较昨日持平'
+        cps = hit.get('concepts') or []
+        cpTxt = ('·概念：' + ' / '.join(cps)) if cps else ''
+        popTag = hit.get('popTag') or ''
+        popTxt = ('·' + popTag) if popTag else ''
         return {
             'ok': True,
             'inHotList': True,
             'rank': hit['order'],
             'heatRate': hit['rate'],
             'risePct': round(hit['rise'], 2),
-            'note': f'同花顺热榜·{hit["name"]}({symbol})·第{hit["order"]}名·热度{hit["rate"]}',
+            'rankChg': chg,
+            'concepts': cps,
+            'popTag': popTag,
+            'note': f'同花顺热榜·{hit["name"]}({symbol})·第{hit["order"]}名·热度{hit["rate"]}{chgTxt}{popTxt}{cpTxt}',
         }
     return {
         'ok': True,
@@ -822,6 +849,399 @@ def fetch_stock_discussion(symbol, name='', max_pages=5):
     }
 
 
+# ---- 投资者问答（沪市：上证e互动 / 深市：巨潮互动易）----
+# 20260923h：个股近期热点「投资者问答」子卡数据源（用户要求：沪市上证e互动 + 深市巨潮互动易，带 uid 缓存）。
+#   · 沪市(60/68/900) → 上交所官方平台「上证e互动」sns.sseinfo.com
+#     按公司查询必须先用公司 uid；公司列表按代码升序分页（每页 32 家），只能倍增 + 二分定位
+#     （实测冷启动 8~17 次请求、6~15s，且个别页会超时）。**uid 必须落盘缓存**——
+#     sentiment.py 每次都是短生命周期子进程，进程内缓存无法跨请求复用，不落盘则每只沪市股每次都重跑二分。
+#     落盘缓存同时记录「总页数」并对二分途经页做全量 code→uid 归档，越用越快（也可用 --warm-uid 一次性预热全表）。
+#   · 深市(00/30/200) → 巨潮「互动易」irm.cninfo.com.cn（两步：queryKeyboardInfo 查 orgId → company/question 取列表）
+# 合规：两平台均为交易所官方/指定信息披露平台的公开问答，免登录、低频访问、不采集提问者昵称等个人信息（asker 不入库）。
+import html as _html
+
+_IRM_UA = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+           '(KHTML, like Gecko) Chrome/124.0 Safari/537.36')
+_IRM_PROXIES = {'http': None, 'https': None}
+_SSE_E_BASE = 'https://sns.sseinfo.com'
+_SSE_COMPANY_END = '没有任何上市公司的信息'
+_SSE_KIND = {'answered': 11, 'questions': 10}
+# 无问答提示：公司维度「暂无回复 / 暂无提问」，全市场翻过末页「暂时没有问答内容」
+_SSE_EMPTY_NOTE = re.compile(r'class="m_feed_note"[^>]*>[^<]*(暂无|暂时没有)[^<]*<')
+_SSE_UID_CACHE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                   'data', 'cache', 'sse_e_uid.json')
+_SSE_UID_TTL = 7 * 24 * 3600      # 公司 uid 7 天内直接复用
+_SSE_PAGES_TTL = 30 * 24 * 3600   # 总页数 30 天内复用（跳过倍增探测）
+_SSE_REQ_TIMEOUT = 8              # 单次请求超时（秒）
+_SSE_DEADLINE = 12                # 沪市 uid 定位 + 取数总预算（秒），超预算则优雅降级
+# ⚠️ 进程级时间预算：本脚本被 lib/sentiment.js 以 execFile timeout=60s 调用，
+# 问答子卡绝不能把整脚本拖过上限——否则连既有涨跌停比/融资余额/个股舆情会被一起杀掉。
+# 故进入本模块时若整脚本已耗时接近上限，直接跳过问答并如实标注，优先保既有因子。
+_SCRIPT_T0 = time.time()
+_IRM_SCRIPT_BUDGET = 40           # 整脚本已耗时超过该秒数则不再发起问答请求
+_SSE_PAGES = {}                   # 单次进程内：页码 → [(code, uid)]
+_SSE_UID_MEM = None               # 落盘缓存的内存副本
+
+
+def _sse_uid_cache_load():
+    global _SSE_UID_MEM
+    if _SSE_UID_MEM is not None:
+        return _SSE_UID_MEM
+    data = None
+    try:
+        with open(_SSE_UID_CACHE_PATH, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception:
+        data = None
+    if not isinstance(data, dict):
+        data = {}
+    if not isinstance(data.get('codes'), dict):
+        data['codes'] = {}
+    if not isinstance(data.get('meta'), dict):
+        data['meta'] = {}
+    _SSE_UID_MEM = data
+    return _SSE_UID_MEM
+
+
+def _sse_uid_cache_save():
+    if _SSE_UID_MEM is None:
+        return
+    try:
+        os.makedirs(os.path.dirname(_SSE_UID_CACHE_PATH), exist_ok=True)
+        with open(_SSE_UID_CACHE_PATH, 'w', encoding='utf-8') as f:
+            json.dump(_SSE_UID_MEM, f, ensure_ascii=False, separators=(',', ':'))
+    except Exception:
+        pass
+
+
+def _irm_retry(fn, attempts=2, delay=0.6, deadline=None):
+    """上证e互动/巨潮互动易偶发 ReadTimeout（实测 600460 单次超时、重试即成功）。
+    两个平台均为单次 1~2 个请求的轻量调用，故只做 1 次短延迟重试，不放大请求量。
+    deadline 不为空时，超预算不再发起重试（保证总耗时可控）。"""
+    last = None
+    for i in range(attempts):
+        if deadline is not None and time.time() > deadline:
+            break
+        try:
+            return fn()
+        except Exception as e:
+            last = e
+            if i < attempts - 1 and (deadline is None or time.time() + delay < deadline):
+                time.sleep(delay)
+    if last is None:
+        raise RuntimeError('超出取数时间预算')
+    raise last
+
+
+def _sse_company_page(page, deadline=None):
+    """上证e互动公司列表第 page 页（每页 32 家，按代码升序）。
+    解析 0 家且该页没有「没有任何上市公司的信息」末页标记 → 判定页面格式已变并抛错（不静默返回空）。"""
+    page = int(page)
+    if page in _SSE_PAGES:
+        return _SSE_PAGES[page]
+    if deadline is not None and time.time() > deadline:
+        raise RuntimeError('上证e互动公司列表定位超出时间预算')
+    r = _irm_retry(lambda: requests.post(
+        _SSE_E_BASE + '/allcompany.do',
+        data={'code': '0', 'order': '2', 'areaId': '0', 'page': page},
+        headers={'User-Agent': _IRM_UA, 'Referer': _SSE_E_BASE + '/'},
+        timeout=_SSE_REQ_TIMEOUT, proxies=_IRM_PROXIES), deadline=deadline)
+    if r.status_code != 200:
+        raise RuntimeError(f'上证e互动公司列表第 {page} 页 HTTP {r.status_code}')
+    try:
+        payload = r.json()
+    except Exception:
+        raise RuntimeError(f'上证e互动公司列表第 {page} 页返回非 JSON')
+    content = payload.get('content') if isinstance(payload, dict) else None
+    if not isinstance(content, str):
+        raise RuntimeError(f'上证e互动公司列表第 {page} 页返回结构变了（没有 content 字符串）')
+    pairs = [(code, uid) for uid, code in
+             re.findall(r"uid=['\"]?(\d+)['\"]?[^>]*>\s*<img[^>]*company/(\d{6})\.png", content)]
+    if not pairs and (page == 1 or _SSE_COMPANY_END not in content):
+        raise RuntimeError(f'上证e互动公司列表第 {page} 页解析出 0 家公司，页面格式可能已变')
+    _SSE_PAGES[page] = pairs
+    # 顺手把本页公司全量写入落盘缓存（二分途经多页 ≈ 免费预热），并记录总页数线索
+    cache = _sse_uid_cache_load()
+    now = time.time()
+    for code, uid in pairs:
+        cache['codes'][code] = {'u': uid, 'ts': now}
+    if pairs:
+        if page > int(cache['meta'].get('maxPage') or 0):
+            cache['meta']['maxPage'] = page
+    else:
+        ep = int(cache['meta'].get('endPage') or 0)
+        if not ep or page < ep:
+            cache['meta']['endPage'] = page
+    cache['meta']['ts'] = now
+    _sse_uid_cache_save()
+    return pairs
+
+
+def _sse_company_uid(code, deadline):
+    """上证e互动公司 uid 定位：落盘缓存命中即返回；否则二分定位（已知总页数时跳过倍增探测）。"""
+    cache = _sse_uid_cache_load()
+    ent = cache['codes'].get(code)
+    if isinstance(ent, dict) and ent.get('u') and \
+            (time.time() - float(ent.get('ts') or 0)) < _SSE_UID_TTL:
+        return str(ent['u'])
+    meta = cache.get('meta') or {}
+    total = 0
+    if (time.time() - float(meta.get('ts') or 0)) < _SSE_PAGES_TTL:
+        mp, ep = int(meta.get('maxPage') or 0), int(meta.get('endPage') or 0)
+        if mp and ep and 0 <= ep - mp <= 2:
+            total = mp
+    if total:
+        low, high = 1, total
+    else:
+        low, high = 1, 1
+        while _sse_company_page(high, deadline):
+            if _sse_company_page(high, deadline)[-1][0] >= code:
+                break
+            low, high = high, high * 2
+    found = None
+    while low <= high:
+        mid = (low + high) // 2
+        pairs = _sse_company_page(mid, deadline)
+        if not pairs or code < pairs[0][0]:
+            high = mid - 1
+        elif code > pairs[-1][0]:
+            low = mid + 1
+        else:
+            for c, u in pairs:
+                if c == code:
+                    found = u
+                    break
+            break
+    if not found:  # 二分区间落空时兜底查缓存（途经页已全量归档）
+        found = (cache['codes'].get(code) or {}).get('u')
+    if not found:
+        raise ValueError(f'上证e互动未收录 {code}（非沪市公司或已退市）')
+    cache['codes'][code] = {'u': found, 'ts': time.time()}
+    _sse_uid_cache_save()
+    return str(found)
+
+
+def _sse_text(fragment):
+    return _html.unescape(re.sub(r'<[^>]+>', '', fragment or '')).strip()
+
+
+def _sse_time(text):
+    m = re.search(r'(\d{4})年(\d{2})月(\d{2})日\s*(\d{2}:\d{2})', text or '')
+    return f'{m.group(1)}-{m.group(2)}-{m.group(3)} {m.group(4)}' if m else ''
+
+
+def _sse_parse_feed(text, code=None):
+    """按「回复块 class="m_feed_detail m_qa"」为界切问题段/回复段
+    （问题框 class 因列表类型而异，不能靠 id 区分问答）。单条解析失败只跳过该条，不整批作废。"""
+    rows = []
+    for chunk in re.split(r'<div class="m_feed_item[^"]*" id="item-', text or '')[1:]:
+        m = re.match(r'(\d+)', chunk)
+        if not m:
+            continue
+        item_id = m.group(1)
+        ask_part, _, answer_part = chunk.partition('class="m_feed_detail m_qa"')
+        q = re.search(r'<div class="m_feed_txt"[^>]*>\s*<a[^>]*>:(.*?)\((\d{6})\)</a>(.*?)</div>',
+                      ask_part, re.S)
+        t = re.search(r'<div class="m_feed_from"[^>]*>\s*<span>([^<]+)</span>', ask_part)
+        if not q or not t:
+            continue
+        if code and q.group(2) != code:
+            continue
+        asker = re.search(r'rel="face"[^>]*?title="([^"]*)"', ask_part, re.S)
+        answer, answer_time = '', ''
+        if answer_part:
+            body = re.search(r'<div class="m_feed_txt"[^>]*>(.*?)</div>', answer_part, re.S)
+            when = re.search(r'<div class="m_feed_from"[^>]*>\s*<span>([^<]+)</span>', answer_part)
+            if body:
+                answer = _sse_text(body.group(1))
+            if when:
+                answer_time = _sse_time(when.group(1))
+        rows.append({
+            'id': item_id, 'code': q.group(2), 'name': _sse_text(q.group(1)),
+            'asker': asker.group(1) if asker else '',
+            'question': _sse_text(q.group(3)),
+            'question_time': _sse_time(t.group(1)),
+            'answer': answer, 'answer_time': answer_time,
+        })
+    return rows
+
+
+def _fetch_sse_e_qa(code, page_size=20):
+    """上证e互动某公司问答：先取「最新已回复」，为空再取「最新提问」（含未回复，本身就是信号）。"""
+    deadline = time.time() + _SSE_DEADLINE
+    uid = _sse_company_uid(code, deadline)
+    rows, kind_used = [], 'answered'
+    for kind in ('answered', 'questions'):
+        if time.time() > deadline:
+            raise RuntimeError('上证e互动取数超出时间预算')
+        r = _irm_retry(lambda: requests.post(
+            _SSE_E_BASE + '/ajax/userfeeds.do',
+            data={'typeCode': 'company', 'type': _SSE_KIND[kind],
+                  'pageSize': int(page_size), 'uid': uid, 'page': 1},
+            headers={'User-Agent': _IRM_UA, 'Referer': _SSE_E_BASE + '/'},
+            timeout=_SSE_REQ_TIMEOUT, proxies=_IRM_PROXIES), deadline=deadline)
+        if r.status_code != 200:
+            raise RuntimeError(f'上证e互动问答 HTTP {r.status_code}')
+        text = (r.content or b'').decode('utf-8', 'replace')
+        rows = _sse_parse_feed(text, code)
+        if rows:
+            kind_used = kind
+            break
+        # 只有明确「暂无 / 暂时没有」才算真没有问答；解析 0 条又无该提示 = 页面结构变了
+        if not _SSE_EMPTY_NOTE.search(text):
+            raise RuntimeError('上证e互动返回既无问答也无「暂无」提示，结构可能已变')
+    return rows, kind_used
+
+
+def _fetch_cninfo_qa(code, page_size=20, page_num=1):
+    """巨潮互动易（深市）两步取数。
+    ⚠️ 第二步参数必须放 query string（POST 但 body 为空），否则 HTTP 400。"""
+    deadline = time.time() + _SSE_DEADLINE
+    r1 = _irm_retry(lambda: requests.post(
+        'https://irm.cninfo.com.cn/newircs/index/queryKeyboardInfo',
+        data={'keyWord': code}, headers={'User-Agent': _IRM_UA},
+        timeout=_SSE_REQ_TIMEOUT, proxies=_IRM_PROXIES), deadline=deadline)
+    if r1.status_code != 200:
+        raise RuntimeError(f'互动易公司检索 HTTP {r1.status_code}')
+    d1 = (r1.json() or {}).get('data') or []
+    if not d1:
+        return []
+    org_id = d1[0].get('secid')
+    if not org_id:
+        return []
+    params = {'_t': 1, 'stockcode': code, 'orgId': org_id, 'pageSize': int(page_size),
+              'pageNum': int(page_num), 'keyWord': '', 'startDay': '', 'endDay': ''}
+    r2 = _irm_retry(lambda: requests.post(
+        'https://irm.cninfo.com.cn/newircs/company/question',
+        params=params, headers={'User-Agent': _IRM_UA},
+        timeout=_SSE_REQ_TIMEOUT, proxies=_IRM_PROXIES), deadline=deadline)
+    if r2.status_code != 200:
+        raise RuntimeError(f'互动易问答列表 HTTP {r2.status_code}')
+    return (r2.json() or {}).get('rows') or []
+
+
+def _cninfo_answered(it):
+    """巨潮「是否已回复」判定：回复正文 or 附件（attachedContent 为空但有 attachedId/attachmentUrl）。
+    不使用 qaStatus（语义未验证，不拿未确认的字段当事实）。"""
+    return bool((it.get('attachedContent') or '').strip()
+                or it.get('attachedId') or it.get('attachmentUrl'))
+
+
+def _irm_market(code):
+    c = str(code or '').strip()
+    if c.startswith(('60', '68', '900')):
+        return 'sh'
+    if c.startswith(('00', '30', '200')):
+        return 'sz'
+    return ''
+
+
+def fetch_irm_qa(symbol, name='', page_size=20):
+    """投资者问答（沪市→上证e互动 / 深市→巨潮互动易）。
+    返回 {ok, posts:[{id,question,answer,askTime,answerTime,asker,answerer,source,replied}],
+          count, answered, source, note[, error]}；任一环节失败 → ok=false 优雅降级，不阻塞其他子模块。
+    注：asker（提问者昵称）仅作展示用途，不写入项目持久化文件。"""
+    code = str(symbol or '').strip()
+    if not code.isdigit() or len(code) != 6:
+        return {'ok': False, 'posts': [], 'count': 0, 'error': 'invalid_symbol',
+                'note': '缺少有效 6 位股票代码，跳过投资者问答'}
+    # 进程级时间预算守卫（见 _IRM_SCRIPT_BUDGET 注释）：整脚本已耗时接近 Node 侧 60s 上限时
+    # 直接跳过问答，避免把既有涨跌停比/融资/舆情因子一起拖死；如实标注原因，不造假数据。
+    _elapsed = time.time() - _SCRIPT_T0
+    if _elapsed > _IRM_SCRIPT_BUDGET:
+        return {'ok': False, 'posts': [], 'count': 0, 'error': 'budget_exceeded',
+                'note': f'本次运行前面已耗时 {int(_elapsed)}s（接近取数上限），已跳过投资者问答；'
+                        f'点「🔄 重新分析」可重试'}
+    market = _irm_market(code)
+    if not market:
+        return {'ok': False, 'posts': [], 'count': 0, 'error': 'unsupported_market',
+                'note': f'{code} 非沪深主板/创业板/科创板，暂无投资者问答数据源'}
+    if market == 'sh':
+        source = '上证e互动'
+        try:
+            rows, kind_used = _fetch_sse_e_qa(code, page_size)
+        except Exception as e:
+            return {'ok': False, 'posts': [], 'count': 0, 'source': source, 'error': str(e)[:140],
+                    'note': f'上证e互动({code})获取失败：{str(e)[:60]}'}
+        posts = []
+        for r in rows:
+            q = (r.get('question') or '').strip()
+            if not q:
+                continue
+            a = (r.get('answer') or '').strip()
+            posts.append({
+                'id': f"sse_{r.get('id')}", 'question': q, 'answer': a,
+                'askTime': r.get('question_time') or '', 'answerTime': r.get('answer_time') or '',
+                'asker': r.get('asker') or '', 'answerer': '上证e互动',
+                'source': source, 'replied': bool(a), 'unansweredList': kind_used == 'questions',
+            })
+    else:
+        source = '巨潮互动易'
+        try:
+            rows = _fetch_cninfo_qa(code, page_size, 1)
+            # 平台按时间倒序，近一页可能全是「尚未回复」的提问（如 002594 近 20 条全未回复），
+            # 故本页无任何已回复问答时再翻一页合并，保证子卡能展示到真正的问答。
+            if rows and not any(_cninfo_answered(r) for r in rows):
+                seen = {str(r.get('indexId') or r.get('id') or '') for r in rows}
+                for r in _fetch_cninfo_qa(code, page_size, 2):
+                    k = str(r.get('indexId') or r.get('id') or '')
+                    if k and k in seen:
+                        continue
+                    rows.append(r)
+        except Exception as e:
+            return {'ok': False, 'posts': [], 'count': 0, 'source': source, 'error': str(e)[:140],
+                    'note': f'巨潮互动易({code})获取失败：{str(e)[:60]}'}
+        posts = []
+        for it in rows:
+            q = (it.get('mainContent') or '').strip()
+            if not q:
+                continue
+            pd = it.get('pubDate')
+            try:
+                ask_time = datetime.fromtimestamp(int(pd) / 1000).strftime('%Y-%m-%d %H:%M') if pd else ''
+            except Exception:
+                ask_time = ''
+            a = (it.get('attachedContent') or '').strip()
+            replied = _cninfo_answered(it)
+            if replied and not a:   # 只有附件、没有正文回复：如实标注，不写成「未回复」
+                a = '（公司以附件形式回复，详见巨潮互动易）'
+            posts.append({
+                'id': f"cninfo_{it.get('indexId') or it.get('id') or ask_time}", 'question': q,
+                'answer': a, 'askTime': ask_time, 'answerTime': '',
+                'asker': '', 'answerer': it.get('attachedAuthor') or '',
+                'source': source, 'replied': replied, 'unansweredList': False,
+            })
+    if not posts:
+        return {'ok': False, 'posts': [], 'count': 0, 'source': source, 'error': 'empty',
+                'note': f'{source}({code})近端无问答（平台只开放近期问答）'}
+    # 已回复优先 + 提问时间倒序（子卡只取前若干条，已获公司回复的信息价值更高）
+    posts.sort(key=lambda p: (1 if p['replied'] else 0, p['askTime'] or ''), reverse=True)
+    answered = sum(1 for p in posts if p['replied'])
+    return {'ok': True, 'posts': posts, 'count': len(posts), 'answered': answered, 'source': source,
+            'note': f'{source}({name or code})·{len(posts)}条问答（已回复{answered}）'}
+
+
+def warm_sse_uid_map(max_pages=200, budget=300):
+    """维护用（不在请求路径调用）：一次性把上证e互动公司 uid 全表落盘。
+    逐页拉取直到「没有任何上市公司的信息」，之后单只沪市股票只需 1 次请求。"""
+    cache = _sse_uid_cache_load()
+    before = len(cache.get('codes') or {})
+    page, deadline = 1, time.time() + budget
+    while page <= max_pages and time.time() < deadline:
+        try:
+            pairs = _sse_company_page(page, deadline)
+        except Exception as e:
+            return {'ok': False, 'pages': page - 1, 'codes': len(cache['codes']),
+                    'added': len(cache['codes']) - before, 'error': str(e)[:160]}
+        if not pairs:
+            break
+        page += 1
+        time.sleep(0.15)  # 礼貌限速：一次性翻全表，间隔 150ms 再取下一页
+    _sse_uid_cache_save()
+    return {'ok': True, 'pages': page - 1, 'codes': len(cache['codes']),
+            'added': len(cache['codes']) - before}
+
+
 def _try_dates(n=5):
     """涨跌停池在非交易日为空，向前回溯 n 个交易日。"""
     out = []
@@ -839,12 +1259,19 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--symbol', default='')
     parser.add_argument('--name', default='')
+    parser.add_argument('--warm-uid', action='store_true',
+                        help='维护用：一次性预热上证e互动公司 uid 缓存后退出（不参与个股分析）')
     args = parser.parse_args()
     symbol = (args.symbol or '').strip()
     name = (args.name or '').strip()
 
+    if args.warm_uid:
+        print(json.dumps({'warmSseUid': warm_sse_uid_map()}, ensure_ascii=False))
+        return
+
     result = {
-        'source': '东方财富·涨跌停池/融资余额/个股新闻/股吧舆情 + 同花顺/雪球公开热度榜 + 同花顺个股讨论',
+        'source': ('东方财富·涨跌停池/融资余额/个股新闻/股吧舆情 + 同花顺/雪球公开热度榜 + 同花顺个股讨论 '
+                   '+ 投资者问答(沪:上证e互动 / 深:巨潮互动易)'),
         'date': _now_str(),
         'breadth': None,
         'margin': None,
@@ -852,6 +1279,7 @@ def main():
         'marketSentiment': None,
         'discussionHeat': None,
         'stockDiscussion': None,
+        'irmQa': None,
         'subOkCount': 0,
     }
 
@@ -911,6 +1339,18 @@ def main():
             result['stockDiscussion'] = {'ok': False, 'posts': [], 'error': str(e)}
     else:
         result['stockDiscussion'] = {'ok': False, 'posts': [], 'error': '缺少有效 6 位股票代码'}
+
+    # 7) 投资者问答（20260923h：沪市→上证e互动 / 深市→巨潮互动易；带 uid 落盘缓存）
+    #    独立 try，失败仅该子卡降级；不计入 subOkCount（纯增益模块，不影响既有全失败判定与总体信号）
+    if symbol and symbol.isdigit() and len(symbol) == 6:
+        try:
+            result['irmQa'] = fetch_irm_qa(symbol, name)
+        except Exception as e:
+            result['irmQa'] = {'ok': False, 'posts': [], 'count': 0, 'error': str(e)[:140],
+                               'note': f'投资者问答获取失败：{str(e)[:60]}'}
+    else:
+        result['irmQa'] = {'ok': False, 'posts': [], 'count': 0, 'error': 'invalid_symbol',
+                           'note': '缺少有效 6 位股票代码，跳过投资者问答'}
 
     result['subOkCount'] = sum(1 for k in ('breadth', 'margin', 'newsSentiment', 'marketSentiment', 'discussionHeat', 'stockDiscussion')
                                if result[k] and result[k].get('ok'))
