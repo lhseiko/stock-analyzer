@@ -5878,8 +5878,13 @@ const App = {
         : `<span class="mo-src">${this.escapeHtml(data.source)}</span>`;
       const noteText = srcNote || data.note;
       const note = noteText ? `<span class="mo-count" title="${this.escapeHtml(noteText)}">口径说明</span>` : '';
+      // 20260924：资金流数据日期 + 收盘口径标注做成可见标签（不再只藏在来源 title 悬浮里），
+      // 让用户一眼知道是上一交易日收盘数据、盘中不更新，消除「卡死」错觉。
+      const dateTag = data.date
+        ? `<span class="mo-src mo-src-date" title="资金流数据日期">截至 ${this.escapeHtml(data.date)}${data.fallbackWarning ? ' · 收盘口径' : ''}</span>`
+        : '';
       return `<div class="mo-row mo-capital-flow ${cls}">
-        <div class="mo-row-head"><span class="mo-flag">💰</span><span class="mo-row-name">${this.escapeHtml(label)}</span>${srcWarn}${note}</div>
+        <div class="mo-row-head"><span class="mo-flag">💰</span><span class="mo-row-name">${this.escapeHtml(label)}</span>${dateTag}${srcWarn}${note}</div>
         <div class="mo-tiles">${body}${renderFiveDay(fiveDay, cls === 'mo-capital-in' ? '近5日净流入最大' : '近5日净流出最大')}</div>
       </div>`;
     };
@@ -5965,7 +5970,10 @@ const App = {
     const renderGroup = (g) => {
       const items = (data[g.key] || []).map(it => {
         const dir = (!it.unavailable && it.changePct > 0) ? 'up' : ((!it.unavailable && it.changePct < 0) ? 'down' : 'flat');
-        let subInfo = fmt(it.price);
+        // 20260924：数据中心报表不提供板块指数点位（price=0）→ 视为缺失回退显示领涨/涨跌家数，
+        // 否则会渲染出 "0.00" 误导用户以为数据卡死。
+        let priceTxt = (it.price && Number(it.price) !== 0) ? fmt(it.price) : '--';
+        let subInfo = priceTxt;
         if (subInfo === '--') {
           if (it.leader) subInfo = `领涨：${it.leader}`;
           else if (it.upCount != null && it.downCount != null) subInfo = `涨${it.upCount} / 跌${it.downCount}`;
@@ -5988,7 +5996,11 @@ const App = {
       const cntTag = (g.key === 'sectorsUp' || g.key === 'sectorsDown') && (data.sectorUpCount != null)
         ? `<span class="mo-count">涨${data.sectorUpCount} · 跌${data.sectorDownCount} · 平${data.sectorFlatCount}</span>`
         : '';
-      const srcTag = g.source ? `<span class="mo-src${g.isEm ? '' : ' mo-src-warn'}">${g.source}</span>${cntTag}` : '';
+      // 20260924：数据中心（收盘口径）通道下，明确标注「截至 X · 收盘口径」，避免用户误以为盘中实时数据卡死。
+      const dateTag = (g.key === 'sectorsUp' || g.key === 'sectorsDown') && data.sectorChannel === 'datacenter' && data.sectorDataDate
+        ? `<span class="mo-src mo-src-date">截至 ${this.escapeHtml(data.sectorDataDate)} · 收盘口径</span>`
+        : '';
+      const srcTag = g.source ? `<span class="mo-src${g.isEm ? '' : ' mo-src-warn'}">${g.source}</span>${cntTag}${dateTag}` : '';
       // 提醒卡片槽位：由 renderMarketOverview 同步从缓存生成，整块刷新时不会丢失
       const reminderSlot = g.reminderSlot ? `<div class="mo-tiles-reminder" data-slot="${g.reminderSlot}">${this.buildReminderHtml(g.reminderSlot)}</div>` : '';
       return `${aiBar}<div class="mo-row ${g.cls}">
