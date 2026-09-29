@@ -6,7 +6,7 @@
   <title>股票投资分析工作台</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
-  <link rel="stylesheet" href="css/style.css?v=20260924a">
+  <link rel="stylesheet" href="css/style.css?v=20260928e">
   <script>
     // 启动时确保 URL 带 ?v= 参数（用于破坏静态资源缓存）。
     // 重要：版本号以 server.js 的 APP_VERSION 为准，由服务端重定向统一下发，
@@ -395,6 +395,7 @@
           <button class="tab" data-tab="capital">💹 资金量能</button>
           <button class="tab" data-tab="journal">⭐ 个股亮点/雷点</button>
           <button class="tab" data-tab="docs">📁 资料库</button>
+          <button class="tab" data-tab="backtest">🎯 策略</button>
         </div>
 
         <!-- Tab content -->
@@ -961,6 +962,38 @@
           <div id="tab-docs" class="tab-panel">
             <div id="docStoreContainer" class="doc-store-container"></div>
           </div>
+
+          <!-- Strategy Backtest Validation tab -->
+          <div id="tab-backtest" class="tab-panel">
+            <div class="bt-wrap">
+              <div class="bt-header">
+                <h2>🎯 策略（虚拟盘风控闸门）</h2>
+                <p class="muted">自动取当前个股前复权日线 → 由代码确定性生成多套交易策略 → 虚拟回测（T+1 次日开盘成交）→ 统计检验与胜率修正 → 给出校验结论与操作建议。全部由代码确定性计算，不构成投资建议。</p>
+              </div>
+              <div class="bt-controls">
+                <span id="btCurrentStock" class="bt-current">当前个股：—</span>
+                <label>回测区间
+                  <select id="btRange">
+                    <option value="1y">近 1 年</option>
+                    <option value="2y">近 2 年</option>
+                    <option value="3y" selected>近 3 年</option>
+                    <option value="5y">近 5 年</option>
+                  </select>
+                </label>
+                <button id="btAuto" class="btn-primary bt-auto">🤖 生成并校验策略</button>
+                <span id="btStatus" class="bt-status"></span>
+              </div>
+              <p class="bt-hint">无需输入任何代码：直接点「🤖 生成并校验策略」，工作台会取当前个股的 <b>60 分钟 K 线</b>（回退日线）按五大类（趋势跟踪 / 均值回归 / 动量轮动 / 价值基本面 / 事件驱动）确定性生成多套策略并逐一校验，给出胜率与操作建议；虚拟交易硬约束 <b>每天最多 1 笔</b>。</p>
+              <details class="bt-advanced">
+                <summary>高级（可选）：用大白话或规则代码自定义策略</summary>
+                <p class="bt-hint">可以直接用中文描述，如：「5日均线上穿20日均线买入，5日均线下穿20日均线卖出」。支持：均线金叉/死叉、MACD、RSI、布林带、收益率 z-score。也可点下面「模板」一键填入，或直接用上方「🤖 生成并校验策略」（无需输入）。中文→规则由<b>确定性代码</b>翻译（同一句话结果永远一致），不调用 AI。</p>
+                <div id="btPresets" class="bt-presets"></div>
+                <textarea id="btDsl" spellcheck="false">5日均线上穿20日均线买入，5日均线下穿20日均线卖出</textarea>
+                <button id="btRun" class="btn-secondary">运行我的策略</button>
+              </details>
+              <div id="btResult"></div>
+            </div>
+          </div>
         </div>
       </div>
     </main>
@@ -1027,7 +1060,8 @@
   <script src="js/homeHotTopics.js?v=20260915d"></script>
   <script src="js/homeMacro.js?v=20260915d"></script>
   <script src="js/homeRank.js?v=20260915d"></script>
-  <script src="js/app.js?v=20260924a"></script>
+  <script src="js/app.js?v=20260928e"></script>
+  <script src="js/backtestUI.js?v=20260928e"></script>
 
   <!-- AI 设置弹窗（20260902e：双模型 · 联网 / 本地分离） -->
   <div class="ai-modal-overlay hidden" id="aiSettingsModal">

@@ -583,6 +583,9 @@ const App = {
         this.loadCapitalFlow();
       } else if (activeTab === 'shareholders') {
         this.loadShareholders();
+      } else if (activeTab === 'backtest') {
+        // 修复「策略页不随个股切换」：切股时若正停留在策略 Tab，立即按新股重算
+        if (typeof BacktestUI !== 'undefined') BacktestUI.open(this.currentSymbol, this.currentData?.name);
       } else if (activeTab === 'journal') {
         if (typeof Notes !== 'undefined') Notes.renderStock(this.currentSymbol, this.currentData?.name);
       } else if (activeTab === 'docs') {
@@ -2769,6 +2772,13 @@ const App = {
         DocStore.setStock(this.currentSymbol, name);
       }
       DocStore.onTabSwitch();
+    }
+
+    // 策略回测校验 tab（20260926a）
+    if (tabName === 'backtest') {
+      if (this.currentSymbol && typeof BacktestUI !== 'undefined') {
+        BacktestUI.open(this.currentSymbol, this.currentData?.name);
+      }
     }
   },
 

@@ -17,6 +17,16 @@
   function cls(v) { return v == null ? 'na' : v >= 60 ? 'good' : v >= 45 ? 'mid' : 'bad'; }
   function dirCls(d) { return d === '涨' ? 'up' : d === '跌' ? 'down' : 'side'; }
 
+  // 20260928c：聚合行（各股）统一展示「最新判断日 + 数据区间」——聚合卡本身没有单一判定日期，
+  // 用「该股全部判断记录的最早/最晚 baseDate」表达覆盖范围与数据新鲜度（两处聚合卡共用同一口径）。
+  function dateLine(minDate, maxDate) {
+    const a = minDate ? String(minDate) : '', b = maxDate ? String(maxDate) : '';
+    if (!b) return '';
+    return a && a !== b
+      ? `📅 最新判断 ${esc(b)} · 数据区间 ${esc(a)} ~ ${esc(b)}`
+      : `📅 判断日 ${esc(b)}`;
+  }
+
   function kpi(label, value, sub, klass) {
     return `<div class="acc-kpi ${klass || ''}"><div class="k-label">${esc(label)}</div><div class="k-value">${value}</div><div class="k-sub">${esc(sub || '')}</div></div>`;
   }
@@ -116,8 +126,9 @@
     document.getElementById('techCount').textContent = `${(d.bySymbol || []).length} 只`;
 
     document.getElementById('techBySymbol').innerHTML = (d.bySymbol || []).length
-      ? `<div class="jd-rec-list">${d.bySymbol.map(s => `
-          <div class="jd-rec">
+      ? `<div class="jd-rec-list">${d.bySymbol.map(s => {
+          const dl = dateLine(s.minDate, s.maxDate);
+          return `<div class="jd-rec">
             <div class="jd-rec-head">
               <span class="jd-rec-sym">${esc(s.symbol)}</span>
               <span class="jd-rec-name">${esc(s.name || '')}</span>
@@ -125,9 +136,11 @@
             </div>
             <div class="jd-rec-body">
               <div class="jd-rec-row">准确率 <b>${pct(s.accuracy)}</b>（${s.correct}/${s.settledCount}） · 涨 ${pct(s.bullRate)} / 跌 ${pct(s.bearRate)} / 震荡 ${pct(s.flatRate)}</div>
+              ${dl ? `<div class="jd-rec-row jd-rec-dates">${dl}</div>` : ''}
               <div class="jd-rec-row"><button class="btn-text jd-view-btn" data-symbol="${esc(s.symbol)}">查看逐条记录 →</button></div>
             </div>
-          </div>`).join('')}</div>`
+          </div>`;
+        }).join('')}</div>`
       : '<div class="data-empty">暂无记录。打开任意个股页「技术面」Tab，即会自动记录一条技术面方向判断。</div>';
   }
 
@@ -165,7 +178,8 @@
     for (const r of d.records || []) {
       if (!r.symbol) continue;
       const k = r.symbol;
-      if (!bySym[k]) bySym[k] = { symbol: k, name: r.name || '', t: 0, c: 0, p: 0 };
+      if (!bySym[k]) bySym[k] = { symbol: k, name: r.name || '', t: 0, c: 0, p: 0, dates: [] };
+      if (r.date) bySym[k].dates.push(String(r.date));
       if (r.settled) { bySym[k].t++; if (r.correct) bySym[k].c++; } else bySym[k].p++;
     }
     const list = Object.values(bySym).sort((x, y) => y.t - x.t);
@@ -173,6 +187,8 @@
     document.getElementById('sdBySymbol').innerHTML = list.length
       ? `<div class="jd-rec-list">${list.map(s => {
           const rate = s.t ? Math.round(s.c / s.t * 1000) / 10 : null;
+          const ds = (s.dates || []).slice().sort();
+          const dl = dateLine(ds[0], ds.slice(-1)[0]);
           return `<div class="jd-rec">
             <div class="jd-rec-head">
               <span class="jd-rec-sym">${esc(s.symbol)}</span>
@@ -181,6 +197,7 @@
             </div>
             <div class="jd-rec-body">
               <div class="jd-rec-row">准确率 <b>${pct(rate)}</b>（${s.c}/${s.t}）</div>
+              ${dl ? `<div class="jd-rec-row jd-rec-dates">${dl}</div>` : ''}
               <div class="jd-rec-row"><button class="btn-text jd-sd-view-btn" data-symbol="${esc(s.symbol)}">查看逐条记录 →</button></div>
             </div>
           </div>`;
