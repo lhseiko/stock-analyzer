@@ -58,6 +58,8 @@ const App = {
     if (typeof Storage !== 'undefined' && Storage.initWatchlist) {
       Storage.initWatchlist().then(() => { this.renderWatchlist(); this.loadWatchlistQuotes(); this.startWatchlistQuoteRefresh(); }).catch(() => {});
     }
+    // 详情页当前个股实时刷新（每 60s，与左侧自选股同源同频，消除「同一只股两个价」）
+    this.startCurrentQuoteRefresh();
     this.renderHistory();
     // Initialize notes (投资心得 / 大盘记录 / 个股亮点雷点)
     if (typeof Notes !== 'undefined') {
@@ -384,12 +386,12 @@ const App = {
     }
 
     container.innerHTML = results.slice(0, 10).map(r => `
-      <div class="search-result-item" data-symbol="${r.symbol || r.code}" data-name="${r.name}">
+      <div class="search-result-item" data-symbol="${this.escapeHtml(r.symbol || r.code)}" data-name="${this.escapeHtml(r.name)}">
         <div>
-          <div class="name">${r.name}</div>
-          <div class="code">${r.code || r.symbol}</div>
+          <div class="name">${this.escapeHtml(r.name)}</div>
+          <div class="code">${this.escapeHtml(r.code || r.symbol)}</div>
         </div>
-        <span class="market-tag">${r.market || ''}</span>
+        <span class="market-tag">${this.escapeHtml(r.market || '')}</span>
       </div>
     `).join('');
 
@@ -1829,6 +1831,30 @@ const App = {
     }
   },
 
+  // 仅更新头部「价格 / 涨跌幅 / 行情日期+时间」——打开页面时渲染与 60s 实时刷新共用同一段逻辑，
+  // 保证头部价格口径单点，不会出现「渲染」与「刷新」两套格式。
+  applyLiveQuote(quote, market) {
+    if (!quote) return;
+    const priceEl = document.getElementById('stockPrice');
+    const changeEl = document.getElementById('stockChange');
+    const dateEl = document.getElementById('stockDate');
+
+    if (priceEl) priceEl.textContent = quote.price ? (market === 'US' ? '$' : '¥') + Storage.formatNumber(quote.price) : '--';
+
+    if (changeEl && quote.changePct !== undefined) {
+      const isUp = quote.change >= 0;
+      changeEl.textContent = `${isUp ? '+' : ''}${Storage.formatNumber(quote.change)} (${Storage.formatPercent(quote.changePct)})`;
+      changeEl.className = 'stock-change ' + (isUp ? 'up' : 'down') + this.boldClass(quote.changePct);
+      if (priceEl) priceEl.style.color = isUp ? 'var(--red)' : 'var(--green)';
+    }
+
+    // 标注行情日期/时间，方便了解这是哪一刻的股价
+    if (dateEl) {
+      const d = quote.date || '';
+      dateEl.textContent = d ? (quote.time ? `${d} ${quote.time}` : d) : '—';
+    }
+  },
+
   renderStockHeader(data) {
     const { quote, name, symbol, market } = data;
 
@@ -1837,24 +1863,7 @@ const App = {
     document.getElementById('stockMarket').textContent = this.marketLabel(market);
 
     if (quote) {
-      const priceEl = document.getElementById('stockPrice');
-      const changeEl = document.getElementById('stockChange');
-      const dateEl = document.getElementById('stockDate');
-
-      priceEl.textContent = quote.price ? (market === 'US' ? '$' : '¥') + Storage.formatNumber(quote.price) : '--';
-
-      if (quote.changePct !== undefined) {
-        const isUp = quote.change >= 0;
-        changeEl.textContent = `${isUp ? '+' : ''}${Storage.formatNumber(quote.change)} (${Storage.formatPercent(quote.changePct)})`;
-        changeEl.className = 'stock-change ' + (isUp ? 'up' : 'down') + this.boldClass(quote.changePct);
-        priceEl.style.color = isUp ? 'var(--red)' : 'var(--green)';
-      }
-
-      // 标注行情日期，方便了解这是哪一天的股价
-      if (dateEl) {
-        const d = quote.date || '';
-        dateEl.textContent = d ? (quote.time ? `${d} ${quote.time}` : d) : '—';
-      }
+      this.applyLiveQuote(quote, market);
 
       // 标注财务数据报告期：PE/PB 等所用的每股收益、每股净资产来自该报告期
       const finEl = document.getElementById('stockFinDate');
@@ -6445,6 +6454,74 @@ const App = {
       }));
       this.renderWatchlist();
     }, 60000);
+  },
+
+  // ---- 详情页「当前个股」实时刷新（每 60s，与左侧自选股同源 / 同频）----
+  // 目的：详情页头部价格、关键指标网格、资金量能·量价卡此前只在打开该股时取一次（快照），
+  // 而左侧自选股每 60s 刷新 → 时间越久两边越不一致（同一只股两个价）。此定时器把详情页
+  // 拉回实时口径：仅刷新「行情派生」展示；技术面/基本面等属分析快照，不在本定时器内刷新。
+  startCurrentQuoteRefresh() {
+    if (this._curQuoteTimer) return;
+    this._curQuoteTimer = setInterval(() => { this.refreshCurrentQuoteTick(); }, 60000);
+  },
+
+  refreshCurrentQuoteTick() {
+    if (document.hidden) return;                              // 后台标签页不刷新
+    if (!this.currentSymbol || !this.currentData) return;     // 未选股（首页）不刷新
+    const dash = document.getElementById('dashboard');
+    if (!dash || dash.classList.contains('hidden')) return;   // 详情页不可见（回到首页）时不刷新
+    this.refreshCurrentQuote();
+  },
+
+  async refreshCurrentQuote() {
+    const symbol = this.currentSymbol;
+    if (!symbol || !this.currentData || this.currentData.symbol !== symbol) return;   // 仅对当前个股的快照做刷新
+    try {
+      const resp = await fetch(`/api/quote/${encodeURIComponent(symbol)}`, { cache: 'no-store' });
+      if (!resp.ok) return;
+      const q = await resp.json();
+      if (!q || q.price == null) return;
+      if (symbol !== this.currentSymbol || this.currentData.symbol !== symbol) return;   // 期间已切股：丢弃本次结果，避免串股
+
+      // 把最新行情合并进当前分析快照的 quote：覆盖行情字段（价格/涨跌/高低/换手/量额/PE/PB…），
+      // 保留分析期其余字段（reportDate/reportPeriod/roeTtm 等），保证格网与头部同步、无新差异。
+      const prevQuote = this.currentData.quote || {};
+      const merged = Object.assign({}, prevQuote, q);
+      if (q.fundamentals) {
+        merged.fundamentals = Object.assign({}, prevQuote.fundamentals || {}, q.fundamentals);
+      }
+      this.currentData = Object.assign({}, this.currentData, { quote: merged });
+
+      this.applyLiveQuote(merged, this.currentData.market);
+      try { this.renderKeyMetrics(this.currentData); } catch (e) { console.error('[实时刷新] 关键指标渲染失败:', e); }
+
+      // 资金量能·量价卡（量价信号/今日涨跌/今日量比…）静默刷新（仅在该股资金数据已加载时）
+      if (this.capitalDataLoaded && this.capitalLoadedSymbol === symbol) {
+        this.refreshCapitalFlowSilent();
+      }
+    } catch (e) {
+      // 静默失败：保留上一次数值，不打扰用户
+    }
+  },
+
+  // 静默刷新资金量能「量价卡」：只更新文本卡片（量价信号 / 今日涨跌 / 今日量比 / 20日… / 量能热度）
+  // 与资金热度评分；不重建 ECharts 图表，避免每 60s 一次全量重绘造成闪烁。
+  async refreshCapitalFlowSilent() {
+    const symbol = this.currentSymbol;
+    if (!symbol) return;
+    try {
+      const name = this.currentData?.name || '';
+      const resp = await fetch(`/api/capital-flow/${encodeURIComponent(symbol)}?name=${encodeURIComponent(name)}`, { cache: 'no-store' });
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (!data || data.error) return;
+      if (symbol !== this.currentSymbol) return;
+      this.capitalData = data;
+      if (typeof CapitalCharts !== 'undefined') {
+        try { CapitalCharts.renderVolumePrice(data.volumeIndicators); } catch (e) { console.error('[实时刷新] 量价卡渲染失败:', e); }
+      }
+      try { this.renderCapitalScore(data); } catch (e) { console.error('[实时刷新] 资金评分渲染失败:', e); }
+    } catch (e) { /* 静默：保留上一次数值 */ }
   },
 
   // 涨跌幅绝对值 ≥10% 时返回加粗类（如涨停/跌停），其余为空

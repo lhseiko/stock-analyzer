@@ -144,7 +144,7 @@ router.post('/api/ai/valuation', async (req, res) => {
 // 20260908：个股专属估值模型（确定性计算，无 LLM 参与）。
 // 20260909l：闸门从硬编码 601318 改为 hasDedicatedValuation 动态判定（平安/圣湘/海天/士兰/华安/长江/麦捷/电气风电/券商）；
 // 本端点同步计算实现仍仅 601318 平安——其余专属股结果统一走 /api/ai/valuation/:symbol 的 analyzeValuation 专属分支。
-router.get('/api/valuation/model/:symbol', (req, res) => {
+router.get('/api/valuation/model/:symbol', async (req, res) => {
   try {
     const symbol = String(req.params.symbol || '').trim().replace(/^(sh|sz|bj)/i, '');
     const { hasDedicatedValuation } = require('../lib/ai/valuation');
@@ -158,10 +158,12 @@ router.get('/api/valuation/model/:symbol', (req, res) => {
     const cfg = paModel.loadInputs();
     if (!cfg) return res.json({ ok: false, error: 'NO_INPUTS', message: '缺少输入配置 data/valuation/601318.json' });
     // 现价跟随实时行情（唯一随时间变化的输入；其余为财报锁死值）
+    // 20261001a：原 require('../lib/quoteService') 是死引用（该模块不存在），实时价从未生效过；
+    // 改走 lib/stockData.getQuote（与 lib/ai/valuation.js 同源），getQuote 为 async 需 await。
     try {
-      const qt = require('../lib/quoteService');
-      if (qt && typeof qt.getQuote === 'function') {
-        const q = qt.getQuote('sh601318');
+      const { getQuote } = require('../lib/stockData');
+      if (typeof getQuote === 'function') {
+        const q = await getQuote('sh601318');
         const px = q && (q.price != null ? q.price : (q.latest && q.latest.price));
         if (px) cfg.inputs.P = Object.assign({}, cfg.inputs.P, { value: px, source: '实时行情' });
       }

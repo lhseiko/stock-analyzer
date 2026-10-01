@@ -158,3 +158,37 @@
 - First-Seen: 2026-09-28
 - Last-Seen: 2026-09-28
 - See Also: LRN-20260922（sector 成分股 push2 全通道 reset → 多主机轮询 + stale 快照回退，同一类「单一源失效」韧性模式）
+
+---
+
+## [LRN-20260930-003] correction / best_practice
+
+**Logged**: 2026-09-30T09:55:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: backend
+
+### Summary
+首页「今日财经热点」新闻→板块关联误判：**「风电设备**板块表现活跃」被误归「医疗器械」**。根因是医疗器械词表把**裸通用词「设备」**当专属词（×3 分），而「风电**设备**」命中该子串。这是同类「泛词抢答」第 **3** 次复发（① 消费→食品饮料 ② 证券→券商 ③ 设备→医疗器械）。
+
+### Details
+- 复现：`analyzeNewsImpact('风电设备板块表现活跃 威力传动涨超10%', ...)` 旧输出 `医疗器械 / 迈瑞医疗、鱼跃医疗 / up`（打分 3，专属词 1）。
+- 根因：`NEWS_SECTOR_MAP` 医疗器械条 `exclusive: [...,'设备',...]`。打分制里 exclusive 命中 ×3，「设备」作为所有「…设备」产业名（风电设备/电力设备/机械设备/光伏设备）的**公共后缀**，在 `text.includes('设备')` 下必然跨行业命中 → 3 分压过真正板块（电力设备仅凭非专属词「风电」得 1 分）。
+- 同类链：① 20260914i「消费」；② 20260923k「证券」（证券交易所=市场基础设施名词）；③ 本次「设备」。共性=**裸通用词 + 子串匹配**。
+- 影响面：`analyzeNewsImpact` 同时被 `/api/hot-news`（首页卡片 + `recordImpact` 自学习库）与 `lib/eventEngine.js`（事件池）消费 → 一条误判会**双向污染**（卡片展示 + 事件权重 + 自学习库统计）。
+
+### Suggested Action（已实施）
+1. **数据修复**：医疗器械词表删除裸词「设备」，改为**医疗专属完整词**「医疗设备/医用设备/医疗仪器」；医药生物 `exclude` 里的「设备」同步改为「医疗设备」；电力设备把「风电」「风电设备」提升为 `exclusive`（3 分稳胜）。
+2. **系统性防护（防同类复发）**：新增 `GENERIC_TOKENS` 裸通用词集（设备/市场/行业/板块/产业/产品/服务/材料/技术/系统/平台/项目/业务），模块加载时对所有条目的 `keywords/exclusive/exclude` **整词过滤剔除**并 `console.warn`。按整词相等判断，故「医疗设备」「医疗服务」等复合词不受误伤。
+3. **守卫**：新增 `scripts/test_news_sector_impact.js`（15/0）——覆盖三类历史事故回归 + 正常归属不破坏 + 裸通用词结构性守卫。
+
+### Metadata
+- Source: user_feedback（用户截图 2026-09-30 09:47「风电设备…」被标「▲医疗器械 迈瑞医疗、鱼跃医疗」+ 挂载 @skill:selfimproving / @skill:proactive-agent / @skill:a-stock-data）
+- Reproducible: yes
+- Related Files: lib/newsSectorImpact.js (NEWS_SECTOR_MAP / GENERIC_TOKENS / pickSector), scripts/test_news_sector_impact.js, server.js (/api/hot-news), lib/eventEngine.js
+- Tags: news-sector-impact, generic-token, cross-sector-misattribution, substring-match
+- Pattern-Key: news.sector_generic_token | harden.sector_token_sanitizer
+- Recurrence-Count: 3
+- First-Seen: 2026-09-14
+- Last-Seen: 2026-09-30
+- See Also: 20260914i（消费→食品饮料，打分制+强排除）, 20260923k（证券→券商，「证券」降泛词 + 境外闸门重写）

@@ -27,7 +27,7 @@ const ShareholderCharts = {
 
     const summary = this._buildSummary(d);
     const holderCard = d.holderCountTrendAvailable
-      ? `<div class="chart-card large"><h3>👥 股东户数走势</h3><div id="shHolderTrend" class="chart"></div></div>`
+      ? `<div class="chart-card large"><h3>👥 股东户数走势${d.priceTrendAvailable ? '<label class="sh-toggle"><input type="checkbox" id="shHolderPriceToggle" checked> 叠加股价走势</label>' : ''}</h3><div id="shHolderTrend" class="chart"></div></div>`
       : `<div class="chart-card large"><h3>👥 股东户数走势</h3><div class="sh-empty">暂无股东户数数据（F10 未披露或接口暂不可用）</div></div>`;
 
     const instHoldCard = d.institutionHoldingsAvailable
@@ -60,7 +60,7 @@ const ShareholderCharts = {
     }
 
     if (d.holderCountTrendAvailable && d.holderCountTrend?.length) {
-      this._renderHolderTrend(d.holderCountTrend);
+      this._renderHolderTrend(d.holderCountTrend, d.priceTrend);
     }
     if (d.institutionHoldingsAvailable && d.institutionHoldings?.length) {
       this._renderInstHoldTrend(d.institutionHoldings);
@@ -124,38 +124,82 @@ const ShareholderCharts = {
     el.textContent = text;
   },
 
-  _renderHolderTrend(trend) {
+  _renderHolderTrend(trend, priceTrend) {
     const chart = this._init('shHolderTrend');
     if (!chart) return;
-    const dates = trend.map(t => t.date);
-    const nums = trend.map(t => t.holderNum);
-    const ratios = trend.map(t => t.changeRatio);
-    const z = this._zoomFor(trend.length);
+    this._holderChart = chart;
+    // 20260929a：切换「叠加股价走势」后只重绘图表，不重建 DOM
+    const hasPrice = Array.isArray(priceTrend) && priceTrend.some(p => p && p.close != null);
+    this._holderState = { trend, priceTrend, hasPrice, showPrice: hasPrice };
+    this._renderHolderChart();
+
+    const toggleEl = document.getElementById('shHolderPriceToggle');
+    if (toggleEl) {
+      toggleEl.checked = this._holderState.showPrice;
+      toggleEl.addEventListener('change', () => {
+        this._holderState.showPrice = toggleEl.checked;
+        this._renderHolderChart();
+      });
+    }
+
+    const latest = trend[trend.length - 1];
+    const priceNote = hasPrice ? ' · 股价取各报告期收盘价（与户数同坐标对比）' : '';
+    this._setSource('shHolderTrend', `数据来源：东方财富 F10 · 股东户数（${latest.date}）· 共 ${trend.length} 个报告期${priceNote}`);
+  },
+
+  // 根据当前开关状态重绘（支持动态增减「股价」轴/系列）
+  _renderHolderChart() {
+    const chart = this._holderChart;
+    const st = this._holderState;
+    if (!chart || !st) return;
+    const dates = st.trend.map(t => t.date);
+    const nums = st.trend.map(t => t.holderNum);
+    const ratios = st.trend.map(t => t.changeRatio);
+    const priceCloses = st.priceTrend
+      ? st.priceTrend.map(p => (p && p.close != null ? p.close : null))
+      : [];
+    const showPrice = st.showPrice && st.hasPrice;
+    const z = this._zoomFor(st.trend.length);
+
+    const yAxes = [
+      { type: 'value', name: '户数', axisLabel: { formatter: v => (v / 1e4).toFixed(1) + '万' } },
+      { type: 'value', name: '环比%', position: 'right' },
+    ];
+    if (showPrice) {
+      yAxes.push({
+        type: 'value', name: '股价', position: 'right', offset: 55,
+        axisLabel: { formatter: v => v.toFixed(2) }, splitLine: { show: false },
+      });
+    }
+
+    const series = [
+      {
+        name: '股东户数', type: 'bar', data: nums,
+        itemStyle: { color: '#5470c6' }, barWidth: '50%',
+      },
+      {
+        name: '环比变化%', type: 'line', yAxisIndex: 1, smooth: true, data: ratios,
+        lineStyle: { width: 2, color: '#cdab74' }, itemStyle: { color: '#cdab74' },
+      },
+    ];
+    const legendData = ['股东户数', '环比变化%'];
+    if (showPrice) {
+      series.push({
+        name: '股价', type: 'line', yAxisIndex: 2, smooth: true, data: priceCloses,
+        lineStyle: { width: 2, color: '#F6465D', type: 'dashed' }, itemStyle: { color: '#F6465D' },
+      });
+      legendData.push('股价');
+    }
 
     chart.setOption({
       tooltip: { trigger: 'axis' },
-      legend: { data: ['股东户数', '环比变化%'], top: 0 },
-      grid: { left: 60, right: 60, top: 40, bottom: 50 },
+      legend: { data: legendData, top: 0 },
+      grid: { left: 60, right: showPrice ? 110 : 60, top: 40, bottom: 50 },
       xAxis: { type: 'category', data: dates, axisLabel: { rotate: 30 } },
-      yAxis: [
-        { type: 'value', name: '户数', axisLabel: { formatter: v => (v / 1e4).toFixed(1) + '万' } },
-        { type: 'value', name: '环比%', position: 'right' },
-      ],
+      yAxis: yAxes,
       dataZoom: [{ type: 'inside', start: z.start, end: z.end }, { type: 'slider', height: 18, bottom: 12, start: z.start, end: z.end }],
-      series: [
-        {
-          name: '股东户数', type: 'bar', data: nums,
-          itemStyle: { color: '#5470c6' }, barWidth: '50%',
-        },
-        {
-          name: '环比变化%', type: 'line', yAxisIndex: 1, smooth: true, data: ratios,
-          lineStyle: { width: 2, color: '#cdab74' }, itemStyle: { color: '#cdab74' },
-        },
-      ],
-    });
-
-    const latest = trend[trend.length - 1];
-    this._setSource('shHolderTrend', `数据来源：东方财富 F10 · 股东户数（${latest.date}）· 共 ${trend.length} 个报告期`);
+      series,
+    }, { replaceMerge: ['yAxis', 'series'] });
   },
 
   _renderTopHoldersPie(holders) {

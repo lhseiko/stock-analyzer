@@ -3383,6 +3383,10 @@ body {
 .sh-source { margin-top: 8px; font-size: 11px; color: var(--text-muted); line-height: 1.5; }
 .sh-source::before { content: 'ℹ️ '; }
 
+/* 20260929a：股东户数走势「叠加股价走势」开关 */
+.sh-toggle { font-size: 12px; font-weight: 400; color: var(--text-secondary); margin-left: 10px; cursor: pointer; user-select: none; vertical-align: middle; }
+.sh-toggle input { width: 13px; height: 13px; vertical-align: middle; margin-right: 4px; cursor: pointer; accent-color: #F6465D; }
+
 /* ===== 当日涨跌判断卡片 ===== */
 .sameday-card { border: 1px solid var(--border); }
 .sameday-card .score-label { display: flex; align-items: center; flex-wrap: wrap; }
@@ -4352,6 +4356,11 @@ body { display: flex; flex-direction: column; }
 .topbar-brand {
   font-size: 13px; font-weight: 700; color: var(--text-primary);
   white-space: nowrap; flex-shrink: 0;
+  display: flex; align-items: center; gap: 6px;
+}
+.topbar-brand .brand-logo {
+  width: 20px; height: 20px; border-radius: 5px; flex-shrink: 0;
+  display: block;
 }
 .topbar-indices {
   display: flex; align-items: center; gap: 20px;
