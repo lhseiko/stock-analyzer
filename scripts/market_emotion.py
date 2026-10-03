@@ -97,12 +97,16 @@ def fetch_breadth():
 
 # ---------- 3) 融资余额（沪深合计，亿元）----------
 def fetch_margin():
+    # 沪深交易所发布节奏不同：常出现「最新日期只有单边有数」（如沪已出 09-30、深仍停在 09-29）。
+    # 若盲目按日期求和，最新日会被腰斩 → 5 日变动被算成虚假暴跌（实测曾算成 -50.47%）。
+    # 修复：只用「沪深双边都有数」的完整日期，单边滞后的最新日不参与，并显式标注（不静默丢弃）。
     sh = ak.macro_china_market_margin_sh()
     sz = ak.macro_china_market_margin_sz()
-    by_date = {}
-    for df in (sh, sz):
+
+    def _to_map(df):
+        m = {}
         if df is None or len(df) == 0:
-            continue
+            return m
         col = None
         for c in df.columns:
             if "融资余额" in str(c):
@@ -114,25 +118,39 @@ def fetch_margin():
                 dcol = c
                 break
         if col is None or dcol is None:
-            continue
+            return m
         for _, row in df.iterrows():
             v = to_float(row.get(col))
             if v is None:
                 continue
             d = row.get(dcol)
             ds = d.strftime("%Y-%m-%d") if hasattr(d, "strftime") else str(d)[:10]
-            by_date[ds] = by_date.get(ds, 0.0) + v / 1e8  # 元 → 亿元
-    if not by_date:
-        raise RuntimeError("融资余额为空")
-    series = sorted(by_date.items())
-    dates = [d for d, _ in series]
-    vals = [v for _, v in series]
+            m[ds] = v / 1e8  # 元 → 亿元
+        return m
+
+    sh_map, sz_map = _to_map(sh), _to_map(sz)
+    # 只保留沪深双边都有数的完整日期（杜绝单边缺失导致的虚假变动）
+    dates = sorted(d for d in sh_map if d in sz_map)
+    if not dates:
+        raise RuntimeError("融资余额无沪深双边完整日期")
+    vals = [sh_map[d] + sz_map[d] for d in dates]
     latest = vals[-1]
     prev = vals[-2] if len(vals) >= 2 else None
     idx5 = max(0, len(vals) - 6)
     base5 = vals[idx5] if len(vals) >= 6 else None
     chg1 = ((latest - prev) / prev * 100) if prev else None
     chg5 = ((latest - base5) / base5 * 100) if base5 else None
+    # 单边滞后的最新日期（若有）：显式标注，供下游/界面说明
+    newest_any = max(list(sh_map) + list(sz_map))
+    partial_note = None
+    if newest_any != dates[-1]:
+        if newest_any in sh_map and newest_any not in sz_map:
+            side = "沪市已出、深市滞后"
+        elif newest_any in sz_map and newest_any not in sh_map:
+            side = "深市已出、沪市滞后"
+        else:
+            side = "单边缺失"
+        partial_note = f"最新单边日期 {newest_any}（{side}）未计入，采用最新双边完整日 {dates[-1]}"
     return {
         "latest": round(latest, 1),
         "prev": round(prev, 1) if prev is not None else None,
@@ -140,7 +158,8 @@ def fetch_margin():
         "change5Pct": round(chg5, 3) if chg5 is not None else None,
         "date": dates[-1],
         "base5Date": dates[idx5] if base5 is not None else None,
-        "source": "沪深交易所·融资余额",
+        "partialNote": partial_note,
+        "source": "沪深交易所·融资余额（仅计双边完整日期）",
     }
 
 

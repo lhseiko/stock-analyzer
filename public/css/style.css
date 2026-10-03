@@ -102,7 +102,7 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html, body { height: 100%; overflow: hidden; }
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
+  font-family: 'Segoe UI Variable Text', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
   background: var(--bg-primary);
   color: var(--text-primary);
   font-size: 14px;
@@ -936,33 +936,39 @@ body {
   flex-wrap: wrap;
 }
 
-.chart-controls { display: flex; gap: 6px; }
+/* 时间范围 / 周期选择器：Robinhood 式胶囊分组（内凹浅底 + 圆角胶囊按钮） */
+.chart-controls {
+  display: inline-flex; gap: 2px; align-items: center;
+  padding: 3px;
+  background: rgba(255,255,255,0.035);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 999px;
+}
 
-.range-btn {
-  padding: 5px 12px;
-  border: 1px solid var(--border);
-  background: var(--bg-hover);
-  border-radius: var(--radius-sm);
+.range-btn, .period-btn, .dy-toggle-btn {
+  padding: 4px 13px;
+  border: none;
+  background: transparent;
+  border-radius: 999px;
   cursor: pointer;
   font-size: 12px;
+  font-weight: 500;
   color: var(--text-secondary);
-  transition: all 0.18s;
+  transition: color 0.16s, background 0.16s, box-shadow 0.16s;
 }
-.range-btn.active, .range-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+.range-btn:hover, .period-btn:hover, .dy-toggle-btn:hover {
+  background: rgba(255,255,255,0.07);
+  color: var(--text-primary);
+}
+.range-btn.active, .period-btn.active, .dy-toggle-btn.active {
+  background: var(--accent);
+  color: #0B0E11;
+  font-weight: 600;
+  box-shadow: 0 2px 10px rgba(240,185,123,0.30);
+}
 
-/* 分红金额柱状图 每次/每年/每股 分段切换按钮 */
-.dy-toggle { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
-.dy-toggle-btn {
-  padding: 5px 12px;
-  border: 1px solid var(--border);
-  background: var(--bg-hover);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-size: 12px;
-  color: var(--text-secondary);
-  transition: all 0.18s;
-}
-.dy-toggle-btn.active, .dy-toggle-btn:hover { background: var(--accent); color: var(--bg-primary, #0B0E11); border-color: var(--accent); }
+/* 分红金额柱状图 每次/每年/每股 分段切换：胶囊分组与图表控件统一 */
+.dy-toggle { display: inline-flex; gap: 2px; align-items: center; padding: 3px; margin-bottom: 10px; background: rgba(255,255,255,0.035); border: 1px solid rgba(255,255,255,0.05); border-radius: 999px; flex-wrap: wrap; }
 
 .chart-grid {
   display: grid;
@@ -4424,16 +4430,8 @@ body { display: flex; flex-direction: column; }
 .wl-empty { color: var(--text-secondary); font-size: 12px; padding: 10px 4px; }
 .wl-loading { color: var(--text-secondary); font-size: 11px; padding: 6px 4px; }
 
-/* ---- 中栏图表：周期切换 ---- */
+/* ---- 中栏图表：周期切换（按钮样式统一见 .range-btn/.period-btn 胶囊规则） ---- */
 .chart-header-wrap { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; }
-.period-controls, .range-controls { display: flex; gap: 4px; }
-.period-btn {
-  background: none; border: 1px solid transparent; color: var(--text-secondary);
-  font-size: 12px; padding: 4px 10px; border-radius: var(--radius-sm); cursor: pointer;
-  transition: color .15s, border-color .15s, background .15s;
-}
-.period-btn:hover { color: var(--text-primary); }
-.period-btn.active { color: var(--accent); border-color: var(--accent); background: var(--accent-light); }
 
 /* ---- 响应式 ---- */
 @media (max-width: 1024px) {
@@ -4891,3 +4889,10 @@ body { display: flex; flex-direction: column; }
 .bt-preset{background:#0D1117;border:1px solid #30363D;color:#C9D1D9;border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer;transition:all .18s;}
 .bt-preset:hover{border-color:#F0B97B;color:#F0B97B;background:rgba(240,185,123,.08);}
 .bt-preset:active{transform:scale(.97);}
+
+/* ===== 数据诚实原则·状态徽标（20261002b） ===== */
+.ds-badge{display:inline-block;font-size:12px;line-height:1.5;padding:2px 9px;border-radius:10px;margin:2px 0;font-weight:600;}
+.ds-fresh{background:rgba(14,203,129,.14);color:#0ECB81;border:1px solid rgba(14,203,129,.35);}
+.ds-stale{background:rgba(240,185,123,.14);color:#F0B97B;border:1px solid rgba(240,185,123,.4);}
+.ds-failed{background:rgba(246,72,92,.14);color:#F6465D;border:1px solid rgba(246,72,92,.4);}
+.dy-note.dy-failed{color:#F6465D;font-weight:600;border-left:3px solid #F6465D;padding:6px 10px;background:rgba(246,72,92,.08);border-radius:6px;}

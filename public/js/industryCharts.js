@@ -779,7 +779,8 @@ window.IndustryCharts = {
         delete Charts.instances[key];
       }
       const doInit = (opt, k) => {
-        const chart = echarts.init(el, 'softDark', { renderer: 'canvas' });
+        let chart = echarts.init(el, 'softDark', { renderer: 'canvas' });
+        if (window.SA_CHART) chart = SA_CHART.attach(chart); // setOption 自动过视觉修补
         chart.setOption(opt);
         el._chart = chart;
         if (window.Charts && Charts.instances) Charts.instances[k] = chart;

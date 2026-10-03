@@ -19,8 +19,10 @@ const DeepCharts = {
     let el = document.getElementById(id);
     if (!el) return null;
     if (this.instances[id]) { try { this.instances[id].dispose(); } catch {} }
-    this.instances[id] = echarts.init(el, 'softDark', { renderer: 'canvas' });
-    return this.instances[id];
+    let chart = echarts.init(el, 'softDark', { renderer: 'canvas' });
+    if (window.SA_CHART) chart = SA_CHART.attach(chart); // setOption 自动过视觉修补
+    this.instances[id] = chart;
+    return chart;
   },
 
   // 仅对可见容器中的图表执行 resize（折叠分组展开时修正尺寸，隐藏容器跳过）
@@ -712,8 +714,21 @@ const DeepCharts = {
     const analysisEl = document.getElementById('deepDivYieldAnalysis');
     if (!chart) return;
     if (!data || !data.series || data.series.length === 0) {
-      const note = (data && data.note) ? data.note : '暂无可用的股息率数据';
-      if (analysisEl) analysisEl.innerHTML = `<div class="dy-note dy-empty">⚠️ ${note}</div>`;
+      let html;
+      if (data && data.success === false) {
+        // 诚实原则：获取失败必须明示，绝不拿空值/零值伪装
+        if (data.errorType === 'NO_DATA') {
+          html = `<div class="dy-note dy-empty">⚠️ ${data.note || '暂无可用的分红或价格数据'}</div>`;
+        } else {
+          const reason = data.reason || data.error || '数据获取失败';
+          const src = data.source ? `｜来源：${data.source}` : '';
+          html = `<div class="dy-note dy-failed">⚠ 股息率数据获取失败：${reason}${src}｜请稍后重试</div>`;
+        }
+      } else {
+        const note = (data && data.note) ? data.note : '暂无可用的股息率数据';
+        html = `<div class="dy-note dy-empty">⚠️ ${note}</div>`;
+      }
+      if (analysisEl) analysisEl.innerHTML = html;
       return;
     }
     const years = data.series.map(d => d.year);

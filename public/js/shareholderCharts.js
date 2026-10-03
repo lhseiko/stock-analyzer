@@ -15,8 +15,10 @@ const ShareholderCharts = {
     const el = document.getElementById(id);
     if (!el) return null;
     if (this.instances[id]) { try { this.instances[id].dispose(); } catch {} }
-    this.instances[id] = echarts.init(el, 'softDark', { renderer: 'canvas' });
-    return this.instances[id];
+    let chart = echarts.init(el, 'softDark', { renderer: 'canvas' });
+    if (window.SA_CHART) chart = SA_CHART.attach(chart); // setOption 自动过视觉修补
+    this.instances[id] = chart;
+    return chart;
   },
 
   // 主渲染入口：data 来自 /api/shareholders/:symbol

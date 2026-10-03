@@ -14,7 +14,11 @@ const CapitalCharts = {
       el.innerHTML = '<div class="data-empty">⚠️ 图表库（ECharts）未加载成功，请检查网络后刷新页面。</div>';
       return null;
     }
-    try { return echarts.init(el, 'softDark'); }
+    try {
+      let chart = echarts.init(el, 'softDark');
+      if (window.SA_CHART) chart = SA_CHART.attach(chart); // setOption 自动过视觉修补
+      return chart;
+    }
     catch (e) {
       console.error('Capital chart init error:', id, e);
       el.innerHTML = `<div class="data-empty">图表渲染失败（${(e && e.message) || e}）。</div>`;
@@ -127,10 +131,16 @@ const CapitalCharts = {
       xAxis: { type: 'category', data: dates, axisLabel: { rotate: 45, fontSize: 10 } },
       yAxis: { type: 'value', name: '亿元', axisLabel: { formatter: '{value}' } },
       series: [
-        { name: '主力净流入', type: 'bar', data: mainNet, itemStyle: { color: function(p) { return p.value >= 0 ? '#cf8e8e' : '#8fb89a'; } } },
-        { name: '超大/大单', type: 'line', data: largeNet, smooth: true, lineStyle: { width: 1.5 }, itemStyle: { color: '#cdab74' } },
-        { name: '中单', type: 'line', data: mediumNet, smooth: true, lineStyle: { width: 1.5 }, itemStyle: { color: '#7fa8c9' } },
-        { name: '小单', type: 'line', data: smallNet, smooth: true, lineStyle: { width: 1.5 }, itemStyle: { color: '#8b939c' } },
+        {
+          name: '主力净流入', type: 'bar', data: mainNet, barMaxWidth: 18,
+          itemStyle: {
+            color: function(p) { return p.value >= 0 ? 'rgba(207,142,142,0.80)' : 'rgba(143,184,154,0.80)'; },
+            borderRadius: [2, 2, 0, 0],
+          },
+        },
+        { name: '超大/大单', type: 'line', data: largeNet, smooth: true, lineStyle: { width: 2 }, itemStyle: { color: '#cdab74' }, symbol: 'none' },
+        { name: '中单', type: 'line', data: mediumNet, smooth: true, lineStyle: { width: 2 }, itemStyle: { color: '#7fa8c9' }, symbol: 'none' },
+        { name: '小单', type: 'line', data: smallNet, smooth: true, lineStyle: { width: 2 }, itemStyle: { color: '#8b939c' }, symbol: 'none' },
       ],
     });
 
@@ -226,8 +236,9 @@ const CapitalCharts = {
       xAxis: { type: 'category', data: s.dates, axisLabel: { rotate: 45, fontSize: 10 } },
       yAxis: { type: 'value', scale: true, axisLabel: { formatter: v => CapitalCharts.formatVol(v) } },
       series: [{
-        name: 'OBV', type: 'line', data: s.obv, smooth: true,
-        areaStyle: { opacity: 0.1 }, lineStyle: { width: 2, color: '#7fa8c9' },
+        name: 'OBV', type: 'line', data: s.obv, smooth: true, symbol: 'none',
+        areaStyle: { color: window.SA_CHART ? SA_CHART.grad('#7fa8c9', 0.22, 0) : { opacity: 0.1 } },
+        lineStyle: { width: 2, color: '#7fa8c9' },
       }],
     });
   },
@@ -273,10 +284,13 @@ const CapitalCharts = {
       xAxis: { type: 'category', data: s.dates, axisLabel: { rotate: 45, fontSize: 10 } },
       yAxis: { type: 'value', scale: true, axisLabel: { formatter: v => CapitalCharts.formatVol(v) } },
       series: [
-        { name: '成交量', type: 'bar', data: s.volumes, itemStyle: { color: '#7fa8c9', opacity: 0.5 } },
-        { name: 'MA5', type: 'line', data: s.volMA5, smooth: true, lineStyle: { width: 1.5, color: '#cf8e8e' } },
-        { name: 'MA10', type: 'line', data: s.volMA10, smooth: true, lineStyle: { width: 1.5, color: '#cdab74' } },
-        { name: 'MA20', type: 'line', data: s.volMA20, smooth: true, lineStyle: { width: 1.5, color: '#a99bc4' } },
+        {
+          name: '成交量', type: 'bar', data: s.volumes, barMaxWidth: 12,
+          itemStyle: { color: 'rgba(127,168,201,0.60)', borderRadius: [2, 2, 0, 0] },
+        },
+        { name: 'MA5', type: 'line', data: s.volMA5, smooth: true, symbol: 'none', lineStyle: { width: 1.5, color: '#cf8e8e' } },
+        { name: 'MA10', type: 'line', data: s.volMA10, smooth: true, symbol: 'none', lineStyle: { width: 1.5, color: '#cdab74' } },
+        { name: 'MA20', type: 'line', data: s.volMA20, smooth: true, symbol: 'none', lineStyle: { width: 1.5, color: '#a99bc4' } },
       ],
     });
   },
@@ -307,8 +321,11 @@ const CapitalCharts = {
       xAxis: { type: 'category', data: dates, axisLabel: { rotate: 45, fontSize: 10 } },
       yAxis: { type: 'value', scale: true, axisLabel: { formatter: '{value}' } },
       series: [
-        { name: '融资余额(亿)', type: 'bar', data: rzBalance, itemStyle: { color: '#cf8e8e', opacity: 0.7 } },
-        { name: '融券余额(亿)', type: 'line', data: rqBalance, smooth: true, lineStyle: { width: 2, color: '#8fb89a' } },
+        {
+          name: '融资余额(亿)', type: 'bar', data: rzBalance, barMaxWidth: 16,
+          itemStyle: { color: 'rgba(207,142,142,0.78)', borderRadius: [2, 2, 0, 0] },
+        },
+        { name: '融券余额(亿)', type: 'line', data: rqBalance, smooth: true, symbol: 'none', lineStyle: { width: 2, color: '#8fb89a' } },
       ],
     });
   },

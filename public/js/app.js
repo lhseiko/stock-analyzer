@@ -1006,7 +1006,7 @@ const App = {
     if (mt) mt.textContent = data.marketTotal != null ? `全市场成交 ${data.marketTotal.toLocaleString('zh-CN', { maximumFractionDigits: 0 })} 亿` : '';
     const note = document.getElementById('sectorCrowdingNote');
     if (note) {
-      note.innerHTML = `${data.denominatorNote || ''}${data.note ? '；' + data.note : ''}｜来源：${data.source || '同花顺'}｜口径：板块成交额 ÷ 全市场成交额 ×100%`;
+      note.innerHTML = `${data.denominatorNote || ''}${data.note ? '；' + data.note : ''}｜来源：${data.source || '同花顺'}｜口径：拥挤度 = 板块成交额 ÷ 全市场成交额 ×100%；当日=单日值，本周/本月=区间累计（成交额、涨跌幅均按区间累计）`;
     }
     const upd = document.getElementById('crowdingUpdated');
     if (upd) upd.textContent = '更新 ' + new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
@@ -1087,7 +1087,7 @@ const App = {
         html += `<div class="tp-comp-value">${esc(f.value || '')}</div>`;
         html += `<div class="tp-comp-detail">${esc(f.detail || '')}</div>`;
         if (f.degraded) html += `<div class="tp-comp-detail tp-emo-warn">⚠ ${esc(f.reason || '数据不可用')} → 权重已归零并按比例分摊</div>`;
-        else if (f.lagged) html += `<div class="tp-comp-detail tp-emo-warn">⏱ 热度数据滞后${f.lagDays != null ? ` ${f.lagDays} 个交易日` : '（日期未知）'} → 权重按规则打 8 折</div>`;
+        else if (f.lagged) html += `<div class="tp-comp-detail tp-emo-warn">⏱ 数据滞后${f.lagDays != null ? ` ${f.lagDays} 个交易日` : '（日期未知）'} → 权重按规则打 8 折</div>`;
         html += `</div>`;
       });
       html += '</div>';

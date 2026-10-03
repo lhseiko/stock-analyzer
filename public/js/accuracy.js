@@ -298,7 +298,7 @@
               <div class="jd-rec-row">归一化方向 <b>${esc(x.shortVerdict || '—')}</b>${x.pattern ? ` · ${esc(x.pattern)}` : ''}</div>
               <div class="jd-rec-row">${x.settled
                 ? `<span class="jd-${x.correct ? 'ok' : 'bad'}">${x.correct ? '✓ 命中' : '✗ 未中'}</span> 实际 ${esc(x.actualDir)} ${x.actualChgPct}%（${esc(x.baseDate)} 收 ${x.actualBaseClose} → ${esc(x.actualTargetDate || '')} 收 ${x.actualTargetClose}）`
-                : '<span class="jd-pending">待验证（目标日未到 / 未收盘）</span>'}</div>
+                : `<span class="jd-pending">待验证（第${x.horizon}交易日・预计 ${esc(x.targetDate || '')} 结算；遇长假顺延）</span>`}</div>
             </div>
           </div>`).join('')}</div>`
       : '<div class="data-empty">该股暂无技术面记录。</div>';

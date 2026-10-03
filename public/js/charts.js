@@ -4,7 +4,10 @@
 
 // 注册柔和暗色主题：透明背景、浅灰文字、弱化网格、暗色 tooltip、低饱和调色板
 // 面向干眼症 / 强光敏感用户，避免白底与高饱和色块眩光
+// 20261001d：主题升级版（Robinhood 式极简坐标轴/悬浮卡 tooltip）已由 chartTheme.js 注册；
+// 此处仅在其加载失败时兜底注册旧版主题，保证图表永不因缺主题而退化成默认亮色。
 (function registerSoftDarkTheme() {
+  if (window.SA_CHART) return; // chartTheme.js 已注册升级版，跳过
   const muted = ['#7fa8c9', '#cf8e8e', '#8fb89a', '#cdab74', '#a99bc4', '#6fb0a4', '#9aa7b0', '#b0a08c'];
   const axisCommon = {
     axisLine: { lineStyle: { color: '#3a424b' } },
@@ -50,8 +53,9 @@ const Charts = {
     let el = document.getElementById(id);
     if (!el) return null;
     if (this.instances[id]) { try { this.instances[id].dispose(); } catch {} }
-    this.instances[id] = echarts.init(el, 'softDark', { renderer: 'canvas' });
-    return this.instances[id];
+    let chart = echarts.init(el, 'softDark', { renderer: 'canvas' });
+    if (window.SA_CHART) chart = SA_CHART.attach(chart); // setOption 自动过视觉修补
+    return chart;
   },
 
   // Color scheme
@@ -149,19 +153,41 @@ const Charts = {
       return { value: ohlc[i], itemStyle: { color, borderColor: color } };
     });
 
+    // 现价标线（Robinhood 式最新价虚线 + 右端价签）：颜色取最新一日涨跌语义色
+    const lastDay = history[history.length - 1];
+    const prevDay = history[history.length - 2] || lastDay;
+    const lastColor = lastDay.close >= prevDay.close ? this.colors.up : this.colors.down;
+
     const series = [{
       name: 'K线',
       type: 'candlestick',
       data: candleItems,
+      barMaxWidth: 14,
       itemStyle: {
         color: this.colors.up,
         color0: this.colors.down,
         borderColor: this.colors.up,
         borderColor0: this.colors.down,
       },
+      markLine: {
+        silent: true,
+        symbol: 'none',
+        data: [{ yAxis: lastDay.close }],
+        lineStyle: { color: lastColor, type: 'dashed', width: 1, opacity: 0.85 },
+        label: {
+          formatter: this.fmtNum(lastDay.close),
+          color: '#0B0E11',
+          backgroundColor: lastColor,
+          padding: [3, 7],
+          borderRadius: 4,
+          fontSize: 10,
+          fontWeight: 700,
+          position: 'insideEndTop',
+        },
+      },
     }];
 
-    // 均线 MA5/10/20/60：白/黄/紫/绿 1px 细线。
+    // 均线 MA5/10/20/60：白/黄/紫/绿 1.5px 细线。
     // 基于「完整历史」滚动计算；缩放(dataZoom)仅为可视裁切，每个点的均线值恒为该点窗口的正确值，缩放不改变数值。
     const maConfigs = [
       { name: 'MA5', n: 5, color: this.colors.ma5 },
@@ -175,32 +201,41 @@ const Charts = {
         type: 'line',
         data: this._sma(closes, m.n),
         smooth: true,
-        lineStyle: { width: 1, color: m.color },
+        lineStyle: { width: 1.5, color: m.color },
         itemStyle: { color: m.color },
         symbol: 'none',
         z: 3,
       });
     });
 
-    // 成交量副图：红涨绿跌
+    // 成交量副图：红涨绿跌（半透明 + 圆角柱顶，视觉更轻盈）
     series.push({
       name: '成交量',
       type: 'bar',
       xAxisIndex: 1,
       yAxisIndex: 1,
-      data: volumes.map((v, i) => ({
-        value: v,
-        itemStyle: { color: this._candleColor(history[i], i > 0 ? history[i - 1].close : history[i].close) },
-      })),
+      barMaxWidth: 14,
+      data: volumes.map((v, i) => {
+        const c = this._candleColor(history[i], i > 0 ? history[i - 1].close : history[i].close);
+        return {
+          value: v,
+          itemStyle: {
+            color: window.SA_CHART ? SA_CHART.rgba(c, 0.62) : c,
+            borderRadius: [2, 2, 0, 0],
+          },
+        };
+      }),
     });
 
     chart.setOption({
       tooltip: {
         trigger: 'axis',
-        axisPointer: { type: 'cross', label: { backgroundColor: '#20262d', color: '#E6EDF3' } },
-        backgroundColor: 'rgba(18,22,28,0.96)',
-        borderColor: 'rgba(255,255,255,0.12)',
+        axisPointer: { type: 'cross', label: { backgroundColor: '#2A313B', color: '#E6EDF3', padding: [3, 6] } },
+        backgroundColor: 'rgba(22,27,34,0.97)',
+        borderColor: 'rgba(255,255,255,0.10)',
         borderWidth: 1,
+        padding: [10, 14],
+        extraCssText: 'border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,0.55);backdrop-filter:blur(6px);',
         textStyle: { color: '#E6EDF3', fontSize: 12 },
         formatter: (params) => {
           if (!params || !params.length) return '';
@@ -243,8 +278,10 @@ const Charts = {
         data: ['K线', 'MA5', 'MA10', 'MA20', 'MA60'],
         top: 0,
         textStyle: { fontSize: 11 },
-        itemWidth: 14,
+        icon: 'roundRect',
+        itemWidth: 12,
         itemHeight: 8,
+        itemGap: 14,
       },
       grid: [
         { left: '8%', right: '3%', top: '8%', height: '52%' },
@@ -255,12 +292,13 @@ const Charts = {
         { type: 'category', gridIndex: 1, data: dates, scale: true, boundaryGap: false, splitLine: { show: false }, axisLabel: { show: false } },
       ],
       yAxis: [
-        { scale: true, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } }, axisLabel: { fontSize: 10 } },
+        { scale: true, splitLine: { lineStyle: { color: 'rgba(139,148,158,0.10)' } }, axisLabel: { fontSize: 10 } },
         { gridIndex: 1, splitNumber: 2, axisLabel: { fontSize: 10, formatter: v => this.fmtCompact(v) } },
       ],
       dataZoom: [
         { type: 'inside', xAxisIndex: [0, 1], start: 60, end: 100, zoomOnMouseWheel: true, moveOnMouseWheel: false, moveOnMouseMove: true },
-        { type: 'slider', xAxisIndex: [0, 1], start: 60, end: 100, height: 16, bottom: 4 },
+        Object.assign({ type: 'slider', xAxisIndex: [0, 1], start: 60, end: 100, height: 16, bottom: 4 },
+          window.SA_CHART ? SA_CHART.zoomStyle : {}),
       ],
       series,
     });
@@ -298,6 +336,7 @@ const Charts = {
       showSymbol: false,
       lineStyle: { width: 2, color: it.color },
       itemStyle: { color: it.color },
+      areaStyle: { color: window.SA_CHART ? SA_CHART.grad(it.color, 0.13, 0) : 'transparent' },
       endLabel: {
         show: true,
         formatter: '{a}',
@@ -575,7 +614,10 @@ const Charts = {
           type: 'bar',
           data: s.macdHistogram.map(v => ({
             value: v,
-            itemStyle: { color: v >= 0 ? this.colors.up : this.colors.down }
+            itemStyle: {
+              color: window.SA_CHART ? SA_CHART.rgba(v >= 0 ? this.colors.up : this.colors.down, 0.80) : (v >= 0 ? this.colors.up : this.colors.down),
+              borderRadius: [1, 1, 0, 0],
+            }
           })),
         }
       ],
@@ -602,7 +644,7 @@ const Charts = {
         data: rsiData,
         smooth: true,
         lineStyle: { color: this.colors.rsi, width: 1.5 },
-        areaStyle: { color: 'rgba(139,92,246,0.08)' },
+        areaStyle: { color: window.SA_CHART ? SA_CHART.grad(this.colors.rsi, 0.18, 0) : 'rgba(139,92,246,0.08)' },
         symbol: 'none',
         markLine: {
           silent: true,
@@ -661,9 +703,9 @@ const Charts = {
           type: 'line',
           data: closes,
           smooth: true,
-          lineStyle: { color: '#E6EDF3', width: 1.5 },
+          lineStyle: { color: '#E6EDF3', width: 2 },
           symbol: 'none',
-          areaStyle: { color: 'rgba(230,237,243,0.04)' },
+          areaStyle: { color: window.SA_CHART ? SA_CHART.grad('#E6EDF3', 0.10, 0) : 'rgba(230,237,243,0.04)' },
         },
         {
           name: 'BOLL上轨',
