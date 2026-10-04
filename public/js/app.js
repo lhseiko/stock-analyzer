@@ -2760,6 +2760,12 @@ const App = {
       setTimeout(() => { try { IndustryCharts.reflow(); } catch (e) { /* ignore */ } }, 320);
     }
 
+    // 技术面：图表曾在隐藏 tab 期被 echarts.init 退化成小尺寸（20261003f 已注册实例），
+    // 切回后统一 resize 复原（与上方 50ms 统一 resize 形成双保险）
+    if (tabName === 'technical') {
+      setTimeout(() => { try { Object.values(Charts.instances).forEach(c => c.resize()); } catch (e) { /* ignore */ } }, 120);
+    }
+
     // 股东分析（issue5）
     if (tabName === 'shareholders') {
       if (this.currentSymbol && this.shareholderLoadedSymbol !== this.currentSymbol) {

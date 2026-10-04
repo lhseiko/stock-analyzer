@@ -138,20 +138,37 @@ const DeepCharts = {
   renderShortTermRisk(data) {
     const chart = this.get('deepShortTermRisk');
     if (!chart || !data) return;
+    const cats = ['货币资金', '短期投资', '短期负债', '应付账款'];
+    const vals = [
+      { value: data.cash, color: '#8fb89a' },
+      { value: data.shortTermInvestments, color: '#7fa8c9' },
+      { value: data.shortTermDebt, color: '#cf8e8e' },
+      { value: data.accountsPayable, color: '#cdab74' },
+    ];
+    // 20261003g：短期偿债柱图升级 2.5D 立体柱（保留数值标签）
+    if (window.SA3D && SA3D.bar25D) {
+      const b = SA3D.bar25D({
+        xData: cats,
+        yName: '亿元',
+        unit: ' 亿',
+        depth: 8,
+        series: [{ name: '金额', data: vals }],
+      });
+      b.series[0].label = {
+        show: true, position: 'top', formatter: '{c}亿', color: '#c9d3dd', fontSize: 11,
+      };
+      chart.setOption(b);
+      return;
+    }
     chart.setOption({
       tooltip: { trigger: 'axis' },
-      legend: { top: 0 },
+      legend: { show: false },
       grid: { left: '15%', right: '8%', bottom: '8%', top: '15%' },
-      xAxis: { type: 'category', data: ['货币资金', '短期投资', '短期负债', '应付账款'] },
+      xAxis: { type: 'category', data: cats },
       yAxis: { type: 'value', name: '亿元' },
       series: [{
         type: 'bar',
-        data: [
-          { value: data.cash, itemStyle: { color: '#8fb89a' } },
-          { value: data.shortTermInvestments, itemStyle: { color: '#7fa8c9' } },
-          { value: data.shortTermDebt, itemStyle: { color: '#cf8e8e' } },
-          { value: data.accountsPayable, itemStyle: { color: '#cdab74' } },
-        ],
+        data: vals.map(v => ({ value: v.value, itemStyle: { color: v.color } })),
         label: { show: true, position: 'top', formatter: '{c}亿' },
       }],
     });
@@ -161,6 +178,19 @@ const DeepCharts = {
   renderAssetComp(data) {
     const chart = this.get('deepAssetComp');
     if (!chart || !data) return;
+    const total = (data || []).reduce((s, a) => s + (a.value || 0), 0);
+    const donutOpt = (window.SA3D && SA3D.donut) ? {
+      centerText: { title: total ? total.toFixed(0) + '亿' : '', sub: '资产合计' },
+      data: data.map(a => ({ name: a.name, value: a.value })),
+      center: ['40%', '50%'],
+      radius: ['34%', '58%'],
+      tooltipFmt: (p) => (p.seriesName === 'base' ? '' : `${p.name}: ${p.value}亿 (${p.percent != null ? p.percent.toFixed(2) : '--'}%)`),
+      legend: { type: 'scroll', orient: 'vertical', right: 0, top: 'middle', itemWidth: 12, itemHeight: 8, textStyle: { fontSize: 11 } },
+    } : null;
+    if (donutOpt) {
+      chart.setOption(SA3D.donut(donutOpt));
+      return;
+    }
     chart.setOption({
       tooltip: { trigger: 'item', formatter: '{b}: {c}亿 ({d}%)' },
       legend: { type: 'scroll', orient: 'vertical', right: 0, top: 'middle' },
@@ -178,17 +208,37 @@ const DeepCharts = {
   renderLiabComp(data) {
     const chart = this.get('deepLiabComp');
     if (!chart || !data) return;
-    chart.setOption({
-      tooltip: { trigger: 'axis' },
-      grid: { left: '15%', right: '8%', bottom: '15%', top: '8%' },
-      xAxis: { type: 'value', name: '亿元' },
-      yAxis: { type: 'category', data: data.map(d => d.name), inverse: true },
-      series: [{
-        type: 'bar',
-        data: data.map(d => ({ value: d.value, itemStyle: { color: '#cf8e8e' } })),
-        label: { show: true, position: 'right', formatter: '{c}亿' },
-      }],
-    });
+    const cats = data.map(d => d.name);
+    if (window.SA3D && SA3D.bar25D) {
+      const b = SA3D.bar25D({
+        horizontal: true,
+        inverse: true,
+        xData: cats,
+        yName: '亿元',
+        unit: ' 亿',
+        depth: 7,
+        barRatio: 0.72,
+        grid: { left: '16%', right: '10%', bottom: '10%', top: '6%' },
+        label: { formatter: (p) => (p.value != null ? p.value.toFixed(1) + '亿' : '') },
+        series: [{
+          name: '负债规模',
+          data: data.map(d => ({ value: d.value, color: '#cf8e8e' })),
+        }],
+      });
+      chart.setOption(b);
+    } else {
+      chart.setOption({
+        tooltip: { trigger: 'axis' },
+        grid: { left: '15%', right: '8%', bottom: '15%', top: '8%' },
+        xAxis: { type: 'value', name: '亿元' },
+        yAxis: { type: 'category', data: cats, inverse: true },
+        series: [{
+          type: 'bar',
+          data: data.map(d => ({ value: d.value, itemStyle: { color: '#cf8e8e' } })),
+          label: { show: true, position: 'right', formatter: '{c}亿' },
+        }],
+      });
+    }
   },
 
   // Section 9: Revenue vs Operating Cash Flow (dual Y-axis)
@@ -380,22 +430,44 @@ const DeepCharts = {
     const chart = this.get('deepGrowth');
     if (!chart || !data) return;
     const latestTtm = (revenueCost || []).some(d => d.year === data.latestYear && d.ttm);
-    chart.setOption({
-      tooltip: { trigger: 'axis' },
-      legend: { top: 0 },
-      grid: { left: '15%', right: '8%', bottom: '8%', top: '15%' },
-      xAxis: { type: 'category', data: ['营收增长率', '净利润增长率'] },
-      yAxis: { type: 'value', name: '%' },
-      series: [{
-        type: 'bar',
-        data: [
-          { value: data.revenueGrowth, itemStyle: { color: data.revenueGrowth >= 0 ? '#cf8e8e' : '#8fb89a' } },
-          { value: data.profitGrowth, itemStyle: { color: data.profitGrowth >= 0 ? '#cf8e8e' : '#8fb89a' } },
-        ],
-        label: { show: true, position: 'top', formatter: (p) => (p.value != null ? p.value.toFixed(2) + '%' : '') },
-      }],
-      title: { subtext: `基准年: ${data.baseYear} → 最新: ${data.latestYear}${latestTtm ? '（TTM估算）' : ''}`, left: 'center', top: 20 },
-    });
+    const growthTitle = { subtext: `基准年: ${data.baseYear} → 最新: ${data.latestYear}${latestTtm ? '（TTM估算）' : ''}`, left: 'center', top: 20 };
+    if (window.SA3D && SA3D.bar25D) {
+      const b = SA3D.bar25D({
+        xData: ['营收增长率', '净利润增长率'],
+        yName: '%',
+        unit: '%',
+        depth: 8,
+        legend: { show: false },
+        grid: { left: '15%', right: '8%', bottom: '8%', top: '15%' },
+        label: { formatter: (p) => (p.value != null ? p.value.toFixed(2) + '%' : '') },
+        series: [{
+          name: '增长率',
+          data: [
+            { value: data.revenueGrowth, color: data.revenueGrowth >= 0 ? '#cf8e8e' : '#8fb89a' },
+            { value: data.profitGrowth, color: data.profitGrowth >= 0 ? '#cf8e8e' : '#8fb89a' },
+          ],
+        }],
+      });
+      b.title = growthTitle;
+      chart.setOption(b);
+    } else {
+      chart.setOption({
+        tooltip: { trigger: 'axis' },
+        legend: { top: 0 },
+        grid: { left: '15%', right: '8%', bottom: '8%', top: '15%' },
+        xAxis: { type: 'category', data: ['营收增长率', '净利润增长率'] },
+        yAxis: { type: 'value', name: '%' },
+        series: [{
+          type: 'bar',
+          data: [
+            { value: data.revenueGrowth, itemStyle: { color: data.revenueGrowth >= 0 ? '#cf8e8e' : '#8fb89a' } },
+            { value: data.profitGrowth, itemStyle: { color: data.profitGrowth >= 0 ? '#cf8e8e' : '#8fb89a' } },
+          ],
+          label: { show: true, position: 'top', formatter: (p) => (p.value != null ? p.value.toFixed(2) + '%' : '') },
+        }],
+        title: growthTitle,
+      });
+    }
     if (latestTtm) {
       const el = document.getElementById('deepGrowth');
       if (el && el.parentElement && !el.parentElement.querySelector('#deepGrowth-ttm-note')) {
@@ -570,35 +642,53 @@ const DeepCharts = {
     const draw = (mode) => {
       const { cats, vals, pending, meta } = build(mode);
       const isPerShare = mode === 'perShare';
-      chart.setOption({
-        tooltip: {
-          trigger: 'axis', axisPointer: { type: 'shadow' },
-          formatter: (ps) => {
-            const p = ps[0];
-            const idx = p.dataIndex;
-            const m = meta && meta[idx];
-            const perShare = m ? (m.perShare || 0).toFixed(2) : '';
-            const amount = m ? (m.amountYi || 0).toFixed(2) : (typeof p.value === 'number' ? p.value.toFixed(2) : p.value);
-            const progress = m && m.progress ? ` · ${m.progress}` : '';
-            if (isPerShare) {
-              return `${p.axisValue}<br/>每股分红 <b>${perShare} 元/股</b><br/>分红金额 <b>${amount} 亿</b>${progress}`;
-            }
-            return `${p.axisValue}<br/>分红金额 <b>${amount} 亿</b><br/>每股分红 <b>${perShare} 元/股</b>${progress}`;
-          },
-        },
-        grid: { left: '8%', right: '6%', bottom: '14%', top: '12%' },
-        xAxis: { type: 'category', data: cats, axisLabel: { rotate: cats.length > 8 ? 30 : 0, interval: 0 } },
-        yAxis: { type: 'value', name: isPerShare ? '每股分红(元/股)' : '分红金额(亿元)' },
-        series: [{
-          type: 'bar',
-          data: vals.map((v, i) => ({
-            value: v,
-            itemStyle: { color: pending[i] ? '#d6a35c' : this.colors.marketCap },
-          })),
-          barMaxWidth: 40,
-          label: { show: true, position: 'top', formatter: (p) => (p.value ? (isPerShare ? p.value.toFixed(2) : p.value.toFixed(1)) : ''), color: '#c9d3dd' },
-        }],
-      }, true);
+      const tooltipFmt = (ps) => {
+        const p = Array.isArray(ps) ? ps[0] : ps;
+        if (!p) return '';
+        const idx = p.dataIndex;
+        const m = meta && meta[idx];
+        const raw = p.value && typeof p.value === 'object' ? p.value.value : p.value;
+        const perShare = m ? (m.perShare || 0).toFixed(2) : '';
+        const amount = m ? (m.amountYi || 0).toFixed(2) : (typeof raw === 'number' ? raw.toFixed(2) : '--');
+        const progress = m && m.progress ? ` · ${m.progress}` : '';
+        if (isPerShare) {
+          return `${p.axisValue}<br/>每股分红 <b>${perShare} 元/股</b><br/>分红金额 <b>${amount} 亿</b>${progress}`;
+        }
+        return `${p.axisValue}<br/>分红金额 <b>${amount} 亿</b><br/>每股分红 <b>${perShare} 元/股</b>${progress}`;
+      };
+      if (window.SA3D && SA3D.bar25D) {
+        const b = SA3D.bar25D({
+          xData: cats,
+          yName: isPerShare ? '每股分红(元/股)' : '分红金额(亿元)',
+          unit: isPerShare ? ' 元/股' : ' 亿',
+          depth: 7,
+          grid: { left: '8%', right: '6%', bottom: '14%', top: '12%' },
+          xLabel: { rotate: cats.length > 8 ? 30 : 0, interval: 0 },
+          tooltipFmt,
+          label: { formatter: (p) => (p.value != null && p.value ? (isPerShare ? p.value.toFixed(2) : p.value.toFixed(1)) : '') },
+          series: [{
+            name: '分红金额',
+            data: vals.map((v, i) => ({ value: v, color: pending[i] ? '#d6a35c' : this.colors.marketCap })),
+          }],
+        });
+        chart.setOption(b, true);
+      } else {
+        chart.setOption({
+          tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: tooltipFmt },
+          grid: { left: '8%', right: '6%', bottom: '14%', top: '12%' },
+          xAxis: { type: 'category', data: cats, axisLabel: { rotate: cats.length > 8 ? 30 : 0, interval: 0 } },
+          yAxis: { type: 'value', name: isPerShare ? '每股分红(元/股)' : '分红金额(亿元)' },
+          series: [{
+            type: 'bar',
+            data: vals.map((v, i) => ({
+              value: v,
+              itemStyle: { color: pending[i] ? '#d6a35c' : this.colors.marketCap },
+            })),
+            barMaxWidth: 40,
+            label: { show: true, position: 'top', formatter: (p) => { const r = p.value && typeof p.value === 'object' ? p.value.value : p.value; return (r ? (isPerShare ? r.toFixed(2) : r.toFixed(1)) : ''); }, color: '#c9d3dd' },
+          }],
+        }, true);
+      }
       const note = document.getElementById('deepDividendBarNote');
       if (note) {
         if (mode === 'year') {
@@ -677,18 +767,33 @@ const DeepCharts = {
       el.innerHTML = '<div class="data-empty">⚠️ 暂未获取到前十大股东数据。</div>';
       return;
     }
-    // 渲染饼图
-    chart.setOption({
-      tooltip: { trigger: 'item', formatter: (p) => `${p.name}: ${(p.value != null ? p.value.toFixed(2) : '--')}% (${p.percent != null ? p.percent.toFixed(2) : '--'}%)` },
-      legend: { type: 'scroll', orient: 'vertical', right: 0, top: 'middle' },
-      series: [{
-        type: 'pie',
-        radius: ['30%', '65%'],
-        center: ['40%', '50%'],
-        data: holders.map(h => ({ name: h.name || '未知', value: h.holdRatio })),
-        label: { formatter: '{b}\n{d}%' },
-      }],
-    });
+    // 渲染饼图（2.5D 厚度圆环，中心标注第一大股东）
+    const top1 = holders[0];
+    const donutOpt = (window.SA3D && SA3D.donut) ? {
+      centerText: top1 && top1.holdRatio != null
+        ? { title: (top1.holdRatio != null ? top1.holdRatio.toFixed(1) + '%' : ''), sub: (top1.name || '').slice(0, 10) }
+        : undefined,
+      data: holders.map(h => ({ name: h.name || '未知', value: h.holdRatio })),
+      center: ['40%', '50%'],
+      radius: ['26%', '56%'],
+      tooltipFmt: (p) => (p.seriesName === 'base' ? '' : `${p.name}: ${(p.value != null ? p.value.toFixed(2) : '--')}% (${p.percent != null ? p.percent.toFixed(2) : '--'}%)`),
+      legend: { type: 'scroll', orient: 'vertical', right: 0, top: 'middle', itemWidth: 12, itemHeight: 8, textStyle: { fontSize: 11 } },
+    } : null;
+    if (donutOpt) {
+      chart.setOption(SA3D.donut(donutOpt));
+    } else {
+      chart.setOption({
+        tooltip: { trigger: 'item', formatter: (p) => `${p.name}: ${(p.value != null ? p.value.toFixed(2) : '--')}% (${p.percent != null ? p.percent.toFixed(2) : '--'}%)` },
+        legend: { type: 'scroll', orient: 'vertical', right: 0, top: 'middle' },
+        series: [{
+          type: 'pie',
+          radius: ['30%', '65%'],
+          center: ['40%', '50%'],
+          data: holders.map(h => ({ name: h.name || '未知', value: h.holdRatio })),
+          label: { formatter: '{b}\n{d}%' },
+        }],
+      });
+    }
     // 在图表容器后追加机构统计说明
     let noteId = 'shareholderStatsNote';
     let noteEl = document.getElementById(noteId);
@@ -1803,8 +1908,8 @@ const DeepCharts = {
     const years = data.yearlyData.map(d => d.year);
     const premiums = data.yearlyData.map(d => d.total);
     const growths = data.yearlyData.map(d => d.yoyGrowth || 0);
-    
-    chart.setOption({
+
+    const baseOpt = {
       tooltip: {
         trigger: 'axis',
         formatter: (ps) => {
@@ -1827,6 +1932,36 @@ const DeepCharts = {
         { type: 'value', name: '保费(亿)' },
         { type: 'value', name: '增长(%)', axisLabel: { formatter: '{value}%' } },
       ],
+    };
+
+    // 20261003g：保费柱升级 2.5D 立体柱（保留同比折线），无 SA3D 时回退原 2D
+    if (window.SA3D && SA3D.bar25D) {
+      const b = SA3D.bar25D({
+        xData: years,
+        yName: '保费(亿)',
+        unit: ' 亿',
+        noTooltip: true,
+        depth: 9,
+        series: [{ name: '保费收入(亿)', data: premiums, color: '#7fa8c9' }],
+      });
+      b.tooltip = baseOpt.tooltip;
+      b.legend = baseOpt.legend;
+      b.grid = baseOpt.grid;
+      b.xAxis = baseOpt.xAxis;
+      b.yAxis = baseOpt.yAxis;
+      b.series = b.series.concat([
+        { name: '同比增长(%)', type: 'line', yAxisIndex: 1, data: growths, itemStyle: { color: '#cdab74' }, smooth: true },
+      ]);
+      chart.setOption(b);
+      return;
+    }
+
+    chart.setOption({
+      tooltip: baseOpt.tooltip,
+      legend: baseOpt.legend,
+      grid: baseOpt.grid,
+      xAxis: baseOpt.xAxis,
+      yAxis: baseOpt.yAxis,
       series: [
         { name: '保费收入(亿)', type: 'bar', data: premiums, itemStyle: { color: '#7fa8c9' } },
         { name: '同比增长(%)', type: 'line', yAxisIndex: 1, data: growths, itemStyle: { color: '#cdab74' }, smooth: true },
@@ -1849,23 +1984,44 @@ const DeepCharts = {
       return;
     }
 
-    chart.setOption({
-      tooltip: {
-        trigger: 'item',
-        formatter: (p) => {
-          const actual = p.data && p.data.actualValue != null ? `${p.data.actualValue}亿 · ` : '';
-          return `${p.name}<br/>${actual}占比 ${p.percent}%`;
-        },
+    const breakdown = data.typeBreakdown || [];
+    const maxType = breakdown.reduce((m, t) => (!m || t.value > m.value ? t : m), null);
+    const donutOpt = (window.SA3D && SA3D.donut) ? {
+      centerText: maxType && maxType.value != null
+        ? { title: maxType.name, sub: '占比最大' }
+        : undefined,
+      data: breakdown.map(t => ({ name: t.name, value: t.value, actualValue: t.value })),
+      center: ['40%', '50%'],
+      radius: ['38%', '62%'],
+      tooltipFmt: (p) => {
+        if (p.seriesName === 'base') return '';
+        const actual = p.data && p.data.actualValue != null ? `${p.data.actualValue}亿 · ` : '';
+        return `${p.name}<br/>${actual}占比 ${p.percent}%`;
       },
-      legend: { orient: 'vertical', right: 10, top: 'center' },
-      series: [{
-        type: 'pie',
-        radius: ['40%', '70%'],
-        center: ['40%', '50%'],
-        data: data.typeBreakdown.map(t => ({ name: t.name, value: t.value, actualValue: t.value })),
-        label: { formatter: '{b}\n{d}%' },
-      }],
-    }, { notMerge: true });
+      legend: { orient: 'vertical', right: 10, top: 'center', itemWidth: 12, itemHeight: 8, textStyle: { fontSize: 11 } },
+    } : null;
+
+    if (donutOpt) {
+      chart.setOption(SA3D.donut(donutOpt), { notMerge: true });
+    } else {
+      chart.setOption({
+        tooltip: {
+          trigger: 'item',
+          formatter: (p) => {
+            const actual = p.data && p.data.actualValue != null ? `${p.data.actualValue}亿 · ` : '';
+            return `${p.name}<br/>${actual}占比 ${p.percent}%`;
+          },
+        },
+        legend: { orient: 'vertical', right: 10, top: 'center' },
+        series: [{
+          type: 'pie',
+          radius: ['40%', '70%'],
+          center: ['40%', '50%'],
+          data: breakdown.map(t => ({ name: t.name, value: t.value, actualValue: t.value })),
+          label: { formatter: '{b}\n{d}%' },
+        }],
+      }, { notMerge: true });
+    }
 
     if (noteEl) {
       const parts = [];
@@ -1908,80 +2064,140 @@ const DeepCharts = {
     // x 轴标签：仅在 Q1（年报起点）显示完整年份，其余隐藏，避免 26 个季度标签重叠
     const isYearStart = (lab) => lab && lab.endsWith('Q1');
 
-    chart.setOption({
-      tooltip: {
-        trigger: 'axis',
-        formatter: (ps) => {
-          const idx = ps[0].dataIndex;
-          const q = data.data[idx];
-          let s = '<strong>' + q.label + '</strong><br/>';
-          s += ps[0].marker + '当季 NBV: ' + q.value.toFixed(1) + ' 亿<br/>';
-          s += ps[1].marker + '累计 NBV: ' + q.cumulative.toFixed(1) + ' 亿<br/>';
-          const ttm = ttmVals[idx];
-          if (ttm != null) {
-            s += '<span style="color:#e6b85c">● TTM 滚动: ' + ttm.toFixed(1) + ' 亿</span><br/>';
-          }
-          const yv = yoy[idx];
-          if (yv != null) {
-            const color = yv >= 0 ? '#F6465D' : '#0ECB81';
-            const sign = yv >= 0 ? '+' : '';
-            s += '<span style="color:' + color + '">累计同比: ' + sign + yv.toFixed(2) + '%</span><br/>';
-          }
-          return s;
-        },
-      },
-      legend: { data: ['当季NBV(亿)', '累计NBV(亿)', 'TTM滚动(亿)', '累计同比(%)'] },
-      grid: { left: '10%', right: '12%', bottom: '16%' },
-      xAxis: {
-        type: 'category',
-        data: labels,
-        axisLabel: {
-          interval: (idx) => isYearStart(labels[idx]),
-          formatter: (val) => val ? val.slice(0, 4) : '',
-          hideOverlap: true,
-          fontSize: 12,
-        },
-        axisTick: {
-          alignWithLabel: true,
-          interval: (idx) => labels[idx] && /(Q1|Q3)$/.test(labels[idx]),
-        },
-      },
-      yAxis: [
-        { type: 'value', name: 'NBV(亿)', position: 'left' },
-        { type: 'value', name: '同比(%)', position: 'right', axisLabel: { formatter: '{value}%' } },
-      ],
-      series: [
-        { name: '当季NBV(亿)', type: 'bar', data: quarterVals, itemStyle: { color: '#a99bc4' }, yAxisIndex: 0 },
-        { name: '累计NBV(亿)', type: 'line', data: cumVals, itemStyle: { color: '#7fa8c9' }, smooth: false, yAxisIndex: 0 },
-        {
-          name: 'TTM滚动(亿)',
-          type: 'line',
-          data: ttmVals,
-          itemStyle: { color: '#e6b85c' },
-          lineStyle: { width: 3 },
-          smooth: false,
-          yAxisIndex: 0,
-          connectNulls: true,
-          markPoint: {
-            data: [
-              { type: 'max', name: '峰值', itemStyle: { color: '#e6b85c' } },
-              { type: 'min', name: '谷值', itemStyle: { color: '#e6b85c' } },
-            ],
-            symbolSize: 40,
-            label: { fontSize: 10, color: '#fff' },
+    const nbvTooltipFmt = (ps) => {
+      const idx = ps[0].dataIndex;
+      const q = data.data[idx];
+      let s = '<strong>' + q.label + '</strong><br/>';
+      s += ps[0].marker + '当季 NBV: ' + q.value.toFixed(1) + ' 亿<br/>';
+      s += ps[1].marker + '累计 NBV: ' + q.cumulative.toFixed(1) + ' 亿<br/>';
+      const ttm = ttmVals[idx];
+      if (ttm != null) {
+        s += '<span style="color:#e6b85c">● TTM 滚动: ' + ttm.toFixed(1) + ' 亿</span><br/>';
+      }
+      const yv = yoy[idx];
+      if (yv != null) {
+        const color = yv >= 0 ? '#F6465D' : '#0ECB81';
+        const sign = yv >= 0 ? '+' : '';
+        s += '<span style="color:' + color + '">累计同比: ' + sign + yv.toFixed(2) + '%</span><br/>';
+      }
+      return s;
+    };
+
+    if (window.SA3D && SA3D.bar25D) {
+      const b = SA3D.bar25D({
+        xData: labels,
+        depth: 6,
+        legend: { data: ['当季NBV(亿)', '累计NBV(亿)', 'TTM滚动(亿)', '累计同比(%)'] },
+        grid: { left: '10%', right: '12%', bottom: '16%' },
+        xAxis: {
+          type: 'category',
+          data: labels,
+          axisLabel: {
+            interval: (idx) => isYearStart(labels[idx]),
+            formatter: (val) => val ? val.slice(0, 4) : '',
+            hideOverlap: true,
+            fontSize: 12,
+          },
+          axisTick: {
+            alignWithLabel: true,
+            interval: (idx) => labels[idx] && /(Q1|Q3)$/.test(labels[idx]),
           },
         },
-        {
-          name: '累计同比(%)',
-          type: 'line',
-          data: yoy,
-          itemStyle: { color: '#cdab74' },
-          lineStyle: { type: 'dashed' },
-          yAxisIndex: 1,
-          connectNulls: false,
+        yAxis: [
+          { type: 'value', name: 'NBV(亿)', position: 'left' },
+          { type: 'value', name: '同比(%)', position: 'right', axisLabel: { formatter: '{value}%' } },
+        ],
+        axisPointer: { type: 'line' },
+        tooltipFmt: nbvTooltipFmt,
+        series: [
+          { name: '当季NBV(亿)', type: 'bar', data: quarterVals.map(v => ({ value: v, color: '#a99bc4' })) },
+          { name: '累计NBV(亿)', type: 'line', data: cumVals, itemStyle: { color: '#7fa8c9' }, smooth: false, yAxisIndex: 0 },
+          {
+            name: 'TTM滚动(亿)',
+            type: 'line',
+            data: ttmVals,
+            itemStyle: { color: '#e6b85c' },
+            lineStyle: { width: 3 },
+            smooth: false,
+            yAxisIndex: 0,
+            connectNulls: true,
+            markPoint: {
+              data: [
+                { type: 'max', name: '峰值', itemStyle: { color: '#e6b85c' } },
+                { type: 'min', name: '谷值', itemStyle: { color: '#e6b85c' } },
+              ],
+              symbolSize: 40,
+              label: { fontSize: 10, color: '#fff' },
+            },
+          },
+          {
+            name: '累计同比(%)',
+            type: 'line',
+            data: yoy,
+            itemStyle: { color: '#cdab74' },
+            lineStyle: { type: 'dashed' },
+            yAxisIndex: 1,
+            connectNulls: false,
+          },
+        ],
+      });
+      chart.setOption(b, { notMerge: true });
+    } else {
+      chart.setOption({
+        tooltip: { trigger: 'axis', formatter: nbvTooltipFmt },
+        legend: { data: ['当季NBV(亿)', '累计NBV(亿)', 'TTM滚动(亿)', '累计同比(%)'] },
+        grid: { left: '10%', right: '12%', bottom: '16%' },
+        xAxis: {
+          type: 'category',
+          data: labels,
+          axisLabel: {
+            interval: (idx) => isYearStart(labels[idx]),
+            formatter: (val) => val ? val.slice(0, 4) : '',
+            hideOverlap: true,
+            fontSize: 12,
+          },
+          axisTick: {
+            alignWithLabel: true,
+            interval: (idx) => labels[idx] && /(Q1|Q3)$/.test(labels[idx]),
+          },
         },
-      ],
-    }, { notMerge: true });
+        yAxis: [
+          { type: 'value', name: 'NBV(亿)', position: 'left' },
+          { type: 'value', name: '同比(%)', position: 'right', axisLabel: { formatter: '{value}%' } },
+        ],
+        series: [
+          { name: '当季NBV(亿)', type: 'bar', data: quarterVals, itemStyle: { color: '#a99bc4' }, yAxisIndex: 0 },
+          { name: '累计NBV(亿)', type: 'line', data: cumVals, itemStyle: { color: '#7fa8c9' }, smooth: false, yAxisIndex: 0 },
+          {
+            name: 'TTM滚动(亿)',
+            type: 'line',
+            data: ttmVals,
+            itemStyle: { color: '#e6b85c' },
+            lineStyle: { width: 3 },
+            smooth: false,
+            yAxisIndex: 0,
+            connectNulls: true,
+            markPoint: {
+              data: [
+                { type: 'max', name: '峰值', itemStyle: { color: '#e6b85c' } },
+                { type: 'min', name: '谷值', itemStyle: { color: '#e6b85c' } },
+              ],
+              symbolSize: 40,
+              label: { fontSize: 10, color: '#fff' },
+            },
+          },
+          {
+            name: '累计同比(%)',
+            type: 'line',
+            data: yoy,
+            itemStyle: { color: '#cdab74' },
+            lineStyle: { type: 'dashed' },
+            yAxisIndex: 1,
+            connectNulls: false,
+          },
+        ],
+      }, { notMerge: true });
+    }
 
     if (noteEl) {
       const parts = [];
@@ -2065,42 +2281,76 @@ const DeepCharts = {
     const opYoy = yoyOf('operatingProfit');
     const netYoy = yoyOf('netProfit');
 
-    chart.setOption({
-      tooltip: {
-        trigger: 'axis',
-        formatter: (ps) => {
-          let s = ps[0].axisValue + '<br/>';
-          ps.forEach(p => {
-            if (p.value == null) return;
-            const isPct = p.seriesName.indexOf('%') >= 0;
-            const v = isPct
-              ? (p.value >= 0 ? '+' : '') + p.value.toFixed(2) + '%'
-              : p.value.toFixed(2) + '亿';
-            s += `${p.marker}${p.seriesName}: ${v}<br/>`;
-          });
-          return s;
+    const opTooltipFmt = (ps) => {
+      let s = ps[0].axisValue + '<br/>';
+      ps.forEach(p => {
+        if (p.value == null) return;
+        const raw = p.value && typeof p.value === 'object' ? p.value.value : p.value;
+        if (raw == null) return;
+        const isPct = p.seriesName.indexOf('%') >= 0;
+        const v = isPct
+          ? (raw >= 0 ? '+' : '') + raw.toFixed(2) + '%'
+          : raw.toFixed(2) + '亿';
+        s += `${p.marker}${p.seriesName}: ${v}<br/>`;
+      });
+      return s;
+    };
+
+    if (window.SA3D && SA3D.bar25D) {
+      const b = SA3D.bar25D({
+        xData: years,
+        depth: 6,
+        legend: { data: ['营运利润(亿)', '净利润(亿)', '营运利润同比(%)', '净利润同比(%)'], top: 0 },
+        grid: { left: '8%', right: '10%', bottom: '15%', top: '15%' },
+        yAxis: [
+          { type: 'value', name: '亿' },
+          { type: 'value', name: '同比(%)', position: 'right', axisLabel: { formatter: '{value}%' } },
+        ],
+        axisPointer: { type: 'line' },
+        tooltipFmt: opTooltipFmt,
+        series: [
+          { name: '营运利润(亿)', type: 'bar', data: rows.map(d => ({ value: d.operatingProfit || 0, color: '#7fa8c9' })) },
+          { name: '净利润(亿)', type: 'bar', data: rows.map(d => ({ value: d.netProfit || 0, color: '#8fb89a' })) },
+          { name: '营运利润同比(%)', type: 'line', yAxisIndex: 1, data: opYoy, itemStyle: { color: '#cdab74' }, lineStyle: { width: 2 }, smooth: true },
+          { name: '净利润同比(%)', type: 'line', yAxisIndex: 1, data: netYoy, itemStyle: { color: '#cf8e8e' }, lineStyle: { width: 2 }, smooth: true },
+        ],
+      });
+      if (data.trendNote) {
+        b.graphic = [{
+          type: 'text',
+          right: 10,
+          bottom: 10,
+          style: { text: data.trendNote.substring(0, 80) + '...', fill: '#8b939c', fontSize: 11 },
+        }];
+      }
+      chart.setOption(b);
+    } else {
+      chart.setOption({
+        tooltip: {
+          trigger: 'axis',
+          formatter: opTooltipFmt,
         },
-      },
-      legend: { data: ['营运利润(亿)', '净利润(亿)', '营运利润同比(%)', '净利润同比(%)'], top: 0 },
-      grid: { left: '8%', right: '10%', bottom: '15%', top: '15%' },
-      xAxis: { type: 'category', data: years },
-      yAxis: [
-        { type: 'value', name: '亿' },
-        { type: 'value', name: '同比(%)', position: 'right', axisLabel: { formatter: '{value}%' } },
-      ],
-      series: [
-        { name: '营运利润(亿)', type: 'bar', data: rows.map(d => d.operatingProfit || 0), itemStyle: { color: '#7fa8c9' }, barGap: '20%' },
-        { name: '净利润(亿)', type: 'bar', data: rows.map(d => d.netProfit || 0), itemStyle: { color: '#8fb89a' } },
-        { name: '营运利润同比(%)', type: 'line', yAxisIndex: 1, data: opYoy, itemStyle: { color: '#cdab74' }, lineStyle: { width: 2 }, smooth: true },
-        { name: '净利润同比(%)', type: 'line', yAxisIndex: 1, data: netYoy, itemStyle: { color: '#cf8e8e' }, lineStyle: { width: 2 }, smooth: true },
-      ],
-      graphic: data.trendNote ? [{
-        type: 'text',
-        right: 10,
-        bottom: 10,
-        style: { text: data.trendNote.substring(0, 80) + '...', fill: '#8b939c', fontSize: 11 },
-      }] : [],
-    });
+        legend: { data: ['营运利润(亿)', '净利润(亿)', '营运利润同比(%)', '净利润同比(%)'], top: 0 },
+        grid: { left: '8%', right: '10%', bottom: '15%', top: '15%' },
+        xAxis: { type: 'category', data: years },
+        yAxis: [
+          { type: 'value', name: '亿' },
+          { type: 'value', name: '同比(%)', position: 'right', axisLabel: { formatter: '{value}%' } },
+        ],
+        series: [
+          { name: '营运利润(亿)', type: 'bar', data: rows.map(d => d.operatingProfit || 0), itemStyle: { color: '#7fa8c9' }, barGap: '20%' },
+          { name: '净利润(亿)', type: 'bar', data: rows.map(d => d.netProfit || 0), itemStyle: { color: '#8fb89a' } },
+          { name: '营运利润同比(%)', type: 'line', yAxisIndex: 1, data: opYoy, itemStyle: { color: '#cdab74' }, lineStyle: { width: 2 }, smooth: true },
+          { name: '净利润同比(%)', type: 'line', yAxisIndex: 1, data: netYoy, itemStyle: { color: '#cf8e8e' }, lineStyle: { width: 2 }, smooth: true },
+        ],
+        graphic: data.trendNote ? [{
+          type: 'text',
+          right: 10,
+          bottom: 10,
+          style: { text: data.trendNote.substring(0, 80) + '...', fill: '#8b939c', fontSize: 11 },
+        }] : [],
+      });
+    }
   },
 
   renderPEV(data) {

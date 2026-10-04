@@ -55,6 +55,9 @@ const Charts = {
     if (this.instances[id]) { try { this.instances[id].dispose(); } catch {} }
     let chart = echarts.init(el, 'softDark', { renderer: 'canvas' });
     if (window.SA_CHART) chart = SA_CHART.attach(chart); // setOption 自动过视觉修补
+    // 20261003f：必须注册实例。此前缺失导致隐藏 tab（display:none）中初始化的图表
+    // 退化为 200px 宽后，switchTab/window resize 遍历 Charts.instances 触达不到 → 切回 tab 仍压缩。
+    this.instances[id] = chart;
     return chart;
   },
 
@@ -148,9 +151,17 @@ const Charts = {
     const volumes = history.map(d => d.volume || 0);
 
     // 实心蜡烛：阳线红、阴线绿，边框同色；十字星/一字板按前收正确着色
+    // [20261003e] 2D 增强：蜡烛带同色柔光晕（shadowBlur 克制，不遮挡数据）
     const candleItems = history.map((d, i) => {
       const color = this._candleColor(d, i > 0 ? history[i - 1].close : d.close);
-      return { value: ohlc[i], itemStyle: { color, borderColor: color } };
+      return {
+        value: ohlc[i],
+        itemStyle: {
+          color, borderColor: color,
+          shadowBlur: 6,
+          shadowColor: window.SA_CHART ? SA_CHART.rgba(color, 0.35) : 'rgba(0,0,0,0.30)',
+        },
+      };
     });
 
     // 现价标线（Robinhood 式最新价虚线 + 右端价签）：颜色取最新一日涨跌语义色
@@ -201,7 +212,7 @@ const Charts = {
         type: 'line',
         data: this._sma(closes, m.n),
         smooth: true,
-        lineStyle: { width: 1.5, color: m.color },
+        lineStyle: { width: 1.5, color: m.color, shadowBlur: 5, shadowColor: m.color },
         itemStyle: { color: m.color },
         symbol: 'none',
         z: 3,
@@ -222,6 +233,8 @@ const Charts = {
           itemStyle: {
             color: window.SA_CHART ? SA_CHART.rgba(c, 0.62) : c,
             borderRadius: [2, 2, 0, 0],
+            shadowBlur: 4,
+            shadowColor: window.SA_CHART ? SA_CHART.rgba(c, 0.30) : 'rgba(0,0,0,0.25)',
           },
         };
       }),
@@ -526,20 +539,57 @@ const Charts = {
     const inRes = profile.resistance && profile.resistance.low != null;
     const inSup = profile.support && profile.support.low != null;
 
+    const tooltipFmt = (ps) => {
+      const p = Array.isArray(ps) ? ps[0] : ps;
+      if (!p) return '';
+      const b = bins[p.dataIndex];
+      if (!b) return '';
+      let s = `价格档 ${this.fmtNum(b.low)} ~ ${this.fmtNum(b.high)}<br/>成交占比 ${this.fmtNum(b.pct)}%`;
+      if (inRes && b.low >= profile.resistance.low && b.high <= profile.resistance.high) s += '<br/>↑ 长期阻力带';
+      if (inSup && b.low >= profile.support.low && b.high <= profile.support.high) s += '<br/>↓ 长期支撑带';
+      return s;
+    };
+    const binColor = (b) => {
+      // 现价上方 → 套牢阻力（暗红）；现价下方 → 获利支撑（暗绿）；现价档 → 金
+      let color = 'rgba(143,184,154,0.65)';
+      if (b.low >= cur) color = 'rgba(207,142,142,0.65)';
+      else if (b.high <= cur) color = 'rgba(143,184,154,0.65)';
+      else color = '#F0B90B';
+      if (inRes && b.low >= profile.resistance.low && b.high <= profile.resistance.high) color = '#cf8e8e';
+      if (inSup && b.low >= profile.support.low && b.high <= profile.support.high) color = '#8fb89a';
+      return color;
+    };
+
+    if (window.SA3D && SA3D.bar25D) {
+      const o = SA3D.bar25D({
+        horizontal: true,
+        inverse: true,
+        xData: bins.map(b => this.fmtNum((b.low + b.high) / 2)),
+        yName: '成交占比',
+        depth: 7,
+        barRatio: 0.8,
+        grid: { left: '14%', right: '12%', top: 16, bottom: 40 },
+        yLabel: { fontSize: 9, interval: 2 },
+        xLabel: { fontSize: 10, formatter: (v) => this.fmtNum((v / volMax) * 100) + '%' },
+        tooltipFmt,
+        series: [{
+          name: '成交占比',
+          data: bins.map(b => ({ value: b.vol, color: binColor(b) })),
+        }],
+      });
+      o.series[0].markLine = {
+        silent: true,
+        symbol: 'none',
+        data: [{ yAxis: curIdx }],
+        lineStyle: { color: '#F0B90B', type: 'dashed', width: 1.5 },
+        label: { formatter: `现价 ${this.fmtNum(cur)}`, color: '#F0B90B', fontSize: 10, position: 'end' },
+      };
+      chart.setOption(o);
+      return;
+    }
+
     chart.setOption({
-      tooltip: {
-        trigger: 'axis',
-        axisPointer: { type: 'shadow' },
-        formatter: (ps) => {
-          if (!ps || !ps.length) return '';
-          const b = bins[ps[0].dataIndex];
-          if (!b) return '';
-          let s = `价格档 ${this.fmtNum(b.low)} ~ ${this.fmtNum(b.high)}<br/>成交占比 ${this.fmtNum(b.pct)}%`;
-          if (inRes && b.low >= profile.resistance.low && b.high <= profile.resistance.high) s += '<br/>↑ 长期阻力带';
-          if (inSup && b.low >= profile.support.low && b.high <= profile.support.high) s += '<br/>↓ 长期支撑带';
-          return s;
-        },
-      },
+      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: tooltipFmt },
       grid: { left: '14%', right: '12%', top: 16, bottom: 40 },
       xAxis: {
         type: 'value',
@@ -556,16 +606,7 @@ const Charts = {
       series: [{
         type: 'bar',
         barWidth: '80%',
-        data: bins.map(b => {
-          // 现价上方 → 套牢阻力（暗红）；现价下方 → 获利支撑（暗绿）；现价档 → 金
-          let color = 'rgba(143,184,154,0.65)';
-          if (b.low >= cur) color = 'rgba(207,142,142,0.65)';
-          else if (b.high <= cur) color = 'rgba(143,184,154,0.65)';
-          else color = '#F0B90B';
-          if (inRes && b.low >= profile.resistance.low && b.high <= profile.resistance.high) color = '#cf8e8e';
-          if (inSup && b.low >= profile.support.low && b.high <= profile.support.high) color = '#8fb89a';
-          return { value: b.vol, itemStyle: { color, borderRadius: [0, 2, 2, 0] } };
-        }),
+        data: bins.map(b => ({ value: b.vol, itemStyle: { color: binColor(b), borderRadius: [0, 2, 2, 0] } })),
         markLine: {
           silent: true,
           symbol: 'none',

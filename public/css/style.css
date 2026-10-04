@@ -2093,6 +2093,10 @@ body {
 .home-action-btn:hover { border-color: var(--accent); background: var(--bg-hover); transform: translateY(-1px); color: var(--accent); }
 .home-action-btn.active { color: var(--orange); border-color: var(--orange); background: rgba(207,174,124,0.14); }
 
+/* 20261003：准确率入口由顶栏移入常驻导航行 .global-nav，与 .home-action-btn 同高并列（保留金色强调色） */
+.nav-acc-link { display: inline-flex; align-items: center; gap: 4px; padding: 8px 16px; border-radius: var(--radius-sm); background: rgba(240,185,123,.12); border: 1px solid rgba(240,185,123,.4); color: #F0B97B; font-size: 13px; font-weight: 600; text-decoration: none; white-space: nowrap; flex-shrink: 0; transition: all .18s ease; }
+.nav-acc-link:hover { background: rgba(240,185,123,.22); border-color: #F0B97B; transform: translateY(-1px); }
+
 /* 笔记查看弹窗（scope modal） */
 .journal-modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .journal-modal-head h3 { margin: 0; font-size: 18px; }
@@ -4896,3 +4900,22 @@ body { display: flex; flex-direction: column; }
 .ds-stale{background:rgba(240,185,123,.14);color:#F0B97B;border:1px solid rgba(240,185,123,.4);}
 .ds-failed{background:rgba(246,72,92,.14);color:#F6465D;border:1px solid rgba(246,72,92,.4);}
 .dy-note.dy-failed{color:#F6465D;font-weight:600;border-left:3px solid #F6465D;padding:6px 10px;background:rgba(246,72,92,.08);border-radius:6px;}
+
+/* ============ [20261003e] 卡片化表格增强（只改视觉） ============ */
+/* 冻结表头：表格容器纵向滚动时表头吸顶 */
+.fmr-table-wrap { max-height: 620px; overflow-y: auto; scrollbar-width: thin; }
+.fmr-table thead th { position: sticky; top: 0; background: #161B22; z-index: 3; box-shadow: 0 1px 0 rgba(255,255,255,0.06); }
+.metrics-table-wrap, .sh-table-wrap, .cap-table-wrap { max-height: 480px; overflow-y: auto; }
+.metrics-table thead th, .sh-table thead th { position: sticky; top: 0; background: #161B22; z-index: 3; }
+/* 斑马纹 + 行悬浮高亮 */
+.fmr-table tbody tr:nth-child(even) { background: rgba(255,255,255,0.018); }
+.fmr-table tbody tr:hover { background: rgba(240,185,123,0.06); }
+.metrics-table > div:nth-child(even), .cap-table-row:nth-child(even) { background: rgba(255,255,255,0.018); }
+/* 涨跌色块：数字带底色圆角块，红涨绿跌 */
+.fmr-chg-num.fmr-up, .fmr-chg-num.fmr-down { display: inline-block; padding: 1px 8px; border-radius: 4px; margin-top: 2px; }
+.fmr-chg-num.fmr-up { background: rgba(246,70,93,0.14); color: #F6465D; }
+.fmr-chg-num.fmr-down { background: rgba(14,203,129,0.12); color: #0ECB81; }
+.fmr-chg-pct { margin-top: 3px; }
+/* 首列排名徽章 */
+.fmr-rank { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; border-radius: 6px; background: rgba(148,163,184,0.10); }
+.fmr-rank-top { background: linear-gradient(135deg, rgba(240,185,123,0.28), rgba(240,185,123,0.10)); color: #F0B97B; box-shadow: 0 0 10px rgba(240,185,123,0.18); }

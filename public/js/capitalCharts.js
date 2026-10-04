@@ -123,26 +123,51 @@ const CapitalCharts = {
     const mediumNet = daily.map(d => Math.round(d.mediumNet / 1e8 * 100) / 100);
     const smallNet = daily.map(d => Math.round(d.smallNet / 1e8 * 100) / 100);
 
-    chart.setOption({
-      title: isEstimated ? { text: '资金流向（基于量价估算）', left: 'center', top: 2, textStyle: { fontSize: 12, color: '#cdab74' } } : undefined,
-      tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
-      legend: { data: ['主力净流入', '超大/大单', '中单', '小单'], top: 28, left: 'center', itemWidth: 14, itemHeight: 10, textStyle: { fontSize: 11 } },
-      grid: { left: '8%', right: '5%', bottom: '10%', top: '24%' },
-      xAxis: { type: 'category', data: dates, axisLabel: { rotate: 45, fontSize: 10 } },
-      yAxis: { type: 'value', name: '亿元', axisLabel: { formatter: '{value}' } },
-      series: [
-        {
-          name: '主力净流入', type: 'bar', data: mainNet, barMaxWidth: 18,
-          itemStyle: {
-            color: function(p) { return p.value >= 0 ? 'rgba(207,142,142,0.80)' : 'rgba(143,184,154,0.80)'; },
-            borderRadius: [2, 2, 0, 0],
+    let moneyOpt;
+    const estTitle = isEstimated ? { text: '资金流向（基于量价估算）', left: 'center', top: 2, textStyle: { fontSize: 12, color: '#cdab74' } } : undefined;
+    const use3D = !!(window.SA3D && SA3D.glb());
+    if (use3D) {
+      moneyOpt = SA3D.bar3D({
+        xData: dates,
+        yName: '亿元',
+        unit: ' 亿',
+        title: estTitle,
+        series: [
+          {
+            name: '主力净流入', data: mainNet, barSize: [16, 16],
+            color: function (v) { return v >= 0 ? '#F6465D' : '#0ECB81'; },
           },
-        },
-        { name: '超大/大单', type: 'line', data: largeNet, smooth: true, lineStyle: { width: 2 }, itemStyle: { color: '#cdab74' }, symbol: 'none' },
-        { name: '中单', type: 'line', data: mediumNet, smooth: true, lineStyle: { width: 2 }, itemStyle: { color: '#7fa8c9' }, symbol: 'none' },
-        { name: '小单', type: 'line', data: smallNet, smooth: true, lineStyle: { width: 2 }, itemStyle: { color: '#8b939c' }, symbol: 'none' },
-      ],
-    });
+          { name: '超大/大单', kind: 'line', data: largeNet, color: '#cdab74' },
+          { name: '中单', kind: 'line', data: mediumNet, color: '#7fa8c9' },
+          { name: '小单', kind: 'line', data: smallNet, color: '#8b939c' },
+        ],
+        legend: { data: ['主力净流入', '超大/大单', '中单', '小单'], top: 28, left: 'center', itemWidth: 14, itemHeight: 10, textStyle: { fontSize: 11 } },
+        view: { alpha: 14, beta: -32, distance: 240 },
+      });
+      moneyOpt.tooltip.axisPointer = undefined;
+    } else {
+      moneyOpt = {
+        title: estTitle,
+        tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+        legend: { data: ['主力净流入', '超大/大单', '中单', '小单'], top: 28, left: 'center', itemWidth: 14, itemHeight: 10, textStyle: { fontSize: 11 } },
+        grid: { left: '8%', right: '5%', bottom: '10%', top: '24%' },
+        xAxis: { type: 'category', data: dates, axisLabel: { rotate: 45, fontSize: 10 } },
+        yAxis: { type: 'value', name: '亿元', axisLabel: { formatter: '{value}' } },
+        series: [
+          {
+            name: '主力净流入', type: 'bar', data: mainNet, barMaxWidth: 18,
+            itemStyle: {
+              color: function(p) { return p.value >= 0 ? 'rgba(207,142,142,0.80)' : 'rgba(143,184,154,0.80)'; },
+              borderRadius: [2, 2, 0, 0],
+            },
+          },
+          { name: '超大/大单', type: 'line', data: largeNet, smooth: true, lineStyle: { width: 2 }, itemStyle: { color: '#cdab74' }, symbol: 'none' },
+          { name: '中单', type: 'line', data: mediumNet, smooth: true, lineStyle: { width: 2 }, itemStyle: { color: '#7fa8c9' }, symbol: 'none' },
+          { name: '小单', type: 'line', data: smallNet, smooth: true, lineStyle: { width: 2 }, itemStyle: { color: '#8b939c' }, symbol: 'none' },
+        ],
+      };
+    }
+    chart.setOption(moneyOpt);
 
     // Add source badge to the section header
     const sectionEl = el.closest('.cap-section');
@@ -314,20 +339,37 @@ const CapitalCharts = {
     const rzBalance = data.map(d => Math.round(d.rzBalance / 1e8 * 100) / 100);
     const rqBalance = data.map(d => Math.round(d.rqBalance / 1e8 * 100) / 100);
 
-    chart.setOption({
-      tooltip: { trigger: 'axis' },
-      legend: { data: ['融资余额(亿)', '融券余额(亿)'], top: 0 },
-      grid: { left: '8%', right: '5%', bottom: '10%', top: '15%' },
-      xAxis: { type: 'category', data: dates, axisLabel: { rotate: 45, fontSize: 10 } },
-      yAxis: { type: 'value', scale: true, axisLabel: { formatter: '{value}' } },
-      series: [
-        {
-          name: '融资余额(亿)', type: 'bar', data: rzBalance, barMaxWidth: 16,
-          itemStyle: { color: 'rgba(207,142,142,0.78)', borderRadius: [2, 2, 0, 0] },
-        },
-        { name: '融券余额(亿)', type: 'line', data: rqBalance, smooth: true, symbol: 'none', lineStyle: { width: 2, color: '#8fb89a' } },
-      ],
-    });
+    let marginOpt;
+    if (window.SA3D && SA3D.glb()) {
+      marginOpt = SA3D.bar3D({
+        xData: dates,
+        yName: '亿元',
+        unit: ' 亿',
+        legend: { data: ['融资余额(亿)', '融券余额(亿)'], top: 0 },
+        view: { alpha: 14, beta: -32, distance: 240 },
+        series: [
+          { name: '融资余额(亿)', data: rzBalance, barSize: [16, 16], color: '#F6465D' },
+          { name: '融券余额(亿)', kind: 'line', data: rqBalance, color: '#8fb89a' },
+        ],
+      });
+      marginOpt.tooltip.axisPointer = undefined;
+    } else {
+      marginOpt = {
+        tooltip: { trigger: 'axis' },
+        legend: { data: ['融资余额(亿)', '融券余额(亿)'], top: 0 },
+        grid: { left: '8%', right: '5%', bottom: '10%', top: '15%' },
+        xAxis: { type: 'category', data: dates, axisLabel: { rotate: 45, fontSize: 10 } },
+        yAxis: { type: 'value', scale: true, axisLabel: { formatter: '{value}' } },
+        series: [
+          {
+            name: '融资余额(亿)', type: 'bar', data: rzBalance, barMaxWidth: 16,
+            itemStyle: { color: 'rgba(207,142,142,0.78)', borderRadius: [2, 2, 0, 0] },
+          },
+          { name: '融券余额(亿)', type: 'line', data: rqBalance, smooth: true, symbol: 'none', lineStyle: { width: 2, color: '#8fb89a' } },
+        ],
+      };
+    }
+    chart.setOption(marginOpt);
   },
 
   renderMarginSummary(margin) {

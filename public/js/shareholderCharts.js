@@ -193,15 +193,42 @@ const ShareholderCharts = {
       legendData.push('股价');
     }
 
-    chart.setOption({
-      tooltip: { trigger: 'axis' },
-      legend: { data: legendData, top: 0 },
-      grid: { left: 60, right: showPrice ? 110 : 60, top: 40, bottom: 50 },
-      xAxis: { type: 'category', data: dates, axisLabel: { rotate: 30 } },
-      yAxis: yAxes,
-      dataZoom: [{ type: 'inside', start: z.start, end: z.end }, { type: 'slider', height: 18, bottom: 12, start: z.start, end: z.end }],
-      series,
-    }, { replaceMerge: ['yAxis', 'series'] });
+    const zoom = [{ type: 'inside', start: z.start, end: z.end }, { type: 'slider', height: 18, bottom: 12, start: z.start, end: z.end }];
+    let opt;
+    if (window.SA3D && SA3D.bar25D) {
+      const b = SA3D.bar25D({
+        xData: dates,
+        legend: { data: legendData, top: 0 },
+        grid: { left: 60, right: showPrice ? 110 : 60, top: 40, bottom: 50 },
+        xAxis: { type: 'category', data: dates, axisLabel: { rotate: 30 } },
+        yAxis: yAxes,
+        axisPointer: { type: 'line' },
+        series: [
+          { name: '股东户数', type: 'bar', data: nums.map(v => ({ value: v, color: '#5470c6' })) },
+          {
+            name: '环比变化%', type: 'line', yAxisIndex: 1, smooth: true, data: ratios,
+            lineStyle: { width: 2, color: '#cdab74' }, itemStyle: { color: '#cdab74' },
+          },
+          ...(showPrice ? [{
+            name: '股价', type: 'line', yAxisIndex: 2, smooth: true, data: priceCloses,
+            lineStyle: { width: 2, color: '#F6465D', type: 'dashed' }, itemStyle: { color: '#F6465D' },
+          }] : []),
+        ],
+      });
+      b.dataZoom = zoom;
+      opt = b;
+    } else {
+      opt = {
+        tooltip: { trigger: 'axis', axisPointer: { type: 'line' } },
+        legend: { data: legendData, top: 0 },
+        grid: { left: 60, right: showPrice ? 110 : 60, top: 40, bottom: 50 },
+        xAxis: { type: 'category', data: dates, axisLabel: { rotate: 30 } },
+        yAxis: yAxes,
+        dataZoom: zoom,
+        series,
+      };
+    }
+    chart.setOption(opt, { replaceMerge: ['yAxis', 'series'] });
   },
 
   _renderTopHoldersPie(holders) {
@@ -213,17 +240,32 @@ const ShareholderCharts = {
       return;
     }
 
-    chart.setOption({
-      tooltip: { trigger: 'item', formatter: (p) => `${p.name}: ${(p.value != null ? p.value.toFixed(2) : '--')}% (${p.percent != null ? p.percent.toFixed(2) : '--'}%)` },
-      legend: { type: 'scroll', orient: 'vertical', right: 0, top: 'middle' },
-      series: [{
-        type: 'pie',
-        radius: ['30%', '65%'],
-        center: ['40%', '50%'],
-        data: holders.map(h => ({ name: h.name || '未知', value: h.holdRatio })),
-        label: { formatter: '{b}\n{d}%' },
-      }],
-    });
+    const top1 = holders[0];
+    const donutOpt = (window.SA3D && SA3D.donut) ? {
+      centerText: top1 && top1.holdRatio != null
+        ? { title: (top1.holdRatio != null ? top1.holdRatio.toFixed(1) + '%' : ''), sub: (top1.name || '').slice(0, 10) }
+        : undefined,
+      data: holders.map(h => ({ name: h.name || '未知', value: h.holdRatio })),
+      center: ['40%', '50%'],
+      radius: ['26%', '56%'],
+      tooltipFmt: (p) => (p.seriesName === 'base' ? '' : `${p.name}: ${(p.value != null ? p.value.toFixed(2) : '--')}% (${p.percent != null ? p.percent.toFixed(2) : '--'}%)`),
+      legend: { type: 'scroll', orient: 'vertical', right: 0, top: 'middle', itemWidth: 12, itemHeight: 8, textStyle: { fontSize: 11 } },
+    } : null;
+    if (donutOpt) {
+      chart.setOption(SA3D.donut(donutOpt));
+    } else {
+      chart.setOption({
+        tooltip: { trigger: 'item', formatter: (p) => `${p.name}: ${(p.value != null ? p.value.toFixed(2) : '--')}% (${p.percent != null ? p.percent.toFixed(2) : '--'}%)` },
+        legend: { type: 'scroll', orient: 'vertical', right: 0, top: 'middle' },
+        series: [{
+          type: 'pie',
+          radius: ['30%', '65%'],
+          center: ['40%', '50%'],
+          data: holders.map(h => ({ name: h.name || '未知', value: h.holdRatio })),
+          label: { formatter: '{b}\n{d}%' },
+        }],
+      });
+    }
 
     const institutionCount = holders.filter(h => h.type === '机构').length;
     const institutionRatio = holders.reduce((s, h) => s + (h.type === '机构' ? (h.holdRatio || 0) : 0), 0);
@@ -288,37 +330,58 @@ const ShareholderCharts = {
     const orgNums = trend.map(t => t.orgNum);
     const ratios = trend.map(t => t.freeRatio);
     const z = this._zoomFor(trend.length);
-
-    chart.setOption({
-      tooltip: {
-        trigger: 'axis',
-        formatter: (params) => {
-          const idx = params[0]?.dataIndex ?? 0;
-          const row = trend[idx];
-          if (!row) return '';
-          const change = (v) => {
-            if (v == null) return '—';
-            const s = v >= 0 ? `+${v}` : `${v}`;
-            return v > 0 ? `<span class="sh-change up">${s}</span>` : v < 0 ? `<span class="sh-change down">${s}</span>` : `<span class="sh-change neutral">${s}</span>`;
-          };
-          return `<div style="font-weight:600;margin-bottom:4px">${row.date}</div>
-            <div>机构家数：${row.orgNum.toLocaleString('zh-CN')} 家（环比 ${change(row.orgNumChange)}）</div>
-            <div>占流通股比：${row.freeRatio.toFixed(2)}%（环比 ${change(row.freeRatioChange)}）</div>`;
-        }
-      },
-      legend: { data: ['机构家数', '占流通股比%'], top: 0 },
-      grid: { left: 55, right: 55, top: 40, bottom: 50 },
-      xAxis: { type: 'category', data: dates, axisLabel: { rotate: 30 } },
-      yAxis: [
-        { type: 'value', name: '家数' },
-        { type: 'value', name: '占比%', position: 'right' },
-      ],
-      dataZoom: [{ type: 'inside', start: z.start, end: z.end }, { type: 'slider', height: 18, bottom: 12, start: z.start, end: z.end }],
-      series: [
-        { name: '机构家数', type: 'bar', data: orgNums, itemStyle: { color: '#7fa8c9' }, barWidth: '50%' },
-        { name: '占流通股比%', type: 'line', yAxisIndex: 1, smooth: true, data: ratios, lineStyle: { width: 2 } },
-      ],
-    });
+    const tooltipFmt = (params) => {
+      const idx = (Array.isArray(params) ? params[0] : params)?.dataIndex ?? 0;
+      const row = trend[idx];
+      if (!row) return '';
+      const change = (v) => {
+        if (v == null) return '—';
+        const s = v >= 0 ? `+${v}` : `${v}`;
+        return v > 0 ? `<span class="sh-change up">${s}</span>` : v < 0 ? `<span class="sh-change down">${s}</span>` : `<span class="sh-change neutral">${s}</span>`;
+      };
+      return `<div style="font-weight:600;margin-bottom:4px">${row.date}</div>
+        <div>机构家数：${row.orgNum.toLocaleString('zh-CN')} 家（环比 ${change(row.orgNumChange)}）</div>
+        <div>占流通股比：${row.freeRatio.toFixed(2)}%（环比 ${change(row.freeRatioChange)}）</div>`;
+    };
+    const zoom = [{ type: 'inside', start: z.start, end: z.end }, { type: 'slider', height: 18, bottom: 12, start: z.start, end: z.end }];
+    let opt;
+    if (window.SA3D && SA3D.bar25D) {
+      const b = SA3D.bar25D({
+        xData: dates,
+        legend: { data: ['机构家数', '占流通股比%'], top: 0 },
+        grid: { left: 55, right: 55, top: 40, bottom: 50 },
+        xAxis: { type: 'category', data: dates, axisLabel: { rotate: 30 } },
+        yAxis: [
+          { type: 'value', name: '家数' },
+          { type: 'value', name: '占比%', position: 'right' },
+        ],
+        axisPointer: { type: 'line' },
+        tooltipFmt,
+        series: [
+          { name: '机构家数', type: 'bar', data: orgNums.map(v => ({ value: v, color: '#7fa8c9' })) },
+          { name: '占流通股比%', type: 'line', yAxisIndex: 1, smooth: true, data: ratios, lineStyle: { width: 2 } },
+        ],
+      });
+      b.dataZoom = zoom;
+      opt = b;
+    } else {
+      opt = {
+        tooltip: { trigger: 'axis', formatter: tooltipFmt },
+        legend: { data: ['机构家数', '占流通股比%'], top: 0 },
+        grid: { left: 55, right: 55, top: 40, bottom: 50 },
+        xAxis: { type: 'category', data: dates, axisLabel: { rotate: 30 } },
+        yAxis: [
+          { type: 'value', name: '家数' },
+          { type: 'value', name: '占比%', position: 'right' },
+        ],
+        dataZoom: zoom,
+        series: [
+          { name: '机构家数', type: 'bar', data: orgNums, itemStyle: { color: '#7fa8c9' }, barWidth: '50%' },
+          { name: '占流通股比%', type: 'line', yAxisIndex: 1, smooth: true, data: ratios, lineStyle: { width: 2 } },
+        ],
+      };
+    }
+    chart.setOption(opt);
 
     // 汇总说明：最近两期机构家数变化与占流通股比变化
     const latest = trend[trend.length - 1];
