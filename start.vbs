@@ -1,35 +1,44 @@
 Option Explicit
 ' Stock Analyzer - hidden launcher (no console window / no flash-exit)
-' Called from desktop .lnk; runs latest code from D drive.
+' Called from the desktop shortcut; runs the latest code from the D drive.
 ' IMPORTANT: always kill the old service on port 3005 first so the user sees the latest code.
 '
-' 20261005 修复：上一版把 Dim 写在注释块之后，而 VBScript 逐行执行，
-'   导致第 1 行赋值 baseDir 时 Dim 尚未执行 -> 报「变量未定义: 'baseDir'」(800A01F4)，
-'   双击图标只弹错误框、服务根本起不来。现将所有 Dim 提到脚本最前面（紧跟 Option Explicit），
-'   再往下才是注释与逻辑，彻底规避「注释把 Dim 和赋值隔开」这一类坑。
+' HISTORY / PITFALLS (all ASCII on purpose - see note at the bottom):
 '
-' 20261004 启动提速：原先把「等旧进程释放端口」和「等服务就绪」都写成固定盲等
-'   （WScript.Sleep 800 + 3500，合计约 4.3 秒纯等待），而实测服务端约 0.9 秒就已监听，
-'   浏览器却要等满 4.3 秒才开——用户感知的「启动慢」几乎全是这两处死等。
-' 现改为：① 杀进程后只等 300ms（端口几十毫秒即释放）；
-'        ② 清掉上一轮就绪标记，再轮询 server.js 在监听成功时写出的 data\.server-ready，
-'           一出现就立刻开浏览器（通常 ~1.0 秒）；最多轮询 12 秒兜底，超时也照常开窗。
-'        标记文件为纯文件系统判断，不依赖 HTTP/网络，绕开本机 HTTP_PROXY 对探测的干扰。
+' 20261005a  Every Dim must be placed BEFORE the first assignment.
+'   VBScript executes line by line and has NO hoisting. A previous version put the
+'   Dim block *after* a comment block, so the assignment ran before the Dim was
+'   reached -> "Variable is undefined: 'baseDir'" (800A01F4) and the service never
+'   started. Keep ALL Dim statements right after Option Explicit.
+'
+' 20261005b  Never hardcode the Node path.
+'   The managed runtime directory carries a suffix (e.g. 22.22.2-3, not 22.22.2),
+'   so a hardcoded path failed FileExists, fell back to a bare "node" that does not
+'   exist on PATH, and WshShell.Run died silently in a hidden window -> double click
+'   did nothing at all. We now auto-detect Node (see below).
+'
+' 20261005c  THIS FILE MUST STAY PURE ASCII (no Chinese text anywhere).
+'   wscript.exe reads a .vbs file using the system ANSI code page (GBK on this box),
+'   NOT UTF-8. Chinese characters saved as UTF-8 are mis-decoded into garbage bytes,
+'   and some of those bytes break the comment/string boundaries -> the parser reports
+'   "Expected identifier" (800A03F2) at a seemingly unrelated line. Keeping the whole
+'   file ASCII makes UTF-8 and GBK identical, so this class of bug can never happen.
+'   => Do NOT add Chinese comments to this file. Use English, or see the notes in
+'      start.bat / this project's docs instead.
+'
+' 20261004  Startup speed-up.
+'   The old version used two fixed blind waits (WScript.Sleep 800 + 3500 = ~4.3s)
+'   even though the server is listening in ~0.9s. We now poll the ready-marker file
+'   that server.js writes inside its app.listen callback, so the browser opens as
+'   soon as the service is actually up (usually ~1.0s). A 12s timeout is the safety net.
 
-' 20261005b 修复「双击图标无反应」：上一版把 Node 路径写死成
-'   C:\Users\16507\.workbuddy\binaries\node\versions\22.22.2\node.exe
-'   但实际目录名带后缀（22.22.2-3，managed 运行时会有 -N 后缀）→ FileExists 为假
-'   → 回退成裸 "node"（PATH 上没有）→ WshShell.Run 隐藏窗口静默失败 → 双击毫无反应。
-'   现改为「自动定位」：① 读 versions\current 指向；② 逐个扫 versions\* 找 node.exe；
-'   ③ 再试 PATH 上的 node；④ 全失败则弹框明确报错（不再静默）。这样以后 Node 升级也不会失效。
-
-' ---- 所有变量声明必须置于首次赋值之前（Option Explicit 强制）----
+' ---- ALL variable declarations must come before the first assignment ----
 Dim WshShell, fso, q, nodeExe, baseDir, target, cmd, readyFile
-Dim i, portOk, verRoot, curFile, curName, vdir, sub, nodeFile, found
+Dim i, portOk, verRoot, curFile, curName, sub, nodeFile, found
 Dim ts, rawCur
 
 baseDir = "D:\stock analyzer\stock-analyzer"
-target  = baseDir & "\server.js"
+target = baseDir & "\server.js"
 readyFile = baseDir & "\data\.server-ready"
 
 Set WshShell = CreateObject("WScript.Shell")
@@ -37,11 +46,14 @@ WshShell.CurrentDirectory = baseDir
 Set fso = CreateObject("Scripting.FileSystemObject")
 q = Chr(34)
 
-' ---- 自动定位 Node 可执行文件（不写死版本号，防 WorkBuddy 升级后失效）----
+' ---- Auto-detect Node (never hardcode the version) ----
+'   (1) read versions\current, whose content is the active version dir name
+'   (2) scan versions\* and take the first node.exe found
+'   (3) fall back to a bare "node" from PATH
+'   (4) if none of the above works, show a message box instead of failing silently
 verRoot = "C:\Users\16507\.workbuddy\binaries\node\versions"
 nodeExe = ""
 
-' ① 优先读 versions\current（内容即当前版本目录名，如 22.22.2-3）
 curFile = verRoot & "\current"
 If fso.FileExists(curFile) Then
     On Error Resume Next
@@ -58,7 +70,6 @@ If fso.FileExists(curFile) Then
     On Error GoTo 0
 End If
 
-' ② 扫 versions\* 子目录，取第一个存在的 node.exe（不依赖版本号写法）
 If Len(nodeExe) = 0 Then
     On Error Resume Next
     For Each sub In fso.GetFolder(verRoot).SubFolders
@@ -68,50 +79,47 @@ If Len(nodeExe) = 0 Then
     On Error GoTo 0
 End If
 
-' ③ 回退到 PATH 上的 node（裸名，交给 cmd 解析）
 If Len(nodeExe) = 0 Then nodeExe = "node"
 
-' ④ 兜底：找不到任何 node 时明确报错（替代此前的静默失败——用户只看到「双击没反应」）
 found = True
 If nodeExe <> "node" Then found = fso.FileExists(nodeExe)
 If Not found Then
-    MsgBox "找不到 Node.js，无法启动股票分析工作台。" & vbCrLf & vbCrLf & _
-           "已检查目录：" & verRoot & vbCrLf & _
-           "请把此提示截图发给开发者。", 16, "Stock Analyzer 启动失败"
+    MsgBox "Cannot find Node.js, so the Stock Analyzer cannot start." & vbCrLf & vbCrLf & _
+           "Checked folder: " & verRoot & vbCrLf & _
+           "Please send a screenshot of this message to the developer.", 16, "Stock Analyzer"
     WScript.Quit 1
 End If
 
-' Kill any old process still listening on port 3005 (only the listener, not other apps)
-' Use a helper .bat so the tricky cmd quoting stays out of VBScript.
+' Kill any old process still listening on port 3005 (only the listener, not other apps).
+' A helper .bat keeps the tricky cmd quoting out of VBScript.
 WshShell.Run q & baseDir & "\kill_port_3005.bat" & q, 0, True
 
-' 杀进程后端口通常几十毫秒即释放，无需盲等 800ms（保守留余量）
+' The port is usually released within tens of milliseconds; a short margin is enough.
 WScript.Sleep 300
 
-' 清掉上一轮的就绪标记，确保下面轮询到的必定是本次新起的服务实例
+' Remove the previous ready marker so we can only ever observe THIS new instance.
 If fso.FileExists(readyFile) Then fso.DeleteFile readyFile, True
 
-' Start a fresh Node service on fixed port 3005
-' SA_NO_AUTO_OPEN=1 tells server.js NOT to open the browser itself.
-' This launcher opens it below. Without this flag BOTH would open a window,
-' which is why the user saw two identical web pages on every double click.
+' Start a fresh Node service on the fixed port 3005.
+' SA_NO_AUTO_OPEN=1 tells server.js NOT to open the browser itself; this launcher does it.
+' Without that flag both would open a window, which is why the user used to see two pages.
 WshShell.Environment("PROCESS")("PORT") = "3005"
 WshShell.Environment("PROCESS")("SA_NO_AUTO_OPEN") = "1"
 ' SA_NO_BG_AI=1 disables the two background LLM scheduled tasks (event scan + dedicated-factor
-' monthly trigger) so the Qwen LLM endpoint is only hit on explicit user action — stops silent
-' Aliyun billing when the app runs unattended. To re-enable background AI, delete the line below.
+' monthly trigger) so the Qwen LLM endpoint is only hit on explicit user action - this stops
+' silent Aliyun billing while the app runs unattended. Delete the line below to re-enable.
 WshShell.Environment("PROCESS")("SA_NO_BG_AI") = "1"
 cmd = q & nodeExe & q & " " & q & target & q
 WshShell.Run cmd, 0, False
 
-' 等服务真正监听成功（server.js 在 app.listen 回调里写入 readyFile），出现即开浏览器。
-' 原盲等 3500ms → 现在通常 ~1.0 秒开浏览器，去掉约 2.5 秒纯等待。
+' Wait until the service is really listening (server.js writes readyFile in app.listen).
 portOk = False
 For i = 0 To 120
     If fso.FileExists(readyFile) Then portOk = True : Exit For
     WScript.Sleep 100
 Next
-' 兜底：标记始终没出现也照常开窗（不会卡死不响应）
+' Safety net: open the browser anyway if the marker never showed up (never hang).
 If Not portOk Then WScript.Sleep 500
-' 用 Chr(34) 拼出成对引号；此前的 """" 会被解析成两个空串，start 把空参数当窗口标题吃掉而开不出页面。
+' Use paired quotes. The old """" literal is parsed as TWO empty strings, so "start"
+' would swallow the first argument as a window title and the page would never open.
 WshShell.Run "cmd /c start " & q & q & " " & q & "http://localhost:3005" & q, 0, False
