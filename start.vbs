@@ -34,7 +34,7 @@ Option Explicit
 
 ' ---- ALL variable declarations must come before the first assignment ----
 Dim WshShell, fso, q, nodeExe, baseDir, target, cmd, readyFile
-Dim i, portOk, verRoot, curFile, curName, sub, nodeFile, found
+Dim i, portOk, verRoot, curFile, curName, subFld, nodeFile, found
 Dim ts, rawCur
 
 baseDir = "D:\stock analyzer\stock-analyzer"
@@ -72,8 +72,8 @@ End If
 
 If Len(nodeExe) = 0 Then
     On Error Resume Next
-    For Each sub In fso.GetFolder(verRoot).SubFolders
-        nodeFile = sub.Path & "\node.exe"
+    For Each subFld In fso.GetFolder(verRoot).SubFolders
+        nodeFile = subFld.Path & "\node.exe"
         If fso.FileExists(nodeFile) Then nodeExe = nodeFile : Exit For
     Next
     On Error GoTo 0
