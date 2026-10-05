@@ -3,6 +3,11 @@ Option Explicit
 ' Called from desktop .lnk; runs latest code from D drive.
 ' IMPORTANT: always kill the old service on port 3005 first so the user sees the latest code.
 '
+' 20261005 修复：上一版把 Dim 写在注释块之后，而 VBScript 逐行执行，
+'   导致第 1 行赋值 baseDir 时 Dim 尚未执行 -> 报「变量未定义: 'baseDir'」(800A01F4)，
+'   双击图标只弹错误框、服务根本起不来。现将所有 Dim 提到脚本最前面（紧跟 Option Explicit），
+'   再往下才是注释与逻辑，彻底规避「注释把 Dim 和赋值隔开」这一类坑。
+'
 ' 20261004 启动提速：原先把「等旧进程释放端口」和「等服务就绪」都写成固定盲等
 '   （WScript.Sleep 800 + 3500，合计约 4.3 秒纯等待），而实测服务端约 0.9 秒就已监听，
 '   浏览器却要等满 4.3 秒才开——用户感知的「启动慢」几乎全是这两处死等。
@@ -10,7 +15,11 @@ Option Explicit
 '        ② 清掉上一轮就绪标记，再轮询 server.js 在监听成功时写出的 data\.server-ready，
 '           一出现就立刻开浏览器（通常 ~1.0 秒）；最多轮询 12 秒兜底，超时也照常开窗。
 '        标记文件为纯文件系统判断，不依赖 HTTP/网络，绕开本机 HTTP_PROXY 对探测的干扰。
+
+' ---- 所有变量声明必须置于首次赋值之前（Option Explicit 强制）----
 Dim WshShell, fso, q, nodeExe, baseDir, target, cmd, readyFile
+Dim i, portOk
+
 baseDir = "D:\stock analyzer\stock-analyzer"
 target  = baseDir & "\server.js"
 readyFile = baseDir & "\data\.server-ready"
@@ -49,7 +58,6 @@ WshShell.Run cmd, 0, False
 
 ' 等服务真正监听成功（server.js 在 app.listen 回调里写入 readyFile），出现即开浏览器。
 ' 原盲等 3500ms → 现在通常 ~1.0 秒开浏览器，去掉约 2.5 秒纯等待。
-Dim i, portOk
 portOk = False
 For i = 0 To 120
     If fso.FileExists(readyFile) Then portOk = True : Exit For
@@ -57,4 +65,5 @@ For i = 0 To 120
 Next
 ' 兜底：标记始终没出现也照常开窗（不会卡死不响应）
 If Not portOk Then WScript.Sleep 500
-WshShell.Run "cmd /c start """" ""http://localhost:3005""", 0, False
+' 用 Chr(34) 拼出成对引号；此前的 """" 会被解析成两个空串，start 把空参数当窗口标题吃掉而开不出页面。
+WshShell.Run "cmd /c start " & q & q & " " & q & "http://localhost:3005" & q, 0, False
