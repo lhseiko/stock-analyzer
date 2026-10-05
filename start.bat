@@ -18,21 +18,37 @@ for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":3005" ^| findstr LISTENING'
 echo 端口清理完成，等待释放...
 ping -n 2 127.0.0.1 >nul 2>&1
 
-REM 选定 Node 路径：优先托管版本，否则系统 PATH 中的 node
-set MANAGED_NODE=C:\Users\16507\.workbuddy\binaries\node\versions\22.22.2\node.exe
-if exist "%MANAGED_NODE%" (
-    set NODE_EXE=%MANAGED_NODE%
+REM 选定 Node 路径：优先托管版本（自动探测版本目录，不写死版本号），否则系统 PATH 中的 node
+REM 注意：批处理中「括号块内的 %VAR% 在解析时展开」，所以不能在同一个块里先 set 再用 %VAR%。
+REM       这里统一用 CALL 子过程（运行时求值），规避延迟展开陷阱。
+set "NODE_ROOT=C:\Users\16507\.workbuddy\binaries\node\versions"
+set "MANAGED_NODE="
+
+REM ① 优先 versions\current 指向的版本；② 再扫 versions\* 任意子目录
+if exist "%NODE_ROOT%\current" for /f "usebackq delims=" %%V in ("%NODE_ROOT%\current") do call :TryNode "%NODE_ROOT%\%%V\node.exe"
+if not defined MANAGED_NODE if exist "%NODE_ROOT%" for /d %%D in ("%NODE_ROOT%\*") do call :TryNode "%%D\node.exe"
+
+REM ③ 回退 PATH 上的 node；④ 全失败则明确报错（不再静默）
+if defined MANAGED_NODE (
+    set "NODE_EXE=%MANAGED_NODE%"
 ) else (
     where node >nul 2>&1
     if not errorlevel 1 (
-        set NODE_EXE=node
+        set "NODE_EXE=node"
     ) else (
-        echo [错误] 未找到 Node.js，请安装 Node.js 后重试。
-        echo 托管路径: %MANAGED_NODE%
+        echo [错误] 未找到 Node.js，无法启动。
+        echo 已检查: %NODE_ROOT%
         pause
         exit /b 1
     )
 )
+goto :AfterNodePick
+
+:TryNode
+if not defined MANAGED_NODE if exist "%~1" set "MANAGED_NODE=%~1"
+exit /b 0
+
+:AfterNodePick
 
 echo 正在启动股票分析工作台...
 echo 地址： http://localhost:3005
