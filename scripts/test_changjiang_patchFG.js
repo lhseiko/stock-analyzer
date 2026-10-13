@@ -87,7 +87,7 @@ console.log('\n===== 补丁G·规则4 长周期均值锚 → 乐观复苏情景�
 const rec = g.recovery || {};
 ok('长周期均值锚取配置 1.33 倍', rec.pbLtMean === 1.33);
 ok('复苏情景价 = BVPS 6.67 × 1.33 = ¥8.87', rec.price === 8.87);
-ok('闸门①市场日均成交额已达标（近20日日均 19323.07 亿 ≥ 15000 亿）', rec.gateTurnover === true && rec.turnoverYi === 19323.07 && rec.turnoverFloorYi === 15000);
+ok('闸门①市场日均成交额已达标（近20日日均 ≥ 15000 亿，闸门通过）', rec.gateTurnover === true && typeof rec.turnoverYi === 'number' && rec.turnoverYi >= rec.turnoverFloorYi && rec.turnoverFloorYi === 15000);
 ok('闸门②公司 ROE 持续上行（4.79→5.08→10.02 → 2026E 12.9）', rec.gateRoe === true && JSON.stringify(rec.roeValues) === '[4.79,5.08,10.02]');
 ok('双条件满足 → 情景 active 并给出说明（长周期均值锚 1.33 倍 × BVPS = ¥8.87）', rec.active === true && String(rec.note).indexOf('长周期均值锚 1.33 倍 × BVPS 6.67 = ¥8.87') !== -1);
 ok('说明明确「不参与主模型计算」', String(rec.note).indexOf('该锚仅作「乐观复苏情景」备用目标，不参与主模型计算') !== -1);

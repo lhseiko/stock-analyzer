@@ -5,7 +5,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "test": "node scripts/run_all_tests.js",
+    "test:quick": "node scripts/run_all_tests.js --quick"
   },
   "dependencies": {
     "axios": "^1.6.0",

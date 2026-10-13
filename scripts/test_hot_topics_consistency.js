@@ -90,7 +90,7 @@ function freshHotTopics(aiMock) {
     ['同花顺股吧讨论帖', '多平台讨论热度（东财/同花顺/雪球）', '个股新闻'].every(s => (a.sources || []).includes(s)),
     JSON.stringify(a.sources));
   check('LLM 否认有内容时综述被确定性摘要覆盖', /【讨论热度】/.test(a.content || '') && !/^未抓取到/.test(a.content || ''));
-  check('缓存写入带 cacheVer', a.cacheVer === '20260913f', String(a.cacheVer));
+  check('缓存写入带 cacheVer', a.cacheVer === '20260923h', String(a.cacheVer));
 
   // ---------- 场景 B：LLM 失败 → 回退话题须来自股吧讨论帖 ----------
   try { fs.rmSync(CACHE_DIR, { recursive: true, force: true }); } catch (e) {}

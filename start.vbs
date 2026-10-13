@@ -90,6 +90,40 @@ If Not found Then
     WScript.Quit 1
 End If
 
+' ---- Rotate server.log if it has grown too large; keep last 14 days of archives ----
+Sub RotateServerLog()
+    On Error Resume Next
+    Dim logDir, logFile, arch, tsY, tsM, tsD, f, y, m, d, fd
+    logDir = baseDir & "\logs"
+    logFile = logDir & "\server.log"
+    If Not fso.FolderExists(logDir) Then fso.CreateFolder(logDir)
+    If fso.FileExists(logFile) Then
+        If fso.GetFile(logFile).Size > (5 * 1024 * 1024) Then
+            tsY = Year(Now)
+            tsM = Right("0" & Month(Now), 2)
+            tsD = Right("0" & Day(Now), 2)
+            arch = logDir & "\server." & tsY & "-" & tsM & "-" & tsD & ".log"
+            If fso.FileExists(arch) Then fso.DeleteFile arch, True
+            fso.MoveFile logFile, arch
+        End If
+    End If
+    ' Retention: delete dated archives older than 14 days (server.YYYY-MM-DD.log).
+    If fso.FolderExists(logDir) Then
+        For Each f In fso.GetFolder(logDir).Files
+            If LCase(fso.GetExtensionName(f.Name)) = "log" Then
+                If f.Name Like "server.????-??-??.log" Then
+                    y = CInt(Mid(f.Name, 8, 4))
+                    m = CInt(Mid(f.Name, 13, 2))
+                    d = CInt(Mid(f.Name, 16, 2))
+                    fd = DateSerial(y, m, d)
+                    If DateDiff("d", fd, Date) > 14 Then fso.DeleteFile f.Path, True
+                End If
+            End If
+        Next
+    End If
+    On Error GoTo 0
+End Sub
+
 ' Kill any old process still listening on port 3005 (only the listener, not other apps).
 ' A helper .bat keeps the tricky cmd quoting out of VBScript.
 WshShell.Run q & baseDir & "\kill_port_3005.bat" & q, 0, True
@@ -103,13 +137,16 @@ If fso.FileExists(readyFile) Then fso.DeleteFile readyFile, True
 ' Start a fresh Node service on the fixed port 3005.
 ' SA_NO_AUTO_OPEN=1 tells server.js NOT to open the browser itself; this launcher does it.
 ' Without that flag both would open a window, which is why the user used to see two pages.
+' All console output (stdout + stderr, incl. stack traces) is appended to logs\server.log
+' for post-mortem; RotateServerLog archives it when it grows past 5MB.
+RotateServerLog
 WshShell.Environment("PROCESS")("PORT") = "3005"
 WshShell.Environment("PROCESS")("SA_NO_AUTO_OPEN") = "1"
 ' SA_NO_BG_AI=1 disables the two background LLM scheduled tasks (event scan + dedicated-factor
 ' monthly trigger) so the Qwen LLM endpoint is only hit on explicit user action - this stops
 ' silent Aliyun billing while the app runs unattended. Delete the line below to re-enable.
 WshShell.Environment("PROCESS")("SA_NO_BG_AI") = "1"
-cmd = q & nodeExe & q & " " & q & target & q
+cmd = "cmd /c " & q & q & nodeExe & q & " " & q & target & q & " >> " & q & baseDir & "\logs\server.log" & q & " 2>&1" & q
 WshShell.Run cmd, 0, False
 
 ' Wait until the service is really listening (server.js writes readyFile in app.listen).

@@ -1100,9 +1100,16 @@ const App = {
     html += '<div class="tp-block-title">越用越准（自动学习）</div>';
     html += `<div class="tp-learn-line">权重自学习：需累计 <b>20</b> 次以上预测样本后才自动调整（命中率 &gt;60% 上调、&lt;45% 下调，常驻因子权重恒定在 <b>5%~30%</b>）；${ll.length ? `本次调整 ${ll.length} 项：${ll.map(x => `${esc(x.name)} ${x.from}%→${x.to}%`).join('、')}` : '当前样本不足，权重保持固定（只记录不调整）'}</div>`;
     if (acc.totalRecords != null) {
-      html += `<div class="tp-learn-line">准确率台账：已记录 <b>${acc.totalRecords}</b> 条预测，已结算 <b>${acc.settledCount}</b> 条`;
-      if (acc.accuracy != null) html += `，命中率 <b>${acc.accuracy}%</b>`;
-      html += `（口径：${esc(acc.horizonLabel || 'T+1 / T+3 / T+5')}）</div>`;
+      let line = `准确率台账：已记录 <b>${acc.totalRecords}</b> 条预测，已结算 <b>${acc.settledCount}</b> 条`;
+      if (acc.accuracy != null) {
+        line += `，命中率 <b>${acc.accuracy}%</b>`;
+        // 20261013f：拆分展示「震荡未命中」与「方向真错」，避免 0% 一刀切被误读（结算口径不变）
+        if (acc.flatMissCount != null && (acc.flatMissCount + acc.dirMissCount) > 0) {
+          line += `（其中震荡未命中 <b>${acc.flatMissCount}</b> / 方向真错 <b>${acc.dirMissCount}</b>）`;
+        }
+      }
+      line += `（口径：${esc(acc.horizonLabel || 'T+1 / T+3 / T+5')}）`;
+      html += `<div class="tp-learn-line">${line}</div>`;
     }
     if (data.health && data.health.report) {
       const hr = data.health.report;
@@ -1721,19 +1728,21 @@ const App = {
     let html = discStrip;
 
     if (a.mode === 'priceChange') {
-      // 模式一：当日异动归因（涨跌幅 ≥3%）
+      // 模式一：当日异动归因（涨跌幅 ≥3% 或 振幅 >3%，20261013g）
       const up = a.changePct > 0;
       const sign = up ? '+' : '';
       const cls = up ? 'ht-pc-up' : 'ht-pc-down';
       const src = Array.isArray(a.sources) && a.sources.length ? '参考来源：' + a.sources.map(s => this.escapeHtml(s)).join('、') : '';
       const cachedTag = a.cached ? '<span class="ht-cached">（今日已分析）</span>' : '';
+      // 20261013g：触发来源角标——涨跌幅触发显示涨跌幅；振幅触发（收盘平盘但盘中震荡大）额外显示振幅
+      const ampTxt = (a.amplitude != null && a.amplitude > 0) ? `<span class="ht-pc-amp">振幅 ${a.amplitude.toFixed(2)}%</span>` : '';
       html += `<div class="ht-price-change ${cls}">`;
-      html += `<div class="ht-pc-head">🔥 当日异动归因 <span class="ht-pc-pct">${sign}${a.changePct.toFixed(2)}%</span>${cachedTag}</div>`;
+      html += `<div class="ht-pc-head">🔥 当日异动归因 <span class="ht-pc-pct">${sign}${a.changePct.toFixed(2)}%</span>${ampTxt}${cachedTag}</div>`;
       html += `<div class="ht-pc-analysis">${this.escapeHtml(a.analysis || '')}</div>`;
       if (src) html += `<div class="ht-pc-sources">${src}</div>`;
       html += `</div>`;
     } else if (a.mode === 'trending') {
-      // 模式二：网络热议话题（涨跌幅 <3%）
+      // 模式二：网络热议话题（涨跌幅 <3% 且振幅 ≤3%，20261013g）
       const src = Array.isArray(a.sources) && a.sources.length ? '参考来源：' + a.sources.map(s => this.escapeHtml(s)).join('、') : '';
       const cachedTag = a.cached ? '<span class="ht-cached">（今日已分析）</span>' : '';
       html += `<div class="ht-trending">`;
@@ -2050,6 +2059,8 @@ const App = {
   // ---- Overview tab ----
   renderOverview(data) {
     const { history, technical, fundamental } = data;
+    // 20261012：留存 overview 数据，供信息分析卡加载完成后回填「主要产品」截图
+    this._overviewData = data;
 
     // 公司概况（公司全称 / 企业性质 / 所属行业 / 控股股东 / 总部地点）
     this.renderCompanyProfile(data);
@@ -2069,7 +2080,9 @@ const App = {
   },
 
   // 公司概况卡片渲染（issue6）：突出主要产品、主要客户、企业性质
-  renderCompanyProfile(data, products) {
+  // 20261012：简介页面新增「主要产品」截图区——复用信息分析卡已抓取的 productsServices.imageLocal
+  // （含必应搜图兜底），让商品截图直接展示在「📊 简介」tab 的公司概况卡；信息分析卡仍保留完整产品与服务详情。
+  renderCompanyProfile(data) {
     const el = document.getElementById('companyProfile');
     const badgeEl = document.getElementById('companyTypeBadge');
     if (!el) return;
@@ -2080,16 +2093,14 @@ const App = {
       badgeEl.className = 'company-type-badge-inline';
     }
 
+    const esc = (s) => this.escapeHtml(s == null ? '' : String(s));
     const row = (label, value) => `
       <div class="cp-row">
         <span class="cp-label">${label}</span>
         <span class="cp-value">${value || '<span class="cp-empty">—</span>'}</span>
       </div>`;
 
-    // 注：产品/客户/供应链/竞争的「图文详情」统一由概览内的「📊 信息分析」卡片
-    // （renderCompanyDeep）展示，公司概况卡此处不重复展示「主要产品/主要客户」行。
-
-    el.innerHTML = `
+    let html = `
       <div class="cp-grid">
         ${row('公司全称', profile.companyName)}
         ${row('企业性质', profile.ownership)}
@@ -2098,8 +2109,25 @@ const App = {
         ${row('总部地点', profile.province)}
       </div>
       ${profile.intro ? `<div class="cp-intro">${profile.intro}</div>` : ''}
-      <div class="cp-source">来源：东方财富F10 · 公司基本资料</div>
     `;
+
+    // 主要产品截图（简介页面）：复用信息分析卡 productsServices（含必应兜底图）；未加载时不阻塞简介渲染
+    try {
+      const ps = (this.companyDeepData && this.companyDeepData.profile && this.companyDeepData.profile.productsServices) || [];
+      if (ps.length) {
+        html += `<div class="cp-prod-title">主要产品</div>`;
+        html += '<div class="cp-prod-grid">' + ps.map(p => {
+          const img = p.imageLocal || '';
+          return `<div class="cp-prod">
+            <div class="cp-prod-img">${img ? `<img src="${esc(img)}" alt="${esc(p.name)}" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}<span class="cp-ph">🏷️</span></div>
+            <div class="cp-prod-name">${esc(p.name)}</div>
+          </div>`;
+        }).join('') + '</div>';
+      }
+    } catch (e) { /* 信息分析未加载时跳过产品图 */ }
+
+    html += `<div class="cp-source">来源：东方财富F10 · 公司基本资料</div>`;
+    el.innerHTML = html;
   },
 
   // ---- 期货关联走势面板（需求1） ----
@@ -5115,6 +5143,8 @@ const App = {
           this.companyDeepData = cached;
           this.companyDeepLoadedSymbol = symbol;
           this.renderCompanyDeep(cached);
+          // 20261012：信息分析加载完成，回填简介卡「主要产品」截图
+          if (this._overviewData) this.renderCompanyProfile(this._overviewData);
           return;
         }
         // 无缓存：主按钮保持「✨ AI 联网获取」，隐藏「🔄 重新搜索」
@@ -5145,6 +5175,8 @@ const App = {
         this.companyDeepData = data;
         this.companyDeepLoadedSymbol = symbol;
         this.renderCompanyDeep(data);
+        // 20261012：信息分析加载完成，回填简介卡「主要产品」截图
+        if (this._overviewData) this.renderCompanyProfile(this._overviewData);
       } else if (!data.success && data.error === 'NO_KEY') {
         body.innerHTML = '<div class="ai-empty">尚未配置 AI API Key，无法联网获取。请先在「⚙️ AI 设置」中配置。</div>';
       } else {

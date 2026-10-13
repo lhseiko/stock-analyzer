@@ -75,11 +75,43 @@ const MacroNews = (() => {
     </div>`;
   }
   function evCard(ev) {
-    const cls = ev.impact === 'bearish' ? 'ev-bear' : (ev.impact === 'conditional' ? 'ev-cond' : 'ev-neu');
-    const badge = ev.impact === 'bearish' ? '偏空' : (ev.impact === 'conditional' ? '方向待定' : '中性');
+    const cls = ev.impact === 'bearish' ? 'ev-bear' : (ev.impact === 'bullish' ? 'ev-bull' : 'ev-neu');
+    const dirLabel = (d) => d === 'bearish' ? '偏空' : (d === 'bullish' ? '偏多' : '中性');
+    const dirCls = (d) => d === 'bearish' ? 'neg' : (d === 'bullish' ? 'pos' : 'neu');
+    // 20261013e：双维度判定徽章——「经济影响」与「股市偏好」分开标注（用户要求，避免单一判定造成误读）。
+    // 偏多=红 / 偏空=绿（项目语义配色）；就业类两维度方向相反属正常（数据弱→经济偏空、宽松预期偏多股市）。
+    // 旧数据（后端无 eco 字段）回退单徽章。
+    let dirBadges = '';
+    if (ev.eco) {
+      dirBadges = `<span class="mu-badge mu-dim ${dirCls(ev.eco)}" title="对经济基本面的影响">经济 ${dirLabel(ev.eco)}</span>` +
+                  `<span class="mu-badge mu-dim ${dirCls(ev.impact)}" title="对股市风险偏好的影响">股市 ${dirLabel(ev.impact)}</span>`;
+    } else {
+      dirBadges = `<span class="mu-badge">${dirLabel(ev.impact)}</span>`;
+    }
+    // 超预期 / 不及预期 / 符合预期 角标（仅已公布）
+    let devBadge = '';
+    if (ev.deviate === 'above') devBadge = `<span class="mu-dev above">超预期</span>`;
+    else if (ev.deviate === 'below') devBadge = `<span class="mu-dev below">不及预期</span>`;
+    else if (ev.status === 'released') devBadge = `<span class="mu-dev inline">符合预期</span>`;
+    // 时间状态角标（预告态：今日公布 / N 天后）
+    let timeBadge = '';
+    if (ev.status === 'upcoming' && typeof ev.daysLeft === 'number' && ev.daysLeft >= 0 && ev.daysLeft <= 3) {
+      timeBadge = `<span class="mu-timebadge">${ev.daysLeft === 0 ? '今日公布' : ev.daysLeft + ' 天后'}</span>`;
+    }
+    // 三值（公布 / 预期 / 前值）
+    let three = '';
+    if (ev.actual != null || ev.forecast != null || ev.previous != null) {
+      const cell = (l, v, c) => `<span class="mu-three"><i>${l}</i><b class="${c}">${escapeHtml(v == null ? '—' : String(v))}</b></span>`;
+      three = `<div class="mu-three-row">
+        ${cell('公布', ev.actual, ev.deviate === 'above' ? 'up' : ev.deviate === 'below' ? 'down' : '')}
+        ${cell('预期', ev.forecast, '')}
+        ${cell('前值', ev.previous, '')}
+      </div>`;
+    }
     return `<div class="macro-us-card ${cls}">
-      <div class="mu-head"><span class="mu-title">${escapeHtml(ev.title)}</span><span class="mu-badge">${badge}</span></div>
+      <div class="mu-head"><span class="mu-title">${escapeHtml(ev.title)}</span><span class="mu-badge-wrap">${devBadge}${timeBadge}${dirBadges}</span></div>
       <div class="mu-meta"><span class="mu-cat">${escapeHtml(ev.category || '')}</span><span class="mu-date">${escapeHtml(ev.dateZh || ev.dateUs || '')}</span></div>
+      ${three}
       <div class="mu-summary">${escapeHtml(ev.summary || '')}</div>
       ${ev.note ? `<div class="mu-note">${escapeHtml(ev.note)}</div>` : ''}
     </div>`;
@@ -90,7 +122,7 @@ const MacroNews = (() => {
     }
     return `<div class="macro-data">${macroData.indicators.map(indCard).join('')}</div>`;
   }
-  function render(newsData, macroData, usEvents) {
+  function render(newsData, macroData, usEvents, usNotice, usSource) {
     const body = document.getElementById('macroBody');
     if (!body) return;
     const updated = (newsData && newsData.updated) ? new Date(newsData.updated)
@@ -120,13 +152,17 @@ const MacroNews = (() => {
       html += `<div class="macro-groups">${groups}</div>`;
     }
 
-    // 3) 国际经济数据 & 事件（策划式事件卡片，引用每日宏观 & 政策同源展示）
+    // 3) 国际经济数据 & 事件（策划式事件卡片：过期事件已由后端自动剔除）
     const usEvs = (usEvents && usEvents.length) ? usEvents : [];
     if (usEvs.length) {
       html += `<div class="macro-sec-head">🌍 国际经济数据 & 事件</div>`;
       html += `<div class="macro-us-grid">${usEvs.map(evCard).join('')}</div>`;
+    } else if (usNotice) {
+      // 20261013：诚实空态——策划式清单无未过期事件时明示，而非静默隐藏区块
+      html += `<div class="macro-sec-head">🌍 国际经济数据 & 事件</div>`;
+      html += `<div class="ai-empty">${escapeHtml(usNotice)}</div>`;
     }
-    html += `<div class="macro-note">📌 经济数据来源：${escapeHtml((macroData && macroData.source) || '东方财富数据中心')}；动态来源：${escapeHtml((newsData && newsData.source) || '东方财富 7×24 快讯')}；美国宏观事件为策划式预告（非自动抓取）。每日自动采集（按自然日缓存），仅供研究参考，不构成投资建议。</div>`;
+    html += `<div class="macro-note">📌 经济数据来源：${escapeHtml((macroData && macroData.source) || '东方财富数据中心')}；动态来源：${escapeHtml((newsData && newsData.source) || '东方财富 7×24 快讯')}；美国宏观事件排期：${escapeHtml(usSource || '自动抓取')}（过期事件自动剔除）。仅供研究参考，不构成投资建议。</div>`;
     body.innerHTML = html;
   }
   async function load(force) {
@@ -155,8 +191,10 @@ const MacroNews = (() => {
       let macroData = null;
       try { macroData = await dataResp.json(); } catch (e) { macroData = null; }
       let usEvents = [];
-      try { const u = await usResp.json(); usEvents = (u && u.events) || []; } catch (e) { usEvents = []; }
-      render(newsData, macroData, usEvents);
+      let usNotice = '';
+      let usSource = '';
+      try { const u = await usResp.json(); usEvents = (u && u.events) || []; usNotice = (u && u.notice) || ''; usSource = (u && u.source) || ''; } catch (e) { usEvents = []; }
+      render(newsData, macroData, usEvents, usNotice, usSource);
     } catch (e) {
       if (body) body.innerHTML = `<div class="ai-empty">宏观数据采集失败：${escapeHtml(e.message)}</div>`;
     } finally {

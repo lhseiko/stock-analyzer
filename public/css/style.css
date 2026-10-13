@@ -674,6 +674,8 @@ body {
 }
 .ht-pc-up .ht-pc-pct { color: var(--red); }
 .ht-pc-down .ht-pc-pct { color: var(--green); }
+/* 20261013g：振幅角标（触发来源展示；中性色，不与涨跌幅的涨跌色争语义） */
+.ht-pc-amp { font-size: 11px; font-weight: 600; color: var(--accent); background: rgba(240,185,123,.12); border: 1px solid rgba(240,185,123,.3); border-radius: 6px; padding: 1px 6px; margin-left: 5px; }
 .ht-pc-analysis {
   font-size: 12px;
   line-height: 1.6;
@@ -2851,6 +2853,14 @@ body {
 .cp-value { font-size: 14px; color: var(--text-primary); font-weight: 500; }
 .cp-empty { color: var(--text-light); }
 .cp-intro { margin-top: 14px; padding: 12px 14px; background: var(--bg-hover); border-radius: var(--radius-sm); font-size: 13px; color: var(--text-secondary); line-height: 1.6; }
+/* 20261012：简介页面「主要产品」截图区（复用信息分析卡 productsServices.imageLocal） */
+.cp-prod-title { margin-top: 16px; font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.cp-prod-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; margin-top: 8px; }
+.cp-prod { border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; background: var(--bg-card); display: flex; flex-direction: column; }
+.cp-prod-img { position: relative; height: 90px; background: var(--bg-elevated); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.cp-prod-img img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.cp-ph { font-size: 22px; opacity: 0.4; }
+.cp-prod-name { font-size: 12px; font-weight: 600; color: var(--text-primary); padding: 6px 8px 0; text-align: center; }
 .cp-source { font-size: 11px; color: var(--text-light); margin-top: 12px; opacity: 0.9; }
 .company-type-badge-inline {
   display: inline-flex; align-items: center; padding: 3px 12px; border-radius: 999px;
@@ -3830,6 +3840,8 @@ body {
 .macro-us-card .mu-head { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
 .macro-us-card .mu-title { font-size: 12.5px; font-weight: 700; color: var(--text-primary); }
 .macro-us-card .mu-badge { font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 6px; white-space: nowrap; }
+.macro-us-card .mu-badge-wrap { display: inline-flex; align-items: center; gap: 5px; }
+.macro-us-card .mu-timebadge { font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 6px; white-space: nowrap; color: var(--accent); background: rgba(240,185,123,.12); border: 1px solid rgba(240,185,123,.35); }
 .macro-us-card.ev-bear .mu-badge { color: var(--green); background: rgba(14,203,129,.14); }
 .macro-us-card.ev-cond .mu-badge { color: #F0B97B; background: rgba(240,185,123,.14); }
 .macro-us-card.ev-neu .mu-badge { color: var(--text-muted); background: rgba(148,163,184,.14); }
@@ -3837,6 +3849,23 @@ body {
 .macro-us-card .mu-cat { color: var(--text-secondary); }
 .macro-us-card .mu-summary { font-size: 12px; line-height: 1.55; color: var(--text-secondary); }
 .macro-us-card .mu-note { font-size: 10.5px; color: var(--text-muted); font-style: italic; }
+/* 20261013c：偏多卡片（红，涨）+ 超预期/不及预期角标 + 三值行 */
+.macro-us-card.ev-bull { border-left-color: var(--red); }
+.macro-us-card.ev-bull .mu-badge { color: var(--red); background: var(--red-soft); }
+/* 20261013e：双维度判定徽章（经济影响 / 股市偏好）——各自按方向配色：偏多红 / 偏空绿 / 中性灰 */
+.macro-us-card .mu-badge.mu-dim { color: var(--text-muted); background: rgba(148,163,184,.14); }
+.macro-us-card .mu-badge.mu-dim.pos { color: var(--red); background: var(--red-soft); }
+.macro-us-card .mu-badge.mu-dim.neg { color: var(--green); background: rgba(14,203,129,.14); }
+.macro-us-card .mu-dev { font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 6px; white-space: nowrap; }
+.macro-us-card .mu-dev.above { color: #F0B97B; background: rgba(240,185,123,.14); }
+.macro-us-card .mu-dev.below { color: #7fa8c9; background: rgba(127,168,201,.14); }
+.macro-us-card .mu-dev.inline { color: var(--text-muted); background: rgba(148,163,184,.14); }
+.macro-us-card .mu-three-row { display: flex; gap: 12px; flex-wrap: wrap; padding: 5px 8px; background: var(--bg-hover); border-radius: 6px; }
+.macro-us-card .mu-three { display: inline-flex; align-items: baseline; gap: 4px; font-size: 11px; }
+.macro-us-card .mu-three i { font-style: normal; color: var(--text-muted); }
+.macro-us-card .mu-three b { font-size: 12px; font-weight: 700; color: var(--text-primary); }
+.macro-us-card .mu-three b.up { color: #F0B97B; }
+.macro-us-card .mu-three b.down { color: #7fa8c9; }
 
 /* ---- 市场情绪提醒 · 宏观情绪因子（非常驻 · 自学习）---- */
 .tp-macro-block { margin-top: 8px; }
