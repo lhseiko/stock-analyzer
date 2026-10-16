@@ -348,6 +348,12 @@
         await loadSentiment();
       }
     } catch (e) { console.error(e); }
+    // 20261016：结算完成确定性反馈——KPI 数字闪烁一次（复用 numFlash 动画），明确告知数据已刷新
+    document.querySelectorAll('.acc-kpi .k-value').forEach(el => {
+      el.classList.remove('num-flash');
+      void el.offsetWidth;
+      el.classList.add('num-flash');
+    });
     ov.classList.add('hidden');
   }
 

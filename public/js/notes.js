@@ -390,8 +390,8 @@ const Notes = {
     container.innerHTML = `
       <div class="sn-toolbar">
         <div class="sn-title">⭐ ${name || symbol} · 个股亮点与雷点</div>
-        <button class="btn-journal-add sn-ai" id="snAiBtn" onclick="Notes.generateAspects('${symbol}', '${(name || symbol).replace(/'/g, "")}')">✨ AI 生成亮点/雷点</button>
-        <button class="btn-journal-add" onclick="Notes.dedupeAll()">🧹 清理重复</button>
+        <button class="btn-journal-add sn-ai" id="snAiBtn" onclick="Notes.generateAspects('${symbol}', '${(name || symbol).replace(/'/g, "")}')">AI 生成亮点/雷点</button>
+        <button class="btn-journal-add" onclick="Notes.dedupeAll()">清理重复</button>
       </div>
       <div id="snAiStatus" class="sn-ai-status">${this.aiStatusHtml || ''}</div>
       <div class="sn-grid">
@@ -467,7 +467,7 @@ const Notes = {
     if (this._aiPendingMap[pendingKey]) return;
     this._aiPendingMap[pendingKey] = true;
     const btn = document.getElementById('snAiBtn');
-    if (btn) { btn.disabled = true; btn.textContent = '⏳ AI 分析中...'; }
+    if (btn) { btn.disabled = true; btn.textContent = 'AI 分析中...'; }
 
     // ① 等待计时：每秒刷新「已等待 N 秒」，让用户看到任务仍在推进（而不是以为卡死）
     const t0 = Date.now();
@@ -573,7 +573,7 @@ const Notes = {
       // 仅当用户仍在该股页面时才复位按钮，避免误改其他个股的按钮状态
       if (this.isCurrentStock(symbol)) {
         const b = document.getElementById('snAiBtn');
-        if (b) { b.disabled = false; b.textContent = '✨ AI 生成亮点/雷点'; }
+        if (b) { b.disabled = false; b.textContent = 'AI 生成亮点/雷点'; }
       }
     }
   },
@@ -601,8 +601,8 @@ const Notes = {
         <div class="note-content">${this.escapeHtml(note.content).replace(/\n/g, '<br>')}</div>
         ${note.verification && note.verification.status !== 'pending' ? `<div class="note-ver">${ver}</div>` : ''}
         <div class="note-actions">
-          <button class="btn-verify" onclick="Notes.verify('${note.id}')">🔍 验证</button>
-          ${(note.aspect === 'highlight' || note.aspect === 'risk') ? `<button class="btn-set-main ${note.mainFor ? 'is-main' : ''}" onclick="Notes.setAsMain('${note.id}')" title="把此条设为该股的「最大亮点」或「最大雷点」，会替换概览页右上角那张卡片的内容并持久化。${note.mainFor ? '（当前已是主项）' : ''}">⭐ ${note.mainFor ? '已是主项' : '设为主'}</button>` : ''}
+          <button class="btn-verify" onclick="Notes.verify('${note.id}')">验证</button>
+          ${(note.aspect === 'highlight' || note.aspect === 'risk') ? `<button class="btn-set-main ${note.mainFor ? 'is-main' : ''}" onclick="Notes.setAsMain('${note.id}')" title="把此条设为该股的「最大亮点」或「最大雷点」，会替换概览页右上角那张卡片的内容并持久化。${note.mainFor ? '（当前已是主项）' : ''}">${note.mainFor ? '已是主项' : '设为主'}</button>` : ''}
           <button class="btn-edit" onclick="Notes.showEditForm('${note.id}')">编辑</button>
           <button class="btn-delete" onclick="Notes.confirmDelete('${note.id}')">删除</button>
         </div>

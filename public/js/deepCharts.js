@@ -914,11 +914,15 @@ const DeepCharts = {
     // 20260906：当前股价一律用工作台头部权威实时价（livePrice）覆盖摘要自带价（单一权威源铁律），无效时回退原值
     const _live = (livePrice != null && isFinite(Number(livePrice)) && Number(livePrice) > 0) ? Number(livePrice) : null;
     const displayPrice = _live != null ? _live : Number(sum.currentPrice);
+    // 20261016：红绿语义色统一引用 chartTheme 色板（单一定义点）。
+    // 注意：「低估」bg 0.08 为 WCAG AA 微调值（卡片表面红字+tint 0.10 为 4.47:1 略低于 AA），刻意低于标准 0.10，勿改。
+    const scRed = (window.SA_CHART && SA_CHART.colors.up) || '#F6465D';
+    const scGreen = (window.SA_CHART && SA_CHART.colors.down) || '#0ECB81';
     const ratingColors = {
-      '低估': { bg: 'rgba(246,70,93,0.12)', border: 'rgba(246,70,93,0.45)', text: '#F6465D' },
+      '低估': { bg: 'rgba(246,70,93,0.08)', border: 'rgba(246,70,93,0.45)', text: scRed },
       '合理': { bg: 'rgba(150,160,180,0.12)', border: 'rgba(150,160,180,0.35)', text: '#aab2c0' },
       '偏高': { bg: 'rgba(14,203,129,0.12)', border: 'rgba(14,203,129,0.40)', text: '#2fbf82' },
-      '高估': { bg: 'rgba(14,203,129,0.14)', border: 'rgba(14,203,129,0.50)', text: '#0ECB81' },
+      '高估': { bg: 'rgba(14,203,129,0.14)', border: 'rgba(14,203,129,0.50)', text: scGreen },
       '数据不足': { bg: 'rgba(139,147,156,0.10)', border: 'rgba(139,147,156,0.35)', text: '#8B949E' },
     };
     const fmt2 = v => (v != null && v !== '' && !isNaN(v) && isFinite(v)) ? Number(v).toFixed(2) : '--';
@@ -1459,7 +1463,7 @@ const DeepCharts = {
       <div class="mx-summary-body">${this.escapeHtmlMulti(ai.summary)}</div>
       <div class="mx-summary-foot">来源：${modeFoot}${dateLabel ? '（' + dateLabel + '）' : ''}${ai.model ? ' · ' + this.escapeHtml(ai.model) : ''}</div>
       ${staleNote ? `<div class="mx-stale-note">${staleNote}</div>` : ''}
-      <button class="ai-trigger-btn" data-ai-type="research">🔄 重新总结</button>
+      <button class="ai-trigger-btn" data-ai-type="research">重新总结</button>
     </div>`;
     this._bindAiTrigger(el, 'research', symbol, stockName);
   },
@@ -1487,7 +1491,7 @@ const DeepCharts = {
 
   _aiErrorPlaceholder(type, symbol, stockName, msg) {
     return `<div class="data-empty">联网总结失败：${this.escapeHtml(msg)}<br><br>
-      <button class="ai-trigger-btn" data-ai-type="${type}">🔄 重试</button></div>`;
+      <button class="ai-trigger-btn" data-ai-type="${type}">重试</button></div>`;
   },
 
   // 20260903f 降费：静默预热本地事实库（研报/公告/概况/主营预下载），不产生任何 LLM 费用；
@@ -1575,7 +1579,7 @@ const DeepCharts = {
       <div class="mx-summary-body">${this.escapeHtmlMulti(ai.summary)}</div>
       <div class="mx-summary-foot">来源：${modeFoot}${dateLabel ? '（' + dateLabel + '）' : ''}${ai.model ? ' · ' + this.escapeHtml(ai.model) : ''}</div>
       ${staleNote ? `<div class="mx-stale-note">${staleNote}</div>` : ''}
-      <button class="ai-trigger-btn" data-ai-type="announcements">🔄 重新总结</button>
+      <button class="ai-trigger-btn" data-ai-type="announcements">重新总结</button>
     </div>`;
     this._bindAiTrigger(el, 'announcements', symbol, stockName);
   },
@@ -1731,7 +1735,7 @@ const DeepCharts = {
       ${tgtWarn}
       ${bodyHtml}
       <div class="mx-summary-foot">来源：${srcLabel}${dateStr ? '（' + dateStr + '）' : ''}${ai.model ? ' · ' + this.escapeHtml(ai.model) : ''}</div>
-      <button class="ai-trigger-btn" data-ai-type="earnings">🔄 重新解读</button>
+      <button class="ai-trigger-btn" data-ai-type="earnings">重新解读</button>
     </div>`;
     this._bindAiTrigger(el, 'earnings', symbol, stockName);
   },

@@ -150,6 +150,11 @@ const MacroNews = (() => {
         </div>`;
       }).join('');
       html += `<div class="macro-groups">${groups}</div>`;
+    } else {
+      // 20261016 审计修复：原实现 0 条时整块静默隐藏，「真无新闻」与「采集失败」不可区分。
+      // 现与区块③一致给诚实空态（有后端 error 时透出，否则说明今日暂无宏观/政策快讯）。
+      html += `<div class="macro-sec-head">📰 宏观政策动态</div>`;
+      html += `<div class="ai-empty">${escapeHtml((newsData && newsData.error) || '今日暂无宏观/政策类快讯，请稍后刷新。')}</div>`;
     }
 
     // 3) 国际经济数据 & 事件（策划式事件卡片：过期事件已由后端自动剔除）
@@ -173,7 +178,7 @@ const MacroNews = (() => {
     lastLoad = now;
     const btn = document.getElementById('macroRefresh');
     const prevLabel = btn ? btn.textContent : '';
-    if (btn) { btn.disabled = true; btn.textContent = '🔄 刷新中…'; }
+    if (btn) { btn.disabled = true; btn.textContent = '刷新中…'; }
     const body = document.getElementById('macroBody');
     if (body && !body.querySelector('.macro-ind') && !body.querySelector('.ai-empty')) {
       body.innerHTML = '<div class="ai-empty">正在采集每日宏观 & 政策…</div>';

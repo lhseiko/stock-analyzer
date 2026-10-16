@@ -51,7 +51,7 @@ const HomeHotTopics = (() => {
           <div class="htw-sub">${sub.map(escapeHtml).join(' · ')}</div>
         </div>
         <div class="htw-right">
-          <div class="htw-score">${r.score}</div>
+          <div class="htw-score"><span class="htw-score-label">综合分</span>${r.score}</div>
           <div class="htw-market">5日 ${pctCell(r.pct5d)} · 资金 ${r.netPct5d == null ? '--' : (r.netPct5d > 0 ? '+' : '') + r.netPct5d + '%'}</div>
         </div>
       </div>`;

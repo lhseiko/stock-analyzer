@@ -248,20 +248,21 @@
   }
 
   /* ---------- 2.5D 柱增强（渐变 + 顶部高光 + 底部投影） ---------- */
+  // 20261016：红涨绿跌统一引用 chartTheme 色板（单一定义点），渐变 alpha 0.95/0.45/0.35 保持原观感
   function lightBar(color, pos) {
-    var up = pos >= 0;
+    var sem = pos >= 0 ? SA_CHART.colors.up : SA_CHART.colors.down;
     return {
       color: {
         type: 'linear',
         x: 0, y: 0, x2: 0, y2: 1,
         colorStops: [
-          { offset: 0, color: up ? 'rgba(246,70,93,0.95)' : 'rgba(14,203,129,0.95)' },
-          { offset: 1, color: up ? 'rgba(246,70,93,0.45)' : 'rgba(14,203,129,0.45)' },
+          { offset: 0, color: SA_CHART.rgba(sem, 0.95) },
+          { offset: 1, color: SA_CHART.rgba(sem, 0.45) },
         ],
       },
       borderRadius: [3, 3, 0, 0],
       shadowBlur: 10,
-      shadowColor: up ? 'rgba(246,70,93,0.35)' : 'rgba(14,203,129,0.35)',
+      shadowColor: SA_CHART.rgba(sem, 0.35),
       shadowOffsetY: 2,
     };
   }

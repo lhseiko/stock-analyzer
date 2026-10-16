@@ -26,6 +26,8 @@
     axisLabel: '#8B949E',
     handle: '#7fa8c9',      // dataZoom 手柄规范色
     accent: '#F0B97B',      // 品牌金
+    up: '#F6465D',          // 全站涨色（红涨绿跌语义，图表序列唯一取色点）
+    down: '#0ECB81',        // 全站跌色
     tooltipBg: 'rgba(22,27,34,0.97)',
     tooltipBorder: 'rgba(255,255,255,0.10)',
     // 既有柔和调色板（保持不变，避免改变未显式指定颜色的序列的观感）

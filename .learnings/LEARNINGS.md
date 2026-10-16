@@ -192,3 +192,117 @@
 - First-Seen: 2026-09-14
 - Last-Seen: 2026-09-30
 - See Also: 20260914i（消费→食品饮料，打分制+强排除）, 20260923k（证券→券商，「证券」降泛词 + 境外闸门重写）
+
+---
+
+## LRN-20261014c — 外部数据接口可用性必须实测，不能照搬文档/假设
+
+### What Happened
+落地策略回测引擎四项待办（真实 F10 / Johansen / 60m 长窗口 / 止损止盈仓位）时，有三处**原始假设被实测推翻**：
+1. **腾讯 m60 分页不可行**。原计划「分页拼接延长 60 分钟窗口」，实测 `mkline?param=sh601318,m60,,N`：`N=800` → 800 根；`N=900/1200` → **静默回退 320 根**（硬上限）；带 `start/end` 参数 → **返回 0 根**（根本不支持日期区间）。→ 改走新浪 `scale=60`，实测上限 **4023 根 ≈ 4 年**，最新收盘价与腾讯逐位一致（51.230 vs 51.23）。
+2. **东财 F10 停牌/ST/退市三接口不可达**。`RPT_TERMINATED_LIST` → 业务错误 `9501`；`push2 clist` 风险警示板（`s:2048`）与 `push2 stock/get`（`f292` 停牌标记）→ **ECONNRESET**。但 `RPT_F10_BASIC_ORGINFO` **可达**，其 `FORMERNAME` 曾用名链就是 ST 历史证据（新洋丰 `中国服装→S中服→中国服装→*ST中服→…` 含 2 次 `*ST`）。
+3. **探测脚本首轮全部误报**。第一版脚本用 `/"m60":\[(.*?)\]/s` 抓根数，结果恒为 `bars=1`（把整个数组当一个匹配）；且脚本放在 `/tmp` 下 `require('axios')` 直接 `MODULE_NOT_FOUND`（Git Bash `/tmp` 与项目 `node_modules` 不在一起）→ **必须把探测脚本写在项目目录内**再执行。
+
+### Root Cause
+- 二次封装接口的**上限与参数支持范围不会写在文档里**，且超限时常见行为是「静默回退到默认值」而非报错——最危险的一类。
+- 沙箱/网络环境会**按域选择性拦截**：同一家的不同子域可达性可能截然相反（东财 `datacenter-web` 可达、`push2` 被重置），不能因一个接口通了就推断同族全通。
+- 用正则解析 JSON 是脆弱手段，应先 `JSON.parse` 再取路径，失败再退正则。
+
+### Suggested Action（已实施）
+1. 所有外部数据源接入前**先写可复现探测脚本实测**，明确记录：单次上限、是否支持日期区间、超限行为（报错 vs 静默回退）、字段名。
+2. **默认路径保持零变化**：`count ≤ 800` 仍走腾讯（`meta=null`），仅 `count > 800` 才切新浪 → 隔离性可验证。
+3. 不可达的能力**如实标注缺口**，不做假降级（`f10Status` 取数失败时返回 `{ok:false, reason, detail}` + 保底 0.9 并注明"未获证据支撑"，而非编造 ST 状态）。
+4. 数据源口径差异**必须量化并写进输出**：新浪 vs 腾讯 60m 在 `10:30`/`14:00` 两个整点切片口径不同（重叠 800 根中 49 根收盘价差 0.02~0.06 元，双向随机，其余 11 个整点一致）→ 挂 `.meta.caution`，让报告能标注而非静默使用。
+5. 探测脚本一律写在项目目录内并在结束时删除（`rm -f _probe*.js`），避免 `node_modules` 解析失败与临时文件残留。
+
+### Metadata
+- Source: ai_self_discovery（四项待办实施中的实测发现）
+- Reproducible: yes
+- Related Files: lib/stockData.js (fetchSinaKline60m / fetchTencentKline60m), lib/f10Status.js, lib/backtestValidator.js
+- Tags: external-api, data-source-probe, silent-fallback, sandbox-network, isolation
+- Pattern-Key: api.verify_before_integrate | probe.silent_fallback
+- Recurrence-Count: 1
+- First-Seen: 2026-10-14
+- Last-Seen: 2026-10-14
+- See Also: LRN 关于「前端第三方库必须本地随包」（同类=外部依赖不可靠，必须实测+本地兜底）
+
+---
+
+## LRN-20261014d — 统计检验实现必须用「已知答案的合成数据」验证，而非只验证"能跑"
+
+### What Happened
+把 `engleGranger` 升级为真实 Johansen 时，若只验证"返回了数字、没报错"，无法判断特征分解是否正确。改用**已知答案的合成数据**后判定全对：
+- `y = 2x + 平稳噪声`（x 为随机游走，真协整）→ 特征值 **`[0.999, 0]`**、`rank=1`、判协整、`p=0.01`。**理论预期正是「1 个近 1 + 1 个近 0」**——这条对齐说明矩矩阵构造、逆矩阵、Jacobi 分解、迹统计量整条链路数学正确。
+- 两条独立随机游走（不协整）→ `stat=12.87 < 15.41`（5% 临界值）、`rank=0`、判不协整、`p=0.199`。
+- 样本 15 根 → 降级 `engle-granger(fallback)`；单变量 → `johansen(rejected)`。
+
+### Root Cause
+数值算法"跑通"与"算对"是两件事。特征值分解、矩阵求逆这类实现，错误时往往仍返回看似合理的数字，只有用**有解析解/理论预期的输入**才能证伪。
+
+### Suggested Action（已实施）
+1. 统计/数值实现一律补**合成数据断言**：协整用 `y=ax+平稳噪声` 验 rank 与特征值形态；平稳性用随机游走 vs 正弦序列。
+2. 同时验证**降级路径**（样本不足、矩阵奇异、维度不足）都返回明确的 `method` 标记，便于排查"到底走的哪条路"。
+3. 早退分支也要补齐字段一致性（johansen 的 `k<2` 分支补 `method='johansen(rejected)'`），避免调用方拿到结构不一致的对象。
+
+### Metadata
+- Source: ai_self_discovery（Johansen 实施）
+- Reproducible: yes
+- Related Files: lib/backtestValidator.js (johansen / jacobiEigen / matInverse / engleGranger)
+- Tags: numerical-verification, synthetic-data, eigenvalue, johansen, cointegration
+- Pattern-Key: verify.statistical_impl_with_known_truth
+- Recurrence-Count: 1
+- First-Seen: 2026-10-14
+- Last-Seen: 2026-10-14
+
+---
+
+## LRN-20261014e — 正则解析中文参数时，排除条件的作用域必须锁定在「子句」而非「整句」
+
+### What Happened
+为 `strategyNL.js` 加中文风控参数解析时，第 6 个测试用例 `'止损8%，止盈15%，回撤5%，分4批建仓'` **把止盈 15% 丢了**。根因：止盈的排除条件写成 `if (tpm && ... && !/回撤|回落|移动/.test(prose))` —— 用**整句 `prose`** 判断，而整句里含"回撤"两字，于是"止盈15%"被误杀。
+修法：改为遍历 `splitClauses(prose)` 的**子句**，只在子句内排除移动止盈语境。
+
+同一轮还发现：纯风控子句被子句跳过逻辑吃掉后，用户会拿到**含糊的 `incomplete`**（不知道哪句出问题）→ 已把未被参数吸收的风控子句并入 `unparsed` 一起返回。
+
+### Root Cause
+「整句扫描」与「按子句解析」混用。凡是多子句输入（中文常见用「，」并列多个条件），排除/否定类判断必须下推到子句粒度，否则任意一个子句里的关键词会污染全部匹配。
+
+### Suggested Action（已实施）
+1. 中文多条件解析统一走 `splitClauses()` 子句粒度，排除条件一律在子句内判断。
+2. 失败时**如实告知具体卡在哪一句**：`unparsed` 要包含真正无法识别的子句（本例返回 `["均线金叉买入","死叉卖出"]`，明确指向缺周期数的均线句，而非止盈句）。
+3. 补充反向用例：确认「金字塔式加仓」「跌破5%加仓」这类仍被如实拒绝（不能因为放开了仓位闸门就一律放行）。
+
+### Metadata
+- Source: ai_self_discovery（中文风控解析实测第 6 例失败）
+- Reproducible: yes
+- Related Files: lib/strategyNL.js (parseRiskParams / translate)
+- Tags: nlp-regex, clause-scope, false-negative, honest-failure
+- Pattern-Key: regex.clause_scoped_exclusion
+- Recurrence-Count: 1
+- First-Seen: 2026-10-14
+- Last-Seen: 2026-10-14
+
+---
+
+## LRN-20261014f — 新增前端渲染函数前，必须核对既有代码读取的真实键名
+
+### What Happened
+为回测结果新增 `renderRiskExit(data)` 时，写成 `data.raw_backtest.full`，而引擎实际返回的键名是 **`raw_backtest_result`**。同一文件第 128 行既有代码写的是 `data.raw_backtest_result` —— 我自己新写的第 233 行却用错了。是端到端脚本报 `Cannot read properties of undefined (reading 'full')` 才暴露。
+
+### Root Cause
+凭记忆/推测写接口键名，没有以既有消费方代码为准。好在端到端验证覆盖到了这条路径，否则前端会静默不渲染风控块（不报错、只是不显示），属最难发现的一类缺陷。
+
+### Suggested Action（已实施）
+1. 新增前端渲染函数时，**先 grep 既有同源代码读的键名**，再写（`grep -n "raw_backtest" public/js/backtestUI.js`）。
+2. 后端返回结构的键名以 `lib/` 里的 `return {...}` 为准，不靠推测。
+3. 端到端验证必须**覆盖新功能的真实调用路径**（本例：经 `validateStrategy` 传入 `stop_loss` 并断言 `riskExit` 已挂载），而非只测单元函数。
+
+### Metadata
+- Source: ai_self_discovery（端到端验证捕获）
+- Reproducible: yes
+- Related Files: public/js/backtestUI.js (renderRiskExit), lib/backtestValidator.js (raw_backtest_result)
+- Tags: frontend-contract, key-name-mismatch, silent-failure, e2e
+- Pattern-Key: frontend.verify_field_name_from_existing_consumer
+- Recurrence-Count: 1
+- First-Seen: 2026-10-14
+- Last-Seen: 2026-10-14

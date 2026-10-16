@@ -1031,11 +1031,11 @@ const App = {
     // 若用户已离开首页，丢弃旧请求
     const empty = document.getElementById('emptyState');
     if (empty && empty.classList.contains('hidden')) return;
-    if (data && data.model === 'volume-emotion-v1') { this._renderEmotionPanel(data); return; }
+    if (data && data.model === 'volume-emotion-v2') { this._renderEmotionPanel(data); return; }
     this._renderTpPanelInto({ panelId: 'homeSentimentPanel', bodyId: 'homeSentimentBody', updatedId: 'homeSentimentUpdated' }, data, symbol, { guardSymbol: false, hideSensitivity: true });
   },
 
-  // ============ 首页·大盘量能情绪分析模型（20260917d，10 因子确定性计算）============
+  // ============ 首页·大盘量能情绪分析模型（20260917d，20261015k 起 9 因子确定性计算）============
   _renderEmotionPanel(data) {
     const panel = document.getElementById('homeSentimentPanel');
     const body = document.getElementById('homeSentimentBody');
@@ -1075,11 +1075,14 @@ const App = {
     // 因子网格（与后端同源，数值一致）
     const fs = Array.isArray(data.factors) ? data.factors : [];
     if (fs.length) {
-      html += `<div class="tp-block-title">因子明细（8 常驻 + 2 非常驻 · 得分 × 权重计入总分）</div>`;
+      html += `<div class="tp-block-title">因子明细（7 常驻 + 2 非常驻 · 得分 × 权重计入总分）</div>`;
       html += '<div class="tp-comp-grid">';
       fs.forEach(f => {
         const sig = (typeof f.score === 'number') ? f.score : 0;
-        const sigCls = sig > 0.03 ? 'tp-sig-bull' : sig < -0.03 ? 'tp-sig-bear' : 'tp-sig-flat';
+        // 20261016b（审计 L4）：阈值对齐后端判色口径 ±0.05
+        // （短期判断因子 lib/sameDayJudgment.js:209/1040，大盘情绪分量 lib/marketEmotionModel.js:526）
+        // 旧值 ±0.03 会导致「文字显示中性、颜色却染成偏多/偏空」的语义错位。
+        const sigCls = sig > 0.05 ? 'tp-sig-bull' : sig < -0.05 ? 'tp-sig-bear' : 'tp-sig-flat';
         const signTxt = (sig >= 0 ? '+' : '') + sig.toFixed(2);
         html += `<div class="tp-comp${f.degraded ? ' tp-comp-degraded' : ''}">`;
         html += `<div class="tp-comp-label">${esc(f.name)}<span class="tp-comp-w">占${f.weight != null ? f.weight.toFixed(1) : '—'}%</span></div>`;
@@ -1157,7 +1160,10 @@ const App = {
       html += '<div class="tp-comp-grid">';
       comps.forEach(c => {
         const sig = (typeof c.signal === 'number') ? c.signal : 0;
-        const sigCls = sig > 0.03 ? 'tp-sig-bull' : sig < -0.03 ? 'tp-sig-bear' : 'tp-sig-flat';
+        // 20261016b（审计 L4）：阈值对齐后端判色口径 ±0.05
+        // （短期判断因子 lib/sameDayJudgment.js:209/1040，大盘情绪分量 lib/marketEmotionModel.js:526）
+        // 旧值 ±0.03 会导致「文字显示中性、颜色却染成偏多/偏空」的语义错位。
+        const sigCls = sig > 0.05 ? 'tp-sig-bull' : sig < -0.05 ? 'tp-sig-bear' : 'tp-sig-flat';
         const signTxt = (sig >= 0 ? '+' : '') + sig.toFixed(2);
         html += `<div class="tp-comp">`;
         html += `<div class="tp-comp-label">${c.label}<span class="tp-comp-w">占${c.weight != null ? (c.weight * 100).toFixed(0) : '—'}%</span></div>`;
@@ -1397,10 +1403,10 @@ const App = {
       </div>
       <div class="sd-drivers">${rows}</div>
       ${expandBtn}
-      <div class="sd-weight-note">权重按当日可用因子自动归一化；对标期货不适用时不参与打分。</div>
+      <div class="sd-weight-note">权重按当日可用因子自动归一化；对标期货不适用时不参与打分。数据缺失的因子按 signal=0 占位但仍计入归一化，会摊薄有效因子权重（如仅 5/7 因子有效时，有效因子合计权重约降至 5/7）。</div>
       ${hist}
       <div class="sd-actions">
-        <button class="ai-trigger-btn" id="samedayRefreshBtn" type="button">🔄 重新判断</button>
+        <button class="ai-trigger-btn" id="samedayRefreshBtn" type="button">重新判断</button>
       </div>
     </div>`;
   },
@@ -1614,9 +1620,9 @@ const App = {
     return `<div class="sd-logic-box">
       <div class="sd-logic-title">长期判断逻辑（${j.horizonLabel || '中长期'}：${j.dir === '涨' ? '看多' : j.dir === '跌' ? '看空' : '中性'}，综合分 ${j.score > 0 ? '+' : ''}${j.score}/100，置信度${j.confidence}）</div>
       ${rows}
-      <div class="sd-weight-note">长期判断不核算准确率，每次打开工作台自动联网更新；对标期货不适用时不参与打分。</div>
+      <div class="sd-weight-note">长期判断不核算准确率，每次打开工作台即时重算；对标期货不适用时不参与打分。数据缺失的因子按 signal=0 占位但仍计入归一化，会摊薄有效因子权重。</div>
       <div class="sd-actions">
-        <button class="ai-trigger-btn" id="longtermRefreshBtn" type="button">🔄 重新分析</button>
+        <button class="ai-trigger-btn" id="longtermRefreshBtn" type="button">重新分析</button>
       </div>
     </div>`;
   },
@@ -1654,7 +1660,33 @@ const App = {
       if (!data || data.success === false || !Array.isArray(data.highlights) || !Array.isArray(data.risks)) {
         v.innerHTML = '<span class="asp-empty">尚未生成</span>';
         v.className = 'score-value aspect neutral';
-        d.textContent = '点个股页「AI 生成亮点/雷点」';
+        // 20261016b（审计 H2）：原仅提示「点个股页某按钮」，概览卡内无入口，用户常无从下手。
+        // 改为在本卡内直接给一个生成按钮（POST /api/ai/aspects），失败时如实回显原因。
+        d.innerHTML = '<span class="asp-gen-hint">尚未生成 · </span>'
+          + `<button type="button" class="asp-gen-btn" id="aspectGenBtn">立即生成</button>`;
+        const genBtn = document.getElementById('aspectGenBtn');
+        if (genBtn) {
+          genBtn.addEventListener('click', async () => {
+            genBtn.disabled = true;
+            genBtn.textContent = '生成中…';
+            d.innerHTML = '<span class="asp-gen-hint">AI 联网生成中，通常需要数秒…</span>';
+            try {
+              const r = await fetch('/api/ai/aspects', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ symbol, stockName: name, industry: industry || '' })
+              });
+              const j = await r.json();
+              if (j && j.success !== false) {
+                await this._loadAspectBrief(symbol, name, industry);
+              } else {
+                d.innerHTML = `<span class="asp-gen-hint">⚠️ 生成失败：${this.escapeHtml((j && (j.message || j.error)) || '未知原因')}</span>`;
+              }
+            } catch (err) {
+              d.innerHTML = `<span class="asp-gen-hint">⚠️ 生成异常：${this.escapeHtml(err.message || '网络错误')}</span>`;
+            }
+          });
+        }
         return;
       }
       // 20260904a：亮点/雷点可能是 {text,outdated} 对象或字符串（向后兼容）
@@ -1665,7 +1697,14 @@ const App = {
       v.className = 'score-value aspect';
       const dt = data.date ? new Date(data.date).toISOString().slice(0, 10) : '';
       const latestLabel = data.latestReportLabel ? ` · 最新报告期 ${data.latestReportLabel}` : '';
-      d.textContent = `来源：AI 联网生成${dt ? '（' + dt + '）' : ''}${latestLabel}`;
+      // 20261016b（审计 H1）：缓存无 TTL 校验、永不过期，旧结论会被当成当天观点展示。
+      // 按「数据最新性」铁律如实标注：距生成日超过 7 天即加过期提示（不改变展示内容本身）。
+      let staleTip = '';
+      if (dt) {
+        const ageDays = Math.floor((Date.now() - new Date(dt + 'T00:00:00').getTime()) / 86400000);
+        if (Number.isFinite(ageDays) && ageDays > 7) staleTip = ` · ⚠️ 已过期（生成于 ${ageDays} 天前）`;
+      }
+      d.textContent = `来源：AI 联网生成${dt ? '（' + dt + '）' : ''}${latestLabel}${staleTip}`;
     } catch (e) {
       if (this.overviewExtraSymbol !== symbol) return;
       v.innerHTML = '<span class="asp-empty">加载失败</span>';
@@ -1833,10 +1872,10 @@ const App = {
         this.renderAIAugment(data);
       } else {
         // 无缓存：保持提示态
-        body.innerHTML = '<div class="ai-empty">点击上方「✨ 一键补全」，让 AI 联网搜索 <b>' + this.escapeHtml(symbol) + '</b> 的近期资料（搜索一次后将长期留存，不再重复联网）。</div>';
+        body.innerHTML = '<div class="ai-empty">点击上方「一键补全」，让 AI 联网搜索 <b>' + this.escapeHtml(symbol) + '</b> 的近期资料（搜索一次后将长期留存，不再重复联网）。</div>';
       }
     } catch {
-      body.innerHTML = '<div class="ai-empty">点击上方「✨ 一键补全」，让 AI 联网搜索 <b>' + this.escapeHtml(symbol) + '</b> 的近期资料。</div>';
+      body.innerHTML = '<div class="ai-empty">点击上方「一键补全」，让 AI 联网搜索 <b>' + this.escapeHtml(symbol) + '</b> 的近期资料。</div>';
     }
   },
 
@@ -1848,7 +1887,7 @@ const App = {
     const changeEl = document.getElementById('stockChange');
     const dateEl = document.getElementById('stockDate');
 
-    if (priceEl) priceEl.textContent = quote.price ? (market === 'US' ? '$' : '¥') + Storage.formatNumber(quote.price) : '--';
+    if (priceEl) priceEl.textContent = quote.price ? (market === 'US' ? '$' : market === 'HK' ? 'HK$' : '¥') + Storage.formatNumber(quote.price) : '--';
 
     if (changeEl && quote.changePct !== undefined) {
       const isUp = quote.change >= 0;
@@ -1858,9 +1897,14 @@ const App = {
     }
 
     // 标注行情日期/时间，方便了解这是哪一刻的股价
+    // 20261016b（审计 S6）：服务端未返回可解析日期时 date 为本机日期，旧版静默展示易被误读为真实交易日，此处如实标注。
     if (dateEl) {
       const d = quote.date || '';
       dateEl.textContent = d ? (quote.time ? `${d} ${quote.time}` : d) : '—';
+      if (d && quote.dateFallback === true) {
+        dateEl.textContent += ' ⚠️ 日期解析失败，显示为本机日期';
+        dateEl.title = '行情接口未返回可解析的交易日，此处显示的是本机系统日期，非真实交易日';
+      }
     }
   },
 
@@ -1900,6 +1944,24 @@ const App = {
     const container = document.getElementById('keyMetrics');
     const metrics = [];
     const f = quote?.fundamentals || {};
+    // ★ 20261015e：顶栏 PE/PB/PS/ROE 与「基本面·关键财务指标」联动——
+    //   数值优先取 fundamental.metrics（基本面左卡同一权威口径，杜绝两处分裂）；
+    //   着色复用 evaluateSignals 的利好/利空信号：利好=红、利空=绿（与左卡 sig-bull/sig-bear 同一判定），
+    //   判定依据追加进 title，鼠标悬停可见。
+    const fm = (data.fundamental && !data.fundamental.error && data.fundamental.metrics) || {};
+    const sigMap = {};
+    (data.signals?.signals || []).forEach(s => { sigMap[s.key] = s; });
+    const sigColor = (key) => {
+      const s = sigMap[key];
+      if (!s) return '';
+      return s.signal === 'bull' ? 'red' : s.signal === 'bear' ? 'green' : '';
+    };
+    const sigNote = (key) => {
+      const s = sigMap[key];
+      if (!s || !s.reason) return '';
+      const tag = s.signal === 'bull' ? '利好' : s.signal === 'bear' ? '利空' : '中性';
+      return ` · 信号判定（${tag}）：${String(s.reason).replace(/"/g, '&quot;')}`;
+    };
     const repDate = f.reportDate;
     const repPeriod = f.reportPeriod;
     const finLabel = repPeriod || repDate || '';
@@ -1919,46 +1981,57 @@ const App = {
       if (quote.prevClose) metrics.push({ label: '昨收', value: Storage.formatNumber(quote.prevClose), source: priceSrc, sub: quoteSub, title: `昨日收盘价 · 来源：${priceSrc} · ${quoteSub}` });
       if (quote.turnover) metrics.push({ label: '换手率', value: Storage.formatNumber(quote.turnover) + '%', source: priceSrc, sub: quoteSub, title: `换手率 · 来源：${priceSrc} · ${quoteSub}` });
       if (quote.amount) metrics.push({ label: '成交额', value: Storage.formatNumber(quote.amount), source: priceSrc, sub: quoteSub, title: `成交额 · 来源：${priceSrc} · ${quoteSub}` });
-      if (quote.totalValue) metrics.push({ label: '总市值', value: Storage.formatNumber(quote.totalValue * (quote.totalValue < 100 ? 10000 : 1)) + (quote.totalValue < 100 ? '亿' : ''), source: priceSrc, sub: quoteSub, title: `总市值 · 来源：${priceSrc} · ${quoteSub}` });
+      if (quote.totalValue) metrics.push({ label: '总市值', value: Storage.formatNumber(quote.totalValue) + (this.currentData?.market === 'US' ? '亿美元' : '亿'), source: priceSrc, sub: quoteSub, title: `总市值 · 来源：${priceSrc} · ${quoteSub}` });
 
       // Valuation / fundamental metrics (with type, source and report period)
-      if (quote.pe) metrics.push({
+      // ★ 20261015e：数值优先 fundamental.metrics（与基本面「关键财务指标」同源同值），
+      //   并按 signals 信号着色：利好=红(red)、利空=绿(green)、中性=默认白色。
+      const peVal = fm.pe || f.pe || quote.pe;
+      if (peVal) metrics.push({
         label: '市盈率(TTM)',
-        value: Storage.formatNumber(quote.pe),
+        value: Storage.formatNumber(peVal),
         source: f.peSource || '行情数据',
         sub: `股价 ${priceDate} · TTM 随行情更新`,
-        title: `PE(TTM) = 总市值 ÷ 近12个月归母净利（滚动12个月，随行情每日更新，不绑定某一财报期） · 来源：${f.peSource || '行情数据'}`
+        valueColor: sigColor('pe'),
+        title: `PE(TTM) = 总市值 ÷ 近12个月归母净利（滚动12个月，随行情每日更新，不绑定某一财报期） · 来源：${f.peSource || '行情数据'}${sigNote('pe')}`
       });
-      if (quote.pb) metrics.push({
+      const pbVal = fm.pb || f.pb || quote.pb;
+      if (pbVal) metrics.push({
         label: '市净率(PB)',
-        value: Storage.formatNumber(quote.pb),
+        value: Storage.formatNumber(pbVal),
         source: f.pbSource || '行情数据',
         sub: finLabel ? `股价 ${priceDate} · 财报 ${finLabel}` : `股价 ${priceDate}`,
-        title: finLabel ? `PB = 股价(${priceDate}) ÷ 每股净资产(财报 ${finLabel}) · 来源：${f.pbSource || '行情数据'}` : '市净率 PB'
+        valueColor: sigColor('pb'),
+        title: finLabel ? `PB = 股价(${priceDate}) ÷ 每股净资产(财报 ${finLabel}) · 来源：${f.pbSource || '行情数据'}${sigNote('pb')}` : '市净率 PB'
       });
-      if (f.ps) {
+      const psVal = fm.ps || f.ps;
+      if (psVal) {
         // 20260909j 审计：PS 主口径为东财 PS_TTM（真 TTM）；本地兜底（总市值÷最新一期营收）为单期口径，须分开标注避免假 TTM
         const psIsTtm = f.psSource && String(f.psSource).indexOf('PS_TTM') >= 0;
         metrics.push({
           label: psIsTtm ? '市销率(PS·TTM)' : '市销率(PS)',
-          value: Storage.formatNumber(f.ps),
+          value: Storage.formatNumber(psVal),
           source: f.psSource || '本地计算',
           sub: psIsTtm
             ? `总市值(行情 ${priceDate}) ÷ 近12个月营收`
             : (finLabel ? `总市值(行情 ${priceDate}) ÷ 营收(财报 ${finLabel}，单期)` : `总市值(行情 ${priceDate}) ÷ 营收`),
-          title: psIsTtm
+          valueColor: sigColor('ps'),
+          title: (psIsTtm
             ? `PS(TTM) = 总市值(行情 ${priceDate}) ÷ 近12个月营业收入（滚动12个月，随行情更新） · 来源：${f.psSource || '本地计算'}`
-            : `PS = 总市值(行情 ${priceDate}) ÷ 最新一期营业收入(财报 ${finLabel}，单期口径非TTM) · 来源：${f.psSource || '本地计算'}`
+            : `PS = 总市值(行情 ${priceDate}) ÷ 最新一期营业收入(财报 ${finLabel}，单期口径非TTM) · 来源：${f.psSource || '本地计算'}`) + sigNote('ps')
         });
       }
-      if (f.roeTtm != null || f.roe) metrics.push({
+      // ROE：优先 TTM（与基本面左卡 metrics.roe 同口径），回退最新披露期值
+      const roeVal = f.roeTtm != null ? f.roeTtm : (typeof fm.roe === 'number' ? fm.roe : f.roe);
+      if (roeVal != null) metrics.push({
         label: '净资产收益率(ROE)',
-        value: Storage.formatNumber(f.roeTtm != null ? f.roeTtm : f.roe) + '%',
+        value: Storage.formatNumber(roeVal) + '%',
         source: f.roeSource || '财报数据',
         sub: f.roeTtm != null ? `TTM（截至 ${priceDate}）` : (finLabel ? `财报 ${finLabel}` : ''),
-        title: f.roeTtm != null
+        valueColor: sigColor('roe'),
+        title: (f.roeTtm != null
           ? `ROE(TTM) = 近12个月归母净利 ÷ 期末归母净资产（滚动12个月，与关键财务指标页/深度分析同源） · 来源：${f.roeSource || '财报数据'}`
-          : `ROE = 归母净利润 ÷ 净资产(财报 ${finLabel}) · 来源：${f.roeSource || '财报数据'}`
+          : `ROE = 归母净利润 ÷ 净资产(财报 ${finLabel}) · 来源：${f.roeSource || '财报数据'}`) + sigNote('roe')
       });
     }
 
@@ -2108,6 +2181,14 @@ const App = {
         ${row('控股股东', profile.controllingShareholder)}
         ${row('总部地点', profile.province)}
       </div>
+      ${(() => {
+        // 20261016b（审计 P1）：mainBusiness 后端已返回（lib/shareholderData.js:307-314，取自东财 F10 经营范围/主营构成原文），
+        // 前端此前从未渲染，导致「简介」缺了最关键的经营口径。此处补上，超长截断并保留全文于 title。
+        const mb = profile.mainBusiness ? String(profile.mainBusiness) : '';
+        if (!mb) return '';
+        const shown = mb.length > 300 ? mb.slice(0, 300) + '…' : mb;
+        return `<div class="cp-row"><span class="cp-label">主营业务 / 经营范围</span><span class="cp-value" title="${esc(mb)}">${esc(shown)}</span></div>`;
+      })()}
       ${profile.intro ? `<div class="cp-intro">${profile.intro}</div>` : ''}
     `;
 
@@ -2126,7 +2207,9 @@ const App = {
       }
     } catch (e) { /* 信息分析未加载时跳过产品图 */ }
 
-    html += `<div class="cp-source">来源：东方财富F10 · 公司基本资料</div>`;
+    // 20261016b 诚实性修正（审计 P2）：「企业性质」由股东结构推断（shareholderData.js:466 inferOwnership），
+    // 非东财 F10 权威登记口径；旧文案整块标「东方财富F10」属虚假归因，此处分层如实标注。
+    html += `<div class="cp-source">来源：东方财富F10 · 公司基本资料（⚠️「企业性质」为按股东结构推断，非权威登记口径）</div>`;
     el.innerHTML = html;
   },
 
@@ -2588,19 +2671,42 @@ const App = {
         extras.push(`历史百分位 ${pctOf[extra.pctKey]}%`);
       }
       const extraHtml = extras.length ? `<div class="mr-extra">${extras.join(' · ')}</div>` : '';
+      // ★ 20261013i：每个指标右侧加「分析」tab，点击展示右卡「指标分析」对应卡片（20261013j 按需单卡）。
+      //   键口径：左卡 keyOf(label) ↔ 右卡 metricAnalysis.metrics[].key（同一套 14 键，单一权威）。
+      // ★ 20261013j：激活态在渲染时按 this.activeMetricKey 直接带上——实时刷新/切股重渲染后不丢失。
+      const jumpKey = keyOf(r[0]);
+      const jump = jumpKey
+        ? `<button type="button" class="metric-jump${this.activeMetricKey === jumpKey ? ' active' : ''}" data-key="${jumpKey}" title="查看「${r[0]}」的指标分析">分析<span class="metric-jump-arrow">▸</span></button>`
+        : '';
       return `<div class="metric-row${cls}" title="${r[2] || ''}">
         <span class="mr-label">${r[0]}${help}</span>
         <span class="mr-value">${r[1] || '--'}${tag}${extraHtml}</span>
+        ${jump}
       </div>`;
     }).join('');
     // 指标释义「?」图标：点击展开浮层
     metricsEl.querySelectorAll('.metric-help').forEach(el => {
       el.addEventListener('click', (e) => { e.stopPropagation(); this.showMetricHelp(el.dataset.help, el); });
     });
+    // ★ 20261013j：「分析」tab 点击 → 右卡「指标分析」按需单卡展示：只显示对应指标卡片，其余隐藏；
+    //   再次点击同一 tab 收起（回到空态）。右卡数据缺失时 toast 明示，不静默失败。
+    metricsEl.querySelectorAll('.metric-jump').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const key = btn.dataset.key;
+        if (!key) return;
+        const next = (this.activeMetricKey === key) ? null : key; // 再次点击当前项 → 收起
+        if (next && !document.querySelector('#metricAnalysis .ma-row[data-key="' + next + '"]')) {
+          this.toast('该指标暂无分析数据', 'info', 2000);
+          return;
+        }
+        this.showMetricAnalysis(next);
+      });
+    });
 
     // 指标分析（20260919a）：替代原「分析师评级」——对左侧「关键财务指标」做确定性五维对比 + 判定依据
     const maEl = document.getElementById('metricAnalysis');
-    if (maEl) maEl.innerHTML = this.renderMetricAnalysis(data.metricAnalysis);
+    if (maEl) maEl.innerHTML = this.renderMetricAnalysis(data.metricAnalysis, this.activeMetricKey);
 
     // 基本面结论 + 论证过程（需求3/4）
     const fc = this.buildFundamentalConclusion(fundamental);
@@ -2635,7 +2741,10 @@ const App = {
 
   // 指标分析渲染（20260919a）：替代原「分析师评级」
   // 展示每只关键财务指标的「当前值 + 五维对比（同比/环比/行业均值/历史百分位/边际变化）+ 判定依据」
-  renderMetricAnalysis(data) {
+  // ★ 20261013j：改为按需单卡展示——activeKey 对应的卡片显示，其余一律加 ma-hidden 隐藏；
+  //   无 activeKey 时面板顶部显示 .ma-empty 引导空态。activeKey 由 showMetricAnalysis 维护
+  //   （this.activeMetricKey），实时刷新 / 切股后重渲染仍保持用户当前选择的指标。
+  renderMetricAnalysis(data, activeKey) {
     if (!data || !Array.isArray(data.metrics) || !data.metrics.length) {
       return '<p style="color:var(--text-secondary);padding:12px 0;">暂无指标分析数据</p>';
     }
@@ -2660,7 +2769,10 @@ const App = {
         return dimChip(d);
       }).join('');
       const j = m.judgment || {};
-      return `<div class="ma-row">
+      // ★ 20261013i：data-key 与左卡 keyOf 同一套键，供「分析」tab 定位锚定
+      // ★ 20261013j：非当前查看项默认隐藏（按需单卡展示）
+      const isActive = !!activeKey && m.key === activeKey;
+      return `<div class="ma-row${isActive ? '' : ' ma-hidden'}" data-key="${esc(m.key || '')}">
         <div class="ma-row-head">
           <span class="ma-row-label">${esc(m.label)}</span>
           <span class="ma-row-value">${esc(m.valueText)}</span>
@@ -2670,7 +2782,37 @@ const App = {
         <div class="ma-reason">${esc(j.reason || '—')}</div>
       </div>`;
     }).join('');
-    return `<div class="ma-note">${esc(data.note || '')}</div>${rows}`;
+    const emptyHtml = `<div class="ma-empty${activeKey ? ' hidden' : ''}">👈 点击左侧「关键财务指标」任一指标右侧的「分析 ▸」，在此查看该项的五维对比与判定依据；再次点击同一 tab 可收起。</div>`;
+    return `<div class="ma-note">${esc(data.note || '')}</div>${emptyHtml}${rows}`;
+  },
+
+  // ★ 20261013j：右卡「指标分析」按需单卡展示——点击左卡 tab 只显示对应指标卡片，其余隐藏。
+  //   key=null 表示收起（回到空态）。当前选择维护在 this.activeMetricKey：
+  //   实时刷新（renderKeyMetrics 重渲染右卡）与切股后都按该键恢复显示，用户选择不丢。
+  showMetricAnalysis(key) {
+    const maEl = document.getElementById('metricAnalysis');
+    if (!maEl) return;
+    const rows = maEl.querySelectorAll('.ma-row[data-key]');
+    let target = null;
+    rows.forEach(r => {
+      const isTarget = !!key && r.dataset.key === key;
+      r.classList.toggle('ma-hidden', !isTarget);
+      if (isTarget) target = r;
+    });
+    const empty = maEl.querySelector('.ma-empty');
+    if (empty) empty.classList.toggle('hidden', !!key);
+    // 左卡 tab 激活态同步（让用户看到当前右卡展示的是哪一项）
+    document.querySelectorAll('#fundMetrics .metric-jump').forEach(btn => {
+      btn.classList.toggle('active', !!key && btn.dataset.key === key);
+    });
+    this.activeMetricKey = key || null;
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.classList.remove('ma-flash');
+      void target.offsetWidth; // 强制重排，使重复点击也能重新触发闪烁动画
+      target.classList.add('ma-flash');
+      window.setTimeout(() => target.classList.remove('ma-flash'), 1800);
+    }
   },
 
   // 指标释义浮层（点击指标标签后的「?」图标）
@@ -2871,7 +3013,7 @@ const App = {
       if (!data.sections) {
         contentEl.innerHTML = `<div style="text-align:center;padding:60px;color:var(--text-secondary);">
           <h3>⚠️ 深度分析数据不完整</h3>
-          <p>本次未能获取到完整的分析数据，请点击「🔄 刷新」重试。</p>
+          <p>本次未能获取到完整的分析数据，请点击「刷新」重试。</p>
         </div>`;
         return;
       }
@@ -2928,7 +3070,9 @@ const App = {
     const status = document.getElementById('deepCacheStatus');
     if (!bar || !status) return;
     const ts = data.cachedAt ? new Date(data.cachedAt).toLocaleString('zh-CN') : '';
-    const sourceNote = '数据来源：东方财富财报 / 分红 / 股东数据 · 本地规则计算';
+    // 20261016b（审计 G7）：深度分析管线不消费事件引擎（lib/deepAnalysis.js 及 lib/deep/* 均无 eventEngine 引用），
+    // 事件仅在个股页事件区单独展示，未并入本页结论。旧文案未披露，易被误读为「已纳入事件影响」，此处如实标注。
+    const sourceNote = '数据来源：东方财富财报 / 分红 / 股东数据 · 本地规则计算；⚠️ 事件引擎识别的突发事件未并入本页结论（仅在个股页事件区单独展示）';
     if (data.fromCache) {
       status.innerHTML = `📦 已加载缓存数据 · 更新于 ${ts} · ${sourceNote}`;
       status.className = 'deep-cache-status cached';
@@ -2942,7 +3086,7 @@ const App = {
   // 首页卡片折叠（除实时大盘/左侧边栏外默认收起，localStorage 记忆用户选择）
   initHomeCollapsible() {
     const COLLAPSE_KEY = 'sa_home_collapsed_v1';
-    const defaultCollapsed = ['homeSentimentPanel', 'indexPeTrendCard', 'sectorCrowdingCard', 'homeNewsCard', 'homeHotTopicsCard', 'macroCard', 'rankCard'];
+    const defaultCollapsed = ['homeSentimentPanel', 'indexPeTrendCard', 'sectorCrowdingCard', 'homeNewsCard', 'homeHotTopicsCard', 'macroCard', 'rankCard', 'historyPanel'];
     let state;
     try { state = JSON.parse(localStorage.getItem(COLLAPSE_KEY) || '{}'); } catch { state = {}; }
     const firstVisit = !localStorage.getItem(COLLAPSE_KEY);
@@ -2951,7 +3095,8 @@ const App = {
       const btn = document.querySelector(`.btn-collapse[data-collapse-target="${id}"]`);
       if (!btn) return;
       if (firstVisit) state[id] = defaultCollapsed.includes(id);
-      const collapsed = !!state[id];
+      // historyPanel 为后续新增：老用户 localStorage 无此键时默认折叠（undefined 视为折叠，显式 false 才展开）
+      const collapsed = id === 'historyPanel' ? state[id] !== false : !!state[id];
       if (collapsed) {
         card.classList.add('collapsed');
         btn.classList.add('collapsed');
@@ -3103,8 +3248,12 @@ const App = {
           contentEl.style.opacity = '1';
           contentEl.innerHTML = `<div style="text-align:center;padding:60px;color:var(--text-secondary);">
             <h3>⚠️ ${data.error}</h3>
-            <p>资金量能分析目前仅支持A股市场。</p>
+            <p>数据加载失败，请稍后刷新重试（可能是行情源超时或网络异常，并非仅限 A 股）。</p>
           </div>`;
+          const sc = document.getElementById('capitalScore');
+          if (sc) sc.textContent = '加载失败';
+          const scd = document.getElementById('capitalScoreDetail');
+          if (scd) scd.textContent = '资金量能数据加载失败';
         }
         return;
       }
@@ -3817,7 +3966,7 @@ const App = {
       return;
     }
     btn.disabled = true;
-    btn.textContent = '⏳ 搜索中…';
+    btn.textContent = '搜索中…';
     refreshBtn.style.display = 'none';
     body.innerHTML = '<div class="ai-loading"><div class="loading-spinner"></div><p>AI 正在联网搜索 ' + (this.escapeHtml(this.currentData?.name || symbol)) + ' 的最新资料…</p></div>';
     try {
@@ -3836,7 +3985,7 @@ const App = {
       body.innerHTML = '<div class="ai-empty">❌ 网络错误：' + this.escapeHtml(e.message) + '</div>';
     } finally {
       btn.disabled = false;
-      btn.textContent = '✨ 一键补全';
+      btn.textContent = '一键补全';
     }
   },
 
@@ -3914,7 +4063,7 @@ const App = {
       }
     }
     btn.disabled = true;
-    btn.textContent = '⏳ 估值中…';
+    btn.textContent = '估值中…';
     body.innerHTML = '<div class="ai-loading"><div class="loading-spinner"></div><p>AI 估值大模型正在联网检索 ' + (this.escapeHtml(this.currentData?.name || symbol)) + ' 的行情/财报…</p></div>';
     try {
       const r = await fetch('/api/ai/valuation', {
@@ -3933,7 +4082,7 @@ const App = {
       body.innerHTML = '<div class="ai-empty">❌ 网络错误：' + this.escapeHtml(e.message) + '</div>';
     } finally {
       btn.disabled = false;
-      btn.textContent = this._isDedicated(this.currentSymbol) ? '🧮 专属估值模型' : '✨ AI 估值';
+      btn.textContent = this._isDedicated(this.currentSymbol) ? '专属估值模型' : 'AI 估值';
     }
   },
 
@@ -4009,7 +4158,7 @@ const App = {
     // ① 券商分类判定（6指标+来源 → 三维评分 → 决策树） ② 估值模型计算过程（假设/乘数 + 输入数据出处）
     if (j && j.dedicated && j.broker) {
       const btn = document.getElementById('valuationAiBtn');
-      if (btn) btn.textContent = '🧮 专属估值模型';
+      if (btn) btn.textContent = '专属估值模型';
       if (dateEl) dateEl.textContent = (j.reportLabel ? j.reportLabel + ' · ' : '') + '确定性计算（无 AI 参与）';
       const ratingMap = { '低估': 'vd-rating-low', '合理': 'vd-rating-mid', '高估': 'vd-rating-high', '需人工复核': 'vd-rating-mid', '无法评级': 'vd-rating-mid' };
       const ratingCls = ratingMap[j.rating] || 'vd-rating-mid';
@@ -4068,7 +4217,7 @@ const App = {
     // 布局 = 平安统一模板（vd-card 骨架）；内容 = 守门员自检 + 口径分离 + PB/SOTP/PE 动态加权（指令9）+ 评级与对比 + 风险监测；权重/模式随指令9实时计算动态渲染。
     if (j && j.dedicated && j.huaan) {
       const btn = document.getElementById('valuationAiBtn');
-      if (btn) btn.textContent = '🧮 专属估值模型';
+      if (btn) btn.textContent = '专属估值模型';
       if (dateEl) dateEl.textContent = (j.reportLabel ? j.reportLabel + ' · ' : '') + '确定性计算（无 AI 参与）';
       const ratingMap = { '低估': 'vd-rating-low', '合理': 'vd-rating-mid', '高估': 'vd-rating-high', '需人工复核': 'vd-rating-mid', '无法评级': 'vd-rating-mid' };
       const ratingCls = ratingMap[j.rating] || 'vd-rating-mid';
@@ -4152,7 +4301,7 @@ const App = {
     // 内容 = 动态时间引擎 + 画像诊断 + 动态SOTP + 五重交叉验证 + 权重自适应 + 三情景 + 兜底状态。
     if (j && j.dedicated && j.sanxi) {
       const btn = document.getElementById('valuationAiBtn');
-      if (btn) btn.textContent = '🧮 专属估值模型';
+      if (btn) btn.textContent = '专属估值模型';
       if (dateEl) dateEl.textContent = (j.reportLabel ? j.reportLabel + ' · ' : '') + (j.version || 'V2.0_全动态') + '（无 AI 参与）';
       const ratingMap = { '低估': 'vd-rating-low', '合理': 'vd-rating-mid', '高估': 'vd-rating-high', '需人工复核': 'vd-rating-mid', '无法评级': 'vd-rating-mid' };
       const ratingCls = ratingMap[j.rating] || 'vd-rating-mid';
@@ -4261,7 +4410,7 @@ const App = {
     // 布局 = 平安统一模板（vd-card 骨架）；内容 = DCF锚 + PE校准 + 三情景，确定性计算。
     if (j && j.dedicated && j.haitian) {
       const btn = document.getElementById('valuationAiBtn');
-      if (btn) btn.textContent = '🧮 专属估值模型';
+      if (btn) btn.textContent = '专属估值模型';
       if (dateEl) dateEl.textContent = (j.reportLabel ? j.reportLabel + ' · ' : '') + '动态估值引擎（无 AI 参与）';
       const ratingMap = { '低估': 'vd-rating-low', '合理': 'vd-rating-mid', '高估': 'vd-rating-high', '需人工复核': 'vd-rating-mid', '无法评级': 'vd-rating-mid' };
       const ratingCls = ratingMap[j.rating] || 'vd-rating-mid';
@@ -4347,7 +4496,7 @@ const App = {
     // 布局 = 平安统一模板（vd-card 骨架）；内容 = 景气度评分→情景权重→PE/PB/PS(+DCF)情景加权，确定性计算。
     if (j && j.dedicated && j.silan) {
       const btn = document.getElementById('valuationAiBtn');
-      if (btn) btn.textContent = '🧮 专属估值模型';
+      if (btn) btn.textContent = '专属估值模型';
       if (dateEl) dateEl.textContent = (j.reportLabel ? j.reportLabel + ' · ' : '') + '确定性计算（无 AI 参与）';
       const ratingMap = { '低估': 'vd-rating-low', '合理': 'vd-rating-mid', '高估': 'vd-rating-high', '需人工复核': 'vd-rating-mid', '无法评级': 'vd-rating-mid' };
       const ratingCls = ratingMap[j.rating] || 'vd-rating-mid';
@@ -4425,7 +4574,7 @@ const App = {
     // 布局 = 平安统一模板（vd-card 骨架）；内容 = 时间引擎 + 画像诊断 + 三情景 + 四路估值矩阵 + 交叉验证 + 监控指标。
     if (j && j.dedicated && j.maijie) {
       const btn = document.getElementById('valuationAiBtn');
-      if (btn) btn.textContent = '🧮 专属估值模型';
+      if (btn) btn.textContent = '专属估值模型';
       if (dateEl) dateEl.textContent = (j.reportLabel ? j.reportLabel + ' · ' : '') + '确定性计算（无 AI 参与）';
       const ratingMap = { '低估': 'vd-rating-low', '合理': 'vd-rating-mid', '高估': 'vd-rating-high', '需人工复核': 'vd-rating-mid', '无法评级': 'vd-rating-mid' };
       const ratingCls = ratingMap[j.rating] || 'vd-rating-mid';
@@ -4513,7 +4662,7 @@ const App = {
     // 布局 = 平安统一模板（vd-card 骨架）；内容 = 正常化盈利锚 → 分部估值(A正常化PE/B PB-ROE/C DCF/D磷矿期权/E磷酸铁) → 三情景 → 敏感性 → 监控指标 → 交叉验证 → 失效预警。确定性计算。
     if (j && j.dedicated && j.xinyangfeng) {
       const btn = document.getElementById('valuationAiBtn');
-      if (btn) btn.textContent = '🧮 专属估值模型';
+      if (btn) btn.textContent = '专属估值模型';
       if (dateEl) dateEl.textContent = (j.reportLabel ? j.reportLabel + ' · ' : '') + '确定性计算（无 AI 参与）';
       const ratingMap = { '低估': 'vd-rating-low', '合理': 'vd-rating-mid', '高估': 'vd-rating-high', '需人工复核': 'vd-rating-mid', '无法评级': 'vd-rating-mid' };
       const ratingCls = ratingMap[j.rating] || 'vd-rating-mid';
@@ -4622,7 +4771,7 @@ const App = {
     // 布局 = 统一 vd-card 骨架；内容 = 三层加权（PB-ROE 50% / PE 35% / DCF 15%）→ 五业务单元叙事 → 三情景 → 敏感性(两矩阵) → 防失真规则 → 失效预警。确定性计算。
     if (j && j.dedicated && j.wanrun) {
       const btn = document.getElementById('valuationAiBtn');
-      if (btn) btn.textContent = '🧮 专属估值模型';
+      if (btn) btn.textContent = '专属估值模型';
       if (dateEl) dateEl.textContent = (j.reportLabel ? j.reportLabel + ' · ' : '') + '确定性计算（无 AI 参与）';
       const ratingMap = { '低估': 'vd-rating-low', '合理': 'vd-rating-mid', '高估': 'vd-rating-high', '需人工复核': 'vd-rating-mid', '无法评级': 'vd-rating-mid' };
       const ratingCls = ratingMap[j.rating] || 'vd-rating-mid';
@@ -4730,7 +4879,7 @@ const App = {
     // 布局 = 平安统一模板（vd-card 骨架）；内容 = PB-ROE主模型 + 理论PB + SOTP交叉验证 + 敏感性/信号/风险看板，确定性计算。
     if (j && j.dedicated && j.changjiang) {
       const btn = document.getElementById('valuationAiBtn');
-      if (btn) btn.textContent = '🧮 专属估值模型';
+      if (btn) btn.textContent = '专属估值模型';
       if (dateEl) dateEl.textContent = (j.reportLabel ? j.reportLabel + ' · ' : '') + '确定性计算（无 AI 参与）';
       const ratingMap = { '低估': 'vd-rating-low', '合理': 'vd-rating-mid', '高估': 'vd-rating-high', '需人工复核': 'vd-rating-mid', '无法评级': 'vd-rating-mid' };
       const ratingCls = ratingMap[j.rating] || 'vd-rating-mid';
@@ -4830,7 +4979,7 @@ const App = {
     // 布局 = 平安统一模板（vd-card 骨架）；内容 = 景气周期评分 + 业务/SOTP分部 + 多路估值矩阵 + 三情景 + 假设 + 敏感性 + 监控。
     if (j && j.dedicated && j.dcavm) {
       const btn = document.getElementById('valuationAiBtn');
-      if (btn) btn.textContent = '🧮 专属估值模型';
+      if (btn) btn.textContent = '专属估值模型';
       if (dateEl) dateEl.textContent = (j.reportLabel ? j.reportLabel + ' · ' : '') + '确定性计算（无 AI 参与）';
       const ratingMap = { '低估': 'vd-rating-low', '合理': 'vd-rating-mid', '高估': 'vd-rating-high', '需人工复核': 'vd-rating-mid', '无法评级': 'vd-rating-mid' };
       const ratingCls = ratingMap[j.rating] || 'vd-rating-mid';
@@ -4941,7 +5090,7 @@ const App = {
     //   ⓪ 协议汇总表（固定模板逐格填充）｜① SOTP 分部明细（熔断可跳过）｜② DDM 简表 ｜③ P/EV 简表
     if (j && j.dedicated) {
       const btn = document.getElementById('valuationAiBtn');
-      if (btn) btn.textContent = '🧮 专属估值模型';
+      if (btn) btn.textContent = '专属估值模型';
       if (dateEl) dateEl.textContent = (j.reportLabel ? j.reportLabel + ' · ' : '') + (j.version || '滚动估值协议') + '（无 AI 参与）';
       const ratingMap = { '低估': 'vd-rating-low', '合理': 'vd-rating-mid', '高估': 'vd-rating-high', '需人工复核': 'vd-rating-mid', '无法评级': 'vd-rating-mid' };
       const ratingCls = ratingMap[j.rating] || 'vd-rating-mid';
@@ -5156,7 +5305,7 @@ const App = {
       }
       body.innerHTML = '<div class="ai-loading"><div class="loading-spinner"></div><p>正在联网进行信息分析（CFA 七段框架，含产品/供应商/竞争对手图片），内容较长请稍候（约 3-4 分钟）…</p></div>';
       const aiBtn = document.getElementById('companyDeepAiBtn');
-      if (aiBtn) { aiBtn.disabled = true; aiBtn.textContent = '⏳ 分析中…'; }
+      if (aiBtn) { aiBtn.disabled = true; aiBtn.textContent = '分析中…'; }
       let data;
       try {
         const resp = await fetch('/api/ai/company-deep', {
@@ -5601,7 +5750,13 @@ const App = {
       <div class="ipe-stats">${latestHtml}</div>
       <div id="indexPeTrendChart" class="ipe-chart"></div>
     `;
-    if (note) note.textContent = data.note || '';
+    if (note) {
+      // 20261016 审计修复：数据源不可达回退缓存时，诚实标注而非静默展示旧数据
+      const staleHtml = data.stale
+        ? `<div class="ipe-stale-warn">${this.escapeHtml(data.staleNote || '⚠️ 实时数据源暂不可达，当前展示缓存数据。')}</div>`
+        : '';
+      note.innerHTML = staleHtml + this.escapeHtml(data.note || '');
+    }
     // 渲染图表
     requestAnimationFrame(() => {
       Charts.indexPETrend('indexPeTrendChart', data.data);
@@ -5742,6 +5897,7 @@ const App = {
             <div class="mt-line">仓位：${this.escapeHtml(s6.strategy.position)}</div>
             <div class="mt-line">策略：${this.escapeHtml(s6.strategy.action)}</div>
             <div class="mt-line mt-watch">观测：${this.escapeHtml(s6.strategy.watch)}</div>
+            <div class="mt-line mt-muted">口径说明：以上为本指数单口径分因子建议；综合仓位以本卡「🧩 大盘融合研判 → 仓位区间」为准（20261016 审计标注）。</div>
           </div>
           <div class="mt-risk">⚠️ 风险提示：${this.escapeHtml(s6.risk)}</div>
         </div>
@@ -5766,9 +5922,13 @@ const App = {
       const extBias = (f.external && f.external.bias) ? f.external.bias : '中性';
       const extCls = extBias === '偏鹰' ? 'fu-ext-hawk' : (extBias === '偏鸽' ? 'fu-ext-dove' : 'fu-ext-neutral');
       const a = f.anchors || {};
+      // 20261016 审计修复：锚点代表与后端口径一致（优先上证，失败顺延第一个可用指数），标签不再硬编码「上证」
+      const repIdx = (data.indices || []).find(x => x.code === 'sh000001' && !x.error)
+        || (data.indices || []).find(x => !x.error) || {};
+      const repName = repIdx.name || '上证';
       const anchorCell = (label, val, extra) => `<div class="mt-anchor"><span class="mt-anchor-label">${this.escapeHtml(label)}</span><span class="mt-anchor-val">${val == null ? '—' : val}${extra ? '<small>' + this.escapeHtml(extra) + '</small>' : ''}</span></div>`;
       const anchorsHtml = `<div class="mt-anchors">
-        ${anchorCell('短期防守锚(前低)', a.shortDefensive, '上证')}
+        ${anchorCell('短期防守锚(前低)', a.shortDefensive, repName)}
         ${anchorCell('结构防守锚', a.structuralDefensive, '摆动低')}
         ${anchorCell('中期支撑', a.midSupport)}
         ${anchorCell('中期压力', a.midPressure)}
@@ -5977,14 +6137,23 @@ const App = {
         result = await resp.json();
       }
       if (!result || !result.success) {
-        if (force && result && result.error === 'NO_KEY') {
-          alert(result.message || '请先在「⚙️ AI 设置」中配置 API Key');
+        // [20261015c] 失败必须可见（诚实合规）：以前只有 NO_KEY 弹窗，API_ERROR（如模型免费额度
+        // 耗尽 403）静默返回 → 用户点按钮毫无反应，误以为功能坏了。现在所有失败都给出明确原因。
+        if (force) {
+          if (result && result.error === 'NO_KEY') {
+            alert(result.message || '请先在「⚙️ AI 设置」中配置 API Key');
+          } else if (result && (result.error || result.message)) {
+            alert('AI 解读生成失败：' + (result.message || result.error));
+          } else {
+            alert('AI 解读暂不可用：服务端未返回内容，请稍后重试');
+          }
         }
         return;
       }
       this.renderMarketAITexts(result);
     } catch (e) {
       console.error('loadMarketAI error:', e);
+      alert('AI 解读请求失败：' + (e && e.message ? e.message : '网络异常，请稍后重试'));
     } finally {
       if (btn) btn.disabled = false;
     }
@@ -6022,31 +6191,42 @@ const App = {
     const noteHtml = data.sectorNote
       ? `<div class="mo-note">ℹ️ ${this.escapeHtml(data.sectorNote)}</div>`
       : '';
-    // 单个 group 渲染为可复用的函数
+    // 单个 group 渲染为可复用的函数（items 由调用方构造，便于末尾追加「当日最多涨停/跌停板块」卡）
     const swBadge = (it) => it && it.swLevel ? `<span class="mo-sw-level">${this.escapeHtml(it.swLevel)}</span>` : '';
-    const renderGroup = (g) => {
-      const items = (data[g.key] || []).map(it => {
-        const dir = (!it.unavailable && it.changePct > 0) ? 'up' : ((!it.unavailable && it.changePct < 0) ? 'down' : 'flat');
-        // 20260924：数据中心报表不提供板块指数点位（price=0）→ 视为缺失回退显示领涨/涨跌家数，
-        // 否则会渲染出 "0.00" 误导用户以为数据卡死。
-        let priceTxt = (it.price && Number(it.price) !== 0) ? fmt(it.price) : '--';
-        let subInfo = priceTxt;
-        if (subInfo === '--') {
-          if (it.leader) subInfo = `领涨：${it.leader}`;
-          else if (it.upCount != null && it.downCount != null) subInfo = `涨${it.upCount} / 跌${it.downCount}`;
-        }
-        return `<div class="mo-tile ${dir}">
-          <div class="mo-name">${it.name || it.code}${swBadge(it)}</div>
-          <div class="mo-price">${subInfo}</div>
-          <div class="mo-chg">${fmtPct(it.changePct)}</div>
+    const renderTile = (it) => {
+      // 20261015l：当日最多涨停/跌停板块卡（追加在两组榜单末尾，涨红跌绿与其他卡一致）
+      if (it.kind === 'limitUpTop' || it.kind === 'limitDownTop') {
+        const isUp = it.kind === 'limitUpTop';
+        const sub = it.leader ? `${isUp ? '封板最早' : '代表'}：${this.escapeHtml(it.leader)}` : '--';
+        return `<div class="mo-tile ${isUp ? 'up' : 'down'}">
+          <div class="mo-name">${this.escapeHtml(it.name || '')}<span class="mo-limit-tag">${isUp ? '涨停最多' : '跌停最多'}</span></div>
+          <div class="mo-price">${sub}</div>
+          <div class="mo-chg">${it.count} 家${isUp ? '涨停' : '跌停'}</div>
         </div>`;
-      }).join('');
+      }
+      const dir = (!it.unavailable && it.changePct > 0) ? 'up' : ((!it.unavailable && it.changePct < 0) ? 'down' : 'flat');
+      // 20260924：数据中心报表不提供板块指数点位（price=0）→ 视为缺失回退显示领涨/涨跌家数，
+      // 否则会渲染出 "0.00" 误导用户以为数据卡死。
+      let priceTxt = (it.price && Number(it.price) !== 0) ? fmt(it.price) : '--';
+      let subInfo = priceTxt;
+      if (subInfo === '--') {
+        if (it.leader) subInfo = `领涨：${it.leader}`;
+        else if (it.upCount != null && it.downCount != null) subInfo = `涨${it.upCount} / 跌${it.downCount}`;
+      }
+      return `<div class="mo-tile ${dir}">
+        <div class="mo-name">${it.name || it.code}${swBadge(it)}</div>
+        <div class="mo-price">${subInfo}</div>
+        <div class="mo-chg">${fmtPct(it.changePct)}</div>
+      </div>`;
+    };
+    const renderGroup = (g, items) => {
+      const html = (items || []).map(renderTile).join('');
       const emptyMsg = (g.key === 'sectorsUp' && data.sectorUpCount === 0)
         ? '— 市场普跌，暂无上涨板块 —'
         : (g.key === 'sectorsDown' && data.sectorDownCount === 0)
           ? '— 市场普涨，暂无下跌板块 —'
           : '— 暂无数据 —';
-      const body = items || `<span class="mo-empty">${emptyMsg}</span>`;
+      const body = html || `<span class="mo-empty">${emptyMsg}</span>`;
       const cachedText = (g.aiKey && this.lastMarketAITexts && this.lastMarketAITexts[g.aiKey]) ? this.lastMarketAITexts[g.aiKey] : '';
       const aiHint = cachedText || '点击右上角「✨ AI 解读」获取大盘/板块联网分析';
       const aiBar = g.aiKey ? `<div class="mo-ai-bar" data-ai-key="${g.aiKey}"><span class="mo-ai-text" title="${this.escapeHtml(aiHint)}">${this.escapeHtml(aiHint)}</span></div>` : '';
@@ -6067,11 +6247,23 @@ const App = {
     };
     // 中国指数 / 行业板块涨幅前5 / 行业板块跌幅前5 / 美国指数，各自占一行；
     // 近一周高频板块（7日涨幅/跌幅最大）由 buildReminderHtml 同步渲染进 .mo-tiles-reminder 槽位；
+    // 当日最多涨停/跌停板块卡（20261015l）追加在涨幅/跌幅两组末尾（数据缺失时不渲染，不伪造）；
     // 行业资金流向由 buildCapitalFlowHtml 同步渲染进 #moCapitalFlow 容器（均来自缓存，整块刷新不再丢失）。
-    const cnHtml = renderGroup(groups.find(g => g.key === 'cn'));
-    const usHtml = renderGroup(groups.find(g => g.key === 'us'));
-    const sectorsUpHtml = renderGroup(groups.find(g => g.key === 'sectorsUp'));
-    const sectorsDownHtml = renderGroup(groups.find(g => g.key === 'sectorsDown'));
+    // 20261015l：两组榜单末尾各追加一卡——涨幅组「当日最多涨停板块」、跌幅组「当日最多跌停板块」
+    const upItems = (data.sectorsUp || []).slice();
+    const topUp = data.topLimitUpBoard;
+    if (topUp && topUp.name && topUp.count > 0) {
+      upItems.push({ kind: 'limitUpTop', name: topUp.name, count: topUp.count, leader: topUp.leader || '' });
+    }
+    const downItems = (data.sectorsDown || []).slice();
+    const topDown = data.topLimitDownBoard;
+    if (topDown && topDown.name && topDown.count > 0) {
+      downItems.push({ kind: 'limitDownTop', name: topDown.name, count: topDown.count, leader: topDown.leader || '' });
+    }
+    const cnHtml = renderGroup(groups.find(g => g.key === 'cn'), data.cn || []);
+    const usHtml = renderGroup(groups.find(g => g.key === 'us'), data.us || []);
+    const sectorsUpHtml = renderGroup(groups.find(g => g.key === 'sectorsUp'), upItems);
+    const sectorsDownHtml = renderGroup(groups.find(g => g.key === 'sectorsDown'), downItems);
     const capitalFlowHtml = this.lastCapitalFlow ? this.buildCapitalFlowHtml(this.lastCapitalFlow) : '';
     const html = warnHtml + noteHtml + '<div class="mo-stack">' +
       cnHtml +
@@ -6121,7 +6313,7 @@ const App = {
       ].map(([k, v]) => `<div class="st-row"><span>${k}</span><span>${v || '--'}</span></div>`).join('');
       return `
         <div class="st-head">🔍 技术面评分计算依据</div>
-        <div class="st-note">技术面评分由以下 6 个信号综合打分得出（每个信号按其多空方向贡献 ±分数，累加为 <b>trendScore</b>，再映射为等级）：</div>
+        <div class="st-note">技术面评分由以下 4 类信号综合打分得出（MA 趋势、RSI、MACD、KDJ，每类按其多空方向贡献 ±分数，累加为 <b>trendScore</b>，再映射为等级；布林带与成交量仅作展示、不参与计分）。其中 MACD 与 KDJ 各含两个<b>可叠加</b>子项（MACD：多头/空头 ±1 与金叉/死叉 ±1.5；KDJ：超买超卖 ±0.5 与 K-D 方向 ±0.5），故 trendScore 理论区间为 <b>−6.5 ~ +6.5</b>：</div>
         <div class="st-sub">当前 trendScore = <b>${td.trendScore ?? '--'}</b> → 等级：<b>${td.techScore}</b></div>
         <div class="st-grid">${sigRows}</div>
         <div class="st-rule">等级判定：trendScore ≥3 强烈看多；≥1.5 偏多；≤-3 强烈看空；≤-1.5 偏空；其余为中性。</div>`;
@@ -6143,7 +6335,7 @@ const App = {
       ].map(([k, v]) => `<div class="st-row"><span>${k}</span><span>${v ?? '--'}</span></div>`).join('');
       return `
         <div class="st-head">🔍 基本面评分计算依据</div>
-        <div class="st-note">基本面评分 = 估值 + 盈利能力 + 成长性 + 财务健康 四项加权求和（满分 100），再映射为等级。各维度的权重随公司类型（增长/价值/红利/均衡）不同而调整。</div>
+        <div class="st-note">基本面评分 = 估值 + 盈利能力 + 成长性 + 财务健康 四项加权求和（满分 100），再映射为等级。各维度固定权重各 25 分，不随公司类型浮动。</div>
         <div class="st-sub">总分 = <b>${f.score ?? '--'}</b> → 等级：<b>${f.overall}</b>（${f.rating}）</div>
         <div class="st-grid">${dimRows}</div>
         <div class="st-rule">主要参考指标：</div>
@@ -6172,7 +6364,7 @@ const App = {
     ].map(([k, v]) => `<div class="st-row"><span>${k}</span><span>${v}</span></div>`).join('');
     return `
       <div class="st-head">🔍 资金热度评分计算依据</div>
-      <div class="st-note">资金热度以 50 分为中性起点，综合量能（交易量，方向无关）、主力资金流向、量能指标（OBV/VR/MFI）、融资融券余额变化与换手率（相对月均）计算，满分 100。</div>
+      <div class="st-note">资金热度以 50 分为中性起点，综合量能（交易量，方向无关）、主力资金流向、量能指标（OBV/VR；MFI 仅作展示、不参与计分）、融资融券余额变化与换手率（相对月均）计算，满分 100。</div>
       <div class="st-sub">得分 = <b>${c.score}</b> → 等级：<b>${c.grade}</b></div>
       <div class="st-grid">${reasonRows}</div>
       <div class="st-rule">主要参考数据：</div>

@@ -2,8 +2,10 @@
  * 大盘量能情绪模型 · 离线回归测试（零网络）
  * --------------------------------------------------------------
  * 运行： node scripts/test_market_emotion.js
- * 覆盖：10 因子齐全 / 权重恒为 100% / 常驻权重边界 5%~30% / 降级因子权重归零并分摊 /
- *       非常驻休眠与激活 / 极端行情熔断 / 量能方向修正 / 月末缩量放宽 / T+1 准确率结算 /
+ * 覆盖：9 因子齐全 / 权重恒为 100% / 常驻权重边界 5%~30% / 降级因子权重归零并分摊 /
+ *       非常驻休眠与激活 / 极端行情熔断 / 炸板率展示与封板质量修正 /
+ *       量能活跃与量价配合合并（加权合成 / 降级 / 历史权重迁移）/ 量能方向修正 /
+ *       月末缩量放宽 / T+1 准确率结算 /
  *       股吧热度时效校验（滞后打折、过期剔除）/ 分位样本交易日过滤。
  * 说明：用 SA_MARKET_EMOTION_DIR 与 SA_MSI_SERIES 指向临时目录，绝不读生产数据。
  */
@@ -100,22 +102,22 @@ const withBars = (bars, over = {}) => baseBundle({ index: { code: 'sh000001', na
 
   console.log('\n[1] 基线：数据齐备时的结构与权重');
   let r = await computeMarketEmotion({ data: baseBundle(), macroFactors: [] });
-  ok(r.factors.length === 10, `因子数 = 10（实际 ${r.factors.length}）`);
+  ok(r.factors.length === 9, `因子数 = 9（实际 ${r.factors.length}）`);
   ok(Math.abs(r.factors.reduce((a, f) => a + f.weight, 0) - 100) < 0.1, '因子权重合计 = 100%');
-  ok(r.model === 'volume-emotion-v1', '模型标识正确');
+  ok(r.model === 'volume-emotion-v2', '模型标识正确（v2 = 量能两因子合并）');
   ok(['看涨', '看跌', '中性'].includes(r.tendency), `短期倾向合法（${r.tendency}）`);
   ok(typeof r.coreDriver === 'string' && r.coreDriver.length > 0, '核心驱动非空');
   ok(typeof r.advice === 'string' && r.advice.length > 0, '操作建议非空');
 
   console.log('\n[2] 常驻权重边界 5%~30%（人为塞入越界权重后仍被夹紧）');
   fs.writeFileSync(path.join(TMP, 'state.json'), JSON.stringify({
-    weights: { volumeActivity: 99, breadthExtreme: 0.1, priceVolume: 10, indexMomentum: 10, margin: 10, mainCapital: 10, discussionHeat: 10, riskAversion: 10, domesticMacro: 5, usMacro: 5 },
+    weights: { volumePrice: 99, breadthExtreme: 0.1, indexMomentum: 10, margin: 10, mainCapital: 10, discussionHeat: 10, riskAversion: 10, domesticMacro: 5, usMacro: 5 },
     factorAcc: {}, events: {},
   }));
   r = await computeMarketEmotion({ data: baseBundle(), macroFactors: [] });
-  const vw = r.factors.find(f => f.key === 'volumeActivity').weight;
+  const vw = r.factors.find(f => f.key === 'volumePrice').weight;
   const bw = r.factors.find(f => f.key === 'breadthExtreme').weight;
-  ok(vw <= W_MAX + 0.01 && vw > 0, `越界上限被夹紧（volumeActivity=${vw}% ≤ ${W_MAX}%）`);
+  ok(vw <= W_MAX + 0.01 && vw > 0, `越界上限被夹紧（volumePrice=${vw}% ≤ ${W_MAX}%）`);
   ok(bw >= W_MIN - 0.01, `越界下限被夹紧（breadthExtreme=${bw}% ≥ ${W_MIN}%）`);
   ok(Math.abs(r.factors.reduce((a, f) => a + f.weight, 0) - 100) < 0.1, '夹紧后权重合计仍 = 100%');
 
@@ -150,16 +152,82 @@ const withBars = (bars, over = {}) => baseBundle({ index: { code: 'sh000001', na
   ok(r.circuit === true, '千股跌停触发熔断');
   ok(/观望/.test(r.advice), `熔断时输出观望建议（${r.advice.slice(0, 20)}…）`);
 
-  console.log('\n[7] 量能活跃度方向修正：放量 + 普跌 → 恐慌抛售（负分）');
+  console.log('\n[6b] 炸板率（20261015j）：统计展示 + 方向分>0 时封板质量修正');
+  // ① 炸板率 40%（<50%）：进入 value 展示、字段透出、不修正
+  r = await computeMarketEmotion({ data: baseBundle({ breadth: { up: 3000, down: 1800, flat: 100, limitUp: 60, limitDown: 3, activePct: 60, zbgcCount: 40, zbgcBreaks: 90, zbgcRate: 0.4 } }), macroFactors: [] });
+  const be40 = r.factors.find(f => f.key === 'breadthExtreme');
+  ok(/炸板率 40%（40\/100）/.test(be40.value), `炸板率进入 value 展示（${be40.value}）`);
+  ok(be40.zbgcRate === 0.4 && be40.zbgcCount === 40 && be40.zbgcBreaks === 90, '炸板三字段透出（zbgcRate/zbgcCount/zbgcBreaks）');
+  ok(be40.score === 1, `炸板率 40% < 50% 不修正（score=${be40.score}）`);
+  ok(/封板质量正常/.test(be40.detail), '低炸板率文案为「封板质量正常」');
+  // ② 炸板率 60%：打 7 折
+  r = await computeMarketEmotion({ data: baseBundle({ breadth: { up: 3000, down: 1800, flat: 100, limitUp: 40, limitDown: 3, activePct: 60, zbgcCount: 60, zbgcBreaks: 120, zbgcRate: 0.6 } }), macroFactors: [] });
+  const be60 = r.factors.find(f => f.key === 'breadthExtreme');
+  ok(be60.score === 0.7, `炸板率 60% ≥ 50% → 打 7 折（score=${be60.score}）`);
+  ok(/打7折/.test(be60.detail), '7 折修正文案可见');
+  // ③ 炸板率 80%：打 5 折，且风险提示出现封板质量条目
+  r = await computeMarketEmotion({ data: baseBundle({ breadth: { up: 3000, down: 1800, flat: 100, limitUp: 20, limitDown: 3, activePct: 60, zbgcCount: 80, zbgcBreaks: 200, zbgcRate: 0.8 } }), macroFactors: [] });
+  const be80 = r.factors.find(f => f.key === 'breadthExtreme');
+  ok(be80.score === 0.5, `炸板率 80% ≥ 70% → 打 5 折（score=${be80.score}）`);
+  ok(/封板质量极差/.test(r.riskTip || ''), `风险提示含封板质量条目（${(r.riskTip || '').slice(0, 30)}…）`);
+  // ④ 炸板率缺失：不修正、不 crash、如实标注暂缺
+  r = await computeMarketEmotion({ data: baseBundle({ breadth: { up: 3000, down: 1800, flat: 100, limitUp: 60, limitDown: 3, activePct: 60, zbgcCount: null, zbgcBreaks: null, zbgcRate: null } }), macroFactors: [] });
+  const beNull = r.factors.find(f => f.key === 'breadthExtreme');
+  ok(beNull.score === 1 && beNull.zbgcRate === null, '炸板率缺失时不修正（score 维持 1）');
+  ok(/暂缺/.test(beNull.detail), '缺失时 detail 如实标注「暂缺」');
+  ok(!/炸板率 \d/.test(beNull.value), '缺失时 value 不显示炸板率段');
+  // ⑤ 普跌场景（score=-1）：炸板率不参与修正（不削弱负面信号）
+  r = await computeMarketEmotion({ data: baseBundle({ breadth: { up: 800, down: 4000, flat: 50, limitUp: 10, limitDown: 30, activePct: 20, zbgcCount: 60, zbgcBreaks: 120, zbgcRate: 0.6 } }), macroFactors: [] });
+  const beDown = r.factors.find(f => f.key === 'breadthExtreme');
+  ok(beDown.score === -1, `普跌场景炸板率不修正（score=${beDown.score}）`);
+  ok(/非普涨场景，不参与修正/.test(beDown.detail), '普跌场景文案说明不参与修正');
+  ok(Math.abs(r.factors.reduce((a, f) => a + f.weight, 0) - 100) < 0.1, '炸板率场景权重合计仍 = 100%');
+
+  console.log('\n[6c] 量能活跃与量价配合合并（20261015k）：加权合成 / 降级 / 历史权重迁移');
+  // ① 基线场景合成数值：恒定成交量日线（价5日涨、量能持平 → 量缩价升 -0.5；量比 1 → 平量 0）
+  //    → (0×15 + -0.5×10)/25 = -0.2
+  const flatVolBars = mkBars(260).map(b => ({ ...b, vol: 5e8 }));
+  r = await computeMarketEmotion({ data: withBars(flatVolBars, { breadth: { up: 3000, down: 1800, flat: 100, limitUp: 60, limitDown: 3, activePct: 60 } }), macroFactors: [] });
+  const vp0 = r.factors.find(f => f.key === 'volumePrice');
+  ok(vp0.score === -0.2, `加权合成数值正确（score=${vp0.score}，期望 -0.2）`);
+  ok(vp0.pvScore === -0.5, `量价分透出（pvScore=${vp0.pvScore}）`);
+  ok(/合成得分 =（量能活跃度 0 × 15 \+ 量价配合度 -0\.5 × 10）÷ 25 = -0\.2/.test(vp0.detail), '合成算式写入 detail（可解释）');
+  ok(/量比 1（平量）/.test(vp0.value) && /价格5日/.test(vp0.value), 'value 合并两边统计');
+  // ② 放量普涨 + 量价齐升：量能分 0.5（1年分位过高封顶）+ 量价分 1 → (0.5×15+1×10)/25 = 0.7
+  r = await computeMarketEmotion({ data: withBars(mkBars(260, { lastVolMult: 1.6 }), { breadth: { up: 3000, down: 1800, flat: 100, limitUp: 60, limitDown: 3, activePct: 60 } }), macroFactors: [] });
+  const vp1 = r.factors.find(f => f.key === 'volumePrice');
+  ok(vp1.score === 0.7, `放量齐升场景加权合成（score=${vp1.score}，期望 0.7）`);
+  ok(vp1.pvScore === 1, `量价齐升判满分（pvScore=${vp1.pvScore}）`);
+  ok(vp1.volState === '放量', `量能状态保留（volState=${vp1.volState}）`);
+  // ③ 单边/双边数据缺失 → 整体降级归零，reason 说明是哪一半
+  r = await computeMarketEmotion({ data: baseBundle({ index: { code: 'sh000001', name: '上证指数', bars: [] } }), macroFactors: [] });
+  const vpD = r.factors.find(f => f.key === 'volumePrice');
+  ok(vpD.degraded === true && vpD.weight === 0, '日线缺失 → 合并因子整体降级且权重 = 0');
+  ok(/量能活跃度/.test(vpD.reason) && /量价配合度/.test(vpD.reason), `降级 reason 指明两半（${vpD.reason}）`);
+  ok(/量能活跃与量价配合/.test(r.dataNote || ''), '数据缺口说明点名合并因子');
+  ok(Math.abs(r.factors.reduce((a, f) => a + f.weight, 0) - 100) < 0.1, '降级后权重合计仍 = 100%');
+  // ④ 历史 state.json 权重迁移：旧 volumeActivity:12 + priceVolume:8 → volumePrice:20（幂等，旧 key 删除）
+  fs.writeFileSync(path.join(TMP, 'state.json'), JSON.stringify({
+    weights: { volumeActivity: 12, priceVolume: 8, breadthExtreme: 15, indexMomentum: 10, margin: 10, mainCapital: 10, discussionHeat: 10, riskAversion: 10, domesticMacro: 5, usMacro: 5 },
+    factorAcc: { volumeActivity: { samples: [true], total: 1, correct: 1 } }, events: {},
+  }));
+  await computeMarketEmotion({ data: baseBundle(), macroFactors: [] });
+  const st = JSON.parse(fs.readFileSync(path.join(TMP, 'state.json'), 'utf8'));
+  ok(st.weights.volumePrice === 20, `旧两 key 权重合并迁移（volumePrice=${st.weights.volumePrice}，期望 20）`);
+  ok(st.weights.volumeActivity === undefined && st.weights.priceVolume === undefined, '旧权重 key 已删除（迁移幂等）');
+  ok(st.factorAcc && st.factorAcc.volumeActivity, '历史准确率台账旧 key 保留可追溯');
+  fs.rmSync(path.join(TMP, 'state.json'), { force: true });
+
+  console.log('\n[7] 量能活跃与量价配合方向修正：放量 + 普跌 → 恐慌抛售（负分）');
   r = await computeMarketEmotion({ data: withBars(mkBars(260, { lastVolMult: 2.0 }), { breadth: { up: 800, down: 4000, flat: 50, limitUp: 10, limitDown: 30, activePct: 20 } }), macroFactors: [] });
-  const va = r.factors.find(f => f.key === 'volumeActivity');
-  ok(va.score < 0, `放量普跌判为负分（score=${va.score}）`);
+  const vp7 = r.factors.find(f => f.key === 'volumePrice');
+  ok(vp7.score < 0, `放量普跌判为负分（score=${vp7.score}）`);
 
   console.log('\n[8] T+1 准确率结算：构造一条历史预测并核验命中判定');
   fs.rmSync(path.join(TMP, 'records.json'), { force: true });
   const hb = mkBars(260);
   const base = hb[hb.length - 2].date;
-  fs.writeFileSync(path.join(TMP, 'records.json'), JSON.stringify([{ date: base, baselineDate: base, tendency: '看涨', score: 0.3, factorDirs: { volumeActivity: 1 } }]));
+  fs.writeFileSync(path.join(TMP, 'records.json'), JSON.stringify([{ date: base, baselineDate: base, tendency: '看涨', score: 0.3, factorDirs: { volumePrice: 1 } }]));
   r = await computeMarketEmotion({ data: withBars(hb), macroFactors: [] });
   const rec = JSON.parse(fs.readFileSync(path.join(TMP, 'records.json'), 'utf8')).find(x => x.date === base);
   ok(rec && rec.settledT1 === true, 'T+1 已结算');

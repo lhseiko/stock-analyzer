@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>分析准确率检查 · 大盘技术分析 / 个股技术面 / 短期行情判断 / 市场情绪提醒</title>
-  <link rel="icon" type="image/x-icon" href="favicon.ico?v=20261003j">
-  <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=20261003j">
-  <link rel="stylesheet" href="css/style.css?v=20261006a">
+  <link rel="icon" type="image/x-icon" href="favicon.ico?v=20261016c">
+  <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=20261016c">
+  <link rel="stylesheet" href="css/style.css?v=20261016c">
   <!-- 本页是独立长页，覆盖主工作台全局的 html,body{overflow:hidden} 以恢复滚动 -->
   <style>
     html, body { height: auto !important; overflow-y: auto !important; overflow-x: hidden; }
@@ -22,11 +22,11 @@
       border: 1px solid var(--border); }
     .acc-kpi .k-label { font-size: 12px; color: #8B949E; }
     .acc-kpi .k-value { font-size: 22px; font-weight: 700; font-family: ui-monospace, Consolas, monospace; margin-top: 4px; }
-    .acc-kpi .k-sub { font-size: 11px; color: #6E7681; margin-top: 2px; }
+    .acc-kpi .k-sub { font-size: 12px; color: #828B96; margin-top: 2px; }
     .acc-kpi.good .k-value { color: #F6465D; }
     .acc-kpi.mid .k-value { color: #F0B97B; }
     .acc-kpi.bad .k-value { color: #0ECB81; }
-    .acc-kpi.na .k-value { color: #6E7681; font-size: 16px; }
+    .acc-kpi.na .k-value { color: #828B96; font-size: 16px; }
     .acc-hint { font-size: 12px; color: #8B949E; margin: 10px 0; line-height: 1.7; }
     .acc-hint code { background: rgba(255,255,255,0.06); padding: 1px 5px; border-radius: 3px; }
   </style>
@@ -34,11 +34,11 @@
 <body>
   <div class="acc-page">
     <header class="jd-header">
-      <div class="jd-title">🎯 分析准确率检查</div>
+      <h1 class="jd-title">🎯 分析准确率检查</h1>
       <div class="jd-actions">
-        <button id="settleBtn" class="btn-primary" title="拉取最新行情结算历史判断，再刷新统计">🔄 结算并刷新</button>
-        <button id="reloadBtn" class="btn-secondary">↻ 重新加载</button>
-        <a href="index.html" class="btn-text">🏠 返回工作台</a>
+        <button id="settleBtn" class="btn-primary" title="拉取最新行情结算历史判断，再刷新统计">结算并刷新</button>
+        <button id="reloadBtn" class="btn-secondary">重新加载</button>
+        <a href="index.html" class="btn-text">返回工作台</a>
       </div>
     </header>
 
@@ -49,10 +49,10 @@
 
     <div class="acc-toolbar">
       <div class="acc-tabs">
-        <button class="acc-tab active" data-tab="market">🧭 大盘技术分析</button>
-        <button class="acc-tab" data-tab="tech">🎯 个股技术面</button>
-        <button class="acc-tab" data-tab="sameDay">📊 短期行情判断</button>
-        <button class="acc-tab" data-tab="sentiment">📡 市场情绪提醒</button>
+        <button class="acc-tab active" data-tab="market">大盘技术分析</button>
+        <button class="acc-tab" data-tab="tech">个股技术面</button>
+        <button class="acc-tab" data-tab="sameDay">短期行情判断</button>
+        <button class="acc-tab" data-tab="sentiment">市场情绪提醒</button>
       </div>
       <div id="techSymbolBar" style="display:none; margin-bottom:10px;">
         <input type="text" id="symbolInput" class="jd-filter" placeholder="输入股票代码（如 601318）查该股技术面准确率" autocomplete="off" style="max-width:320px;">
@@ -75,7 +75,7 @@
       <div class="acc-kpis" id="marketKpis"></div>
       <div class="acc-hint" id="marketCalib"></div>
       <section class="home-card">
-        <div class="home-card-head"><h3>逐条记录（最新在前）</h3><span id="marketCount" class="mo-updated"></span></div>
+        <div class="home-card-head"><h2>逐条记录（最新在前）</h2><span id="marketCount" class="mo-updated"></span></div>
         <div id="marketRecords" class="acc-body"></div>
       </section>
     </section>
@@ -90,11 +90,11 @@
       </div>
       <div class="acc-kpis" id="techKpis"></div>
       <section class="home-card" id="techBySymbolCard">
-        <div class="home-card-head"><h3>各股技术面准确率</h3><span id="techCount" class="mo-updated"></span></div>
+        <div class="home-card-head"><h2>各股技术面准确率</h2><span id="techCount" class="mo-updated"></span></div>
         <div id="techBySymbol" class="acc-body"></div>
       </section>
       <section class="home-card" id="techRecordsCard" style="display:none;">
-        <div class="home-card-head"><h3 id="techRecordsTitle">逐条记录</h3></div>
+        <div class="home-card-head"><h2 id="techRecordsTitle">逐条记录</h2></div>
         <div id="techRecords" class="acc-body"></div>
       </section>
     </section>
@@ -110,11 +110,11 @@
       <div class="acc-kpis" id="sdKpis"></div>
       <div class="acc-hint" id="sdCalib"></div>
       <section class="home-card" id="sdBySymbolCard">
-        <div class="home-card-head"><h3>各股短期判断准确率</h3><span id="sdCount" class="mo-updated"></span></div>
+        <div class="home-card-head"><h2>各股短期判断准确率</h2><span id="sdCount" class="mo-updated"></span></div>
         <div id="sdBySymbol" class="acc-body"></div>
       </section>
       <section class="home-card" id="sdRecordsCard" style="display:none;">
-        <div class="home-card-head"><h3 id="sdRecordsTitle">逐条记录</h3></div>
+        <div class="home-card-head"><h2 id="sdRecordsTitle">逐条记录</h2></div>
         <div id="sdRecords" class="acc-body"></div>
       </section>
     </section>
@@ -129,12 +129,12 @@
       </div>
       <div class="acc-kpis" id="sentKpis"></div>
       <section class="home-card">
-        <div class="home-card-head"><h3>逐条记录（最新在前）</h3><span id="sentCount" class="mo-updated"></span></div>
+        <div class="home-card-head"><h2>逐条记录（最新在前）</h2><span id="sentCount" class="mo-updated"></span></div>
         <div id="sentRecords" class="acc-body"></div>
       </section>
     </section>
   </div>
 
-  <script src="js/accuracy.js?v=20261006a"></script>
+  <script src="js/accuracy.js?v=20261016c"></script>
 </body>
 </html>

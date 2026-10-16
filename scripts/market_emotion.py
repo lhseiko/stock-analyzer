@@ -7,7 +7,8 @@
   "ok": bool,
   "date": "YYYY-MM-DD",
   "index":   { "code","name","bars":[{"date","close","vol"}] },   # 上证指数最近 ~250 交易日（vol=成交量·手）
-  "breadth": { "up","down","flat","limitUp","limitDown","activePct","date" },
+  "breadth": { "up","down","flat","limitUp","limitDown","activePct","date",
+               "zbgcCount","zbgcBreaks","zbgcRate","zbgcNote" },   # 20261015j：zbgc*=炸板股池（炸板率=炸板/(涨停+炸板)）
   "margin":  { "latest","prev","changePct","change5Pct","dates","series" },   # 沪深融资余额（亿元）
   "capital": { "mainNetToday","totalAmount","turnoverAvg","topDecileShare","sample","note" },  # 同花顺·市场资金
   "fx":      { "usdcnh","usdcny","chgPct" },
@@ -73,7 +74,23 @@ def fetch_index():
     return {"code": "sh000001", "name": "上证指数", "bars": bars}
 
 
-# ---------- 2) 市场宽度（涨跌家数 / 涨跌停）----------
+# ---------- 2) 市场宽度（涨跌家数 / 涨跌停 / 炸板率）----------
+def fetch_zbgc(ds_ymd):
+    """东财炸板股池（akshare stock_zt_pool_zbgc_em，底层 push2ex.eastmoney.com，本机实测稳定可达）：
+    曾涨停但收盘未封住的个股集合，与收盘涨停池互斥（互斥性已实测：两池代码交集为 0）。
+    返回炸板家数与总炸板次数；炸板率由调用方结合涨停家数计算（分母 = 涨停 + 炸板家数）。
+    注意 akshare 该接口仅支持最近 30 个交易日内的日期。"""
+    df = ak.stock_zt_pool_zbgc_em(date=ds_ymd)
+    if df is None or len(df) == 0:
+        return {"count": 0, "breaks": 0}
+    total_breaks = 0
+    for v in df["炸板次数"]:
+        fv = to_float(v)
+        if fv is not None:
+            total_breaks += int(fv)
+    return {"count": int(len(df)), "breaks": total_breaks}
+
+
 def fetch_breadth():
     df = ak.stock_market_activity_legu()
     m = {}
@@ -83,16 +100,34 @@ def fetch_breadth():
     ds = None
     if date_v is not None:
         ds = str(date_v)[:10]
-    return {
+    limit_up = int(to_float(m.get("涨停")) or 0)
+    out = {
         "up": int(to_float(m.get("上涨")) or 0),
         "down": int(to_float(m.get("下跌")) or 0),
         "flat": int(to_float(m.get("平盘")) or 0),
-        "limitUp": int(to_float(m.get("涨停")) or 0),
+        "limitUp": limit_up,
         "limitDown": int(to_float(m.get("跌停")) or 0),
         "activePct": to_float(str(m.get("活跃度", "")).replace("%", "")),
         "date": ds,
         "source": "乐咕乐股·市场活跃度",
     }
+    # 炸板率（20261015j）：与涨跌家数同一次采集、同一统计日期口径；分母 = 涨停 + 炸板家数。
+    # 取数失败仅炸板字段为 null 并如实标注，不拖垮涨跌家数（safe 已记 warnings）。
+    ds_ymd = (ds or datetime.datetime.now().strftime("%Y-%m-%d")).replace("-", "")
+    zb = safe("炸板股池", lambda: fetch_zbgc(ds_ymd))
+    if zb is None:
+        out["zbgcCount"] = None
+        out["zbgcBreaks"] = None
+        out["zbgcRate"] = None
+        out["zbgcNote"] = "东财炸板股池取数失败，本次无炸板率"
+    else:
+        cnt, brk = zb["count"], zb["breaks"]
+        denom = limit_up + cnt
+        out["zbgcCount"] = cnt
+        out["zbgcBreaks"] = brk
+        out["zbgcRate"] = round(cnt / denom, 4) if denom > 0 else None
+        out["zbgcNote"] = None if denom > 0 else "当日无涨停亦无炸板，炸板率不适用"
+    return out
 
 
 # ---------- 3) 融资余额（沪深合计，亿元）----------

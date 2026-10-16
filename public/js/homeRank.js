@@ -290,7 +290,7 @@ const HomeRank = (() => {
   async function refresh() {
     const btn = document.getElementById('rankRefresh');
     const prev = btn ? btn.textContent : '';
-    if (btn) { btn.disabled = true; btn.textContent = '🔄 刷新中…'; }
+    if (btn) { btn.disabled = true; btn.textContent = '刷新中…'; }
     try {
       await fetch('/api/fund-industry-matrix/crawl', { method: 'POST' });
     } catch (e) { /* 忽略，继续拉取 */ }

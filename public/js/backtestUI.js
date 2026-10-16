@@ -27,7 +27,7 @@ window.BacktestUI = (function () {
     return '<div class="bt-metric"><div class="k">' + k + '</div><div class="v ' + (c || '') + '">' + v + '</div></div>';
   }
   function verdictBadge(v) {
-    const label = v === 'PASS' ? '✅ 通过' : (v === 'WARNING' ? '⚠️ 警示' : '⛔ 否决');
+    const label = v === 'PASS' ? '✅ 通过' : (v === 'WARNING' ? '⚠️ 警示' : (v === 'INSUFFICIENT_SAMPLE' ? '📉 样本不足' : '⛔ 否决'));
     return '<span class="bt-verdict ' + v + '">' + label + ' · ' + v + '</span>';
   }
   function num(x, d) { return (x == null || isNaN(x)) ? '-' : (typeof x === 'number' ? x.toFixed(d == null ? 2 : d) : x); }
@@ -184,7 +184,12 @@ window.BacktestUI = (function () {
       + '<div class="bt-grid" style="margin-top:12px">'
       + metricCard('修正后胜率', fmtPct(adj.adjusted_win_rate || 0), cls((adj.adjusted_win_rate || 0) - 0.5))
       + metricCard('修正后收益', (adj.adjusted_return * 100).toFixed(1) + '%', cls(adj.adjusted_return))
-      + '</div></div>';
+      + '</div>'
+      + renderSurvivorshipEvidence(adj.survivorship_evidence)
+      + '</div>';
+
+    // ④b 风控出场 & 分批建仓（仅在策略启用了这些能力时展示）
+    html += renderRiskExit(data);
 
     // ⑤ 操作建议
     html += '<div class="bt-section"><h3>⑤ 操作建议</h3>'
@@ -194,6 +199,61 @@ window.BacktestUI = (function () {
 
     r.innerHTML = html;
     lastRenderedSymbol = current.symbol;
+  }
+
+  // —— 幸存者偏差证据块（真实 F10 上市状态）——
+  // 系数来源三档：f10_evidence（有证据）/ caller（调用方指定）/ default（无证据，保底 0.9）
+  function renderSurvivorshipEvidence(ev) {
+    if (!ev) return '';
+    const basisLabel = {
+      f10_evidence: '真实 F10 证据',
+      caller: '调用方指定',
+      default: '默认保底（无证据）',
+    }[ev.basis] || ev.basis;
+    const tone = ev.basis === 'f10_evidence' ? 'bt-sv-ok' : (ev.basis === 'default' ? 'bt-sv-warn' : '');
+    let h = '<div class="bt-evidence ' + tone + '">'
+      + '<div class="bt-ev-title">🏛 幸存者偏差依据：<b>' + basisLabel + '</b> （系数 ×' + ev.factor + '）</div>'
+      + '<div class="bt-ev-body">' + (ev.note || '') + '</div>';
+    if (ev.stHistory && ev.stHistory.length) {
+      h += '<div class="bt-ev-body">风险警示历史：' + ev.stHistory.join(' → ') + '</div>';
+    }
+    if (ev.listingDate) {
+      h += '<div class="bt-ev-body">上市日期：' + String(ev.listingDate).slice(0, 10)
+        + (ev.listingYears != null ? '（约 ' + ev.listingYears + ' 年）' : '')
+        + (ev.isNewListing ? ' ⚠ 上市未满 3 年，回测样本天然偏短' : '') + '</div>';
+    }
+    if (ev.source) h += '<div class="bt-ev-src">来源：' + ev.source + '</div>';
+    h += '</div>';
+    return h;
+  }
+
+  // —— 风控出场 & 分批建仓展示 ——
+  // 只有策略真的启用了（回测结果里带 riskExit / trancheInfo）才渲染，避免默认路径出现空块
+  function renderRiskExit(data) {
+    const rb = (data.raw_backtest_result && data.raw_backtest_result.full) || {};
+    const re = rb.riskExit;
+    const ti = rb.trancheInfo;
+    if (!re && !ti) return '';
+    let h = '<div class="bt-section"><h3>🛡 风控出场与仓位管理</h3>';
+    if (re) {
+      const rows = [];
+      if (re.stopLoss != null) rows.push(['固定止损', (re.stopLoss * 100).toFixed(1) + '%', re.stopLossCount + ' 次触发']);
+      if (re.takeProfit != null) rows.push(['固定止盈', (re.takeProfit * 100).toFixed(1) + '%', re.takeProfitCount + ' 次触发']);
+      if (re.trailing != null) rows.push(['移动止盈', (re.trailing * 100).toFixed(1) + '%', re.trailingCount + ' 次触发']);
+      if (rows.length) {
+        h += '<table class="bt-table"><thead><tr><th>规则</th><th>阈值</th><th>触发次数</th></tr></thead><tbody>'
+          + rows.map(r => '<tr><td>' + r[0] + '</td><td class="factor">' + r[1] + '</td><td>' + r[2] + '</td></tr>').join('')
+          + '</tbody></table>';
+      } else {
+        h += '<div class="bt-diag">已启用风控出场，但样本期内未触发。</div>';
+      }
+    }
+    if (ti) {
+      h += '<div class="bt-diag" style="margin-top:8px">建仓方式：等分 <b>' + ti.tranches + '</b> 批'
+        + (ti.trancheGap > 1 ? '（每批间隔 ' + ti.trancheGap + ' 个交易日）' : '（连续信号日依次建仓）') + '</div>';
+    }
+    h += '</div>';
+    return h;
   }
 
   // —— 自动策略生成流程（无需用户 DSL）——
@@ -257,13 +317,37 @@ window.BacktestUI = (function () {
       + (mc.adf_price && !mc.adf_price.stationary ? '均值回归类须落于「平稳收益率」上（RET/ZSCORE 路径），否则按伪回归陷阱 ×0.5 折算。' : '可直接做趋势/回归。')
       + '</div></div>';
 
-    // 参数敏感性（E 项）
+    // 参数敏感性（E 项）+ 逐候选可视化（P2-1）
     html += '<div class="bt-section"><h3>🎚️ 参数敏感性汇总</h3><div class="bt-grid">'
       + metricCard('候选数', ps.candidate_count || 0)
       + metricCard('修正胜率 最高', (ps.max != null ? (ps.max * 100).toFixed(1) + '%' : '-'))
       + metricCard('修正胜率 最低', (ps.min != null ? (ps.min * 100).toFixed(1) + '%' : '-'))
       + metricCard('离散度', (ps.spread != null ? (ps.spread * 100).toFixed(1) + 'pp' : '-'), ps.spread > 0.1 ? 'down' : '')
-      + '</div><div class="bt-note">' + (ps.note || '') + '</div></div>';
+      + '</div>';
+    const psList = ps.series || [];
+    if (psList.length) {
+      const mx = Math.max.apply(null, psList.map(s => s.adjusted_win_rate)) || 1;
+      html += '<div class="bt-ps-bars">';
+      psList.slice().sort((a, b) => b.adjusted_win_rate - a.adjusted_win_rate).forEach((s, i) => {
+        const w = Math.max(2, Math.round(s.adjusted_win_rate / mx * 100));
+        html += '<div class="bt-ps-row"><span class="bt-ps-name">' + s.name + '</span>'
+          + '<span class="bt-ps-track"><i class="' + (i === 0 ? 'bt-ps-top' : '') + '" style="width:' + w + '%"></i></span>'
+          + '<span class="bt-ps-val">' + (s.adjusted_win_rate * 100).toFixed(1) + '%</span></div>';
+      });
+      html += '</div>';
+    }
+    html += '<div class="bt-note">' + (ps.note || '') + '</div></div>';
+
+    // P1-3 多重检验校正（BH）
+    const mt = data.multiple_testing;
+    if (mt) {
+      html += '<div class="bt-section"><h3>🔬 多重检验校正</h3><div class="bt-grid">'
+        + metricCard('候选家族数', mt.family_size)
+        + metricCard('最优原始 p', mt.best_raw_p)
+        + metricCard('校正后 p', mt.best_adjusted_p, mt.best_significant ? '' : 'down')
+        + metricCard('是否显著', mt.best_significant ? '显著' : '不显著')
+        + '</div><div class="bt-note">' + (mt.note || '') + '</div></div>';
+    }
 
     // 最优策略
     if (best) {
@@ -337,6 +421,8 @@ window.BacktestUI = (function () {
       + verdictBadge(adv.verdict)
       + '<div class="bt-advice">' + (adv.narrative || '') + '</div>'
       + (adv.deterministic ? '<div class="bt-note">（以上为确定性规则生成的文字；配置 AI 密钥后可获得更口语化的解读）</div>' : '')
+      // 20261016b（审计 ST1）：披露派生策略来源，避免「全部由代码确定性计算」被误读为「每套策略都是独立的第三方信号」。
+      + '<div class="bt-note">ℹ️ 策略来源披露：「趋势跟踪·短期行情判定（技术核心）」为派生策略，复用工作台自身的行情判定结论（priceAction.shortTerm.direction），把同一套技术内核回算成历史买卖信号，属工作台内部联动，非外部 AI / 第三方信号源；其余策略由本页独立计算，不依赖行情判定输出。</div>'
       + '</div>';
 
     r.innerHTML = html;
@@ -344,7 +430,7 @@ window.BacktestUI = (function () {
   }
 
   function verdictBadgeText(v) {
-    return v === 'PASS' ? '✅ 通过' : (v === 'WARNING' ? '⚠️ 警示' : '⛔ 否决');
+    return v === 'PASS' ? '✅ 通过' : (v === 'WARNING' ? '⚠️ 警示' : (v === 'INSUFFICIENT_SAMPLE' ? '📉 样本不足' : '⛔ 否决'));
   }
 
   function init() {

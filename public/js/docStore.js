@@ -73,9 +73,9 @@ const DocStore = (function () {
         </div>
         <div class="docs-search-box">
           <input type="text" id="docsSearchInput" placeholder="搜索文档标题、公司名、年份..." class="docs-search-input" />
-          <button id="docsSearchBtn" class="docs-search-btn">🔍</button>
+          <button id="docsSearchBtn" class="docs-search-btn" title="搜索资料" aria-label="搜索资料">🔍</button>
         </div>
-        ${stockCode ? `<button class="docs-upload-btn" id="docsUploadBtn">📤 上传</button><button class="docs-batch-btn" id="docsBatchBtn">📚 批量上传</button>` : ''}
+        ${stockCode ? `<button class="docs-upload-btn" id="docsUploadBtn">上传</button><button class="docs-batch-btn" id="docsBatchBtn">批量上传</button>` : ''}
       </div>
 
       <div id="docsContent" class="docs-content">
@@ -86,7 +86,7 @@ const DocStore = (function () {
       <div class="docs-report-card" id="reportDownloadCard">
         <div class="drc-header">
           <h4>📥 下载年报 / 半年报 / 季报</h4>
-          <span class="drc-hint">默认数据源：巨潮资讯网（已修复） · 进入资料库自动获取 · 自动跳过已下载文件</span>
+          <span class="drc-hint">默认数据源：巨潮资讯网（cninfo，抓取通道） · 进入资料库自动获取 · 自动跳过已下载文件 · 另有「本地上传」入口，其文件由你自行提供，不属于任何抓取来源</span>
         </div>
         <div class="drc-row drc-target-row">
           <span class="drc-target ${curCode ? '' : 'drc-target-empty'}">${curCode
@@ -115,8 +115,8 @@ const DocStore = (function () {
             <option value="eastmoney">东方财富（部分网络受限）</option>
             <option value="all">全部通道</option>
           </select>
-          <button id="reportDownloadBtn" class="drc-btn">⬇️ 开始下载</button>
-          <button id="reportProbeBtn" class="drc-btn drc-btn-ghost">🔍 诊断参数</button>
+          <button id="reportDownloadBtn" class="drc-btn">开始下载</button>
+          <button id="reportProbeBtn" class="drc-btn drc-btn-ghost">诊断参数</button>
         </div>
         <div id="reportDownloadResult" class="drc-result"></div>
       </div>
@@ -185,7 +185,9 @@ const DocStore = (function () {
     }
   }
 
-  // ---- 进入资料库自动抓取年报/半年报（默认东方财富）----
+  // ---- 进入资料库自动抓取年报/半年报（默认通道：巨潮资讯网 cninfo）----
+  // 20261016b（审计 K1）：旧注释写「默认东方财富」，与实际不符——本处请求 channel:'cninfo'（见下方 body），
+  // 服务端默认通道同样是 cninfo（lib/docStore.js）。东方财富仅作为 cninfo 失败时的备用通道。
   // 防抖 + 每股票每日仅触发一次，避免重复拉取
   let autoFetchTimer = null;
   const autoFetchedToday = {}; // { 'code-YYYY-MM-DD': true }
@@ -226,7 +228,7 @@ const DocStore = (function () {
     } catch (e) {
       if (resultEl) resultEl.innerHTML = `<div class="drc-msg warn">⚠️ 自动获取异常：${esc(e.message)}</div>`;
     } finally {
-      if (btn) { btn.disabled = false; btn.textContent = '⬇️ 开始下载'; }
+      if (btn) { btn.disabled = false; btn.textContent = '开始下载'; }
     }
   }
 
@@ -266,7 +268,7 @@ const DocStore = (function () {
 
     const btn = document.getElementById('reportDownloadBtn');
     btn.disabled = true;
-    btn.textContent = '⏳ 下载中...';
+    btn.textContent = '下载中...';
     resultEl.innerHTML = `<div class="drc-msg info">正在从 <b>${channelName}</b> 下载 ${codes.length} 只股票的${typeLabels.join('/')}报告（回溯 ${years} 年），请稍候...</div>`;
 
     try {
@@ -322,7 +324,7 @@ const DocStore = (function () {
             return `<div class="drc-detail-row"><span class="drc-code">${d.code}</span><span>${d.name || ''}</span><span class="drc-detail-status">${status}</span></div>`;
           }).join('');
           html += `<div class="drc-details">${rows}</div>`;
-          html += `<div class="drc-actions"><button class="drc-btn-sm" id="reportViewBtn">📁 在资料库中查看</button></div>`;
+          html += `<div class="drc-actions"><button class="drc-btn-sm" id="reportViewBtn">在资料库中查看</button></div>`;
         }
         resultEl.innerHTML = html;
         // 刷新统计与"全部公司"视图（下载的文件已注册进资料库）
@@ -340,7 +342,7 @@ const DocStore = (function () {
       resultEl.innerHTML = `<div class="drc-msg error">❌ 请求失败：${e.message}</div>`;
     } finally {
       btn.disabled = false;
-      btn.textContent = '⬇️ 开始下载';
+      btn.textContent = '开始下载';
     }
   }
 
@@ -359,7 +361,7 @@ const DocStore = (function () {
       return;
     }
     const btn = document.getElementById('reportProbeBtn');
-    if (btn) { btn.disabled = true; btn.textContent = '⏳ 探测中...'; }
+    if (btn) { btn.disabled = true; btn.textContent = '探测中...'; }
     resultEl.innerHTML = `<div class="drc-msg info">正在探测巨潮接口对 <b>${codes.join(', ')}</b> 各参数组合的返回情况，请稍候...</div>`;
     try {
       const resp = await fetch('/api/reports/probe?codes=' + encodeURIComponent(codes.join(',')));
@@ -404,7 +406,7 @@ const DocStore = (function () {
     } catch (e) {
       resultEl.innerHTML = `<div class="drc-msg error">❌ 请求失败：${e.message}</div>`;
     } finally {
-      if (btn) { btn.disabled = false; btn.textContent = '🔍 诊断参数'; }
+      if (btn) { btn.disabled = false; btn.textContent = '诊断参数'; }
     }
   }
 
@@ -606,8 +608,8 @@ const DocStore = (function () {
           ${doc.description ? `<div class="doc-card-desc">${doc.description}</div>` : ''}
         </div>
         <div class="doc-card-actions">
-          <button class="doc-action-btn doc-download-btn" data-id="${doc.id}" title="下载">⬇️</button>
-          <button class="doc-action-btn doc-delete-btn" data-id="${doc.id}" title="删除">🗑️</button>
+          <button class="doc-action-btn doc-download-btn" data-id="${doc.id}" title="下载" aria-label="下载">⬇️</button>
+          <button class="doc-action-btn doc-delete-btn" data-id="${doc.id}" title="删除" aria-label="删除">🗑️</button>
         </div>
       </div>
     `;
@@ -911,7 +913,7 @@ const DocStore = (function () {
             <div class="bc-file" title="${r.fileName}">${r.fileName}</div>
             <div class="bc-company">
               ${companyBadge}
-              <button class="bc-pick" data-i="${i}" title="选择/更改公司">🔍</button>
+              <button class="bc-pick" data-i="${i}" title="选择/更改公司" aria-label="选择/更改公司">🔍</button>
               <div class="bc-pick-box" id="bcPick_${i}" style="display:none">
                 <input type="text" class="bc-pick-input" placeholder="输入公司名或代码搜索" />
                 <div class="bc-pick-list"></div>
@@ -1057,7 +1059,8 @@ const DocStore = (function () {
       const c = document.getElementById('docStoreContainer');
       if (c && c.offsetParent !== null) {
         render();
-        // 进入资料库时自动从东方财富抓取该股票近年年报/半年报（防抖 1.2s）
+        // 20261016b（审计 K1）：旧注释写「从东方财富抓取」与实际不符，自动抓取固定走 cninfo 通道（见 autoFetchReports 内 body）。
+        // 进入资料库时自动从巨潮资讯网（cninfo）抓取该股票近年年报/半年报（防抖 1.2s）
         if (autoFetchTimer) clearTimeout(autoFetchTimer);
         autoFetchTimer = setTimeout(() => autoFetchReports(), 1200);
       }

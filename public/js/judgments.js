@@ -178,6 +178,14 @@
       if (STATE.symbolScope) STATE.symbolName = data.symbolName || STATE.symbolScope;
       applySymbolScope();
       render();
+      // 20261016：结算完成后准确率数字闪烁一次（确定性反馈，复用 numFlash 动画）
+      if (settle) {
+        document.querySelectorAll('.acc-store').forEach(el => {
+          el.classList.remove('num-flash');
+          void el.offsetWidth;
+          el.classList.add('num-flash');
+        });
+      }
     } catch (e) {
       $('recordList').innerHTML = `<div class="jd-empty">加载失败：${escapeHtml(e.message)}</div>`;
       $('accuracyBody').innerHTML = '';

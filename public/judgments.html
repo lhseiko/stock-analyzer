@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>个股行情判断记录 · 准确率核对</title>
-  <link rel="icon" type="image/x-icon" href="favicon.ico?v=20261003j">
-  <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=20261003j">
-  <link rel="stylesheet" href="css/style.css?v=20261003j">
+  <link rel="icon" type="image/x-icon" href="favicon.ico?v=20261016c">
+  <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=20261016c">
+  <link rel="stylesheet" href="css/style.css?v=20261016c">
   <!-- 本页是独立长页，覆盖主工作台全局的 html,body{overflow:hidden} 以恢复滚动 -->
   <style>
     html, body { height: auto !important; overflow-y: auto !important; overflow-x: hidden; }
@@ -18,11 +18,11 @@
 <body>
   <div class="jd-page">
     <header class="jd-header">
-      <div class="jd-title">📋 个股下一交易日判断记录 · 准确率核对</div>
+      <h1 class="jd-title">📋 个股下一交易日判断记录 · 准确率核对</h1>
       <div class="jd-actions">
-        <button id="recheckBtn" class="btn-secondary" title="用原始数据重新验算记录与准确率">🧮 重新核对</button>
-        <button id="refreshSettleBtn" class="btn-primary" title="先拉取 K 线结算该股历史判断，再刷新">🔄 结算并刷新</button>
-        <a href="index.html" class="btn-text">🏠 返回工作台</a>
+        <button id="recheckBtn" class="btn-secondary" title="用原始数据重新验算记录与准确率">重新核对</button>
+        <button id="refreshSettleBtn" class="btn-primary" title="先拉取 K 线结算该股历史判断，再刷新">结算并刷新</button>
+        <a href="index.html" class="btn-text">返回工作台</a>
       </div>
     </header>
 
@@ -37,7 +37,7 @@
     <!-- 准确率核对：存储值 vs 本页重算 -->
     <section class="home-card" id="accuracyCard">
       <div class="home-card-head">
-        <h3>🎯 准确率核对（存储值 <span class="vs">vs</span> 本页重算）</h3>
+        <h2>🎯 准确率核对（存储值 <span class="vs">vs</span> 本页重算）</h2>
         <span id="accUpdated" class="mo-updated"></span>
       </div>
       <div id="accuracyBody" class="acc-body"></div>
@@ -47,7 +47,7 @@
     <!-- 错误分析与自我进化 -->
     <section class="home-card" id="learningCard">
       <div class="home-card-head">
-        <h3>🧠 错误分析与自我进化</h3>
+        <h2>🧠 错误分析与自我进化</h2>
         <span id="learnUpdated" class="mo-updated"></span>
       </div>
       <div id="learningBody" class="learn-body"></div>
@@ -60,7 +60,7 @@
         <button class="jd-tag active" data-filter="all">全部</button>
         <button class="jd-tag" data-filter="settled">已结算</button>
         <button class="jd-tag" data-filter="pending">待结算</button>
-        <button class="jd-tag" data-filter="mismatch">⚠️ 不一致</button>
+        <button class="jd-tag" data-filter="mismatch">不一致</button>
       </div>
       <span id="recordCount" class="rc"></span>
     </section>
@@ -69,6 +69,6 @@
     <div id="recordList" class="record-list"></div>
   </div>
 
-  <script src="js/judgments.js?v=20261003j"></script>
+  <script src="js/judgments.js?v=20261016c"></script>
 </body>
 </html>

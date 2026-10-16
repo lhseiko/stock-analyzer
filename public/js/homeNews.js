@@ -78,7 +78,7 @@ const HomeNews = (() => {
       </a>`).join('');
     const list = items.slice(1).map(itemHtml).join('');
     body.innerHTML = `${top}<div class="hn-list">${list}</div>
-      <div class="hn-foot">数据来源：${escapeHtml((data && data.source) || '东方财富 7×24 快讯')} · 点击条目跳转原文</div>`;
+      <div class="hn-foot">数据来源：${escapeHtml((data && data.source) || '东方财富 7×24 快讯')} · 点击条目跳转原文${(data && typeof data.sectorMapCount === 'number') ? ` · 板块影响标注仅覆盖 ${data.sectorMapCount} 个行业板块，未命中板块的新闻不显示标注（≠无影响）` : ''}</div>`;
   }
 
   async function load(force) {

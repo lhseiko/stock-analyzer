@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>股票投资分析工作台</title>
-  <link rel="icon" type="image/x-icon" href="favicon.ico?v=20261006a">
-  <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=20261006a">
-  <link rel="stylesheet" href="css/style.css?v=20261006a">
+  <link rel="icon" type="image/x-icon" href="favicon.ico?v=20261016c">
+  <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=20261016c">
+  <link rel="stylesheet" href="css/style.css?v=20261016c">
   <script>
     // 启动时确保 URL 带 ?v= 参数（用于破坏静态资源缓存）。
     // 重要：版本号以 server.js 的 APP_VERSION 为准，由服务端重定向统一下发，
@@ -42,11 +42,11 @@
   <!-- 顶栏：大盘行情状态栏（上证/深证/创业板/科创50/日经指数/恒生/纳斯达克/道琼斯），支持折叠 -->
   <header id="marketTopbar" class="market-topbar">
     <div class="topbar-inner">
-      <div class="topbar-brand"><img class="brand-logo" src="icon.png?v=20261006a" alt="logo">股票分析台</div>
+      <div class="topbar-brand"><img class="brand-logo" src="icon.png?v=20261016c" alt="logo">股票分析台</div>
       <div id="marketTopbarIndices" class="topbar-indices">
         <span class="tb-loading">大盘行情加载中…</span>
       </div>
-      <button id="topbarCollapse" class="topbar-collapse" title="折叠 / 展开大盘行情">▾</button>
+      <button id="topbarCollapse" class="topbar-collapse" title="折叠 / 展开大盘行情" aria-label="折叠 / 展开大盘行情">▾</button>
     </div>
   </header>
 
@@ -55,7 +55,7 @@
     <aside class="sidebar">
       <div class="sidebar-header">
         <h1 class="logo">📈 股票分析台</h1>
-        <button id="keyboardHelpBtn" class="kb-trigger" title="查看快捷键">⌨️</button>
+        <button id="keyboardHelpBtn" class="kb-trigger" title="查看快捷键" aria-label="查看快捷键">⌨️</button>
       </div>
 
       <!-- Search -->
@@ -69,7 +69,7 @@
 
       <!-- AI 模型设置入口（联网 / 本地双模型） -->
       <div class="sidebar-section">
-        <button id="aiSettingsBtn" class="sidebar-setting-btn" title="配置 AI 模型（联网/本地）">⚙️ AI 模型设置</button>
+        <button id="aiSettingsBtn" class="sidebar-setting-btn" title="配置 AI 模型（联网/本地）">AI 模型设置</button>
       </div>
 
       <!-- Quick links -->
@@ -85,17 +85,20 @@
       <!-- Watchlist -->
       <div class="sidebar-section">
         <div class="section-header">
-          <h3>⭐ 自选股</h3>
+          <h2>⭐ 自选股</h2>
           <span id="watchlistCount" class="count-badge">0</span>
         </div>
         <div id="watchlist" class="watchlist"></div>
       </div>
 
       <!-- History -->
-      <div class="sidebar-section">
+      <div class="sidebar-section" id="historyPanel" data-collapsible="true">
         <div class="section-header">
-          <h3>🕐 搜索历史</h3>
-          <button id="clearHistory" class="btn-text">清除</button>
+          <h2>🕐 搜索历史</h2>
+          <div class="header-actions">
+            <button id="clearHistory" class="btn-text">清除</button>
+            <button class="btn-collapse" data-collapse-target="historyPanel" title="折叠/展开" aria-label="折叠/展开">▾</button>
+          </div>
         </div>
         <div id="historyList" class="history-list"></div>
       </div>
@@ -106,18 +109,18 @@
       <!-- 常驻顶部导航：投资心得 / 大盘记录 / AI设置（所有页面都显示） + 个股页操作按钮 -->
       <nav class="global-nav">
         <div class="global-nav-common">
-          <button class="home-action-btn" onclick="Notes.showScopeModal('global')">🧠 投资心得</button>
-          <button class="home-action-btn" onclick="Notes.showScopeModal('market')">🌐 大盘记录</button>
-          <button class="home-action-btn" onclick="App.openAISettings()">⚙️ AI 设置</button>
-          <button class="home-action-btn" onclick="LogicModel.open()" title="以总分树状图查看整个工作台的逻辑框架">🧩 工作台逻辑模型</button>
+          <button class="home-action-btn" onclick="Notes.showScopeModal('global')">投资心得</button>
+          <button class="home-action-btn" onclick="Notes.showScopeModal('market')">大盘记录</button>
+          <button class="home-action-btn" onclick="App.openAISettings()">AI 设置</button>
+          <button class="home-action-btn" onclick="LogicModel.open()" title="按页面布局查看整个工作台的逻辑框架">工作台逻辑模型</button>
         </div>
         <div class="global-nav-extra hidden" id="globalNavExtra">
-          <button id="backHomeBtn" class="home-action-btn" title="返回首页">🏠 首页</button>
+          <button id="backHomeBtn" class="home-action-btn" title="返回首页">首页</button>
           <button id="addToWatchlist" class="home-action-btn" title="加入 / 移出自选股">☆ 自选</button>
-          <button id="exportHTML" class="home-action-btn" title="导出HTML">📄 导出HTML</button>
-          <button id="exportJSON" class="home-action-btn" title="导出JSON">💾 导出JSON</button>
-          <button id="refreshBtn" class="home-action-btn" title="刷新">🔄 刷新</button>
-          <a id="navAccuracyLink" class="nav-acc-link" href="accuracy.html" title="查看判断准确率核对页">🎯 准确率</a>
+          <button id="exportHTML" class="home-action-btn" title="导出HTML">导出HTML</button>
+          <button id="exportJSON" class="home-action-btn" title="导出JSON">导出JSON</button>
+          <button id="refreshBtn" class="home-action-btn" title="刷新">刷新</button>
+          <a id="navAccuracyLink" class="nav-acc-link" href="accuracy.html" title="查看判断准确率核对页">准确率</a>
         </div>
       </nav>
 
@@ -145,9 +148,9 @@
             <h3>📡 市场情绪提醒</h3>
             <div class="mo-head-actions">
               <span id="homeSentimentUpdated" class="mo-updated"></span>
-              <button class="btn-journal-add" id="homeSentimentRefresh" title="重新检测">🔄 重新检测</button>
+              <button class="btn-journal-add" id="homeSentimentRefresh" title="重新检测">重新检测</button>
               <a class="mt-acc-link topbar-acc-small" href="accuracy.html?tab=sentiment" title="查看情绪预警历史与事后验证">准确率核对 →</a>
-              <button class="btn-collapse" data-collapse-target="homeSentimentPanel" title="折叠/展开">▾</button>
+              <button class="btn-collapse" data-collapse-target="homeSentimentPanel" title="折叠/展开" aria-label="折叠/展开">▾</button>
             </div>
           </div>
           <div id="homeSentimentBody" class="sentiment-tp-body">
@@ -161,8 +164,8 @@
             <h3>📈 实时大盘</h3>
             <div class="mo-head-actions">
               <span id="marketUpdated" class="mo-updated"></span>
-              <button class="btn-journal-add" id="marketAIBtn" title="AI 联网解读大盘">✨ AI 解读</button>
-              <button class="btn-journal-add" id="marketRefreshBtn" title="刷新行情">🔄 刷新</button>
+              <button class="btn-journal-add" id="marketAIBtn" title="AI 联网解读大盘">AI 解读</button>
+              <button class="btn-journal-add" id="marketRefreshBtn" title="刷新行情">刷新</button>
             </div>
           </div>
           <div id="marketOverview" class="market-overview-body"></div>
@@ -174,9 +177,9 @@
             <h3>🧭 大盘技术分析（融合版）</h3>
             <div class="mo-head-actions">
               <span id="marketTechnicalUpdated" class="mo-updated"></span>
-              <button class="btn-journal-add" id="marketTechnicalRefresh" title="重新推演三大指数">🔄 刷新</button>
+              <button class="btn-journal-add" id="marketTechnicalRefresh" title="重新推演三大指数">刷新</button>
               <a class="mt-acc-link topbar-acc-small" href="accuracy.html?tab=market" title="查看历史判断与事后验证">准确率核对 →</a>
-              <button class="btn-collapse" data-collapse-target="marketTechnicalCard" title="折叠/展开">▾</button>
+              <button class="btn-collapse" data-collapse-target="marketTechnicalCard" title="折叠/展开" aria-label="折叠/展开">▾</button>
             </div>
           </div>
           <div class="mt-accuracy" id="marketTechAccuracy"></div>
@@ -192,8 +195,8 @@
             <h3>📊 大盘估值趋势</h3>
             <div class="mo-head-actions">
               <span id="indexPeTrendUpdated" class="mo-updated"></span>
-              <button class="btn-journal-add" id="indexPeTrendRefresh" title="刷新估值趋势">🔄 刷新</button>
-              <button class="btn-collapse" data-collapse-target="indexPeTrendCard" title="折叠/展开">▾</button>
+              <button class="btn-journal-add" id="indexPeTrendRefresh" title="刷新估值趋势">刷新</button>
+              <button class="btn-collapse" data-collapse-target="indexPeTrendCard" title="折叠/展开" aria-label="折叠/展开">▾</button>
             </div>
           </div>
           <div class="index-pe-trend-body" id="indexPeTrendBody">
@@ -209,8 +212,8 @@
             <div class="mo-head-actions">
               <span id="crowdingUpdated" class="mo-updated"></span>
               <span id="crowdingMarketTotal" class="mo-sub"></span>
-              <button class="btn-journal-add" id="crowdingRefreshBtn" title="刷新拥挤度">🔄 刷新</button>
-              <button class="btn-collapse" data-collapse-target="sectorCrowdingCard" title="折叠/展开">▾</button>
+              <button class="btn-journal-add" id="crowdingRefreshBtn" title="刷新拥挤度">刷新</button>
+              <button class="btn-collapse" data-collapse-target="sectorCrowdingCard" title="折叠/展开" aria-label="折叠/展开">▾</button>
             </div>
           </div>
           <div class="crowding-body" id="sectorCrowding"></div>
@@ -223,8 +226,8 @@
             <h3>🔥 今日财经热点</h3>
             <div class="mo-head-actions">
               <span id="homeNewsUpdated" class="mo-updated"></span>
-              <button class="btn-journal-add" id="homeNewsRefresh" title="刷新热点新闻">🔄 刷新</button>
-              <button class="btn-collapse" data-collapse-target="homeNewsCard" title="折叠/展开">▾</button>
+              <button class="btn-journal-add" id="homeNewsRefresh" title="刷新热点新闻">刷新</button>
+              <button class="btn-collapse" data-collapse-target="homeNewsCard" title="折叠/展开" aria-label="折叠/展开">▾</button>
             </div>
           </div>
           <div id="homeNewsBody" class="hot-news-body">
@@ -238,8 +241,8 @@
             <h3>🔥 板块舆情热度周榜</h3>
             <div class="mo-head-actions">
               <span id="homeHotTopicsUpdated" class="mo-updated"></span>
-              <button class="btn-journal-add" id="homeHotTopicsRefresh" title="重新采集并计算本周板块舆情热度">🔄 刷新</button>
-              <button class="btn-collapse" data-collapse-target="homeHotTopicsCard" title="折叠/展开">▾</button>
+              <button class="btn-journal-add" id="homeHotTopicsRefresh" title="重新采集并计算本周板块舆情热度">刷新</button>
+              <button class="btn-collapse" data-collapse-target="homeHotTopicsCard" title="折叠/展开" aria-label="折叠/展开">▾</button>
             </div>
           </div>
           <div id="homeHotTopicsBody" class="home-hot-topics-body">
@@ -253,8 +256,8 @@
             <h3>🌐 每日宏观 &amp; 政策</h3>
             <div class="mo-head-actions">
               <span id="macroUpdated" class="mo-updated"></span>
-              <button class="btn-journal-add" id="macroRefresh" title="刷新宏观与政策">🔄 刷新</button>
-              <button class="btn-collapse" data-collapse-target="macroCard" title="折叠/展开">▾</button>
+              <button class="btn-journal-add" id="macroRefresh" title="刷新宏观与政策">刷新</button>
+              <button class="btn-collapse" data-collapse-target="macroCard" title="折叠/展开" aria-label="折叠/展开">▾</button>
             </div>
           </div>
           <div id="macroBody" class="macro-body">
@@ -268,8 +271,8 @@
             <h3>🏭 基金行业配置名单（全市场 · 前20 · 季度环比）</h3>
             <div class="mo-head-actions">
               <span id="rankUpdated" class="mo-updated"></span>
-              <button class="btn-journal-add" id="rankRefresh" title="刷新 / 继续采集">🔄 刷新</button>
-              <button class="btn-collapse" data-collapse-target="rankCard" title="折叠/展开">▾</button>
+              <button class="btn-journal-add" id="rankRefresh" title="刷新 / 继续采集">刷新</button>
+              <button class="btn-collapse" data-collapse-target="rankCard" title="折叠/展开" aria-label="折叠/展开">▾</button>
             </div>
           </div>
           <div id="rankBody" class="rank-body">
@@ -346,7 +349,7 @@
             <div class="hot-topics-head">
               <div class="score-label">🔥 个股近期热点</div>
               <span class="hot-topics-date" id="hotTopicsDate"></span>
-              <button class="btn-journal-add" id="hotTopicRefreshBtn" type="button" title="重新联网分析">🔄</button>
+              <button class="btn-journal-add" id="hotTopicRefreshBtn" type="button" title="重新联网分析" aria-label="重新联网分析">🔄</button>
             </div>
             <div class="hot-topics-analysis" id="hotTopicsAnalysis">
               <div class="ai-empty" id="hotTopicsEmpty">正在联网分析…</div>
@@ -370,10 +373,10 @@
             <div class="score-value sameday-verdict" id="samedayVerdict">--</div>
             <div class="score-detail" id="samedayDetail"></div>
             <div class="sameday-report-sync" id="samedayReportSync" style="display:none"></div>
-            <button class="ai-trigger-btn sameday-logic-btn" id="samedayLogicBtn" type="button">📊 查看判断逻辑</button>
+            <button class="ai-trigger-btn sameday-logic-btn" id="samedayLogicBtn" type="button">查看判断逻辑</button>
             <div class="sameday-accuracy" id="samedayAccuracy"></div>
-            <a href="judgments.html" target="_blank" id="samedayAllLink" class="sameday-all-link">📋 查看该股判断记录</a>
-            <a href="accuracy.html?tab=sameDay" target="_blank" class="sameday-all-link">🎯 准确率核对</a>
+            <a href="judgments.html" target="_blank" id="samedayAllLink" class="sameday-all-link">查看该股判断记录</a>
+            <a href="accuracy.html?tab=sameDay" target="_blank" class="sameday-all-link">准确率核对</a>
             <div class="sameday-logic" id="samedayLogic" style="display:none"></div>
           </div>
           <div class="score-card sameday-card" id="longtermCard">
@@ -381,7 +384,7 @@
             <div class="sameday-subtitle" id="longtermSubtitle"></div>
             <div class="score-value sameday-verdict" id="longtermVerdict">--</div>
             <div class="score-detail" id="longtermDetail"></div>
-            <button class="ai-trigger-btn sameday-logic-btn" id="longtermLogicBtn" type="button">📊 查看判断逻辑</button>
+            <button class="ai-trigger-btn sameday-logic-btn" id="longtermLogicBtn" type="button">查看判断逻辑</button>
             <div class="sameday-accuracy" id="longtermNote"></div>
             <div class="sameday-logic" id="longtermLogic" style="display:none"></div>
           </div>
@@ -394,16 +397,16 @@
 
         <!-- Tabs -->
         <div class="tabs">
-          <button class="tab active" data-tab="overview">📊 简介</button>
-          <button class="tab" data-tab="technical">📈 技术面</button>
-          <button class="tab" data-tab="fundamental">💰 基本面</button>
-          <button class="tab" data-tab="shareholders">👥 股东分析</button>
-          <button class="tab" data-tab="deep">🔬 深度分析</button>
-          <button class="tab" data-tab="industry">🏭 行业分析</button>
-          <button class="tab" data-tab="capital">💹 资金量能</button>
-          <button class="tab" data-tab="journal">⭐ 个股亮点/雷点</button>
-          <button class="tab" data-tab="docs">📁 资料库</button>
-          <button class="tab" data-tab="backtest">🎯 策略</button>
+          <button class="tab active" data-tab="overview">简介</button>
+          <button class="tab" data-tab="technical">技术面</button>
+          <button class="tab" data-tab="fundamental">基本面</button>
+          <button class="tab" data-tab="shareholders">股东分析</button>
+          <button class="tab" data-tab="deep">深度分析</button>
+          <button class="tab" data-tab="industry">行业分析</button>
+          <button class="tab" data-tab="capital">资金量能</button>
+          <button class="tab" data-tab="journal">个股亮点/雷点</button>
+          <button class="tab" data-tab="docs">资料库</button>
+          <button class="tab" data-tab="backtest">策略</button>
         </div>
 
         <!-- Tab content -->
@@ -425,8 +428,8 @@
                 <h3>📊 信息分析</h3>
                 <div class="ai-head-actions">
                   <span id="companyDeepDate" class="ai-date"></span>
-                  <button class="btn-journal-add" id="companyDeepAiBtn">✨ AI 联网获取</button>
-                  <button class="btn-text" id="companyDeepRefresh" style="display:none">🔄 重新搜索</button>
+                  <button class="btn-journal-add" id="companyDeepAiBtn">AI 联网获取</button>
+                  <button class="btn-text" id="companyDeepRefresh" style="display:none">重新搜索</button>
                 </div>
               </div>
               <div id="companyDeepBody" class="company-deep-body">
@@ -548,7 +551,7 @@
             </div>
             <div id="deepCacheBar" class="deep-cache-bar hidden">
               <span id="deepCacheStatus" class="deep-cache-status"></span>
-              <button id="deepRefreshBtn" class="btn-icon deep-refresh-btn" title="重新获取并分析最新数据">🔄 刷新</button>
+              <button id="deepRefreshBtn" class="btn-icon deep-refresh-btn" title="重新获取并分析最新数据">刷新</button>
             </div>
             <div id="deepContent" class="deep-content">
               <!-- Audit warning -->
@@ -563,7 +566,7 @@
                 <div class="ai-holder-foot valuation-ai-head">
                   <span id="valuationAiDate" class="ai-holder-date"></span>
                   <!-- 20260905m：原「🔄 重新估值」按钮已删除——单按钮口径：打开自动读保存的结果，点「✨ AI 估值」即重新估值并保存 -->
-                  <button class="ai-trigger-btn" id="valuationAiBtn" type="button">✨ AI 估值</button>
+                  <button class="ai-trigger-btn" id="valuationAiBtn" type="button">AI 估值</button>
                 </div>
                 <div id="deepConclusion" class="conclusion-panel"></div>
                 <div id="valuationAiBody" class="ai-holder-body" style="display:none"></div>
@@ -846,8 +849,8 @@
                   <h3>🏭 行业分析总览</h3>
                   <div class="ai-head-actions">
                     <span id="industryOverviewDate" class="ai-date"></span>
-                    <button class="btn-journal-add" id="industryOverviewAiBtn">✨ AI 联网获取</button>
-                    <button class="btn-text" id="industryOverviewRefresh" style="display:none">🔄 重新搜索</button>
+                    <button class="btn-journal-add" id="industryOverviewAiBtn">AI 联网获取</button>
+                    <button class="btn-text" id="industryOverviewRefresh" style="display:none">重新搜索</button>
                   </div>
                 </div>
                 <div id="industryOverviewBody" class="industry-overview-body">
@@ -976,7 +979,7 @@
             <div class="bt-wrap">
               <div class="bt-header">
                 <h2>🎯 策略（虚拟盘风控闸门）</h2>
-                <p class="muted">自动取当前个股前复权日线 → 由代码确定性生成多套交易策略 → 虚拟回测（T+1 次日开盘成交）→ 统计检验与胜率修正 → 给出校验结论与操作建议。全部由代码确定性计算，不构成投资建议。</p>
+                <p class="muted">自动取当前个股前复权日线 → 由代码确定性生成多套交易策略 → 虚拟回测（T+1 次日开盘成交）→ 统计检验与胜率修正 → 给出校验结论与操作建议。全部由代码确定性计算，不构成投资建议。<br>其中「趋势跟踪·短期行情判定（技术核心）」为派生策略：它复用工作台自身的行情判定结论（priceAction.shortTerm.direction，见 lib/strategyGenerator.js:198-222），把同一套确定性技术内核回算成历史买卖信号，属工作台内部联动，不是外部 AI 或第三方信号源。</p>
               </div>
               <div class="bt-controls">
                 <span id="btCurrentStock" class="bt-current">当前个股：—</span>
@@ -988,13 +991,13 @@
                     <option value="5y">近 5 年</option>
                   </select>
                 </label>
-                <button id="btAuto" class="btn-primary bt-auto">🤖 生成并校验策略</button>
+                <button id="btAuto" class="btn-primary bt-auto">生成并校验策略</button>
                 <span id="btStatus" class="bt-status"></span>
               </div>
-              <p class="bt-hint">无需输入任何代码：直接点「🤖 生成并校验策略」，工作台会取当前个股的 <b>60 分钟 K 线</b>（回退日线）按五大类（趋势跟踪 / 均值回归 / 动量轮动 / 价值基本面 / 事件驱动）确定性生成多套策略并逐一校验，给出胜率与操作建议；虚拟交易硬约束 <b>每天最多 1 笔</b>。</p>
+              <p class="bt-hint">无需输入任何代码：直接点「生成并校验策略」，工作台会取当前个股的 <b>60 分钟 K 线</b>（回退日线）按五大类（趋势跟踪 / 均值回归 / 动量轮动 / 价值基本面 / 事件驱动）确定性生成多套策略并逐一校验，给出胜率与操作建议；虚拟交易硬约束 <b>每天最多 1 笔</b>。</p>
               <details class="bt-advanced">
                 <summary>高级（可选）：用大白话或规则代码自定义策略</summary>
-                <p class="bt-hint">可以直接用中文描述，如：「5日均线上穿20日均线买入，5日均线下穿20日均线卖出」。支持：均线金叉/死叉、MACD、RSI、布林带、收益率 z-score。也可点下面「模板」一键填入，或直接用上方「🤖 生成并校验策略」（无需输入）。中文→规则由<b>确定性代码</b>翻译（同一句话结果永远一致），不调用 AI。</p>
+                <p class="bt-hint">可以直接用中文描述，如：「5日均线上穿20日均线买入，5日均线下穿20日均线卖出」。支持：均线金叉/死叉、MACD、RSI、布林带、收益率 z-score。也可点下面「模板」一键填入，或直接用上方「生成并校验策略」（无需输入）。中文→规则由<b>确定性代码</b>翻译（同一句话结果永远一致），不调用 AI。</p>
                 <div id="btPresets" class="bt-presets"></div>
                 <textarea id="btDsl" spellcheck="false">5日均线上穿20日均线买入，5日均线下穿20日均线卖出</textarea>
                 <button id="btRun" class="btn-secondary">运行我的策略</button>
@@ -1055,25 +1058,25 @@
     <button class="err-close" id="errorBannerClose" title="关闭">✕</button>
   </div>
 
-  <script src="js/storage.js?v=20261006a"></script>
-    <script src="js/chartTheme.js?v=20261006a"></script>
-    <script src="js/chart3D.js?v=20261006a"></script>
-    <script src="js/charts.js?v=20261006a"></script>
-  <script src="js/deepCharts.js?v=20261006a"></script>
-  <script src="js/industryCharts.js?v=20261006a"></script>
-  <script src="js/capitalCharts.js?v=20261006a"></script>
-  <script src="js/notes.js?v=20261006a"></script>
-  <script src="js/shareholderCharts.js?v=20261006a"></script>
-  <script src="js/docStore.js?v=20261006a"></script>
-  <script src="js/export.js?v=20261006a"></script>
-  <script src="js/homeNews.js?v=20261006a"></script>
-  <script src="js/homeHotTopics.js?v=20261006a"></script>
-  <script src="js/homeMacro.js?v=20261013c"></script>
-  <script src="js/homeRank.js?v=20261006a"></script>
-  <script src="js/dataStatus.js?v=20261006a"></script>
-  <script src="js/logicModel.js?v=20261006a"></script>
-  <script src="js/app.js?v=20261006a"></script>
-  <script src="js/backtestUI.js?v=20261006a"></script>
+  <script src="js/storage.js?v=20261016c"></script>
+    <script src="js/chartTheme.js?v=20261016c"></script>
+    <script src="js/chart3D.js?v=20261016c"></script>
+    <script src="js/charts.js?v=20261016c"></script>
+  <script src="js/deepCharts.js?v=20261016c"></script>
+  <script src="js/industryCharts.js?v=20261016c"></script>
+  <script src="js/capitalCharts.js?v=20261016c"></script>
+  <script src="js/notes.js?v=20261016c"></script>
+  <script src="js/shareholderCharts.js?v=20261016c"></script>
+  <script src="js/docStore.js?v=20261016c"></script>
+  <script src="js/export.js?v=20261016c"></script>
+  <script src="js/homeNews.js?v=20261016c"></script>
+  <script src="js/homeHotTopics.js?v=20261016c"></script>
+  <script src="js/homeMacro.js?v=20261016c"></script>
+  <script src="js/homeRank.js?v=20261016c"></script>
+  <script src="js/dataStatus.js?v=20261016c"></script>
+  <script src="js/logicModel.js?v=20261016c"></script>
+  <script src="js/app.js?v=20261016c"></script>
+  <script src="js/backtestUI.js?v=20261016c"></script>
 
   <!-- AI 设置弹窗（20260902e：双模型 · 联网 / 本地分离） -->
   <div class="ai-modal-overlay hidden" id="aiSettingsModal">
@@ -1138,12 +1141,12 @@
     </div>
   </div>
 
-  <!-- 工作台逻辑模型弹层（20261006a）：以「总—分」树状结构展示整个工作台的逻辑框架。
+  <!-- 工作台逻辑模型弹层（20261013h）：按工作台页面布局展示整个工作台的逻辑框架。
        纯静态结构，不联网、不调用大模型；内容见 public/js/logicModel.js 的 TREE。 -->
   <div class="lm-modal-overlay hidden" id="logicModelModal">
     <div class="lm-modal">
       <div class="lm-modal-head">
-        <h3>🧩 工作台逻辑模型<span class="lm-head-sub">总—分树状 · 整个工作台的逻辑框架</span></h3>
+        <h3>🧩 工作台逻辑模型<span class="lm-head-sub">按页面布局 · 整个工作台的逻辑框架</span></h3>
         <div class="lm-head-actions">
           <button class="lm-tool-btn" id="logicModelExpandAll" type="button">展开全部</button>
           <button class="lm-tool-btn" id="logicModelCollapseAll" type="button">收起全部</button>

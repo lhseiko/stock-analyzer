@@ -5,6 +5,7 @@ data/stock_analyzer.db-wal
 
 # 临时/缓存
 *.log
+logs/
 scripts/_*.txt
 scripts/_*.js
 scripts/_out_*.log

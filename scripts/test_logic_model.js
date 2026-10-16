@@ -24,7 +24,7 @@ console.log('===== §1 树结构自洽 =====');
 t('模块导出 LogicModel.TREE', !!(LM && TREE && TREE.name));
 t('根节点为「股票投资分析工作台」', TREE.name === '股票投资分析工作台', TREE.name);
 t('根节点有总体说明', typeof TREE.desc === 'string' && TREE.desc.length > 20);
-t('L1 板块数为 6（数据/计算/API/展示/AI/规则）', TREE.children.length === 6, String(TREE.children.length));
+t('L1 页面 / 区域数为 4（首页/个股页/公共支撑/独立页）', TREE.children.length === 4, String(TREE.children.length));
 
 const walk = (node, depth, cb) => { cb(node, depth); (node.children || []).forEach(k => walk(k, depth + 1, cb)); };
 let badName = [], badKids = [], dupSibling = [], leafNoDesc = 0, total = 0;
@@ -34,18 +34,18 @@ walk(TREE, 1, (n, d) => {
   if (n.children && !Array.isArray(n.children)) badKids.push(n.name);
   const names = (n.children || []).map(k => k.name);
   if (new Set(names).size !== names.length) dupSibling.push(n.name);
-  if (d <= 2 && !(n.children || []).length) leafNoDesc++;
+  if (d <= 2 && !(n.children || []).length && !n.desc && !n.logic) leafNoDesc++;
 });
 t('每个节点都有非空名称', badName.length === 0, badName.join(','));
 t('children 均为数组', badKids.length === 0, badKids.join(','));
 t('同级节点名称不重复', dupSibling.length === 0, dupSibling.join(','));
-t('L1/L2 板块均含子节点（不是空壳）', leafNoDesc === 0, String(leafNoDesc));
+t('L1/L2 无空壳（叶子须有 children 或 desc 或 logic）', leafNoDesc === 0, String(leafNoDesc));
 t('节点总数 ≥ 60（覆盖足够细度）', total >= 60, String(total));
 
 const st = LM.stats();
 t('stats 自洽：nodes = sections + modules + 1', st.nodes === st.sections + st.modules + 1,
   JSON.stringify(st));
-t('层级深度 = 4（总/板块/模块/细项）', st.depth === 4, String(st.depth));
+t('层级深度 = 4（总/页面/模块/细项）', st.depth === 4, String(st.depth));
 
 // ── §2 关键模块覆盖 ──
 console.log('\n===== §2 关键模块覆盖 =====');
@@ -54,10 +54,10 @@ walk(TREE, 1, (n) => { flat.push((n.name || '') + ' ' + (n.desc || '')); });
 const ALL = flat.join('\n') + '\n' + TREE.desc;
 const cover = [
   '腾讯 qt.gtimg.cn', 'RPT_INDUSTRY_FUNDFLOW', 'RPTA_WEB_GETHGLIST_NEW', '巨潮资讯公告',
-  '市场情绪模型', '大盘技术分析', '大盘估值趋势', '行业板块拥挤度',
-  '短期行情判断', '长期价值判断', '技术面判定', '专属估值模型', '深度分析',
+  '市场情绪提醒', '大盘技术分析', '大盘估值趋势', '行业板块拥挤度',
+  '短期行情判断', '长期行情判断', '技术面', '专属估值模型', '深度分析',
   '策略生成器', '回测校验', '事件驱动引擎', '准确率闭环',
-  'API 层', '展示层', 'AI 叙事层', '规则与守卫',
+  'API 层', 'AI 叙事层', '规则与守卫', '跨页面公共支撑', '页面布局',
   'SA_NO_BG_AI', '数据诚实原则', 'APP_VERSION', 'SCHEMA_VERSION', 'LAYOUT_VERSION'
 ];
 cover.forEach(k => t('覆盖「' + k + '」', ALL.includes(k)));
@@ -100,7 +100,10 @@ const files = [
   ['public/accuracy.html', '准确率核对页'],
   ['public/judgments.html', '判断记录页'],
   ['lib/localDate.js', '统一中国自然日'],
-  ['lib/deep/pipeline.js', '深度分析链路']
+  ['lib/deep/pipeline.js', '深度分析链路'],
+  ['lib/valuationHub.js', '估值 Hub 唯一出口'],
+  ['lib/macroSentimentFactors.js', '宏观情绪因子'],
+  ['lib/hotTopicsWeekly/index.js', '板块舆情周榜']
 ];
 files.forEach(([p, label]) => t(label + ' 对应文件存在（' + p + '）', exists(p)));
 
@@ -135,13 +138,16 @@ console.log('\n===== §5 部署与渲染 =====');
 t('server.js 存在 APP_VERSION', !!APP_V);
 t('APP_VERSION 与 logicModel.js 版本戳一致', idx.includes('js/logicModel.js?v=' + APP_V), APP_V);
 t('/js/logicModel.js 在缓存破坏名单内', /FRONTEND_BUST_FILES[\s\S]{0,400}\/js\/logicModel\.js/.test(serverSrc));
-t('APP_VERSION 注释含本次变更说明', serverSrc.includes('[20261006a]'));
+t('APP_VERSION 注释含本次变更说明', serverSrc.includes('[20261013h]'));
 
 const html = LM.renderHtml();
 t('renderHtml 产出「总」根节点', /class="lm-root"/.test(html) && html.includes('股票投资分析工作台'));
-t('renderHtml 产出 L1 板块卡片', (html.match(/lm-node lm-lv1/g) || []).length === 6,
+t('renderHtml 产出 L1 页面卡片', (html.match(/lm-node lm-lv1/g) || []).length === 4,
   String((html.match(/lm-node lm-lv1/g) || []).length));
 t('renderHtml 含节点计数与角标', /class="lm-count"/.test(html) && /class="lm-badge"/.test(html));
+// 20261013h：判定逻辑 / 数据来源 / 输出去向三字段渲染
+t('renderHtml 含判定逻辑块（lm-logic / lm-k-logic）', /class="lm-desc lm-logic"/.test(html) && /lm-k-logic/.test(html));
+t('renderHtml 含数据来源 / 输出去向块（lm-io / lm-k-in / lm-k-out）', /class="lm-io"/.test(html) && /lm-k-in/.test(html) && /lm-k-out/.test(html));
 t('renderHtml 无 undefined/null 字样', !/>undefined</.test(html) && !/>null</.test(html));
 t('renderHtml 转义 < > &（防注入）', LM.renderHtml().indexOf('<') === 0); // 结构标签正常；内容转义由 esc 保证
 t('折叠/展开 API 齐备', typeof LM.open === 'function' && typeof LM.close === 'function' && typeof LM.toggleAll === 'function' && typeof LM.toggleNode === 'function');
