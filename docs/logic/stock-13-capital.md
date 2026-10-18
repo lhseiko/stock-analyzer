@@ -1,6 +1,6 @@
 # 💹 资金量能（九项热度评分 + 量能分析引擎）· 反向逻辑说明
 
-> 逻辑模型位置：个股页 → 「💹 资金量能」Tab（评分卡 + 量价信号/资金流向/量能指标/融资融券/综合判断 + **量能分析引擎卡（20261017c 新增 · 20261017d 日K三级降级链）**）
+> 逻辑模型位置：个股页 → 「💹 资金量能」Tab（评分卡 + 量价信号/资金流向/量能指标/融资融券/综合判断 + **量能分析引擎卡（20261017c 新增 · 20261017e 日K四级降级链）**）
 > 实现文件：`public/js/app.js:2038-2053, 3185-3231`（`loadCapitalFlow` / `renderCapitalScore`）、`public/js/capitalCharts.js:34-493, 516-661`（`CapitalCharts`）、`lib/capitalFlow.js:564-828`（`computeCapitalConclusion`）、`lib/volumeEngine.js`（量能分析引擎，全文）、`public/js/app.js:2102-2205`（`renderVolumeEngine`）
 > 口径出处：全部标注 `file:line`；查无出处标「⚠️ 待核实」，禁止臆断
 
@@ -103,7 +103,7 @@
 | 接口超时 | OVERALL_TIMEOUT_MS=15000（后端兜底 500）；前端 fetch 硬超时 15000 | server.js:1793；app.js:3181 |
 | 缓存 | 资金量能无 TTL/磁盘缓存（每次实时算）；前端仅内存 `capitalLoadedSymbol` | app.js:3203 |
 
-## 八、量能分析引擎卡（20261017c 新增 · spec 十三步链路 · 20261017d 日K三级降级链）
+## 八、量能分析引擎卡（20261017c 新增 · spec 十三步链路 · 20261017e 日K四级降级链）
 
 > 业务规范：《AI 股票量能分析工作台统一业务逻辑说明书》——量能优先级高于 K 线；必须绑定「价格位置+价格表现+成交量」三者；本质是判断筹码转移方向；**只做客观分析标签，禁任何交易指令**；数据不足必须标注、不得臆造；空头结论优先级永远高于多头。
 > 实现：`lib/volumeEngine.js`（纯计算引擎 + 采集入口，零 LLM，确定性 IF-THEN）。接入点：`lib/capitalFlow.js:717-730`（`analyzeCapitalFlow` 并行补抓，新增 `volumeEngine` 顶层字段，纯新增零破坏）；前端卡 `public/index.html:911-914`（`#capVolumeEngine`）+ `public/js/app.js:2102-2205`（`renderVolumeEngine`，try/catch 隔离，实时刷新同步挂载 :6864）。
@@ -137,22 +137,24 @@
 | 10 | 信号分类 | **空头优先**：bearTop（规则2/4确认）→看空预警；partial→看空观察；bearish→看空观察；规则3→中性「多头失效信号，不得给出看多信号」；bullRule→看多信号；极度缩量→中性观察池（不生成看多）；组合 bull→看多观察；否则 base 分档（≥75/≥55/≥40/≥25/<25） | :816-873 |
 | 11 | 结构化输出 | 四维度客观描述 + 结论提示 + 免责备注 + dataGaps；叙事字段过禁交易指令词表（买入/卖出/加仓/减仓/清仓/抄底/逃顶等，测试 [13] 扫描） | :986-1065 |
 
-### 8.3 数据来源与采集链（`analyzeVolume`，20261017d 起日K走三级降级链）
+### 8.3 数据来源与采集链（`analyzeVolume`，20261017e 起日K走四级降级链）
 
 | 通道 | 端点 | 用途 | 失败行为 |
 |---|---|---|---|
 | 日K①东财多主机（push2his→push2，klt=101，320 根） | `fetchEastmoneyHistoryMultiHost`（stockData.js:220，20261017d 纯新增） | 唯一同时含 **成交额 amount（parts[6]）与换手率 turnover（parts[10]）** 的日K通道；按主机顺序尝试，字段与 `fetchEastmoneyHistory` 完全一致 | 两主机均失败/不足 10 根 → 自动降级下一级，**不阻塞**资金量能其他维度 |
-| 日K②腾讯日K（ifzq.gtimg qfqday，320 根） | `fetchTencentHistory`（stockData.js:1205，20261017d 起导出） | 兜底通道，**仅 OHLCV**；缺成交额/换手率由 `_precompute` 按 spec 降级并如实标注（不臆造） | 仍失败 → 保留最长可用集，引擎如实报「日线数据不足（可用 N 根）」 |
+| 日K②同花顺日K（d.10jqka.com.cn/v4/line/hs_\<code\>/01/{last,all}.js，320 根） | `fetchThsHistory`（stockData.js:279，20261017e 纯新增） | last.js 明文近 140 根**含成交额/换手率**（前复权，与腾讯 qfq / 东财 fqt=1 同口径）+ all.js 压缩全历史（仅 OHLCV：price 每天 4 值=(最低,开−最低,高−最低,收−最低)×priceFactor、volumn=股、dates=MMDD 按 sortYear 逐年展开）；`_mergeThsBars` 以重叠段 close 逐日 ±0.005 一致（≥30 根）才采信 all.js 向过去延伸 | last.js 拿不到 → 整体不用同花顺（不冒险采信未校验解码）；仍失败 → 降级下一级 |
+| 日K③腾讯日K（ifzq.gtimg qfqday，320 根） | `fetchTencentHistory`（stockData.js:1205，20261017d 起导出） | 兜底通道，**仅 OHLCV**；缺成交额/换手率由 `_precompute` 按 spec 降级并如实标注（不臆造） | 仍失败 → 保留最长可用集，引擎如实报「日线数据不足（可用 N 根）」 |
 | 腾讯分时 | `fetchTencentMinutes`（stockData.js:1402，20261017c 增量 `cumVol` 累计量字段） | 规则2（分时震荡）/规则5（每分钟量=相邻累计量差分） | null → 规则2/5 标「分时数据不足，本规则不匹配」 |
 | 东财公告 | `searchAnnouncementsByCode`（cnscraperAdapter.js:118） | 黑名单：近 180 天标题含解禁/减持 | 无公告 → 黑名单不触发（不臆造） |
 | ST 识别 | name 正则 `/\*?ST\|退市/i` | 黑名单 | — |
 | 大盘环境 | `opts.marketEnv`（可选） | 折扣连乘 | 未配置 → 系数 1 + 如实标注 |
 
-> 三级链实现：`_fetchDailyBars`（volumeEngine.js 采集段）——东财多主机 ≥10 根即采用（source=`eastmoney`）；否则腾讯日K ≥10 根采用（source=`tencent`）；均不足保留最长可用集；全断返回空数组。`computeVolumeEngine` 输出 `barsSource` 字段标注实际通道，降级时 dataGaps 追加「日K数据源：腾讯日K（仅 OHLCV）（东财通道不可达，已自动降级）」。
+> 四级链实现：`_fetchDailyBars`（volumeEngine.js 采集段）——东财多主机 ≥10 根即采用（source=`eastmoney`）；否则同花顺 ≥10 根采用（source=`ths`）；否则腾讯日K ≥10 根采用（source=`tencent`）；均不足保留最长可用集；全断返回空数组。`computeVolumeEngine` 输出 `barsSource` 字段标注实际通道，降级时 dataGaps 追加通道来源说明（如「日K数据源：同花顺日K（近期含成交额/换手率，历史段仅OHLCV）（东财通道不可达，已自动降级）」）。同花顺仅近期约 140 根带成交额/换手率，`_precompute` 在 250 日窗口样本不足时追加「成交额/换手率样本仅 N 天（不足250）」dataGaps，不冒充全窗口分位。
+> 同花顺通道工程约束（20260911 既有教训）：本机 d.10jqka 443 常被断、80 可达，且系统代理会挂起该域请求 → http 优先 https 兜底 + `proxy:false` 强制直连 + `transformResponse` 保持原始字符串（JSONP 正则 `^quotebridge[^(]*\((.*)\)\s*;?\s*$` 解包）。解码结构闸门 fail-closed：三列不等长/坏 MMDD（月日越界）/sortYear 计数和 ≠ dates 数/价格非数字 → 返回 null，绝不返回半可信数据。回归：`scripts/test_ths_kline.js` 48 项零网络断言（含 2026-10-18 真实黄金样本：000902 解码 all.js vs 明文 last.js 尾部 30 根逐根一致，末根锚定 close=13.37/amount=86263040/turnover=0.565 防静默漂移）。
 
 ### 8.4 降级 / 容错 / 诚实性设计
 
-- **任何通道失败只降级对应字段**：分时缺→规则2/5 不匹配标注；换手率缺→天量确认降级；成交额缺→流动性不衰减仅标注；日K 三级链（东财多主机→腾讯）全部失败→整体 `ok:false` 但资金量能主链路（moneyFlow/margin/volumeIndicators/conclusion/rules）零影响。
+- **任何通道失败只降级对应字段**：分时缺→规则2/5 不匹配标注；换手率缺→天量确认降级；成交额缺→流动性不衰减仅标注；日K 四级链（东财多主机→同花顺→腾讯）全部失败→整体 `ok:false` 但资金量能主链路（moneyFlow/margin/volumeIndicators/conclusion/rules）零影响。
 - **引擎整体异常**：`analyzeCapitalFlow` 的 `.catch` 置 `volumeEngine=null` 并 `console.warn` 留痕（capitalFlow.js:727-730），前端显示「引擎暂不可用，不影响其他维度」（app.js:2106-2108）。
 - **前端渲染隔离**：`renderVolumeEngine` 与 `CapitalCharts.renderAll`/`renderCapitalScore` 并列 try/catch（app.js:3382-3390），单点异常不互阻。
 - **禁交易指令**：后端叙事字段生成时过词表扫描（测试 [13]）；前端渲染全部 `esc()` 转义（app.js:2200-2204，防 XSS）。
@@ -161,7 +163,7 @@
 ### 8.5 逻辑漏洞自查清单（审计用）
 
 - [ ] **#9 量能引擎与九项热度评分双轨并存，口径需人工对齐**：引擎 `signal.category`（规则+分档）与 `conclusion.signal`（九项方向分）是两个独立体系，同屏展示时用户可能困惑；当前无交叉校验。
-- [x] **#10 东财日K 通道单点**（20261017d 已解决）：`fetchEastmoneyHistory` 仅走 push2his 单主机、无兜底——已通过三级降级链修复：新增 `fetchEastmoneyHistoryMultiHost`（push2his→push2 顺序尝试）+ 腾讯日K OHLCV 兜底（缺字段按 spec 如实标注）。触发场景：用户 2026-10-18 截图「日线数据明显有」但引擎报「可用 0 根」（本机 push2his 被断、主图走腾讯故有数据）；专项验证：主机轮询/字段解析/降级路径/全阻断诚实报错全 PASS。
+- [x] **#10 东财日K 通道单点**（20261017d 解决主机单点，20261017e 补同花顺中间通道）：`fetchEastmoneyHistory` 仅走 push2his 单主机、无兜底——已通过四级降级链修复：①新增 `fetchEastmoneyHistoryMultiHost`（push2his→push2 顺序尝试）；②新增同花顺日K `fetchThsHistory`（last.js 近 140 根含成交额/换手率 + all.js 压缩全历史仅 OHLCV，重叠段 close 一致闸门才采信延伸）——补上「东财全断但同花顺可达」时的含成交额/换手率中间通道，避免直接跌停到仅-OHLCV 的腾讯；③腾讯日K OHLCV 兜底（缺字段按 spec 如实标注）。触发场景：用户 2026-10-18 截图「日线数据明显有」但引擎报「可用 0 根」（本机 push2his 被断、主图走腾讯故有数据）；专项验证：主机轮询/字段解析/降级路径/全阻断诚实报错全 PASS；同花顺 48 项零网络回归 + 真实黄金样本逐根一致全绿。
 - [ ] **#11 横盘阈值 ±1.2% 与横盘判定带宽 15% 是两套口径**：组合引擎的「横盘场景」用单日涨跌幅 <1.2%（:611），位置判定的「横盘形态」用 20 日带宽 ≤15%（:213-242），同名不同义，文档/界面需明示。
 - [ ] **#12 规则3「前高对应量能」取窗口 argmax，多个等高前高时只取第一个**：平台整理多次触及同一高点时，量能参照可能取到非最近一次（:497-520）。
 - [ ] **#13 分时规则依赖腾讯 cumVol 精度**：规则5 每分钟量=相邻累计量差分（stockData.js:1409-1416），分时接口若丢分钟将造成量柱跳变，可能误判「逐级萎缩」。

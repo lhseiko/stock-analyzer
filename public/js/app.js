@@ -2096,7 +2096,7 @@ const App = {
     }
   },
 
-  // 20261017d：量能分析引擎渲染（lib/volumeEngine.js，spec 十三步链路）。
+  // 20261017e：量能分析引擎渲染（lib/volumeEngine.js，spec 十三步链路）。
   // 口径约束：红涨绿跌；仅客观分析标签（后端已做禁交易指令扫描，此处转义防注入）；
   // 数据不足/样本不足如实展示，不伪造；引擎失败不影响其他资金量能维度。
   renderVolumeEngine(data) {
