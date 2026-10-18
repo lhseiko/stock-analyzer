@@ -2096,6 +2096,111 @@ const App = {
     }
   },
 
+  // 20261017d：量能分析引擎渲染（lib/volumeEngine.js，spec 十三步链路）。
+  // 口径约束：红涨绿跌；仅客观分析标签（后端已做禁交易指令扫描，此处转义防注入）；
+  // 数据不足/样本不足如实展示，不伪造；引擎失败不影响其他资金量能维度。
+  renderVolumeEngine(data) {
+    const el = document.getElementById('capVolumeEngine');
+    if (!el) return;
+    const ve = data && data.volumeEngine;
+    if (!ve) {
+      el.innerHTML = '<p style="color:var(--text-secondary);text-align:center;padding:20px;">量能分析引擎暂不可用（数据源异常），不影响上方资金量能维度</p>';
+      return;
+    }
+    if (ve.ok === false) {
+      el.innerHTML = `<p style="color:var(--text-secondary);text-align:center;padding:20px;">${this._veEsc(ve.error || '量能分析数据不足')}</p>`;
+      return;
+    }
+    const esc = (s) => this._veEsc(s);
+    const num = (v, d = 2) => (typeof v === 'number' && isFinite(v) ? v.toFixed(d) : '--');
+
+    // 信号配色：红涨绿跌（看多=红、看空=绿、中性=灰）。引擎字段名为 category
+    const signalLabel = (ve.signal && ve.signal.category) || '中性';
+    const tone = {
+      '看多信号': 'cap-positive', '看多观察': 'cap-positive',
+      '中性': 'cap-neutral',
+      '看空观察': 'cap-negative', '看空预警': 'cap-negative',
+    }[signalLabel] || 'cap-neutral';
+
+    // 量能指标行
+    const vs = ve.volumeState || {};
+    const pos = ve.position || {};
+    const metrics = [
+      ['量能档位', `${esc(vs.level || '--')}${vs.ratio5 != null ? `（${num(vs.ratio5)}×）` : ''}`],
+      ['60日量能确认', esc(vs.confirm || '未确认')],
+      ['价格位置', `${esc(pos.label || '--')}${pos.pricePct12m != null ? `（分位 ${num(pos.pricePct12m, 1)}%）` : ''}`],
+      ['关键支撑', pos.support && pos.support.price != null ? `${num(pos.support.price)}（${esc(pos.support.kind)}）` : '--'],
+      ['关键压力', pos.resistance && pos.resistance.price != null ? `${num(pos.resistance.price)}（${esc(pos.resistance.kind)}）` : '--'],
+      ['今日成交额', vs.amountToday != null ? `${(vs.amountToday / 1e8).toFixed(2)} 亿` : '数据不足'],
+    ];
+    const metricsHtml = metrics.map(([k, v]) =>
+      `<div class="cap-metric"><span class="cm-label">${esc(k)}</span><span class="cm-value">${v}</span></div>`).join('');
+
+    // 四维度客观描述
+    const dim = ve.dimensions || {};
+    const dimsHtml = [
+      ['量能状态', dim.volumeState], ['价格位置', dim.position],
+      ['资金行为', dim.capitalBehavior], ['筹码转移', dim.chipTransfer],
+    ].filter(([, v]) => v).map(([k, v]) =>
+      `<div class="ve-dim"><span class="ve-dim-label">${esc(k)}</span><span class="ve-dim-value">${esc(v)}</span></div>`).join('');
+
+    // 生死位五规则：命中在前（带方向色），未命中折叠
+    const rules = Array.isArray(ve.rules) ? ve.rules : [];
+    const dirTone = { bull: 've-bull', bear: 've-bear', 'bear-block': 've-block' };
+    const ruleRows = rules.map(r => {
+      const badge = r.matched
+        ? `<span class="ve-rule-badge ${dirTone[r.direction] || ''}">${r.partial ? '初步触发' : '命中'}</span>`
+        : '<span class="ve-rule-badge ve-miss">未命中</span>';
+      const gaps = (!r.matched && r.dataGaps && r.dataGaps.length)
+        ? `<div class="ve-rule-gaps">${r.dataGaps.map(g => esc(g)).join('；')}</div>` : '';
+      return `<div class="ve-rule ${r.matched ? 've-rule-hit' : ''}">
+        <div class="ve-rule-head">${badge}<span class="ve-rule-name">${esc(r.id)}. ${esc(r.name)}</span></div>
+        <div class="ve-rule-concl">${esc(r.conclusion)}</div>${gaps}
+      </div>`;
+    }).join('');
+
+    // 风险标签
+    const riskHtml = (ve.riskTags && ve.riskTags.length)
+      ? `<div class="ve-risk-row">${ve.riskTags.map(t => `<span class="ve-risk-tag">${esc(t)}</span>`).join('')}</div>` : '';
+
+    // 得分与衰减
+    const sc = ve.score || {};
+    const decay = [];
+    if (sc.liquidityCoef != null && sc.liquidityCoef !== 1) decay.push(`流动性 ×${num(sc.liquidityCoef, 2)}`);
+    if (sc.blacklistCoef != null && sc.blacklistCoef !== 1) decay.push(`黑名单 ×${num(sc.blacklistCoef, 2)}`);
+    if (sc.marketCoef != null && sc.marketCoef !== 1) decay.push(`大盘环境 ×${num(sc.marketCoef, 2)}`);
+    const decayHtml = decay.length ? `（基础 ${num(sc.base, 1)} ${decay.map(d => esc(d)).join(' ')}）` : '';
+
+    // 数据不足标注（如实展示，不折叠）
+    const gapsHtml = (ve.dataGaps && ve.dataGaps.length)
+      ? `<div class="ve-gaps"><div class="ve-gaps-title">⚠️ 数据不足标注（结论置信度受限）</div>${ve.dataGaps.map(g => `<div class="ve-gap-item">· ${esc(g)}</div>`).join('')}</div>` : '';
+
+    el.innerHTML = `
+      <div class="cap-signal-box ${tone}">
+        <div class="cap-signal-label">量能信号（${esc(ve.date || '')}）</div>
+        <div class="cap-signal-value">${esc(signalLabel)}</div>
+        <div class="cap-signal-desc">${esc(ve.signal && ve.signal.note || '')}${decayHtml ? ' ' + decayHtml : ''}</div>
+        <div class="ve-score">最终有效得分 <b class="${tone === 'cap-neutral' ? '' : tone === 'cap-positive' ? 'cap-pos' : 'cap-neg'}">${num(sc.final, 1)}</b> / 100</div>
+      </div>
+      <div class="cap-metrics-row">${metricsHtml}</div>
+      <div class="ve-section-title">四维度客观描述</div>
+      <div class="ve-dims">${dimsHtml || '<div class="ve-dim-value">数据不足</div>'}</div>
+      <div class="ve-section-title">生死位规则（五大）</div>
+      <div class="ve-rules">${ruleRows}</div>
+      ${riskHtml}
+      <div class="ve-section-title">结论提示</div>
+      <div class="ve-conclusion">${esc(ve.conclusion || '')}</div>
+      ${ve.marketEnvNote ? `<div class="ve-note">${esc(ve.marketEnvNote)}</div>` : ''}
+      ${gapsHtml}
+      <div class="cap-date-note">${esc(ve.disclaimer || '')} 数据源：东方财富日K/腾讯分时/交易所公告 · 本地计算</div>
+    `;
+  },
+
+  // 量能引擎渲染用转义（与后端禁交易指令扫描互补，防 XSS）
+  _veEsc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  },
+
   scoreClass(score, type) {
     if (type === 'tech') {
       if (score === '强烈看多') return 'strong-bullish';
@@ -3276,6 +3381,11 @@ const App = {
           this.renderCapitalScore(data);
         } catch (re) {
           console.error('renderCapitalScore error:', re);
+        }
+        try {
+          this.renderVolumeEngine(data);
+        } catch (re) {
+          console.error('renderVolumeEngine error:', re);
         }
       }, 100);
 
@@ -6751,6 +6861,7 @@ const App = {
         try { CapitalCharts.renderVolumePrice(data.volumeIndicators); } catch (e) { console.error('[实时刷新] 量价卡渲染失败:', e); }
       }
       try { this.renderCapitalScore(data); } catch (e) { console.error('[实时刷新] 资金评分渲染失败:', e); }
+      try { this.renderVolumeEngine(data); } catch (e) { console.error('[实时刷新] 量能引擎渲染失败:', e); }
     } catch (e) { /* 静默：保留上一次数值 */ }
   },
 

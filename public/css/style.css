@@ -2438,6 +2438,34 @@ body {
 .capital-conclusion { padding: 8px; }
 .cap-date-note { font-size: 11px; color: var(--text-light); margin-top: 10px; }
 
+/* ---- 量能分析引擎卡（20261017c：spec 十三步链路，红涨绿跌 softDark）---- */
+.ve-score { margin-top: 8px; font-size: 13px; color: var(--text-secondary); }
+.ve-score b { font-size: 16px; }
+.ve-section-title { font-size: 13px; font-weight: 600; color: var(--text-primary); margin: 14px 0 8px; }
+.ve-dims { display: flex; flex-direction: column; gap: 6px; }
+.ve-dim { display: flex; gap: 10px; font-size: 13px; line-height: 1.6; padding: 6px 10px; background: var(--bg-primary); border-radius: 8px; }
+.ve-dim-label { flex: 0 0 72px; color: var(--text-secondary); }
+.ve-dim-value { flex: 1; color: var(--text-primary); }
+.ve-rules { display: flex; flex-direction: column; gap: 8px; }
+.ve-rule { padding: 8px 12px; border-radius: 8px; background: var(--bg-primary); border: 1px solid var(--border-light); }
+.ve-rule-hit { border-color: var(--border-strong); background: var(--bg-secondary); }
+.ve-rule-head { display: flex; align-items: center; gap: 8px; }
+.ve-rule-name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.ve-rule-badge { font-size: 11px; padding: 2px 8px; border-radius: 4px; background: var(--bg-hover); color: var(--text-secondary); }
+.ve-rule-badge.ve-bull { background: rgba(246,70,93,0.15); color: var(--red); }
+.ve-rule-badge.ve-bear { background: rgba(14,203,129,0.15); color: var(--green); }
+.ve-rule-badge.ve-block { background: var(--accent-light); color: var(--accent); }
+.ve-rule-badge.ve-miss { opacity: 0.7; }
+.ve-rule-concl { font-size: 12px; color: var(--text-secondary); line-height: 1.6; margin-top: 4px; }
+.ve-rule-gaps { font-size: 11px; color: var(--text-light); line-height: 1.5; margin-top: 4px; }
+.ve-risk-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.ve-risk-tag { font-size: 11px; padding: 2px 8px; border-radius: 4px; background: var(--accent-light); color: var(--accent); }
+.ve-conclusion { font-size: 13px; line-height: 1.7; color: var(--text-primary); padding: 10px 12px; background: var(--bg-primary); border-radius: 8px; }
+.ve-note { font-size: 12px; color: var(--text-secondary); margin-top: 8px; line-height: 1.6; }
+.ve-gaps { margin-top: 10px; padding: 8px 12px; border-radius: 8px; background: var(--accent-light); border: 1px solid var(--accent); }
+.ve-gaps-title { font-size: 12px; font-weight: 600; color: var(--accent); margin-bottom: 4px; }
+.ve-gap-item { font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
+
 /* ---- 公司类型分类面板（20260902i 重设计：中性卡面 + 类型色左强调线 + 数据栅格）---- */
 .company-type-panel { margin-bottom: 16px; }
 .company-type-card {

@@ -6,7 +6,7 @@
 {
   "ok": bool,
   "date": "YYYY-MM-DD",
-  "index":   { "code","name","bars":[{"date","close","vol"}] },   # 上证指数最近 ~250 交易日（vol=成交量·手）
+  "index":   { "code","name","bars":[{"date","close","vol"}] },   # 已迁出（20261018）：上证指数日线改由首页量能根 lib/marketTechnical.fetchIndexDailyBars 单一通道采集（lib/marketEmotionData.js 负责注入），本脚本不再输出 index
   "breadth": { "up","down","flat","limitUp","limitDown","activePct","date",
                "zbgcCount","zbgcBreaks","zbgcRate","zbgcNote" },   # 20261015j：zbgc*=炸板股池（炸板率=炸板/(涨停+炸板)）
   "margin":  { "latest","prev","changePct","change5Pct","dates","series" },   # 沪深融资余额（亿元）
@@ -55,23 +55,11 @@ def to_float(x):
         return None
 
 
-# ---------- 1) 上证指数日线（腾讯，含成交量·手）----------
-def fetch_index():
-    df = ak.stock_zh_index_daily_tx(symbol="sh000001")
-    if df is None or len(df) == 0:
-        raise RuntimeError("腾讯指数日线为空")
-    df = df.tail(260)
-    bars = []
-    for _, row in df.iterrows():
-        d = row.get("date")
-        ds = d.strftime("%Y-%m-%d") if hasattr(d, "strftime") else str(d)[:10]
-        bars.append({
-            "date": ds,
-            "close": to_float(row.get("close")),
-            "vol": to_float(row.get("amount")),   # 腾讯 amount 字段 = 成交量（手）
-        })
-    bars = [b for b in bars if b["close"] is not None and b["vol"] is not None]
-    return {"code": "sh000001", "name": "上证指数", "bars": bars}
+# ---------- 1) 上证指数日线 ----------
+# 20261018 迁出：index 块改由首页量能根 lib/marketTechnical.fetchIndexDailyBars 单一通道采集
+# （腾讯 fqkline 直采，320 窗口，与大盘技术分析同源同窗口；实测与本脚本原 akshare 通道
+#   重叠 260 根 date/close/vol 零差异）。lib/marketEmotionData.js 在 runScript 之后注入 index，
+#   故本函数与 main 中的 out["index"] 一并移除，避免同一数据两路采集。
 
 
 # ---------- 2) 市场宽度（涨跌家数 / 涨跌停 / 炸板率）----------
@@ -357,7 +345,6 @@ def fetch_bond():
 
 def main():
     out = {"ok": True, "date": datetime.date.today().strftime("%Y-%m-%d")}
-    out["index"] = safe("index", fetch_index)
     out["breadth"] = safe("breadth", fetch_breadth)
     out["margin"] = safe("margin", fetch_margin)
     out["mainFund"] = safe("mainFund", fetch_main_fund)
@@ -365,7 +352,7 @@ def main():
     out["fx"] = safe("fx", fetch_fx)
     out["bond"] = safe("bond", fetch_bond)
     out["warnings"] = WARN
-    ok_count = sum(1 for k in ("index", "breadth", "margin", "mainFund", "capital", "fx", "bond") if out.get(k))
+    ok_count = sum(1 for k in ("breadth", "margin", "mainFund", "capital", "fx", "bond") if out.get(k))
     out["ok"] = ok_count >= 3
     print(json.dumps(out, ensure_ascii=False))
 

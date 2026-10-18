@@ -27,6 +27,10 @@ function extractFn(src, name) {
 
 const SRC = fs.readFileSync(path.join(__dirname, '..', 'lib', 'sameDayJudgment.js'), 'utf8');
 const STOCK_SRC = fs.readFileSync(path.join(__dirname, '..', 'lib', 'stockData.js'), 'utf8');
+// 20261017a：个股换手率变化已随「量能唯一出口」收敛迁入 lib/capitalFlow.js
+//   computeTurnoverChangeShared（原 sameDayJudgment._computeTurnoverChange），
+//   连同它依赖的 _round/_clamp/_avg 辅助函数一并从 capitalFlow.js 提取注入。
+const CAP_SRC = fs.readFileSync(path.join(__dirname, '..', 'lib', 'capitalFlow.js'), 'utf8');
 // 20260917i：不再从源码提取 'localDate' —— 源码里它是委托壳（引用未注入沙箱的 _localDate），
 // 且与下方 require('../lib/localDate') 的解构 const localDate 重名，会触发
 // SyntaxError: Identifier 'localDate' has already been declared。改为统一使用 require 的真实实现。
@@ -35,7 +39,7 @@ const NAMES = ['round', 'avg', 'formatWan', 'latestQuarterEnd', // 20260913f：�
   'shortDirectionToSignal', // 20260905d/20260905e：大盘及行业板块短期走势因子依赖 helper
   // 20260917i：原 factorMarketShort 因子已按用户要求删除，改为两个拆分后的子因子 helper
   'computeMarketShortSub', 'computeSectorTrendSub', 'computeSectorNewsSub',
-  'factorHoldings', 'factorSectorLimit', '_computeTurnoverChange', 'detectForcedReduction', '_forcedMatchName'];
+  'factorHoldings', 'factorSectorLimit', 'detectForcedReduction', '_forcedMatchName'];
 const sandbox = {};
 // 20260917i：因子/子因子权重常量（W_* / *_SUB_W）随函数一并注入沙箱（源码中因子函数已改为引用常量）
 const CONST_DECLS = (SRC.match(/^const (?:W_[A-Z_]+|[A-Z_]+_SUB_W) = [\d.]+;.*$/gm) || []).join('\n');
@@ -44,8 +48,21 @@ if (!CONST_DECLS) throw new Error('未提取到 W_* / *_SUB_W 权重常量');
 // 需随函数一并注入沙箱，否则 ReferenceError: FACTOR_NAME is not defined。
 const FACTOR_NAME_DECL = (SRC.match(/^const FACTOR_NAME = \{[\s\S]*?\n\};/m) || [])[0];
 if (!FACTOR_NAME_DECL) throw new Error('未提取到 FACTOR_NAME 展示名常量');
+// 20261017a：computeTurnoverChangeShared 依赖的 capitalFlow 本地辅助函数（_round/_clamp/_avg）
+// 三个辅助函数在 capitalFlow.js 头部连续声明（_round 起、_avg 止），
+// 用 indexOf 切片提取，避免正则依赖行尾（仓库为 CRLF，\n\} 类正则会失配）
+const CAP_HELPERS = (() => {
+  const start = CAP_SRC.indexOf('const _round =');
+  const avgIdx = CAP_SRC.indexOf('const _avg =');
+  if (start < 0 || avgIdx < 0 || avgIdx <= start) throw new Error('未提取到 capitalFlow 辅助函数');
+  const end = CAP_SRC.indexOf('\n', avgIdx);
+  if (end < 0) throw new Error('未提取到 capitalFlow 辅助函数（_avg 行尾缺失）');
+  return CAP_SRC.slice(start, end);
+})();
 // eslint-disable-next-line no-eval
-eval(CONST_DECLS + '\n' + FACTOR_NAME_DECL + '\n' + NAMES.map(n => extractFn(SRC, n)).concat([extractFn(STOCK_SRC, 'detectMarket')]).join('\n'));
+eval(CONST_DECLS + '\n' + FACTOR_NAME_DECL + '\n'
+  + CAP_HELPERS + '\n' + extractFn(CAP_SRC, 'computeTurnoverChangeShared') + '\n'
+  + NAMES.map(n => extractFn(SRC, n)).concat([extractFn(STOCK_SRC, 'detectMarket')]).join('\n'));
 
 // 20260906：clamp 已收口至 ruleCore 共享内核（源码中不再有本地定义），改为直接 require
 const { clamp, toImpactScore, impactLabel } = require('../lib/ruleCore');
@@ -73,16 +90,17 @@ check('负相关 corr=-0.8，期货 -5%（反向→偏多）', factorFuturesShor
 check('无期货 → 不适用', factorFuturesShort({ hasFutures: false }).signal, 'zero');
 
 console.log('\n===== 2) 量价口径：放量随价向 / 缩量反价向 =====');
+// 20261017a：_computeTurnoverChange → computeTurnoverChangeShared（lib/capitalFlow.js 量能唯一出口）
 const mkSeries = (turnoverSeq, closes) => turnoverSeq.map((t, i) => ({ turnover: t, close: closes[i] }));
 // 价格序列：仅最后一根 K 线变价（函数取最后两根收盘价比较方向）
 const closesUp = new Array(21).fill(10); closesUp[20] = 11;    // 10 → 11 上涨
 const closesDown = new Array(21).fill(10); closesDown[20] = 9; // 10 → 9  下跌
 const trVol = [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 4];      // 放量（2 → 4）
 const trShrink = [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1.5, 1]; // 缩量（2 → 1）
-check('放量上涨', _computeTurnoverChange(mkSeries(trVol, closesUp)).signal, 'pos');
-check('放量下跌', _computeTurnoverChange(mkSeries(trVol, closesDown)).signal, 'neg');
-check('缩量上涨（上涨乏力→偏空）', _computeTurnoverChange(mkSeries(trShrink, closesUp)).signal, 'neg');
-check('缩量下跌（抛压衰竭→偏多）', _computeTurnoverChange(mkSeries(trShrink, closesDown)).signal, 'pos');
+check('放量上涨', computeTurnoverChangeShared(mkSeries(trVol, closesUp)).signal, 'pos');
+check('放量下跌', computeTurnoverChangeShared(mkSeries(trVol, closesDown)).signal, 'neg');
+check('缩量上涨（上涨乏力→偏空）', computeTurnoverChangeShared(mkSeries(trShrink, closesUp)).signal, 'neg');
+check('缩量下跌（抛压衰竭→偏多）', computeTurnoverChangeShared(mkSeries(trShrink, closesDown)).signal, 'pos');
 
 console.log('\n===== 3) 增持减持 / 板块涨跌停 =====');
 const holders = (n, amt) => new Array(n).fill(0).map((_, i) => ({ name: '股东' + i, holdAmount: 1e8, changeAmount: amt }));
