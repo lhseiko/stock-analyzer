@@ -2096,9 +2096,11 @@ const App = {
     }
   },
 
-  // 20261017e：量能分析引擎渲染（lib/volumeEngine.js，spec 十三步链路）。
+  // 20261017f：量能分析引擎渲染（lib/volumeEngine.js，spec 十三步链路 + 7.4/7.5/11.2-11.4 归集）。
   // 口径约束：红涨绿跌；仅客观分析标签（后端已做禁交易指令扫描，此处转义防注入）；
   // 数据不足/样本不足如实展示，不伪造；引擎失败不影响其他资金量能维度。
+  // 20261017f 新增：三个强制归集总结卡片（位置量价/常见矛盾信号/量比实战口诀），
+  // 无论是否命中逐条完整输出，未命中=灰、数据不足=琥珀、命中按多空语义配色。
   renderVolumeEngine(data) {
     const el = document.getElementById('capVolumeEngine');
     if (!el) return;
@@ -2163,6 +2165,42 @@ const App = {
     const riskHtml = (ve.riskTags && ve.riskTags.length)
       ? `<div class="ve-risk-row">${ve.riskTags.map(t => `<span class="ve-risk-tag">${esc(t)}</span>`).join('')}</div>` : '';
 
+    // 20261017f：三个强制归集总结（spec 11.2/11.3/11.4，无论是否命中都逐条完整输出）
+    // 命中=红/绿按多空语义（红涨绿跌），观察=琥珀，数据不足=琥珀，未命中=灰
+    const renderSummary = (title, summaryObj, toneFn) => {
+      if (!summaryObj || !Array.isArray(summaryObj.items) || !summaryObj.items.length) return '';
+      const rows = summaryObj.items.map(it => {
+        const matched = !!it.matched;
+        const badgeCls = it.status === '数据不足' ? 've-block' : (matched ? (toneFn(it) || 've-bull') : 've-miss');
+        const badgeTxt = it.status === '数据不足' ? '数据不足' : (matched ? '命中' : '未命中');
+        const sub = (it.subStage && it.subStage !== '不属于缩量上涨' && it.subStage !== '不属于缩量下跌')
+          ? `（${esc(it.subStage)}）` : '';
+        const extra = it.hint || it.riskHint || it.trackHint || '';
+        return `<div class="ve-rule ${matched ? 've-rule-hit' : ''}">
+          <div class="ve-rule-head"><span class="ve-rule-badge ${badgeCls}">${badgeTxt}</span><span class="ve-rule-name">${esc(it.form || it.signal || it.name)}${sub}</span></div>
+          <div class="ve-rule-concl">${esc(it.conclusion || '')}${extra ? `<div class="ve-rule-gaps">${esc(extra)}</div>` : ''}</div>
+        </div>`;
+      }).join('');
+      return `<div class="ve-section-title">${title}</div>
+        <div class="ve-note">${esc(summaryObj.summary || '')}</div>
+        <div class="ve-rules">${rows}</div>`;
+    };
+    // 位置量价（7.4）：高位滞涨/高位缩量上涨/下跌初期缩量 = 空头色；其余命中 = 观察色
+    const pvTone = (it) => {
+      if (it.form === '高位放量滞涨') return 've-bear';
+      if (it.form === '低位放量震荡') return 've-block';
+      if (it.form === '缩量上涨') return it.subStage === '高位阶段' ? 've-bear' : 've-block';
+      if (it.form === '缩量下跌') return it.subStage === '下跌初期' ? 've-bear' : 've-block';
+      return null;
+    };
+    // 矛盾信号（11.3）：高位类 = 空头色；其余 = 观察色
+    const ctTone = (it) => (/高位/.test(it.signal || '') ? 've-bear' : 've-block');
+    // 量比口诀（7.5）：口诀3 尾盘放量 / 口诀5 量比大涨不动 = 警惕色；口诀1/2/4 = 观察色
+    const rtTone = (it) => (it.id === 3 || it.id === 5) ? 've-bear' : 've-block';
+    const pvHtml = renderSummary('位置量价补充分析（7.4 归集）', ve.positionVolumeSummary, pvTone);
+    const ctHtml = renderSummary('常见矛盾信号（11.3 归集）', ve.contradictionSummary, ctTone);
+    const rtHtml = renderSummary('量比实战口诀（7.5 归集）', ve.ratioSummary, rtTone);
+
     // 得分与衰减
     const sc = ve.score || {};
     const decay = [];
@@ -2187,12 +2225,15 @@ const App = {
       <div class="ve-dims">${dimsHtml || '<div class="ve-dim-value">数据不足</div>'}</div>
       <div class="ve-section-title">生死位规则（五大）</div>
       <div class="ve-rules">${ruleRows}</div>
+      ${pvHtml}
+      ${ctHtml}
+      ${rtHtml}
       ${riskHtml}
       <div class="ve-section-title">结论提示</div>
       <div class="ve-conclusion">${esc(ve.conclusion || '')}</div>
       ${ve.marketEnvNote ? `<div class="ve-note">${esc(ve.marketEnvNote)}</div>` : ''}
       ${gapsHtml}
-      <div class="cap-date-note">${esc(ve.disclaimer || '')} 数据源：东方财富日K/腾讯分时/交易所公告 · 本地计算</div>
+      <div class="cap-date-note">${esc(ve.disclaimer || '')} 数据源：东方财富日K（降级同花顺/腾讯）/腾讯分时/交易所公告 · 本地计算</div>
     `;
   },
 

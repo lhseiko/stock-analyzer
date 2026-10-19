@@ -2,7 +2,7 @@
  * 量能分析引擎 · 行为回归（零网络，全合成数据）
  * --------------------------------------------------------------
  * 运行： node scripts/test_volume_engine.js
- * 覆盖：lib/volumeEngine.js（20261017e，依据《AI 股票量能分析工作台统一业务逻辑说明书》）——
+ * 覆盖：lib/volumeEngine.js（20261017f，依据《AI 股票量能分析工作台统一业务逻辑说明书》）——
  *   [1] 输入下限校验        [2] 预计算与档位/确认口径
  *   [3] 位置判定（四态+横盘+分歧） [4] 量价三问
  *   [5] 背离检测            [6] 五大生死位规则（含数据不足标注）
@@ -10,6 +10,8 @@
  *   [9] 打分权重与扣分      [10] 流动性分层/兜底/样本不足/数据降级
  *   [11] 黑名单衰减         [12] 信号分类（空头优先/多头失效/极度缩量禁多）
  *   [13] 输出结构完整性与禁交易指令扫描   [14] 缺 amount/turnover 通道降级
+ *   [15] 7.4 不同位置量价补充规则（四形态+子阶段） [16] 7.5 五句量比实战口诀
+ *   [17] 11.2/11.3/11.4 三个强制归集总结 + 一致性约束 + s40 约束
  * 说明：网络采集（东财日K/分时/公告）由服务端实测覆盖，本文件只测确定性引擎逻辑。
  */
 const ve = require('../lib/volumeEngine');
@@ -619,18 +621,28 @@ console.log('\n[13] 输出结构完整性 + 禁交易指令扫描');
 {
   const bars = mkBars(260, i => flatBar(10 + i * 0.01, 1000, { amount: 1e8 }));
   const r = ve.computeVolumeEngine({ symbol: '600000', name: '测试', bars, minutes: null, blacklistReasons: [] });
-  const need = ['ok', 'schema', 'symbol', 'name', 'date', 'volumeState', 'position', 'checks', 'divergence', 'rules', 'combo', 'sequence', 'score', 'liquidity', 'blacklist', 'signal', 'riskTags', 'dimensions', 'conclusion', 'disclaimer', 'dataGaps'];
+  const need = ['ok', 'schema', 'symbol', 'name', 'date', 'volumeState', 'position', 'checks', 'divergence', 'rules', 'combo', 'sequence', 'score', 'liquidity', 'blacklist', 'signal', 'riskTags', 'dimensions', 'conclusion', 'disclaimer', 'dataGaps', 'positionVolumeSummary', 'contradictionSummary', 'ratioSummary'];
   const missing = need.filter(k => !(k in r));
   ok(missing.length === 0, `输出字段齐全（缺失：${missing.join(',') || '无'}）`);
   ok(r.rules.length === 5, '五条生死位规则全部输出（含未命中）');
+  ok(r.schema === 'volume-engine-20261017f', `schema 已升级 20261017f（实际 ${r.schema}）`);
+  // 20261017f：三个归集总结逐条完整输出（spec 11.2/11.3/11.4）
+  ok(r.positionVolumeSummary.items.length === 4, '位置量价归集 4 项（高位放量滞涨/低位放量震荡/缩量上涨/缩量下跌）');
+  ok(r.contradictionSummary.items.length === 4, '矛盾信号归集 4 项');
+  ok(r.ratioSummary.items.length === 5, '量比口诀归集 5 项');
+  ok([r.positionVolumeSummary, r.contradictionSummary, r.ratioSummary].every(s => typeof s.summary === 'string' && s.summary.length > 0), '三个归集总结的总结性判定均非空');
+  ok([...r.positionVolumeSummary.items, ...r.contradictionSummary.items, ...r.ratioSummary.items].every(i => ['命中', '未命中', '数据不足'].includes(i.status)), '归集明细每项 status ∈ {命中,未命中,数据不足}（无留空）');
   const dims = ['volumeState', 'position', 'capitalBehavior', 'chipTransfer'];
   ok(dims.every(d => typeof r.dimensions[d] === 'string' && r.dimensions[d].length > 0), '四维度客观描述齐全');
   ok(/不构成投资建议|不涉及交易执行/.test(r.disclaimer), '免责备注齐全');
   ok(typeof r.position.basis === 'string' && r.position.basis.length > 0, '位置判定依据非空');
   ok(r.volumeState.avg60 > 0, '均量序列非空');
   // 禁交易指令：叙事字段不得出现指令性措辞（减持/解禁为事实标签，不扫描）
+  const summaryNarratives = [...r.positionVolumeSummary.items, ...r.contradictionSummary.items, ...r.ratioSummary.items]
+    .flatMap(i => [i.conclusion, i.hint, i.riskHint, i.trackHint, i.scenario].filter(Boolean));
   const narratives = [r.conclusion, r.dimensions.volumeState, r.dimensions.position, r.dimensions.capitalBehavior, r.dimensions.chipTransfer,
-    r.combo.conclusion, r.divergence.note, r.signal.note, r.disclaimer, ...r.rules.map(x => x.conclusion)].join(' ');
+    r.combo.conclusion, r.divergence.note, r.signal.note, r.disclaimer, ...r.rules.map(x => x.conclusion),
+    r.positionVolumeSummary.summary, r.contradictionSummary.summary, r.ratioSummary.summary, ...summaryNarratives].join(' ');
   const banned = ['买入', '卖出', '加仓', '减仓', '清仓', '抄底', '逃顶', '建议买', '建议卖', '满仓', '空仓'];
   const hit = banned.filter(w => narratives.includes(w));
   ok(hit.length === 0, `叙事字段无交易指令措辞（命中：${hit.join(',') || '无'}）`);
@@ -671,6 +683,316 @@ console.log('\n[14] 边界：短样本 / 脏数据 / 缺换手率');
   ok(r1.score.marketCoef === 0.9 && /系统性风险/.test(r1.marketEnvNote), '配置大盘折扣 → ×0.9 并标注');
   const r2 = ve.computeVolumeEngine({ symbol: '600000', name: '测试', bars, minutes: null, blacklistReasons: [] });
   ok(r2.score.marketCoef === 1 && /未叠加大盘环境折扣/.test(r2.marketEnvNote), '未配置 → 系数 1 + 如实标注');
+}
+
+// ============ [15] 7.4 不同位置量价补充规则 ============
+console.log('\n[15] 7.4 位置量价补充规则：四形态 + 子阶段（直接调用，确定性口径）');
+{
+  // 手搭 pc：n=60，近 20 日低点窗口（40..58）全为 9.5
+  const mkPc = (over = {}) => {
+    const n = over.n || 60;
+    const lows = over.lows || Array.from({ length: n }, () => 9.5);
+    return {
+      n, level: '平量', ratio5: 1, ratio5Prev: 1, ratio10: 1, ratio20: 1,
+      avg5: 1000, avg10: 1000, avg20: 1000, avg60: 1000,
+      confirm: null, chgPct: 0, closePrev: 10, closeToday: 10, highToday: 10.02,
+      volToday: 1000, vols: Array.from({ length: n }, () => 1000), lows, lowToday: 9.95,
+      drawdownFromHigh: -5, pricePct12m: 0.5,
+      ...over,
+    };
+  };
+  const pv = (label, pcOver) => ve._positionVolumeRules(mkPc(pcOver), { position: { label }, rules: [] });
+
+  // 7.4.1 高位放量滞涨：高位 + 天量 + 滞涨（|chg|<1.2%）
+  const a = pv('高位区间', { level: '天量', ratio5: 5, confirm: '放量', chgPct: 0.5 });
+  ok(a.highStagnant.matched === true && a.highStagnant.status === '命中', '高位+天量+滞涨 → 高位放量滞涨命中');
+  ok(/高位派发风险/.test(a.highStagnant.conclusion), '结论含高位派发风险提示');
+  // 冲高回落同样命中（high 10.5 vs close 10.2 → 回落 2.9%）
+  const a2 = pv('高位区间', { level: '大量', ratio5: 2.6, chgPct: 1.5, highToday: 10.5, closeToday: 10.2 });
+  ok(a2.highStagnant.matched === true, '高位+大量+冲高回落 → 命中（上影线口径）');
+  // 高位但量能不达放量标准 → 未命中
+  const a3 = pv('高位区间', { level: '平量', ratio5: 1, chgPct: 0.3 });
+  ok(a3.highStagnant.matched === false && a3.highStagnant.status === '未命中', '高位但无量 → 未命中');
+  // 非高位 → 未命中
+  const a4 = pv('低位区间', { level: '天量', ratio5: 5, chgPct: 0.3 });
+  ok(a4.highStagnant.matched === false, '低位天量 → 高位放量滞涨未命中（位置不满足）');
+
+  // 7.4.2 低位放量震荡：低位 + 大量 + 小阴小阳 + 未创新低（lowToday 9.95 ≥ 窗口低点 9.5）
+  const b = pv('低位区间', { level: '大量', ratio5: 2.6, confirm: '放量', chgPct: 0.3, lowToday: 9.95 });
+  ok(b.lowOscillate.matched === true && b.lowOscillate.status === '命中', '低位+大量+震荡未新低 → 低位放量震荡命中');
+  ok(/观察池/.test(b.lowOscillate.conclusion), '结论为观察池口径（不直接看多）');
+  // 创新低 → 未命中
+  const b2 = pv('低位区间', { level: '大量', ratio5: 2.6, chgPct: -0.3, lowToday: 9.4 });
+  ok(b2.lowOscillate.matched === false && /新低/.test(b2.lowOscillate.detail.priceBehavior), '仍在创新低 → 未命中且说明原因');
+
+  // 7.4.3 缩量上涨两种情况
+  const upLow = pv('低位区间', { level: '温和缩量', ratio5: 0.5, confirm: '缩量', chgPct: 1.5 });
+  ok(upLow.shrinkUp.matched === true && upLow.shrinkUp.subStage === '低位启动阶段' && upLow.shrinkUp.status === '命中', '低位缩量上涨 → 低位启动阶段');
+  ok(/不直接给强看多信号/.test(upLow.shrinkUp.conclusion), '低位缩量上涨结论不直接给强看多');
+  const upHigh = pv('高位区间', { level: '温和缩量', ratio5: 0.5, confirm: '缩量', chgPct: 1.5 });
+  ok(upHigh.shrinkUp.subStage === '高位阶段' && upHigh.shrinkUp.status === '命中', '高位缩量上涨 → 高位阶段（风险观察）');
+  ok(/顶背离或买盘枯竭/.test(upHigh.shrinkUp.conclusion), '高位缩量上涨结论含买盘枯竭风险');
+  const upMid = pv('上涨中途', { level: '温和缩量', ratio5: 0.5, confirm: '缩量', chgPct: 1.5 });
+  ok(upMid.shrinkUp.matched === true && upMid.shrinkUp.status === '数据不足', '缩量上涨位置子阶段不明 → 数据不足（按谨慎观察）');
+
+  // 7.4.4 缩量下跌两种情况
+  const dnBigDrop = pv('低位区间', { level: '极度缩量', ratio5: 0.3, confirm: '缩量', chgPct: -1.5, drawdownFromHigh: -22 });
+  ok(dnBigDrop.shrinkDown.subStage === '低位大跌后' && dnBigDrop.shrinkDown.status === '命中', '低位 + 距高点 ≤-15% → 低位大跌后缩量出清');
+  ok(/不直接看多/.test(dnBigDrop.shrinkDown.conclusion), '低位大跌后结论仅观察不直接看多');
+  const dnEarly = pv('下跌途中', { level: '温和缩量', ratio5: 0.5, confirm: '缩量', chgPct: -1.5, drawdownFromHigh: -8 });
+  ok(dnEarly.shrinkDown.subStage === '下跌初期' && dnEarly.shrinkDown.bearish === true && dnEarly.shrinkDown.status === '命中', '下跌途中 + 距高点 >-10% → 下跌初期');
+  ok(/看空观察或看空预警/.test(dnEarly.shrinkDown.conclusion), '下跌初期结论按看空处理');
+  const dnAmb = pv('低位区间', { level: '温和缩量', ratio5: 0.5, confirm: '缩量', chgPct: -1.5, drawdownFromHigh: -10 });
+  ok(dnAmb.shrinkDown.matched === true && dnAmb.shrinkDown.status === '数据不足', '缩量下跌子阶段不明 → 数据不足');
+  const dnGap = pv('下跌途中', { level: '温和缩量', ratio5: 0.5, confirm: '缩量', chgPct: null });
+  ok(dnGap.shrinkDown.status === '数据不足' && /无法判定/.test(dnGap.shrinkDown.conclusion), '涨跌幅缺失 → 数据不足，无法判定（不臆造）');
+
+  // 量能性状共享口径（7.4/7.5/11.3 同源）
+  const t = ve._volTraits(mkPc({ level: '天量', ratio5: 5, confirm: '放量', chgPct: 0.5, highToday: 10.5, closeToday: 10.2 }));
+  ok(t.isHugeVol === true && t.isStagnant === true && t.fellFromHigh === true && t.isShrink === false, '性状：天量+滞涨+冲高回落 → isHugeVol/isStagnant/fellFromHigh');
+  const t2 = ve._volTraits(mkPc({ level: '平量', ratio5: 0.5, confirm: '缩量', chgPct: -2 }));
+  ok(t2.isShrink === true && t2.isStagnant === false, '性状：缩量+跌幅 -2% → isShrink 且非滞涨');
+}
+
+// ============ [16] 7.5 五句量比实战口诀 ============
+console.log('\n[16] 7.5 五句量比口诀：开盘/均价线/尾盘（分时）+ 三条日线条目');
+{
+  // 分时构造：120 分钟；cumVol 手；开盘 30 分钟 13 手/分，中段 1 手/分，尾段 12 手/分
+  const mkMinutes = (spec) => {
+    // spec: {rates: [perMinRate...] 按 30 分钟一段} → 生成 {time,price,avg,cumVol}
+    const out = [];
+    let cum = 0;
+    for (let i = 0; i < 120; i++) {
+      const rate = spec.rates[Math.floor(i / 30)] || 0;
+      cum += rate;
+      const price = spec.prices ? spec.prices(i) : 10;
+      out.push({ time: `${String(9 + Math.floor(i / 60)).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}`, price, avg: 10, cumVol: cum });
+    }
+    return { minutes: out, prevClose: 10 };
+  };
+  const mkPc = (over = {}) => {
+    const n = over.n || 60;
+    const lows = over.lows || Array.from({ length: n }, () => 9.5);
+    return {
+      n, level: '平量', ratio5: 1, ratio5Prev: 1, ratio10: 1, ratio20: 1,
+      avg5: 1000, avg10: 1000, avg20: 1000, avg60: 1000,
+      confirm: null, chgPct: 0, closePrev: 10, closeToday: 10, highToday: 10.02,
+      volToday: 1000, vols: Array.from({ length: n }, () => 1000), lows, lowToday: 9.95,
+      drawdownFromHigh: -5, pricePct12m: 0.5,
+      ...over,
+    };
+  };
+
+  // 口诀1 命中：avg5=1000000 股 → 前 5 日每分钟均量 41.67 手；开盘 30 分钟累计 4000 手 → 量比 3.2；末端站均价线
+  {
+    const pc = mkPc({ avg5: 1000000 });
+    const minutes = mkMinutes({ rates: [133.33, 0, 0, 0], prices: i => (i === 119 ? 10.5 : 10) });
+    const r = ve._ratioRules(pc, { minutes, position: { label: '低位区间' } });
+    const k1 = r.items[0];
+    ok(k1.matched === true && k1.status === '命中', `开盘量比 >3 且站均价线 → 命中（detail ${JSON.stringify(k1.detail)}）`);
+    ok(k1.detail.openRatio > 3 && k1.detail.aboveAvg === true, `开盘量比 ${k1.detail.openRatio} >3 且 aboveAvg`);
+    ok(k1.tag === '开盘量比超3放量待确认', '标签：开盘量比超3放量待确认');
+    ok(/不直接输出看多信号/.test(k1.conclusion), '结论限定为观察/确认（不直接看多）');
+  }
+  // 口诀1 未命中：开盘量比不足（rate 低）→ 未命中
+  {
+    const pc = mkPc({ avg5: 1000000 });
+    const minutes = mkMinutes({ rates: [10, 0, 0, 0] });
+    const r = ve._ratioRules(pc, { minutes, position: { label: '低位区间' } });
+    ok(r.items[0].matched === false && r.items[0].status === '未命中', '开盘量比不足 → 未命中');
+  }
+  // 口诀1 未命中：量比够但跌破均价线 → 承接失败口径
+  {
+    const pc = mkPc({ avg5: 1000000 });
+    const minutes = mkMinutes({ rates: [133.33, 0, 0, 0], prices: i => (i === 119 ? 9.5 : 10) });
+    const r = ve._ratioRules(pc, { minutes, position: { label: '低位区间' } });
+    const k1 = r.items[0];
+    ok(k1.matched === false && /未站上均价线/.test(k1.conclusion), '量比够但跌破均价线 → 未命中（需站上均价线）');
+  }
+  // 口诀1 数据不足：无分时 → 不得臆造
+  {
+    const r = ve._ratioRules(mkPc(), { minutes: null, position: { label: '低位区间' } });
+    ok(r.items[0].status === '数据不足' && r.items[0].dataOk === false, '无分时 → 口诀1 数据不足');
+    ok(r.dataGaps.some(g => /分时数据不足/.test(g)), 'dataGaps 收录分时不足说明');
+  }
+  // 口诀2 命中：昨日量比 1.5 回落至 1.0 且横盘不跌
+  {
+    const pc = mkPc({ ratio5: 1.0, ratio5Prev: 1.5, chgPct: 0.3, closePrev: 10, closeToday: 10.03 });
+    const k2 = ve._ratioRules(pc, { minutes: null, position: { label: '上涨中途' } }).items[1];
+    ok(k2.matched === true && k2.tag === '量比回落横盘卖盘变轻观察', '口诀2 命中（量比回落至 1 附近 + 横盘不跌）');
+    ok(/不得因量比回落直接输出看空结论/.test(k2.conclusion), '口诀2 结论禁止因量比回落直接看空');
+  }
+  // 口诀2 未命中：量比仍在高位
+  {
+    const pc = mkPc({ ratio5: 1.4, ratio5Prev: 1.5, chgPct: 0.3 });
+    ok(ve._ratioRules(pc, { minutes: null, position: { label: '上涨中途' } }).items[1].matched === false, '量比未回落至 0.8-1.2 → 未命中');
+  }
+  // 口诀3 命中：尾盘每分钟均量 12 ≥ 此前 5×2 且价格拉升 ≥0.5%（rally 基准 = 尾盘窗口起点 ms[90]）
+  {
+    const pc = mkPc({ avg5: 1000000 });
+    const minutes = mkMinutes({ rates: [13, 1, 1, 12], prices: i => (i === 90 ? 10 : (i === 119 ? 10.2 : 10)) });
+    const r = ve._ratioRules(pc, { minutes, position: { label: '低位区间' } });
+    const k3 = r.items[2];
+    ok(k3.matched === true && k3.status === '命中', `尾盘放量拉升 → 命中（detail ${JSON.stringify(k3.detail)}）`);
+    ok(k3.tag === '尾盘放量拉升真实性待确认', '标签：尾盘放量拉升真实性待确认');
+    ok(/不能仅因红盘判断为抢筹/.test(k3.conclusion) && /不得输出看多信号/.test(k3.hint), '结论限定真实性待确认（不直接看多）');
+  }
+  // 口诀3 未命中：尾盘量够但价格未拉升
+  {
+    const pc = mkPc({ avg5: 1000000 });
+    const minutes = mkMinutes({ rates: [13, 1, 1, 12], prices: () => 10 });
+    const k3 = ve._ratioRules(pc, { minutes, position: { label: '低位区间' } }).items[2];
+    ok(k3.matched === false && /价格未走高/.test(k3.conclusion), '尾盘放量但价格未拉升 → 未命中');
+  }
+  // 口诀3 数据不足：分时不足 60 分钟
+  {
+    const short = { minutes: Array.from({ length: 30 }, (_, i) => ({ time: '09:30', price: 10, avg: 10, cumVol: i + 1 })), prevClose: 10 };
+    const k3 = ve._ratioRules(mkPc(), { minutes: short, position: { label: '低位区间' } }).items[2];
+    ok(k3.status === '数据不足' && k3.matched === false, '分时不足 60 分钟 → 口诀3 数据不足');
+  }
+  // 口诀4 命中：近 3 日量 600 < avg60×0.7 且 lowToday 9.95 > 近 20 日最低 9.5
+  {
+    const vols = Array.from({ length: 60 }, () => 1000);
+    vols[57] = 600; vols[58] = 600; vols[59] = 600;
+    const pc = mkPc({ vols, avg60: 1000, chgPct: -0.2, confirm: '缩量' });
+    const k4 = ve._ratioRules(pc, { minutes: null, position: { label: '低位区间' } }).items[3];
+    ok(k4.matched === true && k4.confirmed === false && k4.tag === '连续低成交不再新低待放量阳线', '口诀4 命中且未确认（等待放量阳线）');
+    ok(/不得直接输出看多信号/.test(k4.hint), '口诀4 未确认前禁直接看多');
+  }
+  // 口诀4 已确认：当日放量阳线 → confirmed
+  {
+    const vols = Array.from({ length: 60 }, () => 1000);
+    vols[57] = 600; vols[58] = 600; vols[59] = 600;
+    const pc = mkPc({ vols, avg60: 1000, chgPct: 2.5, confirm: '放量' });
+    const k4 = ve._ratioRules(pc, { minutes: null, position: { label: '低位区间' } }).items[3];
+    ok(k4.matched === true && k4.confirmed === true && k4.tag === null, '口诀4 已出现放量阳线 → 确认成立不再限制');
+  }
+  // 口诀4 未命中：股价仍创新低
+  {
+    const vols = Array.from({ length: 60 }, () => 1000);
+    vols[57] = 600; vols[58] = 600; vols[59] = 600;
+    const pc = mkPc({ vols, avg60: 1000, chgPct: -0.2, lowToday: 9.4 });
+    ok(ve._ratioRules(pc, { minutes: null, position: { label: '低位区间' } }).items[3].matched === false, '仍创新低 → 口诀4 未命中');
+  }
+  // 口诀5 命中：量比 2.5 但滞涨
+  {
+    const pc = mkPc({ ratio5: 2.5, chgPct: 0.3, level: '大量' });
+    const k5 = ve._ratioRules(pc, { minutes: null, position: { label: '上涨中途' } }).items[4];
+    ok(k5.matched === true && k5.tag === '量比大价格滞涨警惕对倒', '口诀5 命中（量比大 + 涨不动）');
+    ok(/警惕是否为对倒出货/.test(k5.conclusion), '口诀5 结论含对倒警惕');
+  }
+  // 口诀5 未命中：量比大但价格明确上涨
+  {
+    const pc = mkPc({ ratio5: 2.5, chgPct: 3.0, highToday: 10.3, closeToday: 10.3 });
+    ok(ve._ratioRules(pc, { minutes: null, position: { label: '上涨中途' } }).items[4].matched === false, '量比大但价格真涨 → 未命中');
+  }
+}
+
+// ============ [17] 三个强制归集总结 + 一致性约束 ============
+console.log('\n[17] 11.2/11.3/11.4 归集总结：逐条完整 + 常态模板 + 数据不足 + 约束联动');
+{
+  const mkPv = (over = {}) => ({
+    highStagnant: { form: '高位放量滞涨', status: '未命中', matched: false, conclusion: 'x', detail: {} },
+    lowOscillate: { form: '低位放量震荡', status: '未命中', matched: false, conclusion: 'x', detail: {} },
+    shrinkUp: { form: '缩量上涨', status: '未命中', matched: false, subStage: '不属于缩量上涨', conclusion: 'x', detail: {} },
+    shrinkDown: { form: '缩量下跌', status: '未命中', matched: false, subStage: '不属于缩量下跌', conclusion: 'x', detail: {} },
+    ...over,
+  });
+  const mkContra = (over = {}) => ({
+    shouldAmpNot: { signal: '该放量未放量', status: '未命中', matched: false, conclusion: 'x', scenario: '', riskHint: '' },
+    shouldShrinkHuge: { signal: '该缩量反放巨量', status: '未命中', matched: false, conclusion: 'x', scenario: '', riskHint: '' },
+    highHugeNotUp: { signal: '高位放巨量但价格不涨', status: '未命中', matched: false, conclusion: 'x', scenario: '', riskHint: '' },
+    lowHugeNotDown: { signal: '低位放大量但价格不跌', status: '未命中', matched: false, conclusion: 'x', scenario: '', trackHint: '' },
+    ...over,
+  });
+  const mkRatio = (items) => ({ items });
+
+  // 全未命中 → 常态模板（spec：未命中必须写「未命中」）
+  {
+    const s = ve._buildSummaries({ pv: mkPv(), contra: mkContra(), ratio: mkRatio([1, 2, 3, 4, 5].map(id => ({ id, name: `口诀${id}`, status: '未命中', matched: false, conclusion: '未命中', hint: '', detail: {} }))), position: { label: '上涨中途' } });
+    ok(s.positionVolumeSummary.items.length === 4 && s.positionVolumeSummary.items.every(i => i.status === '未命中'), '位置量价 4 项全部「未命中」');
+    ok(/常态运行/.test(s.positionVolumeSummary.summary) && /高位放量滞涨/.test(s.positionVolumeSummary.summary), '位置量价归集总结为常态模板（列出未命中项）');
+    ok(/不显著/.test(s.contradictionSummary.summary), '矛盾信号归集总结为常态模板（不显著）');
+    ok(/常态运行/.test(s.ratioSummary.summary), '量比口诀归集总结为常态模板');
+  }
+  // 数据不足 → 总结显式标注（不得与未命中混淆）
+  {
+    const s = ve._buildSummaries({ pv: mkPv(), contra: mkContra(), ratio: mkRatio([1, 2, 3, 4, 5].map(id => ({ id, name: `口诀${id}`, status: id === 1 ? '数据不足' : '未命中', matched: false, conclusion: '数据不足，无法判定', hint: '', detail: {} }))), position: { label: '上涨中途' } });
+    ok(/数据不足/.test(s.ratioSummary.summary) && /分时数据不足/.test(s.ratioSummary.summary), '口诀1 数据不足 → 归集总结显式标注');
+  }
+  // 命中 + 空头优先：总结给出主结论但明细完整
+  {
+    const s = ve._buildSummaries({
+      pv: mkPv({ highStagnant: { form: '高位放量滞涨', status: '命中', matched: true, conclusion: '高位放量滞涨：命中', detail: {} }, shrinkDown: { form: '缩量下跌', status: '命中', matched: true, subStage: '下跌初期', conclusion: '下跌初期缩量无承接', detail: {} } }),
+      contra: mkContra({ shouldAmpNot: { signal: '该放量未放量', status: '命中', matched: true, conclusion: '资金没有跟上', scenario: '突破关键压力位', riskHint: '谨防假突破' } }),
+      ratio: mkRatio([1, 2, 3, 4, 5].map(id => ({ id, name: `口诀${id}`, status: id === 5 ? '命中' : '未命中', matched: id === 5, conclusion: '量比大但股价涨不动', hint: '警惕对倒', detail: {} }))),
+      position: { label: '高位区间' },
+    });
+    ok(/主要命中【高位放量滞涨】/.test(s.positionVolumeSummary.summary) && /下跌初期缩量无承接/.test(s.positionVolumeSummary.summary), '位置量价归集：主命中 + 空头优先项均列出');
+    ok(/空头优先结论为【有/.test(s.positionVolumeSummary.summary), '空头优先结论显式给出');
+    ok(/需小心的项/.test(s.contradictionSummary.summary), '矛盾信号归集区分「需小心/需跟踪」');
+    ok(/需警惕项为【口诀5】/.test(s.ratioSummary.summary), '口诀归集：口诀3/5 归入需警惕');
+  }
+  // 一致性约束（_classify 直调）：高位放量滞涨 + 多头规则 → 只能看多观察
+  {
+    const sig = ve._classify({
+      pc: { level: '平量' }, combo: { direction: 'bull' }, sequence: { bullConfirm: true },
+      divergence: { type: null }, checks: { failed: [] }, position: { label: '高位区间' }, riskTags: [],
+      rules: [{ id: 1, name: '低位吸筹', matched: true, direction: 'bull', priority: 'normal' }],
+      pv: { highStagnant: { matched: true } }, contra: {}, ratio: { items: [] },
+    }, { base: 70 });
+    ok(sig.category === '看多观察' && /高位放量滞涨/.test(sig.note), '高位放量滞涨禁看多信号 → 降级看多观察');
+  }
+  // 一致性约束：下跌初期缩量 → 强制看空观察（压过多头规则）
+  {
+    const sig = ve._classify({
+      pc: { level: '平量' }, combo: { direction: 'neutral' }, sequence: { bullConfirm: false },
+      divergence: { type: null }, checks: { failed: [] }, position: { label: '下跌途中' }, riskTags: [],
+      rules: [{ id: 1, name: '低位吸筹', matched: true, direction: 'bull', priority: 'normal' }],
+      pv: { shrinkDown: { subStage: '下跌初期' } }, contra: {}, ratio: { items: [] },
+    }, { base: 80 });
+    ok(sig.category === '看空观察' && /下跌初期/.test(sig.note), '下跌初期缩量无承接 → 强制看空观察');
+  }
+  // spec 7.4 例外：低位吸筹完整命中 → 低位放量震荡不限制看多
+  {
+    const sig = ve._classify({
+      pc: { level: '平量' }, combo: { direction: 'bull' }, sequence: { bullConfirm: true },
+      divergence: { type: null }, checks: { failed: [] }, position: { label: '低位区间' }, riskTags: [],
+      rules: [{ id: 1, name: '低位吸筹', matched: true, direction: 'bull', priority: 'normal' }],
+      pv: { lowOscillate: { matched: true } }, contra: { lowHugeNotDown: { matched: true } }, ratio: { items: [] },
+    }, { base: 70 });
+    ok(sig.category === '看多信号', '规则1 命中时低位放量震荡/低位放大量不跌不限制看多（spec 7.4 例外）');
+  }
+  // s40 约束：高位放量滞涨封顶 12；低位缩量上涨保底 16
+  {
+    const s1 = ve._scoreEngine({ level: '大量' }, { combo: { direction: 'bull' }, sequence: { type: null, bullConfirm: false }, checks: { pulse: false, failed: [] }, divergence: { type: null }, pv: { highStagnant: { matched: true } } });
+    ok(s1.components.volumePrice.score === 12, `高位放量滞涨 → 量价匹配分封顶 12（实际 ${s1.components.volumePrice.score}）`);
+    const s2 = ve._scoreEngine({ level: '温和缩量' }, { combo: { direction: 'observe' }, sequence: { type: null, bullConfirm: false }, checks: { pulse: false, failed: [] }, divergence: { type: null }, pv: { shrinkUp: { subStage: '低位启动阶段' } } });
+    ok(s2.components.volumePrice.score === 16, `低位缩量上涨 → 量价匹配分保底 16（实际 ${s2.components.volumePrice.score}）`);
+  }
+  // 集成：高位放量滞涨全链路（冒烟场景 A 固化）
+  {
+    const bars = mkBars(260, i => {
+      const p = 10 + i * 0.04;
+      return i === 259
+        ? { open: p, high: p * 1.01, low: p * 0.995, close: p * 1.001, volume: 5000, amount: p * 5000 * 100, turnover: 1.5 }
+        : flatBar(p, 1000);
+    });
+    const r = ve.computeVolumeEngine({ symbol: '600000', name: '测试', bars, minutes: null, blacklistReasons: [] });
+    ok(r.positionVolumeSummary.items[0].status === '命中' && r.positionVolumeSummary.items[0].form === '高位放量滞涨', '集成：高位放量滞涨归集命中');
+    ok(r.riskTags.includes('高位放量滞涨'), '风险标签：高位放量滞涨');
+    ok(r.signal.category !== '看多信号', `高位放量滞涨不得输出看多信号（实际 ${r.signal.category}）`);
+  }
+  // 集成：无分时时口诀 1/3 数据不足如实标注；提供分时时不误标
+  {
+    const bars = mkBars(250, i => flatBar(10, 1000, { amount: 1e8 }));
+    const r1 = ve.computeVolumeEngine({ symbol: '600000', name: '测试', bars, minutes: null, blacklistReasons: [] });
+    ok(r1.ratioSummary.items[0].status === '数据不足' && r1.ratioSummary.items[2].status === '数据不足', '无分时 → 口诀1/3 数据不足');
+    ok(r1.dataGaps.some(g => /开盘量比超3/.test(g)) && r1.dataGaps.some(g => /尾盘突然放量拉升/.test(g)), 'dataGaps 收录两条口诀的分时不足说明');
+    const minutes = { minutes: Array.from({ length: 240 }, (_, i) => ({ time: '09:30', price: 10, avg: 10, cumVol: (i + 1) * 4 })), prevClose: 10 };
+    const r2 = ve.computeVolumeEngine({ symbol: '600000', name: '测试', bars, minutes, blacklistReasons: [] });
+    ok(r2.ratioSummary.items[0].status !== '数据不足' && r2.ratioSummary.items[2].status !== '数据不足', '提供分时 → 口诀1/3 不标数据不足');
+  }
 }
 
 console.log(`\n===== 结果：通过 ${pass} / 失败 ${fail} =====`);
