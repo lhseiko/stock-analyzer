@@ -515,3 +515,41 @@
 - Recurrence-Count: 1
 - First-Seen: 2026-10-19
 - Last-Seen: 2026-10-19
+
+## [LRN-20261019-006] correction / best_practice
+
+**Logged**: 2026-10-19T21:30:00Z
+**Priority**: high
+**Status**: resolved
+**Area**: backend/frontend
+
+### Summary
+缩量定档标准与市场标准矛盾（用户新洋丰 000902 截图报障：量比(÷5日均量) 0.99 却显示「缩量上涨」/量能热度「缩量」）：`_volumeTier` 定档写为 `amplified = confirm==='放量' || ratio5>1.3`、`shrunk = confirm==='缩量' || ratio5<0.7`——**60 日均量口径的确认结果有权把 ÷5 日均量的「平量」翻转成「温和缩量」**，且 0.7/1.3 阈值偏离市场标准（缩量<0.8 / 平量0.8~1.2 / 放量>1.2 / 严重缩量<0.5）。
+
+### Details
+- 用户截图数据：000902 当日 +1.87%、量比(÷5日均量) 0.99（tencent_quote 直采 = 东财 App 口径）、20日量价比 1.03 → 卡片显示「缩量上涨」、热度「缩量」、combo「缩量上涨·caution」，与市场标准直接矛盾。
+- 根因是**确认机制越界为改判机制**：judgedLevel 机制（20261017i 为修「A 卡展示平量 vs C 卡结论缩量」矛盾而引入）本意是「60 日口径确认 ÷5 档位」，实际实现是 `confirm==='缩量'` 时**无条件翻转**档位（当日量 < avg60×0.7 即判缩量，与 ÷5 日均量的市场标准量比无关）。000902 实证：当日量 806 万 < avg60×0.7=838 万 → confirm=缩量 → 平量(0.99)被翻转成温和缩量。
+- 影响面：10 只自选股中 5 只档位被 60 日口径改写（000902 0.99、600460 0.93、000783 0.82 均在 0.8~1.2 市场「平量」区间却显示缩量）。
+- 用户三项决策（AskUserQuestion 确认后实施）：①阈值对齐市场 0.8/1.2/0.5；②60 日均量口径保留为分歧披露（`divergenceNote`，不翻转档位）；③不增加日环比 ±10% 披露行。
+
+### Suggested Action（已实施，版本 20261019f）
+1. 定档改纯 ÷5 日均量单独定档：`LEVEL_RULES`（温和缩量 [0.5,0.8)/温和放量 (1.2,2.5]）、`_volTriState`（>1.2/<0.8）、`_volumeTier`（amplified/shrunk 纯 ratio5，去掉 confirm 或项）、`_precompute` judgedLevel（纯 ratio5，dry<0.5）、`_comboEngine`（amplified/shrunk 纯 ratio5）、`_volTraits`（isHugeVol/isShrink 纯 ratio5）六处。
+2. 60 日口径降级为披露：`crossBasisOk = confirmDir===null || t5===null || confirmDir===t5`；不一致时 basis 串附「60 日均量口径确认为『缩量』（当日量低于 60 日均量 ×0.7）……档位以 ÷5 日均量（市场标准量比）为准」；`dimensions.volumeState.confirmDisagree` 同步标注。judgedLevel 恒等于 level（保留字段为输出结构兼容）。
+3. capitalFlow.js `unifiedVolState` dry 边界 0.4→0.5（与引擎同源）；多日规则（pulse/口诀4/amp2 等）基准为 60 日属规则自身语义不动。
+4. 版本三件套：schema `volume-engine-20261019f`；sameDayJudgment `LAYOUT_VERSION` 20261019e→20261019f（展示值变化、因子结构哈希不捕获→手动升版强制重算）；`APP_VERSION` 20261019e→20261019f + public 三 HTML 31 处 ?v= 同步。
+5. 实测 10 只自选股全部与市场标准一致：000902 0.99→平量/温和上涨/热度量能平稳（divergenceNote 披露 60 日分歧）；600460 0.93、000783 0.82 缩量→平量；688289 0.74、600030 0.78 维持缩量（<0.8 判定正确）。sameDayJudgment 000902 schemaVersion=h2375b0d3-20261019f、regenerated=true、量价配合=温和上涨/0.2。
+
+### Prevention
+- **「确认/校验」机制不许拥有「改判」权力**：20261017i 引入 judgedLevel 的初衷是交叉校验（60 日口径确认 ÷5 档位），实现时写成 `confirm==='缩量' || ratio5<0.7`——一个「或」就把校验器变成了改判器，且静默。凡设计「B 口径确认 A 口径」类机制，默认语义必须是「不一致时披露分歧」（divergenceNote + confirmDisagree），档位永远归市场标准口径单独定档；只有用户明确要求「B 有权覆盖 A」时才写覆盖，且必须显式留痕。
+- **阈值常量必须来自可引用的外部标准**：0.7/1.3 是项目自定义值，与市场通行量比标准（0.8/1.2/0.5）长期不一致却无人发现，因为没有任何测试或注释标注「此值对标什么」。凡与市场/监管/行业口径挂钩的阈值，注释与测试断言里必须写明「对齐 XX 标准（0.8/1.2/0.5）」并建市场标准回归块（本次复刻 000902 形态：ratio5=0.95+confirm=缩量 → 断言 tier=平量/shrunk=false/分歧披露；边界 0.49/0.5/0.79/0.8/1.2/1.21 六值全断言）。
+- **前端直采值与自算值必须二选一并明示**：用户能同时看到「量比(÷5日均量) 0.99」（卡片自算或直采）与结论「缩量」，说明**数字通道与档位通道用了两套阈值**。凡卡片同时展示「数值+档位标签」，两者必须由同一函数同一边界计算（本次统一收口 `_volTriState`/`_volumeTier` 后前端展示值改读 tier 字段），否则数值与结论矛盾只是时间问题。
+
+### Metadata
+- Source: user_feedback
+- Reproducible: yes（scripts/test_volume_engine.js 市场标准对齐回归块零网络可复现；000902 API 实测 signal=温和上涨/level=平量/divergenceNote 在场）
+- Related Files: lib/volumeEngine.js, lib/capitalFlow.js, lib/sameDayJudgment.js, scripts/test_volume_engine.js, scripts/test_volume_consistency.js, docs/logic/stock-13-capital.md
+- Tags: volume-tier, market-standard-alignment, ratio5, confirm-flip, divergence-note, layout-version
+- Pattern-Key: backend.volume_tier_market_standard_misalignment
+- Recurrence-Count: 1
+- First-Seen: 2026-10-19
+- Last-Seen: 2026-10-19

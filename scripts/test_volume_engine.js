@@ -2,7 +2,7 @@
  * 量能分析引擎 · 行为回归（零网络，全合成数据）
  * --------------------------------------------------------------
  * 运行： node scripts/test_volume_engine.js
- * 覆盖：lib/volumeEngine.js（20261017f，依据《AI 股票量能分析工作台统一业务逻辑说明书》）——
+ * 覆盖：lib/volumeEngine.js（20261017f，依据《AI 股票量能分析工作台统一业务逻辑说明书》；20261019f 定档标准对齐市场标准量比 0.8/1.2/0.5、60 日确认不再翻转档位）——
  *   [1] 输入下限校验        [2] 预计算与档位/确认口径
  *   [3] 位置判定（四态+横盘+分歧） [4] 量价三问
  *   [5] 背离检测            [6] 五大生死位规则（含数据不足标注）
@@ -49,7 +49,7 @@ console.log('\n[1] 输入下限：少于 10 根 → ok:false 且标注样本不�
 }
 
 // ============ [2] 预计算与档位 ============
-console.log('\n[2] 预计算：均量不含当日；六档边界；60 日均量确认');
+console.log('\n[2] 预计算：均量不含当日；六档边界（20261019f 对齐市场标准 0.8/1.2/0.5）；60 日均量确认（不再翻转档位）');
 {
   // 前 259 根量 1000，最后一日 300 → ratio5 = 300/1000 = 0.3 → 极度缩量
   const bars = mkBars(260, i => flatBar(10 + i * 0.001, i === 259 ? 300 : 1000));
@@ -64,16 +64,45 @@ console.log('\n[2] 预计算：均量不含当日；六档边界；60 日均量�
     const bars = mkBars(60, i => flatBar(10, i === 59 ? 1000 * v : 1000));
     return ve._precompute(bars).level;
   };
+  // 20261019f：六档阈值对齐市场标准量比（缩量 <0.8 / 平量 [0.8,1.2] / 放量 >1.2 / 极度缩量 <0.5）
   ok(tier(0.39) === '极度缩量', '0.39 → 极度缩量');
-  ok(tier(0.4) === '温和缩量', '0.40 → 温和缩量（边界含）');
-  ok(tier(0.69) === '温和缩量', '0.69 → 温和缩量');
-  ok(tier(0.7) === '平量', '0.70 → 平量（边界含）');
-  ok(tier(1.3) === '平量', '1.30 → 平量（边界含）');
-  ok(tier(1.31) === '温和放量', '1.31 → 温和放量');
+  ok(tier(0.49) === '极度缩量', '0.49 → 极度缩量（新边界不含）');
+  ok(tier(0.5) === '温和缩量', '0.50 → 温和缩量（边界含）');
+  ok(tier(0.79) === '温和缩量', '0.79 → 温和缩量');
+  ok(tier(0.8) === '平量', '0.80 → 平量（边界含）');
+  ok(tier(1.2) === '平量', '1.20 → 平量（边界含）');
+  ok(tier(1.21) === '温和放量', '1.21 → 温和放量');
   ok(tier(2.5) === '温和放量', '2.50 → 温和放量（边界含）');
   ok(tier(2.51) === '大量', '2.51 → 大量');
   ok(tier(4) === '大量', '4.00 → 大量（边界含）');
   ok(tier(4.01) === '天量', '4.01 → 天量');
+}
+{
+  // 20261019f：市场标准对齐回归（用户新洋丰 000902 实测反馈：量比 0.99 市场=平量，
+  // 旧逻辑因 60 日均量口径把平量翻成「温和缩量」，与市场标准矛盾）。
+  // 核心不变量：定档只看 ÷5 日均量（市场标准量比），60 日确认不得翻转档位，仅作分歧披露。
+  // 场景复刻：前 54 日大量（1400）→ 近 5 日回落至 1000 → 当日 950：
+  //   ratio5 = 950/1000 = 0.95（平量）；60 日均量 ≈1383，950 < 1383×0.7=968 → 60 日口径缩量。
+  const bars = mkBars(60, i => flatBar(10, i < 54 ? 1400 : (i < 59 ? 1000 : 950)));
+  const pc = ve._precompute(bars);
+  ok(Math.abs(pc.ratio5 - 0.95) < 0.01, `场景 ratio5=0.95（实际 ${pc.ratio5}）`);
+  ok(pc.confirm === '缩量', `60 日均量口径 = 缩量（实际 ${pc.confirm}）`);
+  ok(pc.level === '平量', `5 日量比 0.95 → 平量（市场标准，实际 ${pc.level}）`);
+  ok(pc.judgedLevel === '平量', 'judgedLevel 恒等于 level（60 日确认不翻转档位）');
+  const t = ve._volumeTier(pc);
+  ok(t.tier === '平量' && t.shrunk === false && t.amplified === false, 'volumeTier：tier=平量、amplified/shrunk 均 false（旧逻辑 shrunk 会翻成 true）');
+  ok(t.consistent === false, '60 日口径与 5 日档位不一致 → consistent=false');
+  ok(/60 日均量口径确认为「缩量」/.test(t.divergenceNote || '') && /市场标准量比/.test(t.divergenceNote || ''), '分歧说明披露 60 日口径，并声明「档位以 ÷5 日均量（市场标准量比）为准」');
+  const r = ve.computeVolumeEngine({ symbol: 'X', name: 'X', bars, barsSource: 'tencent' });
+  ok(r.ok && r.volumeState.level === '平量', `端到端 volumeState.level=平量（实际 ${r.volumeState && r.volumeState.level}）`);
+  ok(r.ok && r.volumeState.ratio5Level === '平量', 'ratio5Level 同为平量（定档改后两者一致）');
+  // 反向场景：量比 0.75（<0.8）→ 缩量（即使 60 日口径未确认）；量比 1.25（>1.2）→ 放量
+  const bShrink = mkBars(60, i => flatBar(10, i === 59 ? 750 : 1000));
+  const tShrink = ve._volumeTier(ve._precompute(bShrink));
+  ok(tShrink.tier === '温和缩量' && tShrink.shrunk === true, '量比 0.75（<0.8）→ 温和缩量（市场标准，无需 60 日确认）');
+  const bAmp = mkBars(60, i => flatBar(10, i === 59 ? 1250 : 1000));
+  const tAmp = ve._volumeTier(ve._precompute(bAmp));
+  ok(tAmp.tier === '温和放量' && tAmp.amplified === true, '量比 1.25（>1.2）→ 温和放量（市场标准）');
 }
 {
   // 放量确认：最近一日 > 60 日均量 ×1.5
@@ -626,7 +655,8 @@ console.log('\n[13] 输出结构完整性 + 禁交易指令扫描');
   ok(missing.length === 0, `输出字段齐全（缺失：${missing.join(',') || '无'}）`);
   ok(r.rules.length === 5, '五条生死位规则全部输出（含未命中）');
   // 20261019d：新增 expectedVolumeSummary 归集（该放/该缩缺口补充）与 signal.bullSupport → schema 升至 20261019d。
-  ok(r.schema === 'volume-engine-20261019d', `schema 已升级 20261019d（实际 ${r.schema}）`);
+  // 20261019f：定档标准改市场标准量比（÷5日均量 0.8/1.2 单独定档，60 日确认降级为分歧披露）→ schema 升至 20261019f。
+  ok(r.schema === 'volume-engine-20261019f', `schema 已升级 20261019f（实际 ${r.schema}）`);
   ok(r.volumeTier && typeof r.volumeTier.tier === 'string', '输出含 volumeTier（统一量能档位真值源）');
   ok(r.volumeState.level === r.volumeTier.tier, `引擎展示档位等于统一档位（${r.volumeState.level}）`);
   ok('ratio5Level' in r.volumeState, 'volumeState 保留 ratio5Level（原始 ÷5日均量档位）供追溯');
