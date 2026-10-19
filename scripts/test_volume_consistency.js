@@ -24,6 +24,7 @@
  *   [9] 引擎失败降级：unifiedTier 缺失时 computeVolumeIndicators 仍正常输出
  *   [10] 日K降级链新鲜度判据（20261019a，000783 实测缺陷）
  *   [11] 当日 bar 实时行情终值对齐（20261019b，000902 实测缺陷：日期新鲜 ≠ 数值终值）
+ *   [12] 量比数据源直采（20261019c，用户指令：量比向腾讯等数据源取值，不在本地重算）
  */
 'use strict';
 
@@ -452,6 +453,47 @@ group('11. 当日 bar 实时行情终值对齐（20261019b，000902 实测缺陷
   const rBad = VE._reconcileTodayBar(starBarsBad, badQuote, 'ths', T);
   ok(rBad.note === 'overwritten' && starBarsBad[1].volume === 261256500,
     '（对照）未归一的 quote 会覆写出 100 倍假量——此为已被源头修复拦截的旧缺陷形态');
+});
+
+// ============================================================
+group('12. 量比数据源直采（20261019c：向腾讯取值，不在本地工作台重算）', () => {
+  // 构造 12 根日K：前 11 根量=100，当日量=200 → 本地 ratio5 = 200/100 = 2.0
+  const bars = [];
+  for (let i = 0; i < 11; i++) bars.push({ date: `2026-02-${String(i + 1).padStart(2, '0')}`, open: 10, high: 10.5, low: 9.5, close: 10, volume: 100, amount: 1000, turnover: 1 });
+  bars.push({ date: '2026-02-12', open: 10, high: 10.5, low: 9.5, close: 10, volume: 200, amount: 2000, turnover: 2 });
+
+  // [12.1] 注入数据源量比（腾讯 fields[49]）= 0.99 → 直接采用，不得本地重算为 2.0
+  const c1 = VE.computeVolumeEngine({ symbol: '000902', name: '新洋丰', bars, barsSource: 'tencent', quoteVolumeRatio: 0.99 });
+  ok(c1.volumeState.ratio5 === 0.99, '注入量比 0.99 → ratio5 取数据源值 0.99（非本地 2.0）');
+  ok(c1.volumeState.ratio5Basis === 'tencent_quote', 'ratio5Basis = tencent_quote（直采，非本地计算）');
+
+  // [12.2] 不注入 → 退回本地 volToday/avg5 = 2.0
+  const c2 = VE.computeVolumeEngine({ symbol: 'X', name: 'X', bars, barsSource: 'tencent' });
+  ok(c2.volumeState.ratio5 === 2 && c2.volumeState.ratio5Basis === 'local_fallback', '不注入 → ratio5 = 本地 2.0，basis = local_fallback');
+
+  // [12.3] 注入无效值（0 / 负数 / null）→ 退回本地
+  const c3a = VE.computeVolumeEngine({ symbol: 'X', name: 'X', bars, barsSource: 'tencent', quoteVolumeRatio: 0 });
+  const c3b = VE.computeVolumeEngine({ symbol: 'X', name: 'X', bars, barsSource: 'tencent', quoteVolumeRatio: -1 });
+  const c3c = VE.computeVolumeEngine({ symbol: 'X', name: 'X', bars, barsSource: 'tencent', quoteVolumeRatio: null });
+  ok(c3a.volumeState.ratio5 === 2 && c3a.volumeState.ratio5Basis === 'local_fallback', '注入 0 → 退回本地 2.0');
+  ok(c3b.volumeState.ratio5 === 2 && c3b.volumeState.ratio5Basis === 'local_fallback', '注入负数 → 退回本地 2.0');
+  ok(c3c.volumeState.ratio5 === 2 && c3c.volumeState.ratio5Basis === 'local_fallback', '注入 null → 退回本地 2.0');
+
+  // [12.4] 注入值参与下游判定与本地同口径：直采 2.0 与本地 2.0 的 amplified 判定一致
+  const localPc = VE._precompute(bars);
+  const srcPc = VE._precompute(bars, { quoteVolumeRatio: 2.0 });
+  ok(srcPc.ratio5 === 2.0 && localPc.ratio5 === 2.0, '直采 2.0 与本地 2.0 数值同源（同一只票两种取值路径一致）');
+  ok(srcPc.ratio5Basis === 'tencent_quote' && localPc.ratio5Basis === 'local_fallback', 'basis 正确区分直采/兜底');
+
+  // [12.5] 注入小量比 → 缩量判定一致（下游 shrunk 不依赖是否来自本地）
+  const shrinkSrc = VE._precompute(bars, { quoteVolumeRatio: 0.5 });
+  const shrinkLoc = (() => {
+    const b2 = bars.slice();
+    b2[b2.length - 1] = { ...b2[b2.length - 1], volume: 50 }; // 本地 ratio5 = 50/100 = 0.5
+    return VE._precompute(b2);
+  })();
+  ok(shrinkSrc.ratio5 === 0.5 && shrinkLoc.ratio5 === 0.5, '直采 0.5 与本地 0.5 数值一致（下游 shrunk 判定同源）');
+  ok(!(shrinkSrc.ratio5 > 1.3) && !(shrinkLoc.ratio5 > 1.3), '两者量比 0.5 均不触发放大（下游同口径）');
 });
 
 // ============================================================

@@ -200,6 +200,7 @@
 | 日K降级链判据 | **根数 ≥10 且末根=今天（新鲜）**；stale 不终止链；全 stale 取末根最新（并列按 东财>同花顺>腾讯）；全 <10 根取最长可用集 | volumeEngine.js `_chooseDailyBars` / `_fetchDailyBars`（20261019a） |
 | 当日 bar 终值对齐 | 末根日期 = quote 日期 → 以腾讯实时 quote 覆写 OHLC/量/额（实质偏差 >0.1% close 或 >0.5% 量才留痕）；quote 日期更新且为今日 → 补齐当日 bar；quote 缺失/停牌（量 0）→ 不动 | volumeEngine.js `_reconcileTodayBar`（20261019b） |
 | 腾讯量单位按板块 | 科创板（sh688/689）腾讯三接口（qt 快照/分时 cumVol/日K volume）恒为「股」；其余板块为「手」。契约：quote.volume=股、日K/分时=手，源头归一 | stockData.js `tencentVolumeUnitIsShares`（20261019b） |
+| **量比直采（非本地重算）** | 量比（volume ratio）直接取腾讯行情 `fields[49]`（与东方财富 App 量比口径完全一致），经 `quote.volumeRatio` 透传至 `_precompute`；有效（finite>0）时**替代本地「今日量 ÷ 前 5 日均量」**，并标注 `ratio5Basis='tencent_quote'`；缺失/无效（未开盘/未解析/0）退回本地重算并标注 `ratio5Basis='local_fallback'`，dataGaps 如实说明来源 | stockData.js `fetchTencentQuote`（20261019c）；volumeEngine.js `_precompute`/`computeVolumeEngine`/`analyzeVolume` |
 | 统一量能档位 | **定档** = 当日量 ÷ 前 5 日均量（基准不含当日）；**二次确认** = 60 日均量 ×1.5 / ×0.7；放大 = `confirm==='放量' \|\| ratio5>1.3`，缩量 = `confirm==='缩量' \|\| ratio5<0.7`（**与 `_comboEngine` 的 amplified/shrunk 同式，改动必须两处同步**）；五档量能态 `huge/amp/flat/shrink/dry` 对应 `ratio5>2.5 / >1.3 / [0.7,1.3] / <0.7 / <0.4` | volumeEngine.js `_volTriState` / `_volumeTier` |
 | 日K volume 单位归一 | 东财/同花顺 = 股（÷100）、腾讯 = 手（÷1）；capitalFlow 复用引擎 bars 前统一折算为「手」，与 `getHistory()` 同口径 | capitalFlow.js `VOLUME_TO_LOT` |
 
@@ -225,3 +226,21 @@
 **诚实性设计**：跨口径分歧不静默取一侧，由 `divergenceNote` 如实标注两类情形——①**跨窗口**（近 5 日量能与近 20 日常规水平分处不同档位，说明近期量能抬升/回落）；②**跨基准**（÷5日均量原始档位与 60 日均量确认结论不一致，说明对外取判定档位）。前端两卡均展示口径来源（`unified.basis` / `volumeTier.basis`）。
 
 **验证**：`scripts/test_volume_consistency.js` 91 项零网络回归（9 组：边界同源 / tier 与判定同式 / 分歧标注 / 五档覆盖 / 零副作用回退 / 端到端 A-B-C 同源 / 单位换算 / 载荷控制 / 引擎失败降级）；服务端实测 6 只（含原互斥样本）三方全一致。
+
+### 8.8 量比直采数据源（20261019c · 用户指令：量比向腾讯取值，不在本地重算）
+
+**用户指令**：「把模型的量比数据直接向 mcp 或通过腾讯或者同花顺等数据源取值，不要在本地工作台进行计算」。
+
+**根因回顾**：此前量比 = 本地用日 K 重算的「今日量 ÷ 前 5 日均量」，与东方财富 App 量比存在口径/时滞差异（用户原反馈 新洋丰 000902 工作台 0.97 vs 东财 App 0.99）。
+
+**修复**：量比改为**数据源直采**——
+1. `stockData.fetchTencentQuote` 新增解析腾讯行情 `fields[49]`（量比，与东方财富 App 口径完全一致，8 只自选股逐一吻合：000902=0.99、688289=0.74、601318=0.63 等），透出为 `quote.volumeRatio`；无效（未开盘/未解析/0）置 `null`。
+2. `volumeEngine._precompute(bars, {quoteVolumeRatio})` 收到有效值即**替代本地重算**，并标注 `ratio5Basis='tencent_quote'`；缺失/无效退回本地 `volToday/avg5` 并标注 `'local_fallback'`。
+3. `analyzeVolume` 从实时 `quote.volumeRatio` 透传，并在 `dataGaps` 透明标注「量比 X 取自腾讯实时行情直采（fields[49]），非本地工作台重算」/「量比本地回退计算」。
+4. 下游（amplified/shrunk、judgedLevel、capitalFlow 五档回执）消费 `pc.ratio5` 不变——**输出格式零变化，纯内部取值来源切换，隔离修改**。
+
+**数据源选型说明**：优先腾讯 qt.gtimg `fields[49]`（已实测 = 东财 App 量比）；东财 push2 `f52`、同花顺、MCP 均可作为同源补充，但腾讯已满足「与东财一致」目标，故以腾讯为主、本地重算仅兜底。后续如需东财/MCP 交叉校验，可在 `getQuote` 并行取东财 `f52` 做二次比对，不影响现有链路。
+
+**诚实性**：结论文案仍沿用「当前量 ÷ 5 日均量」作为量比的指标描述语（保持前端一致），但其底层数值已是数据源直采量比；来源以 `ratio5Basis` 与 dataGaps 双重留痕，不伪装本地重算。
+
+**验证**：`scripts/test_volume_consistency.js` 新增第 [12] 组 10 项（注入直采值 / 不注入兜底 / 无效值退回 / 下游同口径），总量 133→143 项全绿；全量 53 测试文件仅 3 个在档旧失败（零新增）；服务端实测 8 只自选股量比均 = 腾讯直采值与东财 App 一致。

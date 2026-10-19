@@ -398,3 +398,40 @@
 - Recurrence-Count: 2（000783 同根因第一形态）
 - First-Seen: 2026-10-19
 - Last-Seen: 2026-10-19
+
+---
+
+## [LRN-20261019-003] correction / data-sourcing
+
+**Logged**: 2026-10-19T14:00:00Z
+**Priority**: high
+**Status**: resolved
+**Area**: backend / volume-analysis
+
+### Summary
+用户指令：「把模型的量比数据直接向 mcp 或通过腾讯或者同花顺等数据源取值，不要在本地工作台进行计算」。量比（volume ratio）改为**数据源直采**，不再在本地用「今日量 ÷ 前 5 日均量」重算。
+
+### Details
+此前量比走本地重算链路：取当日 bar 成交量（经 `_reconcileTodayBar` 对齐实时 quote 终值后）÷ 前 5 日均量。与东方财富 App 量比存在口径/时滞差异（用户原反馈 新洋丰 000902 工作台 0.97 vs 东财 App 0.99）。
+探查确认腾讯 qt.gtimg.cn 行情 `fields[49]` 即为量比，与东财 App 量比完全一致（8 只自选股逐一吻合：601318=0.63、600909=0.97、000783=0.82、600460=0.93、688289=0.74、603288=1.49、000902=0.99、002643=0.64）。东财 push2 `f52`、同花顺、MCP 亦可作同源补充。
+
+### Suggested Action（已实施，版本 20261019c）
+1. `stockData.fetchTencentQuote` 解析 `fields[49]` 透出 `quote.volumeRatio`（无效置 null）。
+2. `volumeEngine._precompute(bars, {quoteVolumeRatio})` 收到有效值即替代本地重算，标注 `ratio5Basis='tencent_quote'`；缺失/无效退回本地并标注 `'local_fallback'`。
+3. `analyzeVolume` 透传 `quote.volumeRatio` 至 `computeVolumeEngine`，dataGaps 透明标注来源。
+4. 下游消费 `pc.ratio5` 不变 → 输出格式零变化，隔离修改。
+
+### Prevention
+- **数值口径指标优先取数据源现成字段**：量比/换手率/市盈率等标准行情字段，数据源通常直接提供且与主流 App 同口径；本地重算易因「当日 vs 收盘」「分钟均量 vs 日均量」等口径偏差与权威源脱节。先查数据源是否已有该字段，再决定是否本地兜底。
+- **直采值须标注来源与兜底路径**：`ratio5Basis` + dataGaps 双重留痕，不伪装本地重算，也不静默回退。
+- **上游 quote 携带字段要透传到底**：`quote.volumeRatio` 经 `getQuote → analyzeCapitalFlow → analyzeVolume → computeVolumeEngine` 整链透传，缺任一环即退回兜底；改动链路时须核对透传路径。
+
+### Metadata
+- Source: user_feedback
+- Reproducible: yes（腾讯 qt.gtimg fields[49] 可脚本复现）
+- Related Files: lib/stockData.js (fetchTencentQuote), lib/volumeEngine.js (_precompute/computeVolumeEngine/analyzeVolume), server.js (/api/capital-flow), scripts/test_volume_consistency.js
+- Tags: data-sourcing, volume-ratio, tencent-quote, data-consistency
+- Pattern-Key: backend.volume_ratio_prefer_data_source
+- Recurrence-Count: 1
+- First-Seen: 2026-10-19
+- Last-Seen: 2026-10-19
