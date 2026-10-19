@@ -58,7 +58,7 @@ function mkBars(n = 60, base = 1000, today = 1000, todayClose = null) {
 
 // 统一档位方向归一化（放量 / 平量 / 缩量）
 function dirOf(text) {
-  if (/放量|齐升|齐跌/.test(text || '')) return 'amp';
+  if (/放量|齐升|巨量/.test(text || '')) return 'amp'; // 20261019e：补「巨量」（huge 档下跌新标签「巨量下跌」）；「齐跌」已随标签废弃移除
   if (/地量|缩量/.test(text || '')) return 'shrink';
   if (/平稳|平量|温和上涨|温和回调|显著下跌|平衡/.test(text || '')) return 'flat';
   return null;
@@ -140,8 +140,8 @@ group('4. capitalFlow 五档量能态全覆盖（统一档位驱动）', () => {
   // 下跌样本（当日 -5%，触发 bigDown 细分）
   const bars = mkBars(60, 1000, 800, 9.5);
   const cases = [
-    [3.0, '放量', '大量', '放量下跌', '显著放量', 'huge'],
-    [1.6, '放量', '温和放量', '量价齐跌', '温和放量', 'amp'],
+    [3.0, '放量', '大量', '巨量下跌', '显著放量', 'huge'],   // 20261019e：huge 档下跌标签「放量下跌」→「巨量下跌」
+    [1.6, '放量', '温和放量', '放量下跌', '温和放量', 'amp'], // 20261019e：amp 档下跌标签「量价齐跌」（与「下跌放量」解释矛盾）→「放量下跌」
     [1.0, null, '平量', '显著下跌', '量能平稳', 'flat'],
     [0.66, '缩量', '温和缩量', '缩量下跌', '缩量', 'shrink'],
     [0.3, '缩量', '极度缩量', '地量下跌', '地量', 'dry'],
@@ -170,11 +170,11 @@ group('5. 零副作用：未传 unifiedTier 时退回本地 20 日口径', () =>
   const vi = computeVolumeIndicators(bars, null, null);
   const vp = vi.volumePrice;
   ok(vp.unified === null, '未接入引擎 → unified 为 null（前端退回 dayVolRatio 展示）');
-  ok(vp.signal === '放量下跌', `本地口径仍生效：量比 1.5 → 放量下跌（实际 ${vp.signal}）`);
+  ok(vp.signal === '巨量下跌', `本地口径仍生效：量比 1.5 → 巨量下跌（实际 ${vp.signal}）`); // 20261019e：本地 huge 档标签改名
   // 注：本地 heatLevel 用「近3日均量 ÷ 近20日均量」= 1166.67/1000 ≈ 1.17 → 量能平稳。
   // 这正是旧口径的典型缺陷：当日量已达 20 日均量的 1.5 倍（显著放量），却因分子取近3日
   // 被前两日正常量稀释、且分子本身包含在分母内，最终判为「量能平稳」，与同卡
-  // 「放量下跌」互斥。统一引自引擎档位后此分歧已消除（见第 4/6 组）。
+  // 「巨量下跌」互斥。统一引自引擎档位后此分歧已消除（见第 4/6 组）。
   ok(vp.heatLevel === '量能平稳', `本地口径仍生效：heatLevel = 量能平稳（实际 ${vp.heatLevel}）`);
   ok(/量比1\.5/.test(vp.description), '本地口径描述保持原文案（含「量比x」）');
 
@@ -253,16 +253,16 @@ group('9. 引擎失败降级：unifiedTier 缺失时仍正常输出', () => {
   // 引擎失败 → volumeEngine 为 null → unifiedTier 不传
   const vi = computeVolumeIndicators(bars, null, null, undefined);
   ok(vi !== null && !!vi.volumePrice, 'unifiedTier 缺失时指标层正常返回');
-  ok(vi.volumePrice.signal === '放量下跌', '降级后按本地 20 日口径输出（放量下跌）');
+  ok(vi.volumePrice.signal === '巨量下跌', '降级后按本地 20 日口径输出（巨量下跌）'); // 20261019e：本地 huge 档标签改名
   ok(vi.volumePrice.unified === null, '降级后 unified 为 null，前端据此退回原展示');
   ok(typeof vi.volumePrice.description === 'string' && vi.volumePrice.description.length > 0, '降级后描述文案完整');
 
   // 脏数据：unifiedTier 结构不完整时不得崩溃
   const dirty = computeVolumeIndicators(bars, null, null, { unifiedTier: {} });
   ok(dirty !== null && !!dirty.volumePrice, 'unifiedTier 为 {} 时不崩溃');
-  // bars 为下跌样本（-5%），amplified=true 且缺 ratio5 时按 amp 档 → 下跌分支为「量价齐跌」
+  // bars 为下跌样本（-5%），amplified=true 且缺 ratio5 时按 amp 档 → 下跌分支为「放量下跌」
   const dirty2 = computeVolumeIndicators(bars, null, null, { unifiedTier: { amplified: true } });
-  ok(dirty2.volumePrice.signal === '量价齐跌', 'unifiedTier 缺 ratio5 时按 amplified 取 amp 档（量价齐跌）');
+  ok(dirty2.volumePrice.signal === '放量下跌', 'unifiedTier 缺 ratio5 时按 amplified 取 amp 档（放量下跌）'); // 20261019e：amp 档标签「量价齐跌」→「放量下跌」
   const dirty3 = computeVolumeIndicators(bars, null, null, { unifiedTier: { shrunk: true } });
   ok(dirty3.volumePrice.signal === '缩量下跌', 'unifiedTier 缺 ratio5 时按 shrunk 取 shrink 档（缩量下跌）');
 });
@@ -629,6 +629,41 @@ group('13. 预期量能规则（20261019d：该放/该缩缺口补充，3 风险
   const hit = e2e2.expectedVolumeSummary.items.find(i => i.form === '低位倍量阳线');
   ok(hit.matched === true && hit.status === '命中', `端到端低位倍量阳线命中（位置 ${e2e2.position.label}）`);
   ok(e2e2.signal.bullSupport.includes('低位倍量阳线启动，底部启动信号'), '正向量能确认进入 signal.bullSupport');
+});
+
+// ============================================================
+group('14. 量价标签与解释方向一致护栏（20261019e 用户报障：海天味业标签「量价齐跌」vs 解释「下跌放量」自相矛盾）', () => {
+  // 不变量：标签的量能方向词与解释的量能方向词必须同向——
+  //   标签放量向（放量/巨量/齐升）→ 解释不得出现缩量向词；
+  //   标签缩量向（缩量/地量/齐跌）→ 解释不得出现放量向词。
+  // 「齐跌」按缩量向校验（20 日窗口遗留词，义为价跌量缩）：旧代码把当日口径 amp 档下跌误标
+  // 「量价齐跌」而解释写「下跌放量」，正是本断言要防回归的矛盾类。
+  // 覆盖 5 档 × 涨跌两向 × 统一/本地两口径 = 20 个场景。
+  const ut = (r5) => ({
+    tier: 'x', ratio5Level: 'x', ratio5: r5, ratio20: r5, confirm: null,
+    amplified: r5 > 1.3, shrunk: r5 < 0.7, consistent: true, divergenceNote: null,
+  });
+  const check = (sig, desc, tag) => {
+    const sigAmp = /放量|巨量|齐升/.test(sig || '');
+    const sigShrink = /缩量|地量|齐跌/.test(sig || '');
+    const descAmp = /放量|巨量|齐升/.test(desc || '');
+    const descShrink = /缩量|地量|齐跌/.test(desc || '');
+    if (sigAmp) ok(!descShrink, `${tag}：标签「${sig}」放量向，解释不得缩量向（实际解释：${desc}）`);
+    if (sigShrink) ok(!descAmp, `${tag}：标签「${sig}」缩量向，解释不得放量向（实际解释：${desc}）`);
+    ok(!!sig, `${tag}：signal 非空`);
+  };
+  for (const r5 of [3.0, 1.6, 1.0, 0.66, 0.3]) {
+    for (const [close, dirName] of [[10.5, '上涨'], [9.5, '下跌']]) {
+      const bars = mkBars(60, 1000, 800, close);
+      const vp = computeVolumeIndicators(bars, null, null, { unifiedTier: ut(r5) }).volumePrice;
+      check(vp.signal, vp.description, `统一档位 ratio5=${r5} ${dirName}`);
+    }
+  }
+  for (const [today, dirName] of [[3000, '上涨'], [3000, '下跌'], [1300, '上涨'], [1300, '下跌'], [1000, '上涨'], [1000, '下跌'], [600, '上涨'], [600, '下跌'], [300, '上涨'], [300, '下跌']]) {
+    const bars = mkBars(60, 1000, today, dirName === '上涨' ? 10.5 : 9.5);
+    const vp = computeVolumeIndicators(bars, null, null).volumePrice;
+    check(vp.signal, vp.description, `本地口径 量比≈${(today / 1000).toFixed(2)} ${dirName}`);
+  }
 });
 
 // ============================================================

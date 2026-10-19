@@ -477,3 +477,41 @@
 - Recurrence-Count: 1
 - First-Seen: 2026-10-19
 - Last-Seen: 2026-10-19
+
+---
+
+## [LRN-20261019-005] correction / best_practice
+
+**Logged**: 2026-10-19T20:30:00Z
+**Priority**: high
+**Status**: resolved
+**Area**: frontend/backend
+
+### Summary
+量价信号标签「量价齐跌」与解释「下跌放量」自相矛盾（用户海天味业 603288 截图报障「严重违反工作台核心原则」）：`capitalFlow.js` 下跌分支 amp 档标签是 **20 日窗口时代的遗留词**（义为价跌+20日量能萎缩），20260902m 改当日口径时只改了解释、漏改标签——当日口径下 amp 档 = 价跌且当日量÷前5日均量 1.3~2.5（量增），标签暗示量缩与解释语义直接相反。
+
+### Details
+- 用户截图数据：603288 当日 -1.18%、量比(÷5日均量) 1.49 → amp 档 → 标签「量价齐跌」+ 解释「下跌放量，空头占优，观望为宜」。
+- 根因是**半拉子口径迁移**：20260902m 把量价主信号从 20 日窗口改为当日口径时，`volumePriceDesc`（解释）改了、`volumePriceSignal`（标签词汇表）没改——「齐升/齐跌」本就是 20 日窗口词（价量同向变化），当日口径的正确词是「放量上涨/放量下跌」。
+- 连带发现历史遗漏：旧 amp 档「量价齐跌」不在 `bearScore`/capitalCharts bear 列表 → **下跌放量不得空头分**（huge 档反而有分），多空打分与标签档位错配。
+
+### Suggested Action（已实施，版本 20261019e）
+1. `capitalFlow.js` 下跌侧分级对称化：huge「放量下跌」→「**巨量下跌**」、amp「量价齐跌」→「**放量下跌**」（desc 本就正确、未动）。
+2. 消费方全同步且**分值按档位继承、零分值变化**：`VP_MAP`（巨量下跌 −12 / 放量下跌 −9）、sameDayJudgment `vpSigMap`（−0.6 / −0.5）、capitalCharts `signalClass` 与 bear 列表（均 +2，与后端同口径）。
+3. `bearScore` 列表补「巨量下跌」，amp 档改名后自动修复「下跌放量不得空头分」遗漏。
+4. sameDayJudgment `LAYOUT_VERSION` 20260922c→20261019e 手动升版（展示值随标签名变化、因子结构哈希不捕获 → 必须手动升版强制重算当日判断，否则旧快照静默复用）。
+
+### Prevention
+- **口径迁移必须标签+解释+评分+配色四处一起改**：20260902m 只改解释漏改标签，矛盾潜伏 17 天才被用户截图发现。凡「改口径」类改动，先把该字段的**全部词汇表**（生产者分支 + 所有下游映射表 + 前端配色/计分列表 + 测试断言）列清单再动手，用 grep 把旧词在全仓扫一遍（本次扫出 4 个必须改的点 + 4 个不能改的语义正确项，如 marketEmotionModel 大盘口径「量价齐跌（资金退潮）」=价跌量缩）。
+- **「标签 vs 解释」矛盾是可单测的不变量**：新增 `test_volume_consistency.js` 第 14 组护栏——标签量能方向词与解释必须同向（放量/巨量/齐升 vs 缩量/地量/齐跌），覆盖 5 档 × 涨跌两向 × 统一/本地两口径 = 20 场景；「齐跌」按缩量向校验，旧矛盾写法回归即失败。同类「文字+数值双通道展示」的指标都应补这种不变量断言。
+- **改名时分值按档位继承而非重算**：huge 继承原放量下跌分值、amp 继承原量价齐跌分值，保证评分零变化、只修文案矛盾——符合项目「数据不变则结论不变」铁律，也避免「修 bug 顺手改结论」引发的二次信任问题。
+
+### Metadata
+- Source: user_feedback
+- Reproducible: yes（scripts/test_volume_consistency.js 第 14 组零网络可复现；603288 API 实测 signal=放量下跌/desc=下跌放量）
+- Related Files: lib/capitalFlow.js, lib/sameDayJudgment.js, public/js/capitalCharts.js, scripts/test_volume_consistency.js, docs/logic/stock-13-capital.md
+- Tags: volume-price-signal, label-desc-contradiction, half-migrated-lexicon, bear-score-omission, layout-version
+- Pattern-Key: backend.volume_price_label_desc_contradiction
+- Recurrence-Count: 1
+- First-Seen: 2026-10-19
+- Last-Seen: 2026-10-19

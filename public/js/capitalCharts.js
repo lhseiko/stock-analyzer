@@ -66,8 +66,8 @@ const CapitalCharts = {
       '温和上涨': 'cap-positive',
       '缩量上涨': 'cap-negative',
       '地量上涨': 'cap-neutral',
+      '巨量下跌': 'cap-negative',
       '放量下跌': 'cap-negative',
-      '量价齐跌': 'cap-negative',
       '显著下跌': 'cap-negative',
       '缩量下跌': 'cap-negative',
       '地量下跌': 'cap-negative',
@@ -480,7 +480,7 @@ const CapitalCharts = {
         if (['放量上涨', '量价齐升', '温和上涨'].includes(vpSig)) bs += 2;
         else if (['缩量回调'].includes(vpSig)) bs += 1;
         else if (['缩量上涨', '温和回调', '地量上涨', '地量回调', '缩量下跌', '地量下跌'].includes(vpSig)) br += 1;
-        else if (['放量下跌', '量价齐跌', '显著下跌'].includes(vpSig)) br += 2;
+        else if (['巨量下跌', '放量下跌', '显著下跌'].includes(vpSig)) br += 2; // 20261019e：与 capitalFlow.js 多空打分同口径（巨量下跌/放量下跌均 +2；旧「量价齐跌」标签已废弃）
       }
       if (mf?.summary?.summary?.['5d']?.mainNet > 0) bs += 2;
       else if (mf?.summary?.summary?.['5d']?.mainNet < 0) br += 2;
