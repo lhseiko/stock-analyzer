@@ -435,3 +435,45 @@
 - Recurrence-Count: 1
 - First-Seen: 2026-10-19
 - Last-Seen: 2026-10-19
+
+---
+
+## [LRN-20261019-004] coverage_gap / enhancement
+
+**Logged**: 2026-10-19T12:00:00Z
+**Priority**: medium
+**Status**: resolved
+**Area**: backend / volume-analysis
+
+### Summary
+用户提供「什么时候该放量/该缩量」规范性判定清单（📈该放量 4 类 / 📉该缩量 4 类 / 💎位置决定性质），要求去重后补入模型。覆盖度比对：6 类与既有规则重复（不补），4 类缺口补入 `_expectedVolumeRules`（3 风险 + 3 正向确认）。
+
+### Details
+**重复项（已覆盖，未补）**：突破压力位放量=shouldAmpNot；上涨回调洗盘=shouldShrinkHuge；高位放量滞涨=highStagnant/highHugeNotUp；底部缩量不跌=shrinkDown低位大跌后/lowOscillate/lowHugeNotDown；下跌途中缩量阴跌=shouldShrinkHuge；「位置决定性质」=_detectPosition 核心设计。
+
+**4 类缺口根因**（都是既有规则的边界未覆盖，非逻辑错误）：
+1. 高位放量下跌（放量大阴线）：`highHugeNotUp`/`highStagnant` 只覆盖 `isStagnant`(｜chgPct｜<1.2%) 或 `fellFromHigh`(上影≥2%)，明显收跌的大阴线（chgPct≤−1.2%）两者都不满足 → 漏判。
+2. 下跌途中放量阳线诱多：`shouldShrinkHuge` 的「下跌途中」场景要求 chgPct<0（只抓缩量阴跌），放量阳线（chgPct>0）完全漏判。
+3. 高位缩量横盘（温水煮青蛙）：`shrinkUp` 高位阶段要求 chgPct>0（只覆盖缩量上涨），高位缩量横盘漏判。
+4. 正向确认缺失：原模型偏矛盾/风险信号，对「突破后回踩缩量不破 / 低位倍量阳线启动 / 主升浪缩量上涨控盘」无任何正面口径。
+
+### Suggested Action（已实施，版本 20261019d）
+1. `volumeEngine.js` 新增 `_expectedVolumeRules(pc, ctx)`（纯 IF-THEN，零 LLM，导出供单测），6 信号：highVolumeDrop / downtrendVolUpTrap / highShrinkSideways（风险）+ breakoutPullbackShrink / bottomVolUpStart / mainRiseShrinkControl（正向）。
+2. `_classify` 注入：风险类→noBullReasons；downtrendVolUpTrap 在下跌途中→forceBear 强制看空；正向类→`signal.bullSupport` 数组，仅在「看多信号」或「无硬性禁多理由的看多观察」时追加 note（避免与禁多理由自相矛盾）。
+3. `_buildSummaries` 新增 `expectedVolumeSummary` 归集（6 项，无论命中逐条完整输出，未触发=未触发、不臆造）；前端 `renderVolumeEngine` 经既有通用 `renderSummary` + `expTone`（读 `item.tone`）渲染新卡片，零新 CSS。
+4. schema 升至 `volume-engine-20261019d`（`test_volume_engine.js` 断言同步）；`test_volume_consistency.js` 新增 [13] 组 38 项（143→181）。
+
+### Prevention
+- **补规则前先做覆盖度比对**：用户给外部规范文本时，逐条映射到既有规则的**精确触发条件**（不是规则名），只有边界未覆盖的才补；每条补入项须在结论里写明「为何原规则不命中、去向是哪条」，防止重复与语义重叠。
+- **正向信号必须设自相矛盾护栏**：模型以矛盾/风险信号为主时，补正向确认不能无条件追加——须限定「无硬性禁多理由」才注入 note，否则会出现「既说高位派发又说突破确认」的自相矛盾展示（违反诚实性铁律）。
+- **确定性条件规则的实测以合成端到端为主**：6 信号是条件模式，当日真实数据未必命中（实测 18 只零命中但结构/ schema/既有规则全对）；须另造合成 bars（上行至高位后放量大跌、下行至低位后倍量阳线）走 `computeVolumeEngine` 端到端验证命中→风险标签→禁看多链路，避免「空过断言」。
+
+### Metadata
+- Source: user_feedback
+- Reproducible: yes（scripts/test_volume_consistency.js [13] 组零网络可复现）
+- Related Files: lib/volumeEngine.js (_expectedVolumeRules/_classify/_buildSummaries/computeVolumeEngine), public/js/app.js (renderVolumeEngine), scripts/test_volume_consistency.js, scripts/test_volume_engine.js
+- Tags: volume-analysis, expected-volume, coverage-gap, classify-constraint, honesty-guard
+- Pattern-Key: backend.volume_expected_rules_coverage_gap
+- Recurrence-Count: 1
+- First-Seen: 2026-10-19
+- Last-Seen: 2026-10-19

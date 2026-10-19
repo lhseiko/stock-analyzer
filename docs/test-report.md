@@ -1,15 +1,15 @@
 # 测试回归报告（docs/test-report.md）
 
-> 生成时间：2026-10-16T13:05:07.168Z
+> 生成时间：2026-10-19T11:10:00.852Z
 > 模式：full
 > 命令：`node scripts/run_all_tests.js`
 
 ## 结论
 
-**❌ 43/46 通过，失败 3 项**
+**❌ 50/53 通过，失败 3 项**
 
-- 执行测试数：46
-- 通过：43　失败：3
+- 执行测试数：53
+- 通过：50　失败：3
 
 ## 明细
 
@@ -32,6 +32,7 @@
 | ❌ | `test_hot_topics_consistency.js` | 1 |
 | ✅ | `test_hot_topics_merge.js` | 0 |
 | ✅ | `test_huaan_sotp.js` | 0 |
+| ✅ | `test_industry_policy_match.js` | 0 |
 | ✅ | `test_left_card_prior_alignment.js` | 0 |
 | ✅ | `test_limit_board_top.js` | 0 |
 | ✅ | `test_llm_stream_fallback.js` | 0 |
@@ -40,8 +41,10 @@
 | ✅ | `test_macro_sentiment_factors.js` | 0 |
 | ✅ | `test_market_emotion.js` | 0 |
 | ✅ | `test_market_technical.js` | 0 |
+| ✅ | `test_market_volume_root_migration.js` | 0 |
 | ✅ | `test_metric_analysis.js` | 0 |
 | ✅ | `test_metric_analysis_order.js` | 0 |
+| ✅ | `test_minute_chart.js` | 0 |
 | ✅ | `test_news_sector_impact.js` | 0 |
 | ✅ | `test_news_sector_scoring.js` | 0 |
 | ✅ | `test_news_time.js` | 0 |
@@ -58,6 +61,10 @@
 | ❌ | `test_swallow_catch_guard.js` | 1 |
 | ✅ | `test_tech_accuracy.js` | 0 |
 | ❌ | `test_tech_face_overdue.js` | 1 |
+| ✅ | `test_ths_kline.js` | 0 |
 | ✅ | `test_trading_calendar.js` | 0 |
 | ✅ | `test_tz_smoke.js` | 0 |
+| ✅ | `test_volume_consistency.js` | 0 |
+| ✅ | `test_volume_engine.js` | 0 |
 | ✅ | `test_volume_price_signal_wiring.js` | 0 |
+| ✅ | `test_volume_root_migration.js` | 0 |

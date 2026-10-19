@@ -2205,9 +2205,12 @@ const App = {
     const ctTone = (it) => (/高位/.test(it.signal || '') ? 've-bear' : 've-block');
     // 量比口诀（7.5）：口诀3 尾盘放量 / 口诀5 量比大涨不动 = 警惕色；口诀1/2/4 = 观察色
     const rtTone = (it) => (it.id === 3 || it.id === 5) ? 've-bear' : 've-block';
+    // 预期量能规则（20261019d）：命中项按后端 item.tone 着色（ve-bull 看多=红 / ve-bear 看空=绿 / ve-block 观察=琥珀）
+    const expTone = (it) => it.tone || null;
     const pvHtml = renderSummary('位置量价补充分析（7.4 归集）', ve.positionVolumeSummary, pvTone);
     const ctHtml = renderSummary('常见矛盾信号（11.3 归集）', ve.contradictionSummary, ctTone);
     const rtHtml = renderSummary('量比实战口诀（7.5 归集）', ve.ratioSummary, rtTone);
+    const expHtml = renderSummary('预期量能规则（该放/该缩缺口补充）', ve.expectedVolumeSummary, expTone);
 
     // 得分与衰减
     const sc = ve.score || {};
@@ -2236,6 +2239,7 @@ const App = {
       ${pvHtml}
       ${ctHtml}
       ${rtHtml}
+      ${expHtml}
       ${riskHtml}
       <div class="ve-section-title">结论提示</div>
       <div class="ve-conclusion">${esc(ve.conclusion || '')}</div>

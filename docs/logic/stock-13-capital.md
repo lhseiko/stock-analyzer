@@ -196,11 +196,12 @@
 | 7.4 子阶段阈值 | 低位大跌后=低位区间且距阶段高点≤−15%；下跌初期=下跌途中且距高点>−10%；其余→位置子阶段不明（数据不足，谨慎处理） | :856-864 |
 | 7.5 口诀阈值 | 开盘量比>3（开盘 30 分钟口径；**单位除数随 barsSource 自适应**：腾讯日K为「手」→除 1，其余通道为「股」→除 100）；尾盘窗口=时间戳 14:30-15:00（须收盘且≥25 分钟）；尾盘每分钟均量≥此前×2 且拉升≥0.5%；连续低成交=近 3 日<avg60×0.7 且不创近 20 日新低；量比大涨不动=ratio5>2 且滞涨/冲高回落 | :906-1050 |
 | 分时数据形态 | 腾讯 `fetchTencentMinutes` 返回当日交易时段 09:30-11:30 + 13:00-15:00（time 格式 'HHMM'）；**收盘后会追加 15:01-15:10 盘后条目**（15:10 实测 247 条），故尾盘必须按时间戳而非末尾位置取窗 | stockData.js:1594；volumeEngine.js:958-990 |
-| 引擎 schema 版本 | volume-engine-20261017i | 输出段 `schema` |
+| 引擎 schema 版本 | volume-engine-20261019d | 输出段 `schema` |
 | 日K降级链判据 | **根数 ≥10 且末根=今天（新鲜）**；stale 不终止链；全 stale 取末根最新（并列按 东财>同花顺>腾讯）；全 <10 根取最长可用集 | volumeEngine.js `_chooseDailyBars` / `_fetchDailyBars`（20261019a） |
 | 当日 bar 终值对齐 | 末根日期 = quote 日期 → 以腾讯实时 quote 覆写 OHLC/量/额（实质偏差 >0.1% close 或 >0.5% 量才留痕）；quote 日期更新且为今日 → 补齐当日 bar；quote 缺失/停牌（量 0）→ 不动 | volumeEngine.js `_reconcileTodayBar`（20261019b） |
 | 腾讯量单位按板块 | 科创板（sh688/689）腾讯三接口（qt 快照/分时 cumVol/日K volume）恒为「股」；其余板块为「手」。契约：quote.volume=股、日K/分时=手，源头归一 | stockData.js `tencentVolumeUnitIsShares`（20261019b） |
 | **量比直采（非本地重算）** | 量比（volume ratio）直接取腾讯行情 `fields[49]`（与东方财富 App 量比口径完全一致），经 `quote.volumeRatio` 透传至 `_precompute`；有效（finite>0）时**替代本地「今日量 ÷ 前 5 日均量」**，并标注 `ratio5Basis='tencent_quote'`；缺失/无效（未开盘/未解析/0）退回本地重算并标注 `ratio5Basis='local_fallback'`，dataGaps 如实说明来源 | stockData.js `fetchTencentQuote`（20261019c）；volumeEngine.js `_precompute`/`computeVolumeEngine`/`analyzeVolume` |
+| **预期量能规则（该放/该缩缺口补充）** | 风险类：高位放量下跌（高位区间+isHugeVol+chgPct≤−1.2%）；下跌途中放量阳线诱多（下跌途中+isHugeVol+chgPct>0+非规则1命中）；高位缩量横盘（高位区间+isShrink+isStagnant）。正向确认类：突破后回踩缩量不破（breakThrough+isShrink+chgPct<0+收盘≥压力位×0.995）；低位倍量阳线（低位区间+chgPct>0+ratio5≥2）；主升浪缩量上涨（上涨中途+chgPct>0+isShrink）。全部纯 IF-THEN，命中注入 `_classify`（风险→禁看多；诱多→下跌途中强制看空；正向→`signal.bullSupport`） | volumeEngine.js `_expectedVolumeRules`（20261019d） |
 | 统一量能档位 | **定档** = 当日量 ÷ 前 5 日均量（基准不含当日）；**二次确认** = 60 日均量 ×1.5 / ×0.7；放大 = `confirm==='放量' \|\| ratio5>1.3`，缩量 = `confirm==='缩量' \|\| ratio5<0.7`（**与 `_comboEngine` 的 amplified/shrunk 同式，改动必须两处同步**）；五档量能态 `huge/amp/flat/shrink/dry` 对应 `ratio5>2.5 / >1.3 / [0.7,1.3] / <0.7 / <0.4` | volumeEngine.js `_volTriState` / `_volumeTier` |
 | 日K volume 单位归一 | 东财/同花顺 = 股（÷100）、腾讯 = 手（÷1）；capitalFlow 复用引擎 bars 前统一折算为「手」，与 `getHistory()` 同口径 | capitalFlow.js `VOLUME_TO_LOT` |
 
@@ -244,3 +245,24 @@
 **诚实性**：结论文案仍沿用「当前量 ÷ 5 日均量」作为量比的指标描述语（保持前端一致），但其底层数值已是数据源直采量比；来源以 `ratio5Basis` 与 dataGaps 双重留痕，不伪装本地重算。
 
 **验证**：`scripts/test_volume_consistency.js` 新增第 [12] 组 10 项（注入直采值 / 不注入兜底 / 无效值退回 / 下游同口径），总量 133→143 项全绿；全量 53 测试文件仅 3 个在档旧失败（零新增）；服务端实测 8 只自选股量比均 = 腾讯直采值与东财 App 一致。
+
+### 8.9 预期量能规则（20261019d · 用户提供「该放量/该缩量」判定清单，去重后补入）
+
+**用户指令**：「这里有段关于什么时候该放量和缩量的判定，你看看有没有可以补充到模型里的，重复的就不用了。」（附「📈该放量 4 类 / 📉该缩量 4 类 / 💎位置决定性质」规范性文字）。
+
+**覆盖度比对结论**：用户清单中 6 类与模型既有规则重复（突破压力位放量=shouldAmpNot、上涨回调洗盘=shouldShrinkHuge、高位放量滞涨=highStagnant/highHugeNotUp、底部缩量不跌=shrinkDown低位大跌后/lowOscillate/lowHugeNotDown、下跌途中缩量阴跌=shouldShrinkHuge、「位置决定性质」=_detectPosition 核心设计），**不重复补**；**4 类缺口补入**（`lib/volumeEngine.js` 新增 `_expectedVolumeRules`，纯 IF-THEN，零 LLM，已导出供单测）：
+
+| # | 信号 | 位置 + 量能 + 价格行为 | 为何原规则漏判（缺口根因） | 注入约束 |
+|---|---|---|---|---|
+| ① | 高位放量下跌（风险） | 高位区间 + isHugeVol + chgPct≤−1.2% | `highHugeNotUp`/`highStagnant` 仅覆盖滞涨横盘（\|chgPct\|<1.2%）或冲高回落（上影≥2%），**明显收跌的放量大阴线既非滞涨也非冲高回落** | `_classify` noBullReasons + riskTag「高位放量大阴线派发风险」 |
+| ② | 下跌途中放量阳线诱多（风险） | 下跌途中 + isHugeVol + chgPct>0 + 非规则1命中 | `shouldShrinkHuge`「下跌途中」场景要求 chgPct<0（仅缩量阴跌），**放量阳线诱多原完全漏判** | observeOnlyReasons + **下跌途中时 forceBear 强制看空** + riskTag |
+| ③ | 高位缩量横盘（风险） | 高位区间 + isShrink + isStagnant | `shrinkUp` 高位阶段要求 chgPct>0（仅高位缩量上涨），**高位缩量横盘（温水煮青蛙）漏判** | noBullReasons + riskTag「高位缩量横盘动能衰竭」 |
+| ④ | 突破后回踩缩量不破（正向） | breakThrough + isShrink + chgPct<0 + 收盘≥压力位×0.995 | 原模型**无任何正向确认口径**（偏矛盾/风险信号） | `signal.bullSupport` 看多支撑（仅在无硬性禁多理由时追加 note，避免自相矛盾） |
+| ⑤ | 低位倍量阳线启动（正向） | 低位区间 + chgPct>0 + ratio5≥2 | 同上；与规则1（连续3日放量）互补：捕捉**单日倍量阳线启动**，结论要求「需后续放量确认，不可单日下定论」 | 同上 |
+| ⑥ | 主升浪缩量上涨控盘（正向） | 上涨中途 + chgPct>0 + isShrink | 原模型对**上涨中途缩量上涨**无任何口径（既无风险也无正面） | 同上 |
+
+**接线**：`computeVolumeEngine` 调 `_expectedVolumeRules(pc, ctx)`（ctx 含 position/levels/breakThrough/rules）→ 风险标签、highlights、`_buildSummaries` 新增 `expectedVolumeSummary` 归集（6 项，**无论是否命中逐条完整输出**：未命中=未命中、数据不足=数据不足、未触发=未触发，不臆造）；前端 `renderVolumeEngine` 经既有通用 `renderSummary` 渲染新卡片（`expTone` 读 `item.tone`：ve-bull 看多=红 / ve-bear 看空=绿，红涨绿跌口径一致），零新 CSS。
+
+**诚实性设计**：①正向量能确认**不单独生成信号**，仅在 `_classify` 输出为看多信号/无硬性禁多理由的看多观察时追加 note——避免与「高位放量滞涨/放量大阴线」等禁多理由自相矛盾；②每条结论对「为何不命中」给出明确去向（如「由高位放量滞涨规则覆盖」），证明与既有规则边界清晰、非重复；③单日倍量阳线明确标注「需后续连续放量/重心抬升确认」。
+
+**验证**：`scripts/test_volume_consistency.js` 新增第 [13] 组 38 项（6 信号命中/未命中/数据不足/与既有规则不重复边界/规则1例外/归集6项完整/端到端命中→风险标签+禁看多、端到端低位倍量→bullSupport），总量 143→181 项全绿；`test_volume_engine.js` schema 断言同步升至 20261019d（221 项全绿）；全量 53 测试文件 50 通过，3 个在档旧失败零新增；服务端实测 18 只（8 自选 + 10 常见）零崩溃、`expectedVolumeSummary` 6 项结构完整、schema 正确，今日数据下未出现命中形态（600036 招商银行高位但 ratio5=0.87 平量，两高位规则均如实标注不触发原因）。

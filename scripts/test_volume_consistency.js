@@ -25,6 +25,7 @@
  *   [10] 日K降级链新鲜度判据（20261019a，000783 实测缺陷）
  *   [11] 当日 bar 实时行情终值对齐（20261019b，000902 实测缺陷：日期新鲜 ≠ 数值终值）
  *   [12] 量比数据源直采（20261019c，用户指令：量比向腾讯等数据源取值，不在本地重算）
+ *   [13] 预期量能规则（20261019d，该放/该缩缺口补充：3 风险 + 3 正向确认）
  */
 'use strict';
 
@@ -494,6 +495,140 @@ group('12. 量比数据源直采（20261019c：向腾讯取值，不在本地工
   })();
   ok(shrinkSrc.ratio5 === 0.5 && shrinkLoc.ratio5 === 0.5, '直采 0.5 与本地 0.5 数值一致（下游 shrunk 判定同源）');
   ok(!(shrinkSrc.ratio5 > 1.3) && !(shrinkLoc.ratio5 > 1.3), '两者量比 0.5 均不触发放大（下游同口径）');
+});
+
+// ============================================================
+group('13. 预期量能规则（20261019d：该放/该缩缺口补充，3 风险 + 3 正向确认）', () => {
+  // 手搭 pc（与 test_volume_engine.js [15] 同款手法，确定性口径）
+  const mkPc = (over = {}) => {
+    const n = over.n || 60;
+    return {
+      n, level: '平量', ratio5: 1, ratio5Prev: 1, ratio10: 1, ratio20: 1,
+      avg5: 1000, avg10: 1000, avg20: 1000, avg60: 1000,
+      confirm: null, chgPct: 0, closePrev: 10, closeToday: 10, highToday: 10.02,
+      volToday: 1000, vols: Array.from({ length: n }, () => 1000), lows: Array.from({ length: n }, () => 9.5), lowToday: 9.95,
+      highs: Array.from({ length: n }, () => 10.1), highToday: 10.02,
+      drawdownFromHigh: -5, pricePct12m: 0.5,
+      ...over,
+    };
+  };
+  const call = (label, pcOver, extra = {}) => VE._expectedVolumeRules(mkPc(pcOver), {
+    position: { label },
+    levels: { resistance: { price: 10 }, support: { price: 9 } },
+    breakThrough: !!extra.breakThrough,
+    rules: extra.rules || [],
+  });
+
+  // ---- ①高位放量下跌（风险）：高位 + 巨量 + 明显收跌 ----
+  const d1 = call('高位区间', { level: '天量', ratio5: 5, confirm: '放量', chgPct: -4 });
+  ok(d1.highVolumeDrop.matched === true && d1.highVolumeDrop.status === '命中', '高位+天量+大跌(-4%) → 高位放量下跌命中');
+  ok(d1.highVolumeDrop.tone === 've-bear' && /派发/.test(d1.highVolumeDrop.conclusion), '结论为高位派发口径，tone=ve-bear');
+  const d2 = call('高位区间', { level: '天量', ratio5: 5, confirm: '放量', chgPct: 0.5 });
+  ok(d2.highVolumeDrop.matched === false && /高位放量滞涨/.test(d2.highVolumeDrop.conclusion), '高位+天量+滞涨(0.5%) → 本规则未命中（交由高位放量滞涨，不重复）');
+  const d3 = call('低位区间', { level: '天量', ratio5: 5, chgPct: -4 });
+  ok(d3.highVolumeDrop.matched === false, '低位天量下跌 → 未命中（位置不满足）');
+  const d4 = call('高位区间', { level: '平量', ratio5: 1, chgPct: -4 });
+  ok(d4.highVolumeDrop.matched === false, '高位无量下跌 → 未命中（量能不达）');
+  const d5 = call('高位区间', { level: '天量', ratio5: 5, chgPct: null });
+  ok(d5.highVolumeDrop.status === '数据不足' && /无法判定/.test(d5.highVolumeDrop.conclusion), '涨跌幅缺失 → 数据不足，不臆造');
+
+  // ---- ②下跌途中放量阳线诱多（风险）：下跌途中 + 巨量 + 收阳 ----
+  const u1 = call('下跌途中', { level: '大量', ratio5: 2.6, confirm: '放量', chgPct: 2 });
+  ok(u1.downtrendVolUpTrap.matched === true && u1.downtrendVolUpTrap.tone === 've-bear', '下跌途中+大量+阳线(+2%) → 放量阳线诱多命中');
+  ok(/诱多|对倒出货/.test(u1.downtrendVolUpTrap.conclusion), '结论为诱多陷阱口径');
+  const u2 = call('下跌途中', { level: '大量', ratio5: 2.6, chgPct: -2 });
+  ok(u2.downtrendVolUpTrap.matched === false && /该缩量反放巨量/.test(u2.downtrendVolUpTrap.conclusion), '下跌途中+放量+阴跌 → 本规则未命中（交由该缩量反放巨量，不重复）');
+  const u3 = call('下跌途中', { level: '大量', ratio5: 2.6, chgPct: 2 }, { rules: [{ id: 1, matched: true }] });
+  ok(u3.downtrendVolUpTrap.matched === false, '规则1 低位吸筹完整命中 → 不误判为诱多（spec 7.4 例外）');
+  const u4 = call('高位区间', { level: '大量', ratio5: 2.6, chgPct: 2 });
+  ok(u4.downtrendVolUpTrap.matched === false, '高位放量阳线 → 未命中（位置不满足）');
+
+  // ---- ③高位缩量横盘（风险）：高位 + 缩量 + 横盘 ----
+  const s1 = call('高位区间', { level: '温和缩量', ratio5: 0.5, confirm: '缩量', chgPct: 0.3 });
+  ok(s1.highShrinkSideways.matched === true && s1.highShrinkSideways.tone === 've-bear', '高位+缩量+横盘(0.3%) → 高位缩量横盘命中');
+  ok(/动能衰竭|温水煮青蛙|补跌/.test(s1.highShrinkSideways.conclusion), '结论为动能衰竭口径');
+  const s2 = call('高位区间', { level: '温和缩量', ratio5: 0.5, confirm: '缩量', chgPct: 1.5 });
+  ok(s2.highShrinkSideways.matched === false && /高位缩量上涨/.test(s2.highShrinkSideways.conclusion), '高位缩量上涨(+1.5%) → 本规则未命中（交由高位缩量上涨，不重复）');
+  const s3 = call('低位区间', { level: '温和缩量', ratio5: 0.5, confirm: '缩量', chgPct: 0.3 });
+  ok(s3.highShrinkSideways.matched === false, '低位缩量横盘 → 未命中（位置不满足）');
+
+  // ---- ④突破后回踩缩量不破（正向确认）----
+  const p1 = call('上涨中途', { level: '温和缩量', ratio5: 0.5, confirm: '缩量', chgPct: -0.5, closeToday: 10.2 }, { breakThrough: true });
+  ok(p1.breakoutPullbackShrink.matched === true && p1.breakoutPullbackShrink.tone === 've-bull', '有效突破后缩量回踩不破 → 命中（正向确认）');
+  ok(/突破确认|健康回踩/.test(p1.breakoutPullbackShrink.conclusion), '结论为突破确认口径');
+  const p2 = call('上涨中途', { level: '温和缩量', ratio5: 0.5, confirm: '缩量', chgPct: 1.5, closeToday: 10.2 }, { breakThrough: true });
+  ok(p2.breakoutPullbackShrink.matched === false, '突破后仍上涨（非回踩）→ 未命中');
+  const p3 = call('上涨中途', { level: '温和缩量', ratio5: 0.5, confirm: '缩量', chgPct: -0.5, closeToday: 9.9 }, { breakThrough: true });
+  ok(p3.breakoutPullbackShrink.matched === false, '突破后回踩跌破原压力位 → 未命中（确认度一般）');
+  const p4 = call('上涨中途', { level: '温和缩量', ratio5: 0.5, confirm: '缩量', chgPct: -0.5, closeToday: 10.2 }, { breakThrough: false });
+  ok(p4.breakoutPullbackShrink.matched === false && p4.breakoutPullbackShrink.status === '未触发', '无有效突破前提 → 未触发');
+
+  // ---- ⑤低位倍量阳线启动（正向确认）----
+  const b1 = call('低位区间', { level: '大量', ratio5: 2.5, chgPct: 2 });
+  ok(b1.bottomVolUpStart.matched === true && b1.bottomVolUpStart.tone === 've-bull', '低位+倍量(2.5×)+阳线 → 低位倍量阳线命中');
+  ok(/底部启动信号/.test(b1.bottomVolUpStart.conclusion) && /需后续连续放量/.test(b1.bottomVolUpStart.conclusion), '结论为底部启动信号且要求后续确认（不单日下定论）');
+  const b2 = call('低位区间', { level: '温和放量', ratio5: 1.2, chgPct: 2 });
+  ok(b2.bottomVolUpStart.matched === false, '低位收阳但未达倍量(<2×) → 未命中');
+  const b3 = call('低位区间', { level: '天量', ratio5: 5, chgPct: -2 });
+  ok(b3.bottomVolUpStart.matched === false, '低位放量阴线 → 未命中（非阳线启动）');
+
+  // ---- ⑥主升浪缩量上涨（正向确认）----
+  const m1 = call('上涨中途', { level: '温和缩量', ratio5: 0.5, confirm: '缩量', chgPct: 2 });
+  ok(m1.mainRiseShrinkControl.matched === true && m1.mainRiseShrinkControl.tone === 've-bull', '上涨中途+缩量+上涨 → 主升浪缩量上涨命中（控盘）');
+  ok(/筹码锁定良好|控盘/.test(m1.mainRiseShrinkControl.conclusion), '结论为筹码锁定良好口径');
+  const m2 = call('上涨中途', { level: '大量', ratio5: 2, confirm: '放量', chgPct: 2 });
+  ok(m2.mainRiseShrinkControl.matched === false, '上涨中途放量上涨 → 未命中（非缩量）');
+  const m3 = call('上涨中途', { level: '温和缩量', ratio5: 0.5, confirm: '缩量', chgPct: -2 });
+  ok(m3.mainRiseShrinkControl.matched === false, '上涨中途缩量下跌 → 未命中（非上涨）');
+
+  // ---- 归集总结：6 项逐条完整输出 ----
+  const sm = VE._buildSummaries({
+    pv: VE._positionVolumeRules(mkPc(), { position: { label: '高位区间' }, rules: [] }),
+    ratio: { items: [] },
+    contra: VE._contradictionRules(mkPc(), { position: { label: '高位区间' }, rules: [], levels: { resistance: { price: 10 }, support: { price: 9 } } }),
+    position: { label: '高位区间' },
+    exp: call('高位区间', { level: '天量', ratio5: 5, confirm: '放量', chgPct: -4 }),
+  });
+  ok(sm.expectedVolumeSummary && Array.isArray(sm.expectedVolumeSummary.items) && sm.expectedVolumeSummary.items.length === 6, 'expectedVolumeSummary 输出 6 项（无论命中逐条完整）');
+  ok(sm.expectedVolumeSummary.items.every(i => i.form && i.status && typeof i.matched === 'boolean' && i.conclusion), '每项含 form/status/matched/conclusion');
+  ok(sm.expectedVolumeSummary.items.filter(i => i.matched).length === 1, '高位天量大跌场景仅高位放量下跌命中（其余未命中）');
+  ok(/空头类命中/.test(sm.expectedVolumeSummary.summary) && /正向量能确认/.test(sm.expectedVolumeSummary.summary), '归集总结含空头类/正向量能确认分项');
+
+  // ---- 端到端：上行至高位后放量大跌 → 命中 + 风险标签 + 不得看多 + schema ----
+  const bars = [];
+  for (let i = 0; i < 250; i++) {
+    const isLast = i === 249;
+    const base = 8 + (7 * i) / 249; // 8 → 15 单调上行至高位
+    bars.push({
+      date: `2026-01-${String((i % 28) + 1).padStart(2, '0')}`,
+      open: base, high: isLast ? base * 1.005 : base * 1.01, low: isLast ? base * 0.94 : base * 0.99,
+      close: isLast ? base * 0.96 : base, // 末根大跌约 -4%
+      volume: isLast ? 6000 : 1000, // 末根巨量
+    });
+  }
+  const e2e = VE.computeVolumeEngine({ symbol: 'X', name: 'X', bars, barsSource: 'tencent' });
+  const e2eHvd = e2e.expectedVolumeSummary.items.find(i => i.form === '高位放量下跌');
+  ok(e2e.schema === 'volume-engine-20261019d', `schema 已升 20261019d（实际 ${e2e.schema}）`);
+  ok(e2eHvd.matched === true && e2eHvd.status === '命中', `端到端高位放量大跌命中（位置 ${e2e.position.label}）`);
+  ok(e2e.riskTags.includes('高位放量大阴线派发风险'), '命中 → 风险标签「高位放量大阴线派发风险」同步输出');
+  ok(!/看多信号/.test(e2e.signal.category), `高位放量大跌不得输出看多信号（实际 ${e2e.signal.category}）`);
+
+  // ---- 端到端：下行至低位后倍量阳线 → 正向量能确认进入 signal.bullSupport ----
+  const bars2 = [];
+  for (let i = 0; i < 250; i++) {
+    const isLast = i === 249;
+    const base = 15 - (7 * i) / 249; // 15 → 8 单调下行至低位
+    bars2.push({
+      date: `2026-01-${String((i % 28) + 1).padStart(2, '0')}`,
+      open: base, high: isLast ? base * 1.04 : base * 1.01, low: isLast ? base * 0.99 : base * 0.99,
+      close: isLast ? base * 1.03 : base, // 末根阳线
+      volume: isLast ? 5000 : 1000, // 末根倍量
+    });
+  }
+  const e2e2 = VE.computeVolumeEngine({ symbol: 'X', name: 'X', bars: bars2, barsSource: 'tencent' });
+  const hit = e2e2.expectedVolumeSummary.items.find(i => i.form === '低位倍量阳线');
+  ok(hit.matched === true && hit.status === '命中', `端到端低位倍量阳线命中（位置 ${e2e2.position.label}）`);
+  ok(e2e2.signal.bullSupport.includes('低位倍量阳线启动，底部启动信号'), '正向量能确认进入 signal.bullSupport');
 });
 
 // ============================================================

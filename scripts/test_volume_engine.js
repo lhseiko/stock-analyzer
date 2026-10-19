@@ -625,9 +625,8 @@ console.log('\n[13] 输出结构完整性 + 禁交易指令扫描');
   const missing = need.filter(k => !(k in r));
   ok(missing.length === 0, `输出字段齐全（缺失：${missing.join(',') || '无'}）`);
   ok(r.rules.length === 5, '五条生死位规则全部输出（含未命中）');
-  // 20261017i：输出结构新增 volumeTier（统一量能档位真值源）+ volumeState.ratio5Level，
-  // volumeState.level 语义改为判定性档位 judgedLevel → schema 升至 20261017i。
-  ok(r.schema === 'volume-engine-20261017i', `schema 已升级 20261017i（实际 ${r.schema}）`);
+  // 20261019d：新增 expectedVolumeSummary 归集（该放/该缩缺口补充）与 signal.bullSupport → schema 升至 20261019d。
+  ok(r.schema === 'volume-engine-20261019d', `schema 已升级 20261019d（实际 ${r.schema}）`);
   ok(r.volumeTier && typeof r.volumeTier.tier === 'string', '输出含 volumeTier（统一量能档位真值源）');
   ok(r.volumeState.level === r.volumeTier.tier, `引擎展示档位等于统一档位（${r.volumeState.level}）`);
   ok('ratio5Level' in r.volumeState, 'volumeState 保留 ratio5Level（原始 ÷5日均量档位）供追溯');
