@@ -81,6 +81,17 @@ const CapitalCharts = {
       ? `<span class="cm-value ${dayPct > 0 ? 'cap-pos' : dayPct < 0 ? 'cap-neg' : ''}">${dayPct > 0 ? '+' : ''}${dayPct.toFixed(2)}%</span>`
       : '<span class="cm-value">--</span>';
     const dayVolRatio = typeof vp.dayVolRatio === 'number' ? vp.dayVolRatio : null;
+    // 20261017i：统一量能口径。此前本卡用「当日量 ÷ 前20日均量」判放量/缩量，
+    // 量能分析卡（引擎）用「÷5日均量 + 60日均量确认」，两处各算一套导致同屏互斥。
+    // 现两卡均引自引擎 unifiedTier，此处优先显示统一口径并显示口径来源；
+    // 未接入引擎（unified 为 null）时退回原 20 日口径，行为与改动前一致。
+    const un = vp.unified || null;
+    const ratioVal = (un && typeof un.ratio5 === 'number') ? un.ratio5 : dayVolRatio;
+    const ratioLabel = un ? '量比(÷5日均量)' : '今日量比';
+    const ratioCls = ratioVal !== null ? (ratioVal > 1.3 ? 'cap-pos' : (ratioVal < 0.7 ? 'cap-neg' : '')) : '';
+    const basisNote = un
+      ? `量能口径（与「量能分析」同源）：${un.basis}${un.confirm ? `　当前 60 日均量口径：${un.confirm}` : ''}${un.divergenceNote ? `　${un.divergenceNote}` : ''}`
+      : '';
     el.innerHTML = `
       <div class="cap-signal-box ${signalClass[vp.signal] || ''}">
         <div class="cap-signal-label">量价信号（当日）</div>
@@ -89,13 +100,13 @@ const CapitalCharts = {
       </div>
       <div class="cap-metrics-row">
         <div class="cap-metric"><span class="cm-label">今日涨跌</span>${dayPctHtml}</div>
-        <div class="cap-metric"><span class="cm-label">今日量比</span><span class="cm-value ${dayVolRatio !== null && dayVolRatio > 1.2 ? 'cap-pos' : dayVolRatio !== null && dayVolRatio < 0.8 ? 'cap-neg' : ''}">${dayVolRatio !== null ? dayVolRatio.toFixed(2) : '--'}</span></div>
+        <div class="cap-metric"><span class="cm-label">${ratioLabel}</span><span class="cm-value ${ratioCls}">${ratioVal !== null ? ratioVal.toFixed(2) : '--'}</span></div>
         <div class="cap-metric"><span class="cm-label">20日涨跌日</span><span class="cm-value">${vp.upDays}天/${vp.downDays}天</span></div>
         <div class="cap-metric"><span class="cm-label">20日量价比</span><span class="cm-value ${vp.ratio > 1 ? 'cap-pos' : 'cap-neg'}">${vp.ratio}</span></div>
         <div class="cap-metric"><span class="cm-label">20日净涨跌</span><span class="cm-value ${vp.netChangePct > 0 ? 'cap-pos' : vp.netChangePct < 0 ? 'cap-neg' : ''}">${vp.netChangePct > 0 ? '+' : ''}${vp.netChangePct}%</span></div>
         <div class="cap-metric"><span class="cm-label">量能热度</span><span class="cm-value">${vp.heatLevel || '--'}</span></div>
       </div>
-      <div class="cap-date-note">${dateNote}</div>
+      <div class="cap-date-note">${dateNote}${basisNote ? `<br>${basisNote}` : ''}</div>
     `;
   },
 

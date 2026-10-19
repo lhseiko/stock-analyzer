@@ -2142,9 +2142,15 @@ const App = {
 
     // 四维度客观描述
     const dim = ve.dimensions || {};
+    // 20261017i：量能口径标注。此前「量价分析」卡与「量能分析」卡各算一套
+    // （÷前20日均量 vs ÷5日均量+60日确认），同屏结论互斥。现两卡均引自引擎
+    // 统一档位（unifiedTier / volumeTier），此处明示口径来源便于用户核对。
+    const tierBasis = (ve.volumeTier && ve.volumeTier.basis)
+      || '当日量 ÷ 前5日均量（基准不含当日），叠加 60 日均量 ×1.5/×0.7 确认';
     const dimsHtml = [
       ['量能状态', dim.volumeState], ['价格位置', dim.position],
       ['资金行为', dim.capitalBehavior], ['筹码转移', dim.chipTransfer],
+      ['量能口径', `${tierBasis}（与「量价分析」卡同源）`],
     ].filter(([, v]) => v).map(([k, v]) =>
       `<div class="ve-dim"><span class="ve-dim-label">${esc(k)}</span><span class="ve-dim-value">${esc(v)}</span></div>`).join('');
 

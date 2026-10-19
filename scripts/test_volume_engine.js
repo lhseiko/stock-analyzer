@@ -625,7 +625,13 @@ console.log('\n[13] 输出结构完整性 + 禁交易指令扫描');
   const missing = need.filter(k => !(k in r));
   ok(missing.length === 0, `输出字段齐全（缺失：${missing.join(',') || '无'}）`);
   ok(r.rules.length === 5, '五条生死位规则全部输出（含未命中）');
-  ok(r.schema === 'volume-engine-20261017g', `schema 已升级 20261017g（实际 ${r.schema}）`);
+  // 20261017i：输出结构新增 volumeTier（统一量能档位真值源）+ volumeState.ratio5Level，
+  // volumeState.level 语义改为判定性档位 judgedLevel → schema 升至 20261017i。
+  ok(r.schema === 'volume-engine-20261017i', `schema 已升级 20261017i（实际 ${r.schema}）`);
+  ok(r.volumeTier && typeof r.volumeTier.tier === 'string', '输出含 volumeTier（统一量能档位真值源）');
+  ok(r.volumeState.level === r.volumeTier.tier, `引擎展示档位等于统一档位（${r.volumeState.level}）`);
+  ok('ratio5Level' in r.volumeState, 'volumeState 保留 ratio5Level（原始 ÷5日均量档位）供追溯');
+  ok(typeof r.volumeTier.amplified === 'boolean' && typeof r.volumeTier.shrunk === 'boolean', 'volumeTier 输出 amplified/shrunk 判定（与 _comboEngine 同式）');
   // 20261017f：三个归集总结逐条完整输出（spec 11.2/11.3/11.4）
   ok(r.positionVolumeSummary.items.length === 4, '位置量价归集 4 项（高位放量滞涨/低位放量震荡/缩量上涨/缩量下跌）');
   ok(r.contradictionSummary.items.length === 4, '矛盾信号归集 4 项');
