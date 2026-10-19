@@ -625,7 +625,7 @@ console.log('\n[13] 输出结构完整性 + 禁交易指令扫描');
   const missing = need.filter(k => !(k in r));
   ok(missing.length === 0, `输出字段齐全（缺失：${missing.join(',') || '无'}）`);
   ok(r.rules.length === 5, '五条生死位规则全部输出（含未命中）');
-  ok(r.schema === 'volume-engine-20261017f', `schema 已升级 20261017f（实际 ${r.schema}）`);
+  ok(r.schema === 'volume-engine-20261017g', `schema 已升级 20261017g（实际 ${r.schema}）`);
   // 20261017f：三个归集总结逐条完整输出（spec 11.2/11.3/11.4）
   ok(r.positionVolumeSummary.items.length === 4, '位置量价归集 4 项（高位放量滞涨/低位放量震荡/缩量上涨/缩量下跌）');
   ok(r.contradictionSummary.items.length === 4, '矛盾信号归集 4 项');
@@ -757,19 +757,24 @@ console.log('\n[15] 7.4 位置量价补充规则：四形态 + 子阶段（直�
 // ============ [16] 7.5 五句量比实战口诀 ============
 console.log('\n[16] 7.5 五句量比口诀：开盘/均价线/尾盘（分时）+ 三条日线条目');
 {
-  // 分时构造：120 分钟；cumVol 手；开盘 30 分钟 13 手/分，中段 1 手/分，尾段 12 手/分
-  const mkMinutes = (spec) => {
-    // spec: {rates: [perMinRate...] 按 30 分钟一段} → 生成 {time,price,avg,cumVol}
-    const out = [];
+  // 20261017g：分时构造改用真实交易时段（09:30-11:30 = 121 条 + 13:00-15:00 = 121 条，共 242 条，
+  // 时间格式 'HHMM' 与腾讯 fetchTencentMinutes 一致）——尾盘窗口需按时间戳截取，旧的 120 条/带冒号形态不再适用。
+  const TRADE_MIN = (() => {
+    const t = [];
+    for (let i = 0; i <= 120; i++) { const k = 9 * 60 + 30 + i; t.push(`${String(Math.floor(k / 60)).padStart(2, '0')}${String(k % 60).padStart(2, '0')}`); }
+    for (let i = 0; i <= 120; i++) { const k = 13 * 60 + i; t.push(`${String(Math.floor(k / 60)).padStart(2, '0')}${String(k % 60).padStart(2, '0')}`); }
+    return t;
+  })();
+  const TAIL_START = 211; // 14:30 所在索引（上午 121 条 + 13:00 起第 90 分钟）
+  const mkMinutes = (spec = {}) => {
+    const rate = (i) => (typeof spec.rate === 'function' ? spec.rate(i) : 4);
+    const price = (i) => (typeof spec.price === 'function' ? spec.price(i) : 10);
     let cum = 0;
-    for (let i = 0; i < 120; i++) {
-      const rate = spec.rates[Math.floor(i / 30)] || 0;
-      cum += rate;
-      const price = spec.prices ? spec.prices(i) : 10;
-      out.push({ time: `${String(9 + Math.floor(i / 60)).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}`, price, avg: 10, cumVol: cum });
-    }
-    return { minutes: out, prevClose: 10 };
+    const minutes = TRADE_MIN.map((time, i) => { cum += rate(i); return { time, price: price(i), avg: 10, cumVol: cum }; });
+    return { minutes, prevClose: 10 };
   };
+  // 盘中截断（模拟未收盘，截取到指定分钟数）
+  const intraday = (obj, n) => ({ minutes: obj.minutes.slice(0, n), prevClose: obj.prevClose });
   const mkPc = (over = {}) => {
     const n = over.n || 60;
     const lows = over.lows || Array.from({ length: n }, () => 9.5);
@@ -786,7 +791,7 @@ console.log('\n[16] 7.5 五句量比口诀：开盘/均价线/尾盘（分时）
   // 口诀1 命中：avg5=1000000 股 → 前 5 日每分钟均量 41.67 手；开盘 30 分钟累计 4000 手 → 量比 3.2；末端站均价线
   {
     const pc = mkPc({ avg5: 1000000 });
-    const minutes = mkMinutes({ rates: [133.33, 0, 0, 0], prices: i => (i === 119 ? 10.5 : 10) });
+    const minutes = mkMinutes({ rate: i => (i < 30 ? 133.33 : 0), price: i => (i === 241 ? 10.5 : 10) });
     const r = ve._ratioRules(pc, { minutes, position: { label: '低位区间' } });
     const k1 = r.items[0];
     ok(k1.matched === true && k1.status === '命中', `开盘量比 >3 且站均价线 → 命中（detail ${JSON.stringify(k1.detail)}）`);
@@ -794,17 +799,33 @@ console.log('\n[16] 7.5 五句量比口诀：开盘/均价线/尾盘（分时）
     ok(k1.tag === '开盘量比超3放量待确认', '标签：开盘量比超3放量待确认');
     ok(/不直接输出看多信号/.test(k1.conclusion), '结论限定为观察/确认（不直接看多）');
   }
+  // 20261017g：单位换算按日K通道自适应——腾讯日K为「手」、东财/同花顺为「股」（同日相差 100 倍）
+  {
+    const minutes = mkMinutes({ rate: i => (i < 30 ? 133.33 : 0), price: i => (i === 241 ? 10.5 : 10) });
+    const pcShare = mkPc({ avg5: 1000000 });   // 东财/同花顺口径：100 万股
+    const pcHand = mkPc({ avg5: 10000 });      // 腾讯口径：1 万手（= 100 万股）
+    const rEM = ve._ratioRules(pcShare, { minutes, position: { label: '低位区间' }, barsSource: 'eastmoney' });
+    const rTHS = ve._ratioRules(pcShare, { minutes, position: { label: '低位区间' }, barsSource: 'ths' });
+    const rTX = ve._ratioRules(pcHand, { minutes, position: { label: '低位区间' }, barsSource: 'tencent' });
+    ok(Math.abs(rEM.items[0].detail.openRatio - 3.2) < 0.05, `东财（股）通道开盘量比 3.2（实际 ${rEM.items[0].detail.openRatio}）`);
+    ok(Math.abs(rTHS.items[0].detail.openRatio - 3.2) < 0.05, `同花顺（股）通道开盘量比 3.2（实际 ${rTHS.items[0].detail.openRatio}）`);
+    ok(Math.abs(rTX.items[0].detail.openRatio - 3.2) < 0.05, `腾讯（手）通道换算后开盘量比同为 3.2（实际 ${rTX.items[0].detail.openRatio}）`);
+    // 反向校验：若腾讯「手」数据误按「股」换算（÷100），量比会虚高 100 倍（≈320）必然误判
+    const wrong = ve._ratioRules(pcHand, { minutes, position: { label: '低位区间' }, barsSource: 'eastmoney' });
+    ok(wrong.items[0].detail.openRatio > 100, `误按「股」换算时腾讯手数据量比虚高至 ${wrong.items[0].detail.openRatio}（反向印证必须按通道区分）`);
+    ok(rTX.items[0].matched === true, '腾讯通道命中口径与其余通道一致（不因单位虚高/塌陷）');
+  }
   // 口诀1 未命中：开盘量比不足（rate 低）→ 未命中
   {
     const pc = mkPc({ avg5: 1000000 });
-    const minutes = mkMinutes({ rates: [10, 0, 0, 0] });
+    const minutes = mkMinutes({ rate: i => (i < 30 ? 10 : 0) });
     const r = ve._ratioRules(pc, { minutes, position: { label: '低位区间' } });
     ok(r.items[0].matched === false && r.items[0].status === '未命中', '开盘量比不足 → 未命中');
   }
   // 口诀1 未命中：量比够但跌破均价线 → 承接失败口径
   {
     const pc = mkPc({ avg5: 1000000 });
-    const minutes = mkMinutes({ rates: [133.33, 0, 0, 0], prices: i => (i === 119 ? 9.5 : 10) });
+    const minutes = mkMinutes({ rate: i => (i < 30 ? 133.33 : 0), price: i => (i === 241 ? 9.5 : 10) });
     const r = ve._ratioRules(pc, { minutes, position: { label: '低位区间' } });
     const k1 = r.items[0];
     ok(k1.matched === false && /未站上均价线/.test(k1.conclusion), '量比够但跌破均价线 → 未命中（需站上均价线）');
@@ -827,28 +848,49 @@ console.log('\n[16] 7.5 五句量比口诀：开盘/均价线/尾盘（分时）
     const pc = mkPc({ ratio5: 1.4, ratio5Prev: 1.5, chgPct: 0.3 });
     ok(ve._ratioRules(pc, { minutes: null, position: { label: '上涨中途' } }).items[1].matched === false, '量比未回落至 0.8-1.2 → 未命中');
   }
-  // 口诀3 命中：尾盘每分钟均量 12 ≥ 此前 5×2 且价格拉升 ≥0.5%（rally 基准 = 尾盘窗口起点 ms[90]）
+  // 口诀3 命中：尾盘（14:30-15:00 时间戳窗口）每分钟均量 12 ≥ 此前 1×2 且价格拉升 ≥0.5%
+  // （rally 基准 = 尾盘窗口起点 14:30，不再是数组末尾）
   {
     const pc = mkPc({ avg5: 1000000 });
-    const minutes = mkMinutes({ rates: [13, 1, 1, 12], prices: i => (i === 90 ? 10 : (i === 119 ? 10.2 : 10)) });
+    const minutes = mkMinutes({ rate: i => (i >= TAIL_START ? 12 : 1), price: i => (i === TAIL_START ? 10 : (i === 241 ? 10.2 : 10)) });
     const r = ve._ratioRules(pc, { minutes, position: { label: '低位区间' } });
     const k3 = r.items[2];
     ok(k3.matched === true && k3.status === '命中', `尾盘放量拉升 → 命中（detail ${JSON.stringify(k3.detail)}）`);
+    ok(k3.detail.tailPerMin === 12 && k3.detail.priorPerMin === 1 && k3.detail.rally === true, '尾盘窗口按 14:30-15:00 时间戳截取（均量 12 vs 此前 1）');
     ok(k3.tag === '尾盘放量拉升真实性待确认', '标签：尾盘放量拉升真实性待确认');
     ok(/不能仅因红盘判断为抢筹/.test(k3.conclusion) && /不得输出看多信号/.test(k3.hint), '结论限定真实性待确认（不直接看多）');
   }
   // 口诀3 未命中：尾盘量够但价格未拉升
   {
     const pc = mkPc({ avg5: 1000000 });
-    const minutes = mkMinutes({ rates: [13, 1, 1, 12], prices: () => 10 });
+    const minutes = mkMinutes({ rate: i => (i >= TAIL_START ? 12 : 1) });
     const k3 = ve._ratioRules(pc, { minutes, position: { label: '低位区间' } }).items[2];
     ok(k3.matched === false && /价格未走高/.test(k3.conclusion), '尾盘放量但价格未拉升 → 未命中');
   }
-  // 口诀3 数据不足：分时不足 60 分钟
+  // 20261017g：盘中未收盘 → 不得把「最近半小时」当尾盘判定
   {
-    const short = { minutes: Array.from({ length: 30 }, (_, i) => ({ time: '09:30', price: 10, avg: 10, cumVol: i + 1 })), prevClose: 10 };
-    const k3 = ve._ratioRules(mkPc(), { minutes: short, position: { label: '低位区间' } }).items[2];
-    ok(k3.status === '数据不足' && k3.matched === false, '分时不足 60 分钟 → 口诀3 数据不足');
+    const pc = mkPc({ avg5: 1000000 });
+    const minutes = intraday(mkMinutes({ rate: i => (i >= 70 ? 12 : 1) }), 100); // 截断至 11:09
+    const r = ve._ratioRules(pc, { minutes, position: { label: '低位区间' } });
+    const k3 = r.items[2];
+    ok(k3.status === '数据不足' && k3.matched === false, '盘中未收盘 → 口诀3 数据不足（不冒判尾盘）');
+    ok(/尚未覆盖到收盘/.test(k3.conclusion), '明确指出「尚未收盘」，而非笼统的数据不足');
+    ok(r.dataGaps.some(g => /尚未覆盖收盘/.test(g)), 'dataGaps 收录未收盘说明');
+  }
+  // 20261017g：尾盘窗口不足 25 分钟（分时断了尾巴但含 1500）→ 数据不足
+  {
+    const arr = [];
+    let cum = 0;
+    for (let i = 0; i < 200; i++) { cum += 1; arr.push({ time: '0930', price: 10, avg: 10, cumVol: cum }); }
+    for (let i = 0; i < 10; i++) { cum += 12; arr.push({ time: `14${40 + i}`, price: 10, avg: 10, cumVol: cum }); }
+    cum += 12; arr.push({ time: '1500', price: 10, avg: 10, cumVol: cum });
+    const k3 = ve._ratioRules(mkPc({ avg5: 1000000 }), { minutes: { minutes: arr, prevClose: 10 }, position: { label: '低位区间' } }).items[2];
+    ok(k3.status === '数据不足' && /窗口不足 25 分钟/.test(k3.conclusion), '尾盘时间戳窗口不足 25 分钟 → 数据不足');
+  }
+  // 口诀3 数据不足：无分时
+  {
+    const k3 = ve._ratioRules(mkPc(), { minutes: null, position: { label: '低位区间' } }).items[2];
+    ok(k3.status === '数据不足' && k3.matched === false, '无分时 → 口诀3 数据不足');
   }
   // 口诀4 命中：近 3 日量 600 < avg60×0.7 且 lowToday 9.95 > 近 20 日最低 9.5
   {
@@ -989,9 +1031,16 @@ console.log('\n[17] 11.2/11.3/11.4 归集总结：逐条完整 + 常态模板 + 
     const r1 = ve.computeVolumeEngine({ symbol: '600000', name: '测试', bars, minutes: null, blacklistReasons: [] });
     ok(r1.ratioSummary.items[0].status === '数据不足' && r1.ratioSummary.items[2].status === '数据不足', '无分时 → 口诀1/3 数据不足');
     ok(r1.dataGaps.some(g => /开盘量比超3/.test(g)) && r1.dataGaps.some(g => /尾盘突然放量拉升/.test(g)), 'dataGaps 收录两条口诀的分时不足说明');
-    const minutes = { minutes: Array.from({ length: 240 }, (_, i) => ({ time: '09:30', price: 10, avg: 10, cumVol: (i + 1) * 4 })), prevClose: 10 };
-    const r2 = ve.computeVolumeEngine({ symbol: '600000', name: '测试', bars, minutes, blacklistReasons: [] });
-    ok(r2.ratioSummary.items[0].status !== '数据不足' && r2.ratioSummary.items[2].status !== '数据不足', '提供分时 → 口诀1/3 不标数据不足');
+    // 20261017g：分时须带真实交易时段时间戳（'HHMM'）且覆盖到 15:00，口诀3 才具备判定条件
+    const fullMinutes = { minutes: Array.from({ length: 242 }, (_, i) => {
+      const k = i <= 120 ? 9 * 60 + 30 + i : 13 * 60 + (i - 121);
+      return { time: `${String(Math.floor(k / 60)).padStart(2, '0')}${String(k % 60).padStart(2, '0')}`, price: 10, avg: 10, cumVol: (i + 1) * 4 };
+    }), prevClose: 10 };
+    const r2 = ve.computeVolumeEngine({ symbol: '600000', name: '测试', bars, minutes: fullMinutes, blacklistReasons: [] });
+    ok(r2.ratioSummary.items[0].status !== '数据不足' && r2.ratioSummary.items[2].status !== '数据不足', '提供完整交易日分时 → 口诀1/3 不标数据不足');
+    const r3 = ve.computeVolumeEngine({ symbol: '600000', name: '测试', bars, minutes: { minutes: fullMinutes.minutes.slice(0, 100), prevClose: 10 }, blacklistReasons: [] });
+    ok(r3.ratioSummary.items[2].status === '数据不足' && r3.ratioSummary.items[0].status !== '数据不足', '盘中未收盘分时 → 仅口诀3 标数据不足（口诀1 开盘已完整可判）');
+    ok(r3.dataGaps.some(g => /尚未覆盖收盘/.test(g)), '集成层 dataGaps 收录未收盘说明');
   }
 }
 
