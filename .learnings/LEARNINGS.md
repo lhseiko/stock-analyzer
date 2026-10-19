@@ -360,3 +360,41 @@
 - Recurrence-Count: 1
 - First-Seen: 2026-10-19
 - Last-Seen: 2026-10-19
+
+---
+
+## [LRN-20261019-002] correction
+
+**Logged**: 2026-10-19T18:20:00Z
+**Priority**: high
+**Status**: resolved
+**Area**: backend / data-source
+
+### Summary
+用户连续两轮反馈量比与东方财富 App 不一致（000783 长江证券 → 20261019a 修复；000902 新洋丰 → 本条 20261019b）。第一轮修复后**同类缺陷换了形态复发**：同花顺当日 bar 带「今日日期」但收盘后数值仍是盘中快照（close 13.69 vs 终值 13.62），「日期新鲜」判据被绕过。排查中又发现更深一层系统性 bug：**腾讯行情全家桶对科创板（sh688/689）的量单位是「股」而非「手」**，getQuote 无脑 ×100 使 688 的 quote.volume 虚增 100 倍（圣湘生物量比一度 73.53）。
+
+### Root Cause
+1. **「日期新鲜 ≠ 数值终值」**：20261019a 只校验末根日期=今天，而同花顺当日 bar 收盘后一段时间内是盘中快照，日期新鲜但数值错误。
+2. **「权威源」用反了方向**：日K降级链在通道之间选优，却忽略了**主行情源腾讯实时 quote 本身就是交易所终值**——当日 bar 根本不该依赖日K通道，应以 quote 为唯一权威源。
+3. **单位「规律」被单一样本泛化**：「腾讯量恒为手」是从 000902（深主板）单样本实证得出的，688 科创板反例一测即破。外部数据源的单位口径必须按板块实测，不能假设统一。
+
+### Suggested Action（已实施，版本 20261019b）
+1. **当日 bar 终值对齐**：`volumeEngine._reconcileTodayBar`（纯函数）——末根日期=quote 日期→以腾讯实时 quote 覆写 OHLC/量/额；quote 日期更新且为今日→直接补齐当日 bar；实质偏差（>0.1% close 或 >0.5% 量）才留痕 dataGaps，一致则幂等静默。
+2. **科创板量单位源头归一**：stockData.js `tencentVolumeUnitIsShares`（/^sh68/），qt 快照（不×100）/ 日K（÷100 归手）/ 分时 cumVol（÷100 归手）三处自适应，维持「quote.volume=股 / 日K与分时=手」既有契约。
+3. **独立第三方裁决法**：单位之争用新浪行情（volume=股、amount=元）+「量×均价≈成交额」自洽性校验裁决，不靠任何单一争议源自证。
+
+### Prevention
+- **当日/实时数据与历史数据的权威源必须分层**：历史段用日K通道，当日段永远以实时行情为准——任何日K通道的「当日 bar」都可能是延迟固化的快照。
+- **修复「A 类缺陷」后必须追问其变体**：000783 是「当日 bar 缺失」，000902 是「当日 bar 存在但数值假」——同一根因（当日 bar 不可信）的两种形态，只修看得见的那个会复发。
+- **外部数据源单位按板块实测**：主板实测结论不得外推到科创板/北交所；单位假设要写成可校验的断言（本条已入 test_volume_consistency [11.8]）。
+- **量额自洽校验是单位错的照妖镜**：`volume × 均价 ≈ amount` 不成立即为单位错，一行算式即可自动化裁决。
+
+### Metadata
+- Source: user_feedback
+- Reproducible: yes（000902 三通道原始数据可脚本复现）
+- Related Files: lib/volumeEngine.js (_reconcileTodayBar), lib/stockData.js (tencentVolumeUnitIsShares/fetchTencentQuote/fetchTencentHistory/fetchTencentMinutes), scripts/test_volume_consistency.js
+- Tags: data-consistency, unit-normalization, realtime-vs-snapshot, star-market, volume-analysis
+- Pattern-Key: backend.intraday_bar_authority_is_live_quote
+- Recurrence-Count: 2（000783 同根因第一形态）
+- First-Seen: 2026-10-19
+- Last-Seen: 2026-10-19

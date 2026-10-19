@@ -22,6 +22,8 @@
  *   [7] 单位换算：东财(股)/腾讯(手) 通道比值一致，绝对量按「手」归一
  *   [8] API 载荷：引擎内部 bars 不随接口下发
  *   [9] 引擎失败降级：unifiedTier 缺失时 computeVolumeIndicators 仍正常输出
+ *   [10] 日K降级链新鲜度判据（20261019a，000783 实测缺陷）
+ *   [11] 当日 bar 实时行情终值对齐（20261019b，000902 实测缺陷：日期新鲜 ≠ 数值终值）
  */
 'use strict';
 
@@ -346,6 +348,110 @@ group('10. 日K降级链新鲜度判据（20261019a，000783 实测缺陷）', (
     { bars: mk(140, '2026-10-16'), source: 'ths', priority: 1 },
   ]);
   ok(sim2 && sim2.source === 'eastmoney' && sim2.stale === true, '流程编排：全 stale 走完链后按优先级取东财并标 stale');
+});
+
+// ============================================================
+group('11. 当日 bar 实时行情终值对齐（20261019b，000902 实测缺陷）', () => {
+  // 背景：000902 新洋丰——东财被断、同花顺当日 bar 带今日日期但数值是盘中快照
+  //（close 13.69 / 7,923,196 股，真实终值 close 13.62 / 8,052,800 股 = 80,528 手），
+  // 20261019a 新鲜度判据只查「末根日期=今天」→ 日期新鲜 ≠ 数值终值，快路径采用错误快照
+  // → 工作台量比 0.97 / 当日 +2.39%，东财 App 0.99 / +1.87%。
+  // 修复：腾讯实时 quote（交易所终值）对齐当日 bar（覆写/补齐），单位按通道自适应。
+  const T = '2026-10-19';
+  const thsBars = [
+    { date: '2026-10-15', open: 13.16, high: 13.42, low: 12.99, close: 13.08, volume: 9433600, amount: 124203281 },
+    { date: '2026-10-16', open: 13.17, high: 13.55, low: 13.17, close: 13.37, volume: 6452996, amount: 86263040 },
+    { date: '2026-10-19', open: 13.29, high: 13.83, low: 13.29, close: 13.69, volume: 7923196, amount: 108592500 }, // 同花顺盘中快照
+  ];
+  const quote000902 = { price: 13.62, open: 13.29, high: 13.83, low: 13.29, volume: 8052800, amount: 110360000, date: '2026-10-19', prevClose: 13.37 };
+
+  // [11.1] 000902 实际场景复现：同花顺快照 → 覆写为终值
+  const b1 = JSON.parse(JSON.stringify(thsBars));
+  const r1 = VE._reconcileTodayBar(b1, quote000902, 'ths', T);
+  ok(r1 && r1.note === 'overwritten', `同花顺快照偏差 → note=overwritten（实际 ${r1 && r1.note}）`);
+  ok(b1[2].close === 13.62, `当日 close 覆写为终值 13.62（实际 ${b1[2].close}）`);
+  ok(b1[2].volume === 8052800, `当日量覆写为终值 8,052,800 股（实际 ${b1[2].volume}）`);
+  ok(b1[2].amount === 110360000, `当日额覆写为终值（ths 通道含 amount）`);
+  ok(b1[0].close === 13.08 && b1[1].close === 13.37, '历史根不动（仅对齐当日）');
+  // 覆写后当日涨跌 = (13.62-13.37)/13.37 = +1.87%（东财口径），不再是快照的 +2.39%
+  const chg = (b1[2].close - b1[1].close) / b1[1].close * 100;
+  ok(Math.abs(chg - 1.87) < 0.01, `覆写后当日涨跌 +1.87%（实际 ${chg.toFixed(2)}%，快照口径曾为 +2.39%）`);
+
+  // [11.2] tencent 通道单位换算：quote.volume 为「股」，bar 为「手」→ ÷100
+  const txBars = [
+    { date: '2026-10-16', open: 13.17, high: 13.55, low: 13.17, close: 13.37, volume: 64530 },
+    { date: '2026-10-19', open: 13.29, high: 13.83, low: 13.29, close: 13.62, volume: 80528 },
+  ];
+  const r2 = VE._reconcileTodayBar(txBars, quote000902, 'tencent', T);
+  ok(r2 && r2.note === null, `腾讯终值 + quote 终值一致 → 幂等无动作（实际 ${r2 && r2.note}）`);
+  ok(txBars[1].volume === 80528, `tencent 通道量保持「手」口径不变（实际 ${txBars[1].volume}）`);
+  ok(txBars[1].amount === undefined, 'tencent 通道不写入 amount（该通道日K无此字段）');
+
+  // [11.3] quote 比末根新且为今日 → 补齐当日 bar（全通道日K集体延迟场景）
+  const staleBars = [
+    { date: '2026-10-15', open: 13.16, high: 13.42, low: 12.99, close: 13.08, volume: 9433600 },
+    { date: '2026-10-16', open: 13.17, high: 13.55, low: 13.17, close: 13.37, volume: 6452996 },
+  ];
+  const r3 = VE._reconcileTodayBar(staleBars, quote000902, 'ths', T);
+  ok(r3 && r3.note === 'appended', `quote 更新 → 补齐当日 bar（实际 ${r3 && r3.note}）`);
+  ok(staleBars.length === 3 && staleBars[2].date === '2026-10-19', '补齐后末根 = 今日');
+  ok(staleBars[2].close === 13.62 && staleBars[2].volume === 8052800, '补齐 bar 为 quote 终值');
+
+  // [11.4] quote 陈旧（quote.date < 末根日期）→ 不动（不得用旧 quote 污染新 bar）
+  const freshBars = [
+    { date: '2026-10-18', open: 13, high: 13.5, low: 12.9, close: 13.4, volume: 7000000 },
+    { date: '2026-10-19', open: 13.29, high: 13.83, low: 13.29, close: 13.62, volume: 8052800 },
+  ];
+  const staleQuote = { ...quote000902, date: '2026-10-16', price: 13.37, volume: 6452996 };
+  const r4 = VE._reconcileTodayBar(freshBars, staleQuote, 'ths', T);
+  ok(r4 && r4.note === null, 'quote.date 早于末根 → 不动');
+  ok(freshBars[1].close === 13.62 && freshBars.length === 2, '末根未被污染');
+
+  // [11.5] 防御：quote 缺失 / price 非正 / volume 非正（停牌）/ date 缺失 → 全部不动
+  const base = JSON.parse(JSON.stringify(thsBars));
+  ok(VE._reconcileTodayBar(base, null, 'ths', T).note === null, 'quote 缺失 → 不动');
+  ok(VE._reconcileTodayBar(base, { ...quote000902, price: 0 }, 'ths', T).note === null, 'price=0 → 不动');
+  ok(VE._reconcileTodayBar(base, { ...quote000902, volume: 0 }, 'ths', T).note === null, 'volume=0（停牌）→ 不动');
+  ok(VE._reconcileTodayBar(base, { ...quote000902, date: undefined }, 'ths', T).note === null, 'date 缺失 → 不动');
+  ok(VE._reconcileTodayBar([], quote000902, 'ths', T).note === null, '空 bars → 不动');
+
+  // [11.6] 幂等：覆写后再次对齐 → 无动作（终值稳定）
+  const b6 = JSON.parse(JSON.stringify(thsBars));
+  VE._reconcileTodayBar(b6, quote000902, 'ths', T);
+  const r6 = VE._reconcileTodayBar(b6, quote000902, 'ths', T);
+  ok(r6.note === null, '二次对齐 → 幂等无动作');
+
+  // [11.7] 覆写仅当日实质偏差才留痕：微小偏差（<0.1% close 且 <0.5% 量）→ 静默
+  const tinyQuote = { ...quote000902, price: 13.62, volume: Math.round(8052800 * 1.001) };
+  const b7 = JSON.parse(JSON.stringify(thsBars));
+  b7[2] = { ...b7[2], close: 13.62, volume: 8052800 };
+  const r7 = VE._reconcileTodayBar(b7, tinyQuote, 'ths', T);
+  ok(r7.note === null, '0.1% 内微小偏差 → 静默（盘中实时对齐不留痕）');
+
+  // [11.8] 科创板单位链（20261019b 新浪裁决：腾讯对 688 的量恒为「股」非「手」）：
+  // 688289 当日真实 2,612,565 股（新浪 volume/成交额 41,366,868 与量×均价自洽）。
+  // stockData 源头归一后 quote.volume 已是股 → ths 通道覆写不再 ÷100/×100 错配 → 量比回到 0.74。
+  const { tencentVolumeUnitIsShares } = require(path.join(ROOT, 'lib', 'stockData'));
+  ok(tencentVolumeUnitIsShares('sh688289') === true, '科创板 sh688289 量单位=股');
+  ok(tencentVolumeUnitIsShares('sh689009') === true, '科创板 CDR sh689 也属股口径');
+  ok(tencentVolumeUnitIsShares('sz000902') === false, '深主板仍为手口径');
+  ok(tencentVolumeUnitIsShares('sh601318') === false, '沪主板仍为手口径');
+  ok(tencentVolumeUnitIsShares('sh000001') === false, '指数（sh000001）不受影响');
+  ok(tencentVolumeUnitIsShares('') === false && tencentVolumeUnitIsShares(null) === false, '空/缺省 → 手口径（防御）');
+  // 688 场景：ths 历史（股口径）+ quote（源头已归一为股）→ 覆写后量比 = 2612565/3553050 ≈ 0.735
+  const starBars = [
+    { date: '2026-10-16', open: 15.7, high: 15.9, low: 15.6, close: 15.76, volume: 3413707, amount: 54226413 },
+    { date: '2026-10-19', open: 15.5, high: 15.95, low: 15.46, close: 15.85, volume: 2612565, amount: 41366868 },
+  ];
+  const starQuote = { price: 15.85, open: 15.56, high: 15.95, low: 15.46, volume: 2612565, amount: 41366868, date: T }; // 源头归一后
+  const r8 = VE._reconcileTodayBar(starBars, starQuote, 'ths', T);
+  ok(r8.note === null, '科创板（源头归一后）覆写幂等无动作');
+  // 若源头未归一（quote.volume 虚增 100 倍 = 旧缺陷），覆写将产生 73 倍假量比——锁死回归
+  const badQuote = { ...starQuote, volume: 261256500 };
+  const starBarsBad = JSON.parse(JSON.stringify(starBars));
+  const rBad = VE._reconcileTodayBar(starBarsBad, badQuote, 'ths', T);
+  ok(rBad.note === 'overwritten' && starBarsBad[1].volume === 261256500,
+    '（对照）未归一的 quote 会覆写出 100 倍假量——此为已被源头修复拦截的旧缺陷形态');
 });
 
 // ============================================================
