@@ -320,6 +320,153 @@ const Charts = {
     this._bindChartGestures(chart);
   },
 
+  // ============ 20261017h：分时走势图（主图「分时」按钮） ============
+  // 数据源与「资金量能」的量能分析引擎同源（腾讯分时 fetchTencentMinutes），
+  // 因此图上看到的开盘放量、尾盘拉升与量能卡 7.5 口诀的判定是同一份数据、同一口径。
+  minute(id, data) {
+    const chart = this.get(id);
+    if (!chart || !data) return;
+    const minutes = Array.isArray(data.minutes) ? data.minutes : [];
+    if (!minutes.length) return;
+
+    // 只保留真实交易时段：腾讯分时收盘后会追加 15:01+ 的盘后条目（15:10 实测达 247 条），
+    // 与 lib/volumeEngine.js 口诀3「尾盘 14:30-15:00」同一口径，避免图上画出盘后横线。
+    const rows = minutes.filter(m => /^\d{4}$/.test(String(m.time || '')) && String(m.time) <= '1500');
+    if (!rows.length) return;
+
+    const prevClose = Number(data.prevClose) || rows[0].price;
+    const times = rows.map(m => `${String(m.time).slice(0, 2)}:${String(m.time).slice(2)}`);
+    const prices = rows.map(m => m.price);
+    const avgs = rows.map(m => (m.avg != null && isFinite(m.avg) ? +Number(m.avg).toFixed(3) : null));
+    const pcts = prices.map(p => (prevClose ? +(((p - prevClose) / prevClose) * 100).toFixed(2) : 0));
+    // 每分钟成交量 = 相邻累计量差分（与量能引擎规则5 同口径）
+    const volBars = rows.map((m, i) => (i === 0 ? (m.cumVol || 0) : Math.max(0, (m.cumVol || 0) - (rows[i - 1].cumVol || 0))));
+
+    // Y 轴以昨收为中心对称（A股分时图标准）：涨跌幅绝对值再留 5% 余量
+    const maxAbs = Math.max(...pcts.map(p => Math.abs(p)), 0.2) * 1.05;
+    const priceLo = +(prevClose * (1 - maxAbs / 100)).toFixed(3);
+    const priceHi = +(prevClose * (1 + maxAbs / 100)).toFixed(3);
+
+    const lastPct = pcts[pcts.length - 1];
+    const lineColor = lastPct > 0 ? this.colors.up : (lastPct < 0 ? this.colors.down : this.colors.flat);
+
+    // 数据日期诚实标注：休市时腾讯返回的是上一交易日分时，不得冒充今日
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const dateLabel = data.minuteDate || '日期未知';
+    const staleHint = data.minuteDate && data.minuteDate !== today ? `（最近交易日，非今日）` : '';
+
+    chart.setOption({
+      title: {
+        text: `${dateLabel} 分时走势 ${staleHint}`,
+        subtext: `昨收 ${this.fmtNum(prevClose)} · 数据源：腾讯分时（与量能分析引擎同源）`,
+        left: '8%', top: 2,
+        textStyle: { fontSize: 12, color: staleHint ? this.colors.ma10 : '#E6EDF3' },
+        subtextStyle: { fontSize: 10, color: '#8B949E' },
+      },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'cross', label: { backgroundColor: '#2A313B', color: '#E6EDF3', padding: [3, 6] } },
+        backgroundColor: 'rgba(22,27,34,0.97)',
+        borderColor: 'rgba(255,255,255,0.10)',
+        borderWidth: 1,
+        padding: [10, 14],
+        extraCssText: 'border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,0.55);backdrop-filter:blur(6px);',
+        textStyle: { color: '#E6EDF3', fontSize: 12 },
+        formatter: (params) => {
+          if (!params || !params.length) return '';
+          const i = params[0].dataIndex;
+          if (i == null) return '';
+          const c = pcts[i] > 0 ? this.colors.up : (pcts[i] < 0 ? this.colors.down : this.colors.flat);
+          const sign = pcts[i] > 0 ? '+' : '';
+          return `<div style="font-weight:600;margin-bottom:5px;color:#E6EDF3">${times[i]}</div>` +
+            `<div style="display:flex;justify-content:space-between;gap:18px;line-height:1.7">
+               <span style="color:#8B949E">价格</span>
+               <span style="color:#E6EDF3;font-variant-numeric:tabular-nums">${this.fmtNum(prices[i])}</span></div>` +
+            `<div style="display:flex;justify-content:space-between;gap:18px;line-height:1.7">
+               <span style="color:#8B949E">涨跌幅</span>
+               <span style="color:${c};font-weight:600;font-variant-numeric:tabular-nums">${sign}${pcts[i].toFixed(2)}%</span></div>` +
+            `<div style="display:flex;justify-content:space-between;gap:18px;line-height:1.7">
+               <span style="color:#8B949E">均价</span>
+               <span style="color:#E6EDF3;font-variant-numeric:tabular-nums">${avgs[i] != null ? this.fmtNum(avgs[i]) : '--'}</span></div>` +
+            `<div style="display:flex;justify-content:space-between;gap:18px;line-height:1.7">
+               <span style="color:#8B949E">分钟量</span>
+               <span style="color:#E6EDF3;font-variant-numeric:tabular-nums">${this.fmtVolume(volBars[i])}</span></div>`;
+        },
+      },
+      legend: {
+        data: ['分时价格', '均价线'],
+        top: 0, right: '3%',
+        textStyle: { fontSize: 11 }, icon: 'roundRect', itemWidth: 12, itemHeight: 8, itemGap: 14,
+      },
+      grid: [
+        { left: '8%', right: '11%', top: '18%', height: '52%' },
+        { left: '8%', right: '11%', top: '75%', height: '13%' },
+      ],
+      xAxis: [
+        {
+          type: 'category', data: times, boundaryGap: false, splitLine: { show: false },
+          axisLabel: { fontSize: 10, interval: (idx, val) => ['09:30', '10:30', '11:30', '13:00', '14:00', '15:00'].includes(val) },
+        },
+        { type: 'category', gridIndex: 1, data: times, boundaryGap: false, splitLine: { show: false }, axisLabel: { show: false } },
+      ],
+      yAxis: [
+        {
+          scale: false, min: priceLo, max: priceHi,
+          splitLine: { lineStyle: { color: 'rgba(139,148,158,0.10)' } },
+          axisLabel: { fontSize: 10, formatter: v => this.fmtNum(v) },
+        },
+        {
+          position: 'right', min: -maxAbs, max: maxAbs,
+          splitLine: { show: false },
+          axisLabel: { fontSize: 10, formatter: v => `${v > 0 ? '+' : ''}${Number(v).toFixed(2)}%` },
+        },
+        { gridIndex: 1, splitNumber: 2, axisLabel: { fontSize: 10, formatter: v => this.fmtCompact(v) } },
+      ],
+      series: [
+        {
+          name: '分时价格',
+          type: 'line',
+          data: prices,
+          showSymbol: false,
+          lineStyle: { width: 1.8, color: lineColor, shadowBlur: 6, shadowColor: window.SA_CHART ? SA_CHART.rgba(lineColor, 0.4) : 'rgba(0,0,0,0.3)' },
+          itemStyle: { color: lineColor },
+          areaStyle: { color: window.SA_CHART ? SA_CHART.grad(lineColor, 0.16, 0) : 'transparent' },
+          markLine: {
+            silent: true, symbol: 'none',
+            lineStyle: { type: 'dashed', color: '#8B949E', width: 1, opacity: 0.7 },
+            label: { show: true, formatter: '昨收', position: 'insideStartTop', fontSize: 10, color: '#8B949E' },
+            data: [{ yAxis: prevClose }],
+          },
+          z: 3,
+        },
+        {
+          name: '均价线',
+          type: 'line',
+          data: avgs,
+          showSymbol: false,
+          lineStyle: { width: 1.3, color: this.colors.ma10 },
+          itemStyle: { color: this.colors.ma10 },
+          z: 2,
+        },
+        {
+          name: '分钟量',
+          type: 'bar',
+          xAxisIndex: 1,
+          yAxisIndex: 2,
+          data: volBars.map((v, i) => {
+            // 红涨绿跌：该分钟价格较上一分钟上行=红
+            const up = i === 0 ? prices[0] >= prevClose : prices[i] >= prices[i - 1];
+            const c = up ? this.colors.up : this.colors.down;
+            return { value: v, itemStyle: { color: window.SA_CHART ? SA_CHART.rgba(c, 0.62) : c, borderRadius: [2, 2, 0, 0] } };
+          }),
+        },
+      ],
+    });
+
+    this._bindChartGestures(chart);
+  },
+
   // 主图交互：双击复位缩放
   _bindChartGestures(chart) {
     if (!chart) return;

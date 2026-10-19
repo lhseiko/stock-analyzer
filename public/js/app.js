@@ -448,10 +448,10 @@ const App = {
     }
     // `/` 聚焦搜索
     if (e.key === '/' && !isTyping) { e.preventDefault(); this.focusSearch(); return; }
-    // 数字键切换周期：1日K 2周K 3月K 4=60分钟
-    if (!isTyping && /^[1-4]$/.test(e.key)) {
-      const periods = ['daily', 'weekly', 'monthly', '60m'];
-      const p = periods[parseInt(e.key, 10) - 1];
+    // 数字键切换周期：0分时 1日K 2周K 3月K 4=60分钟（20261017h 新增 0=分时）
+    if (!isTyping && /^[0-4]$/.test(e.key)) {
+      const periods = ['minute', 'daily', 'weekly', 'monthly', '60m'];
+      const p = periods[parseInt(e.key, 10)];
       if (p && this.currentSymbol) { e.preventDefault(); this.switchPeriod(p); }
       return;
     }
@@ -632,6 +632,8 @@ const App = {
     // 切换股票后清空 60分钟缓存，避免串股
     this.history60m = [];
     this.technical60m = null;
+    // 20261017h：切换股票后清空分时缓存，避免串股（renderMinute 另有 symbol 校验兜底）
+    this.minuteData = null;
     // 中栏指标图初始化（周期默认日K / 指标默认 MACD）
     this.renderDashboardCharts(data);
     // 左栏选中行高亮
@@ -6880,6 +6882,13 @@ const App = {
       if (this.capitalDataLoaded && this.capitalLoadedSymbol === symbol) {
         this.refreshCapitalFlowSilent();
       }
+
+      // 20261017h：分时视图跟随 60s 刷新重绘——盘中分时是逐分钟增长的，静态画面会误导。
+      // （K 线主图本身仍不刷新，属既有 S11 缺陷：分析快照不重算，仅分时视图走增量重绘。）
+      if (this.currentPeriod === 'minute' && symbol === this.currentSymbol) {
+        this.minuteData = null;                 // 丢弃缓存，强制取最新分时
+        await this.renderMinute({ silent: true });
+      }
     } catch (e) {
       // 静默失败：保留上一次数值，不打扰用户
     }
@@ -6961,12 +6970,25 @@ const App = {
   renderDashboardCharts(data) {
     this.currentPeriod = 'daily';
     document.querySelectorAll('.period-btn').forEach(b => b.classList.toggle('active', b.dataset.period === 'daily'));
+    this._syncRangeControls('daily');
   },
 
-  // ---- 中栏图表：周期切换（日K/周K/月K/60分钟） ----
+  // ---- 中栏图表：周期切换（分时/日K/周K/月K/60分钟） ----
+  // 「时间范围」只对日/周/月K 有意义；分时与 60 分钟无此概念 → 隐藏范围按钮
+  _syncRangeControls(period) {
+    const el = document.getElementById('rangeControls');
+    if (el) el.style.display = (period === 'minute' || period === '60m') ? 'none' : '';
+  },
+
   async switchPeriod(period) {
     if (!this.currentSymbol) return;
     document.querySelectorAll('.period-btn').forEach(b => b.classList.toggle('active', b.dataset.period === period));
+    this._syncRangeControls(period);
+    if (period === 'minute') {
+      this.currentPeriod = period;
+      await this.renderMinute();
+      return;
+    }
     if (period === '60m') {
       this.currentPeriod = period;
       await this.render60m();
@@ -6974,6 +6996,32 @@ const App = {
     }
     this.currentPeriod = period;
     this.renderMainChart(period);
+  },
+
+  // 分时走势（20261017h）：与量能引擎同源的腾讯分时数据 + 均价线 + 分钟量柱
+  // opts.silent = 静默模式（60s 实时刷新用）：失败仅留痕，不弹提示、不切回日K，避免打断阅读
+  async renderMinute(opts = {}) {
+    const silent = !!(opts && opts.silent);
+    const symbol = this.currentSymbol;
+    try {
+      if (!this.minuteData || this.minuteData.symbol !== symbol) {
+        const resp = await fetch(`/api/minute/${encodeURIComponent(symbol)}`, { cache: 'no-store' });
+        const data = await resp.json();
+        if (data && data.success && Array.isArray(data.minutes) && data.minutes.length) {
+          this.minuteData = { symbol, minutes: data.minutes, prevClose: data.prevClose, minuteDate: data.minuteDate || null };
+        } else {
+          if (silent) { console.warn('[实时刷新] 分时数据暂不可用，保留上次画面'); return; }
+          this.toast('分时数据暂不可用，已切回日K', 'info');
+          this.fallbackToDaily();
+          return;
+        }
+      }
+      Charts.minute('candlestickChart', this.minuteData);
+    } catch (e) {
+      if (silent) { console.warn('[实时刷新] 分时重绘失败:', e && e.message); return; }
+      this.toast('分时数据加载失败，已切回日K', 'error');
+      this.fallbackToDaily();
+    }
   },
 
   // 60分钟周期：东财 klt=60，第一根收盘价与实时价同口径（不复权）
@@ -7013,6 +7061,7 @@ const App = {
   fallbackToDaily() {
     this.currentPeriod = 'daily';
     document.querySelectorAll('.period-btn').forEach(b => b.classList.toggle('active', b.dataset.period === 'daily'));
+    this._syncRangeControls('daily');
     this.renderMainChart('daily');
   },
 
