@@ -306,3 +306,57 @@
 - Recurrence-Count: 1
 - First-Seen: 2026-10-14
 - Last-Seen: 2026-10-14
+
+---
+
+## [LRN-20261019-001] correction
+
+**Logged**: 2026-10-19T08:50:00Z
+**Priority**: critical
+**Status**: resolved
+**Area**: backend
+
+### Summary
+个股页「资金量能」内三处量能结论互相矛盾——量价信号（缩量回调）/ 量能热度（量能平稳）/ 量能分析·资金行为（平量下跌）。用户原话：「这些结论严重的违反了工作台的核心逻辑数据的一致性」。实测 20 只样本 **14 只（70%）** 互斥，最刺眼的是东方财富 300059：A、C 判「缩量」而 B 判「温和放量」，方向直接相反。
+
+### Details
+三处结论此前**各自独立计算、无交叉校验**，四层根因叠加：
+
+| 层 | 问题 | 位置 |
+|---|---|---|
+| L1 数据源分裂 | 量价卡用路由传入的 `getHistory()` 日K；量能卡用引擎 `_fetchDailyBars` 四级链自拉。两条通道可能停在不同交易日 | server.js:1854 vs capitalFlow.js:728 |
+| L2 分子不同 | A = 当日成交量；B = 近 3 日均量 | capitalFlow.js:328 vs :420 |
+| L3 分母不同 | A = 前20日均量（不含当日）；B = 近20日均量（**含当日，且分子本身包含在分母内**）；C = 前5日均量 + 60日确认 | :323 / :421 / volumeEngine.js:153 |
+| L4 阈值不同 | A、B 用 1.5/1.2/0.8/0.5 五档；C 用 1.3/0.7 | :342 / :426 / :641 |
+
+**B 的结构性缺陷**：分子（近3日）包含在分母（近20日）内，比值天然被压向 1，实测几乎恒为「量能平稳」——20 只样本 6 只报平稳且多数落在 0.9~1.3，与同卡「量价信号」频繁互斥。
+
+**排查中新发现的引擎内部自相矛盾（非用户原始反馈项）**：引擎**展示用 `pc.level`（纯 ÷5日均量），而结论走 `amplified/shrunk`（档位 or 60日确认的并集）**，两者不同源 → 出现「量能档位=平量」却「资金行为=缩量上涨」（600460/000902/002594/600030 等 4/15 触发）。第一轮只修了跨卡口径，一致性从 70% 降到 27%，剩余 4 处全部来自这一层。
+
+### Root Cause
+1. 多个模块各自实现「放量/缩量」判定，没有单一真值源；每个模块改口径时都无法感知其他模块的口径变化。
+2. **「描述性档位」与「判定性状态」被混用**：`pc.level` 是描述性的（相对近 5 日），`amplified/shrunk` 是判定性的（含长期确认），引擎把描述性值直接当展示、判定性值用于结论，自相矛盾。
+3. 缺少跨卡一致性回归测试——三套口径并存数月未被测出，直到用户肉眼发现。
+
+### Suggested Action（已实施，见 commit c95088f / 版本 20261017i）
+1. **建立单一真值源**：`volumeEngine.js _volumeTier`（当日量 ÷ 前5日均量定档 + 60日均量 ×1.5/×0.7 确认），放大/缩量判定与 `_comboEngine` 的 amplified/shrunk **完全同式**，并在两处都写明「改动必须同步」的注释。
+2. **下游改引真值源，保留全部既有文案**：`computeVolumeIndicators` 新增 `opts.unifiedTier`，五档 `volBucket`（huge/amp/flat/shrink/dry）映射到原有全部信号文案，下游 `VP_MAP`/`HEAT_MAP` 打分零影响；未传入时退回本地口径，零副作用。
+3. **展示层与判定层对齐**：新增判定性档位 `judgedLevel` 用于对外展示，原始档位以 `ratio5Level` 保留追溯；引擎内部规则与打分仍照旧用 `pc.level`（隔离修改）。
+4. **数据源统一**：两卡共用引擎同一份日K（volume 按通道归一为「手」），内部 `bars` 字段返回前剔除、不下发前端。
+5. **跨卡一致性回归测试**：新增 `scripts/test_volume_consistency.js` 91 项（含端到端 A/B/C 同源比对），把「三处必须同向」变成机器可校验的约束，而非依赖肉眼。
+
+### Prevention（适用面超出本模块）
+- **凡是同一语义指标在多处展示，必须共用同一个计算真值源**；展示层只做文案映射，不做二次判定。
+- **警惕「比值型指标」的分子分母包含关系**（如近3日/近20日），这类口径会把结果压向中性值、掩盖真实信号。
+- **区分「描述性档位」与「判定性状态」**：同一指标用于展示和用于结论分支时，若取自不同口径，必然出现自相矛盾。
+- **一致性约束要机器化**：跨模块口径一致性应写成回归断言（本例 91 项），否则只能等用户肉眼发现。
+
+### Metadata
+- Source: user_feedback
+- Reproducible: yes（20 只样本 14 只互斥，可脚本复现）
+- Related Files: lib/volumeEngine.js (_volumeTier/_volTriState/judgedLevel), lib/capitalFlow.js (computeVolumeIndicators/analyzeCapitalFlow), public/js/capitalCharts.js (renderVolumePrice), public/js/app.js (renderVolumeEngine), scripts/test_volume_consistency.js
+- Tags: data-consistency, cross-module-caliber, volume-analysis, silent-contradiction
+- Pattern-Key: backend.single_source_of_truth_for_shared_metric
+- Recurrence-Count: 1
+- First-Seen: 2026-10-19
+- Last-Seen: 2026-10-19

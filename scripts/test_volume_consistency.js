@@ -264,6 +264,91 @@ group('9. 引擎失败降级：unifiedTier 缺失时仍正常输出', () => {
 });
 
 // ============================================================
+group('10. 日K降级链新鲜度判据（20261019a，000783 实测缺陷）', () => {
+  // 背景：000783 长江证券——东财被断(0根)、同花顺 140 根但末根止于 10-16（当日K线延迟）、
+  // 腾讯 321 根有 10-19。旧判据「≥10 根即采用」直接用同花顺 → 工作台量比 1.26（10-16 口径）
+  // vs 东财 App 0.82（10-19 口径），且「当日涨跌」也是三天前的。
+  const T = '2026-10-19';
+  const mk = (n, lastDate) => Array.from({ length: n }, (_, i) => ({
+    date: lastDate, open: 10, high: 10.3, low: 9.7, close: 10, volume: 1000,
+  }));
+  const bar = (dates) => dates.map(d => ({ date: d, open: 10, high: 10.3, low: 9.7, close: 10, volume: 1000 }));
+
+  // [10.1] 000783 实际场景复现：东财缺位 + 同花顺 stale + 腾讯 fresh → 必须选腾讯
+  const r1 = VE._chooseDailyBars([
+    { bars: bar(['2026-10-15', '2026-10-16']), source: 'ths', priority: 1 },       // <10 根，不入候选
+    { bars: mk(140, '2026-10-16'), source: 'ths', priority: 1 },
+    { bars: mk(321, '2026-10-19'), source: 'tencent', priority: 2 },
+  ], T);
+  ok(r1 && r1.source === 'tencent', `同花顺 stale + 腾讯 fresh → 选腾讯（实际 ${r1 && r1.source}）`);
+  ok(r1 && r1.stale === false, '选中通道末根=今天 → stale=false');
+
+  // [10.2] 东财 fresh → 立即采用（快路径语义：fresh 在前优先）
+  const r2 = VE._chooseDailyBars([
+    { bars: mk(320, T), source: 'eastmoney', priority: 0 },
+    { bars: mk(321, T), source: 'tencent', priority: 2 },
+  ], T);
+  ok(r2 && r2.source === 'eastmoney' && r2.stale === false, '东财 fresh → 直接选东财（不落到低优先级）');
+
+  // [10.3] 全部 stale 且末根并列（停牌/节假日）→ 按通道优先级选东财（字段全优先，与旧行为一致）
+  const r3 = VE._chooseDailyBars([
+    { bars: mk(140, '2026-10-16'), source: 'ths', priority: 1 },
+    { bars: mk(321, '2026-10-16'), source: 'tencent', priority: 2 },
+    { bars: mk(320, '2026-10-16'), source: 'eastmoney', priority: 0 },
+  ], T);
+  ok(r3 && r3.source === 'eastmoney', `全 stale 并列 → 选东财（实际 ${r3 && r3.source}）`);
+  ok(r3 && r3.stale === true, '全 stale → stale=true（上层如实标注「未包含今日数据」）');
+  ok(r3 && r3.lastDate === '2026-10-16', `stale 通道末根日期回传（实际 ${r3 && r3.lastDate}）`);
+
+  // [10.4] 全 stale 且末根不同 → 选末根最新者
+  const r4 = VE._chooseDailyBars([
+    { bars: mk(140, '2026-10-15'), source: 'ths', priority: 1 },
+    { bars: mk(321, '2026-10-17'), source: 'tencent', priority: 2 },
+  ], T);
+  ok(r4 && r4.lastDate === '2026-10-17', `末根不同 → 取最新（实际 ${r4 && r4.lastDate}）`);
+  ok(r4 && r4.source === 'tencent', '末根最新者优先于通道优先级');
+
+  // [10.5] 全部不足 10 根 → null（外层走「最长可用集」兜底）
+  const r5 = VE._chooseDailyBars([
+    { bars: bar(['2026-10-15', '2026-10-16']), source: 'ths', priority: 1 },
+  ], T);
+  ok(r5 === null, '全部候选 <10 根 → null（外层兜底）');
+
+  // [10.6] 空候选 → null
+  ok(VE._chooseDailyBars([], T) === null, '空候选 → null');
+
+  // [10.7] 东财 stale 根数多、腾讯 fresh 根数少 → fresh 胜出（新鲜性 > 根数）
+  const r7 = VE._chooseDailyBars([
+    { bars: mk(320, '2026-10-16'), source: 'eastmoney', priority: 0 },
+    { bars: mk(11, T), source: 'tencent', priority: 2 },
+  ], T);
+  ok(r7 && r7.source === 'tencent' && r7.stale === false, '新鲜性优先于根数与通道优先级（腾讯 11 根 fresh 胜东财 320 根 stale）');
+
+  // [10.8] 外层流程语义（_fetchDailyBars 的三段式编排，20261019a 首版曾在此踩坑：
+  // stale 候选非 null 就提前 return，导致腾讯虽有今日数据也轮不到——000783 复现）。
+  // 复刻生产编排：每段收集后选取，仅 fresh（stale=false）才终止；走完全部通道后取最终。
+  const simulateFetch = (channels) => {
+    const collected = [];
+    for (const ch of channels) {
+      if (Array.isArray(ch.bars) && ch.bars.length) collected.push(ch);
+      const got = VE._chooseDailyBars(collected, T);
+      if (got && !got.stale) return got;
+    }
+    return VE._chooseDailyBars(collected, T);
+  };
+  const sim1 = simulateFetch([
+    { bars: mk(140, '2026-10-16'), source: 'ths', priority: 1 },
+    { bars: mk(321, T), source: 'tencent', priority: 2 },
+  ]);
+  ok(sim1 && sim1.source === 'tencent' && sim1.stale === false, '流程编排：同花顺 stale 不终止链，继续取到腾讯 fresh');
+  const sim2 = simulateFetch([
+    { bars: mk(320, '2026-10-16'), source: 'eastmoney', priority: 0 },
+    { bars: mk(140, '2026-10-16'), source: 'ths', priority: 1 },
+  ]);
+  ok(sim2 && sim2.source === 'eastmoney' && sim2.stale === true, '流程编排：全 stale 走完链后按优先级取东财并标 stale');
+});
+
+// ============================================================
 console.log('\n' + '='.repeat(60));
 console.log(`结果：${pass} 通过 / ${fail} 失败`);
 console.log('='.repeat(60));
