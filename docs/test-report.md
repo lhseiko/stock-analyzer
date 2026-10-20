@@ -1,6 +1,6 @@
 # 测试回归报告（docs/test-report.md）
 
-> 生成时间：2026-10-19T11:10:00.852Z
+> 生成时间：2026-10-20T04:18:47.787Z
 > 模式：full
 > 命令：`node scripts/run_all_tests.js`
 

@@ -55,6 +55,7 @@
 - **旧 schema 强制重算**：复用门控 `schemaVersion===SCHEMA_VERSION` 防止旧结论静默复用（sameDayJudgment.js:2166）。但⚠️ 反面风险：改因子结构但**忘升 LAYOUT_VERSION** → 哈希不变 → 旧记录被判「同 schema」永久复用（记忆铁律已记此坑，test_schema_version_guard.js 防御）。
 - **长期判断不核算**：`longTermJudgment.js:12` 明确「不落盘、不核算准确率」，每次打开自动重算——长期判断无准确率台账（设计决策，非 bug，但 accuracy.html 无长期 tab）。
 - **启动兜底**：服务未常驻时 `settleAll()` 仅补跑一次（server.js:2413-2435），长期 pending 风险（J15/J16 同记）。
+- **非交易日基准日双防呆（20261020a，ERR-20261020-001）**：情绪台账的 baseDate 可能落非交易日——marketEmotionModel 在上证日线通道瞬时失败时把 baselineDate 兜底为 today（marketEmotionModel.js:832），若当天为周末/节假日则该值落非交易日，上证无该日 K 线，`settleRecord` 的 `findIndex` 恒 -1 → 记录永久 pending（用户截图「结算的数量比预测的数量少太大」实为该单条卡死+重复计数，非结算系统故障）。修复：①结算侧 `settleRecord` 基准日比对经 `resolveBaseDate` 回滚到上一交易日（sentimentAccuracy.js:161），与 20261013f targetDate 防呆对称，且不变量 `nextTradingDay(d)==nextTradingDay(previousTradingDay(d))` 保证目标日不受影响（test_event_weight_sentiment_acc.js 锁定）；②留档侧 `recordDailyJudgment` 同样回滚，且回滚而来的记录不得覆盖目标日既有留档——通道故障日的降级结论不得顶替正常交易日的完整判断（:79-97）；③存量脏记录（周日基准日）删除。
 
 ## 六、逻辑漏洞自查清单（审计用）
 
@@ -74,5 +75,5 @@
 | LEARN_MIN_SAMPLE（短期） | 5 | sameDayJudgment.js:1200 |
 | LEARN_MIN_SAMPLE（情绪） | 20 | marketEmotionModel.js:68 |
 | LEARN_MIN_SAMPLE（舆情拐点） | 15 | sentimentTurningPoint.js:39 |
-| APP_VERSION（缓存破坏戳） | 20261016a | server.js:98 |
+| APP_VERSION（缓存破坏戳） | 20261020a | server.js:98 |
 | 结算槽位 | 15:30（每分钟检查） | server.js:2200,2261 |

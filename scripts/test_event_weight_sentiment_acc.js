@@ -125,6 +125,73 @@ t('过期未结算检出', () => {
   assert.ok(a.overdueCount >= 1);
 });
 
+console.log('\n=== 非交易日基准日防呆（ERR-20261020-001，20261020a）===');
+const fsTm = require('fs');
+const pathTm = require('path');
+const calTm = require('../lib/cnTradingCalendar');
+t('resolveBaseDate：周日回滚到上周五', () => assert.strictEqual(sa.resolveBaseDate('2026-10-18'), '2026-10-16'));
+t('resolveBaseDate：国庆假期中段回滚到节前最后交易日', () => assert.strictEqual(sa.resolveBaseDate('2026-10-03'), '2026-09-30'));
+t('resolveBaseDate：交易日原样返回', () => assert.strictEqual(sa.resolveBaseDate('2026-10-16'), '2026-10-16'));
+t('resolveBaseDate：空值透传（不伪造日期）', () => {
+  assert.strictEqual(sa.resolveBaseDate(null), null);
+  assert.strictEqual(sa.resolveBaseDate(undefined), undefined);
+});
+t('不变量：非交易日 d 的 nextTradingDay(d) == nextTradingDay(previousTradingDay(d))（基准日回滚不改目标日）', () => {
+  for (const d of ['2026-10-18', '2026-10-03', '2026-01-01', '2028-01-02']) {
+    assert.strictEqual(calTm.nextTradingDay(d), calTm.nextTradingDay(calTm.previousTradingDay(d)), d);
+  }
+});
+t('结算侧源码断言：baseIdx 比对走 resolveBaseDate 回滚（防呆接线在位）', () => {
+  const src = fsTm.readFileSync(pathTm.join(__dirname, '..', 'lib', 'sentimentAccuracy.js'), 'utf8');
+  assert.ok(/findIndex\(h => h\.date === resolveBaseDate\(rec\.baseDate\)\)/.test(src), 'baseIdx 查询应经 resolveBaseDate');
+});
+// 功能实测：用 2028 年未来日期，绝不与真实留档（≤ 今日）碰撞；finally 复原现场
+function withTempRecord(dateStr, fn) {
+  const file = pathTm.join(sa.DIR, `${dateStr}.json`);
+  const existed = fsTm.existsSync(file);
+  const backup = existed ? fsTm.readFileSync(file, 'utf8') : null;
+  try { return fn(file); } finally {
+    if (existed) fsTm.writeFileSync(file, backup); else if (fsTm.existsSync(file)) fsTm.unlinkSync(file);
+  }
+}
+t('留档侧：非交易日 baseDate 回滚到上一交易日并落盘（功能实测）', () => {
+  withTempRecord('2027-12-31', file => {
+    const rec = sa.recordDailyJudgment(
+      { level: '预警', impliedDir: '看跌', zScore: -0.3, reasons: [{ text: '单测' }] },
+      { baseDate: '2028-01-02' } // 周日 → 回滚 2027-12-31（周五）
+    );
+    assert.ok(rec, '应留档');
+    assert.strictEqual(rec.baseDate, '2027-12-31');
+    assert.strictEqual(rec.targetDate, '2028-01-03'); // 下一交易日（01-01 周六、01-02 周日之后）
+    assert.ok(fsTm.existsSync(file), '应写入回滚后的基准日文件');
+    assert.ok(!fsTm.existsSync(pathTm.join(sa.DIR, '2028-01-02.json')), '不得产生周日基准日脏文件');
+  });
+});
+t('留档侧：回滚而来的记录不覆盖目标日既有留档（降级结论不得顶替正常判断）', () => {
+  withTempRecord('2027-12-31', file => {
+    fsTm.writeFileSync(file, JSON.stringify({ baseDate: '2027-12-31', targetDate: '2028-01-03', level: '强烈预警', impliedDirRaw: '看跌', dir: '跌', zScore: -0.9, settled: false }));
+    const rec = sa.recordDailyJudgment(
+      { level: '预警', impliedDir: '看涨', zScore: 0.3, reasons: [{ text: '单测' }] },
+      { baseDate: '2028-01-02' } // 周日，回滚目标日已有留档
+    );
+    assert.strictEqual(rec.zScore, -0.9);
+    const after = JSON.parse(fsTm.readFileSync(file, 'utf8'));
+    assert.strictEqual(after.dir, '跌');
+    assert.strictEqual(after.zScore, -0.9);
+  });
+});
+t('留档侧：交易日 baseDate 照常按原日期留档（正常路径不受影响）', () => {
+  withTempRecord('2028-01-05', file => {
+    const rec = sa.recordDailyJudgment(
+      { level: '预警', impliedDir: '看涨', zScore: 0.3, reasons: [{ text: '单测' }] },
+      { baseDate: '2028-01-05' } // 周三，交易日
+    );
+    assert.strictEqual(rec.baseDate, '2028-01-05');
+    assert.strictEqual(rec.targetDate, '2028-01-06');
+    assert.ok(fsTm.existsSync(file));
+  });
+});
+
 console.log('\n' + '='.repeat(50));
 console.log(`结果：${pass}/${pass + fail} 通过`);
 if (fail) { console.log(`${fail} 项失败 ❌`); process.exit(1); }

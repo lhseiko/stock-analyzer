@@ -553,3 +553,41 @@
 - Recurrence-Count: 1
 - First-Seen: 2026-10-19
 - Last-Seen: 2026-10-19
+
+---
+
+## [LRN-20261020-001] 兜底日期必须过交易日历：周末基准日把准确率台账卡死
+
+**Logged**: 2026-10-20T05:10:00Z
+**Type**: correction
+**Priority**: high
+
+### Summary
+情绪准确率台账「已结算数永久少于已记录数」：2026-10-18（周日）日线通道瞬时失败，`baselineDate` 兜底为 today=周日，留档基准日落非交易日 → 上证无该日 K 线 → `settleRecord` 的 `findIndex` 恒 -1 → 永久 pending。用户截图报障「结算的数量比预测的数量少太大」。
+
+### Details
+- 触发链：周日 13:38 首页调 /api/sentiment-turning-point → index bars 为空（东财/网络瞬时失败，logs 满屏 socket hang up）→ marketEmotionModel.js:832 `bars.length ? bars[bars.length-1].date : today` 兜底为周日 → server.js:942 留档 → settleRecord baseIdx=-1。
+- 既有防呆只覆盖 targetDate 一侧（20261013f：目标日撞休市日则重算），**baseDate 一侧裸奔**——「兜底为 today」在周末/节假日场景下天然非法。
+- 实证排除两项误判：①weights 总和 160 非 bug（scaleBounded 每次归一化到 100 并夹紧，:138 有注释）；②并非服务器没跑结算（重启后 settleAll 仍未结算该记录，node 直调 settleRecord 复现 settled=false）。
+- 附带发现（另开一轮）：权重自学习「当前样本不足」文案不准——priceVolume→volumePrice 改名（20261015k）致旧 key 28 样本不参与学习、新 key 仅 3 样本，indexMomentum/margin 已到 W_MAX=30，learnLog 恒空。
+
+### Suggested Action（已实施，版本 20261020a）
+1. 结算侧：新增纯函数 `resolveBaseDate`（非交易日→previousTradingDay 回滚，空值透传），`settleRecord` 基准日比对改走它；不变量 `nextTradingDay(d)==nextTradingDay(previousTradingDay(d))` 保证目标日不受回滚影响。
+2. 留档侧：`recordDailyJudgment` 同样回滚；并追加「回滚而来的记录不得覆盖目标日既有留档」——周日降级结论只剩单因子、indexValue 为 null，若允许覆盖会顶替正常记录（原方案的「幂等去重」只防 settled 覆盖，不够）。
+3. 存量：删除 data/sentiment-accuracy/2026-10-18.json（与 10-16 记录同目标同方向的重复计数产物），台账回 17 条。
+4. 测试：test_event_weight_sentiment_acc.js 新增 9 项（resolveBaseDate 4 + 不变量 1 + 接线断言 1 + 留档功能实测 3，用 2028 未来日期+finally 复原，零污染）；44/44 全绿；全量回归 50/53 零新增失败。版本戳 APP_VERSION 20261020a + public 31 处。
+
+### Prevention
+- **兜底值必须过合法性校验，尤其日期**：`X.length ? X[last] : today` 这类兜底在「today 本身可能非法」的场景（周末/节假日/休市）会把异常扩散成持久脏数据。凡兜底一个「日期/ID/代码」类字段，落库前必须过对应日历/字典校验（交易日历 cnTradingCalendar 是唯一权威源），非法则回滚到最近合法值，而不是原样落地。
+- **防呆要成对**：targetDate 有防呆、baseDate 没有——「基准日/目标日」「开始/结束」「上/下」这类成对字段，校验必须对称补齐，修一侧时主动 grep 另一侧。
+- **「少太多」先分层再定位**：用户口中的「结算比预测少」是聚合数字，先拆出 pending 明细逐条定性（在途/未来/真卡死），本案 3 条 pending 里仅 1 条是 bug——避免把「1 条卡死」修成「重建结算系统」。
+
+### Metadata
+- Source: user_feedback
+- Reproducible: yes（node -e 调 settleRecord 复现；scripts/test_event_weight_sentiment_acc.js 零网络可复现）
+- Related Files: lib/sentimentAccuracy.js, lib/marketEmotionModel.js, server.js, scripts/test_event_weight_sentiment_acc.js, .learnings/ERRORS.md
+- Tags: sentiment-accuracy, weekend-baseline, fallback-validation, trading-calendar, paired-guard
+- Pattern-Key: backend.fallback_date_must_pass_calendar
+- Recurrence-Count: 1
+- First-Seen: 2026-10-18
+- Last-Seen: 2026-10-20
