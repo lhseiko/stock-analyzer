@@ -41,6 +41,9 @@
 | ⭐ 个股亮点雷点（日志 Tab） | stock-14-highlights-tab.md | 本次完成 |
 | 📁 资料库（F10） | stock-15-f10.md | 本次完成 |
 | 🎯 策略（虚拟盘风控） | stock-16-strategy.md | 本次完成 |
+| 📐 箱体区间判定（技术面②卡内·单箱体） | stock-17-range.md | 20261020j 重写（多窗口版已废） |
+| 📏 阻力/支撑区间（有效性检验 + 侵蚀收缩） | stock-18-zone-validity.md | 20261020i 新建 / m 增侵蚀 |
+| ✏️ 手动阻力/支撑区间（②卡「手动添加」页签） | stock-19-manual-zones.md | 20261021d 新增 |
 
 ### 跨页面公共支撑
 

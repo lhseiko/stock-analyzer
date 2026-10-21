@@ -12,6 +12,7 @@
  *   [13] 输出结构完整性与禁交易指令扫描   [14] 缺 amount/turnover 通道降级
  *   [15] 7.4 不同位置量价补充规则（四形态+子阶段） [16] 7.5 五句量比实战口诀
  *   [17] 11.2/11.3/11.4 三个强制归集总结 + 一致性约束 + s40 约束
+ *   [18] 20261020a 底部区域相位分类（构筑期/启动确认区/方向不明）：该放/该缩期望单源推导、两侧互斥
  * 说明：网络采集（东财日K/分时/公告）由服务端实测覆盖，本文件只测确定性引擎逻辑。
  */
 const ve = require('../lib/volumeEngine');
@@ -351,12 +352,15 @@ console.log('\n[6] 五大生死位规则：命中/未命中/数据不足标注')
 }
 {
   // 规则5 分时无量拉升：分时价创新高 + 量逐级萎缩 + 无接力
+  // 20261020c：规则5 尾盘窗口改按 time 时间戳截取后，夹具必须用真实 'HHMM' 时间戳
+  // （腾讯分时契约；旧的 '09:30' 带冒号格式不可解析，会被整体剔除误判「交易时段数据不足」）
+  const mm120 = Array.from({ length: 120 }, (_, i) => { const k = 9 * 60 + 30 + i; return `${String(Math.floor(k / 60)).padStart(2, '0')}${String(k % 60).padStart(2, '0')}`; });
   const bars = mkBars(120, i => flatBar(10 + i * 0.02, 1000));
   let cum = 0;
   const minutes = { minutes: Array.from({ length: 120 }, (_, i) => {
     cum += Math.max(1, 30 - i * 0.2);
     const price = 12 + i * 0.001;
-    return { time: '09:30', price, avg: price, cumVol: cum };
+    return { time: mm120[i], price, avg: price, cumVol: cum };
   }), prevClose: 12 };
   const r = ve.computeVolumeEngine({ symbol: '600000', name: '测试', bars, minutes, blacklistReasons: [] });
   ok(r.rules[4].matched === true, '规则5 分时无量拉升 → 命中');
@@ -372,13 +376,59 @@ console.log('\n[6] 五大生死位规则：命中/未命中/数据不足标注')
   // 规则5 未命中：分时放量拉升（有接力）
   const bars = mkBars(120, i => flatBar(10 + i * 0.02, 1000));
   let cum = 0;
+  const mm120b = Array.from({ length: 120 }, (_, i) => { const k = 9 * 60 + 30 + i; return `${String(Math.floor(k / 60)).padStart(2, '0')}${String(k % 60).padStart(2, '0')}`; });
   const minutes = { minutes: Array.from({ length: 120 }, (_, i) => {
     cum += 50;
     const price = 12 + i * 0.001;
-    return { time: '09:30', price, avg: price, cumVol: cum };
+    return { time: mm120b[i], price, avg: price, cumVol: cum };
   }), prevClose: 12 };
   const r = ve.computeVolumeEngine({ symbol: '600000', name: '测试', bars, minutes, blacklistReasons: [] });
   ok(r.rules[4].matched === false, '分时等量拉升（有接力）→ 规则5 不命中');
+}
+// 20261020c：规则5 尾盘窗口盘后条目污染（用户 2026-10-20 截图报障 688289 圣湘生物误命中）
+// 形态忠实复刻腾讯实测：242 个交易分钟（时间戳 09:30-11:30 + 13:00-15:00），价格持续走高创日内新高
+// （688289 价格侧属实：尾盘 +0.69%、14:56 创新高、收盘距最高 0.19%），但量能向尾盘放大且末 20 分钟
+// 有脉冲（688289 实测分桶 381/865/653/2333 末桶最大、末 20 分钟最大分钟量为此前均量 3.8 倍）；
+// 收盘后追加 25 条盘后条目（15:01-15:25，cumVol 恒定，其中 1 条 +3——复刻腾讯对 688289 的真实返回，
+// 该 +3 恰好落在第 3 桶区间使旧口径「萎缩」恒真）。
+{
+  const tradeTimes = [];
+  for (let i = 0; i <= 120; i++) { const k = 9 * 60 + 30 + i; tradeTimes.push(`${String(Math.floor(k / 60)).padStart(2, '0')}${String(k % 60).padStart(2, '0')}`); }
+  for (let i = 0; i <= 120; i++) { const k = 13 * 60 + i; tradeTimes.push(`${String(Math.floor(k / 60)).padStart(2, '0')}${String(k % 60).padStart(2, '0')}`); }
+  const mkPolluted = (mvFn) => {
+    let c = 0;
+    const arr = tradeTimes.map((time, i) => { c += mvFn(i); return { time, price: 15.5 + i * 0.001983, avg: 15.5, cumVol: c }; });
+    const closeCum = c;
+    for (let j = 0; j < 25; j++) arr.push({ time: `15${String(1 + j).padStart(2, '0')}`, price: 15.5 + 241 * 0.001983, avg: 15.5, cumVol: closeCum + (j === 10 ? 3 : 0) });
+    return { minutes: arr, prevClose: 15.5 };
+  };
+  const bars = mkBars(120, i => flatBar(10 + i * 0.02, 1000));
+  // A. 误命中复现：量能向尾盘放大 + 末 20 分钟有脉冲，但带 25 条零量盘后条目
+  const minutes = mkPolluted(i => 10 + i * 0.5);
+  const r = ve.computeVolumeEngine({ symbol: '600000', name: '测试', bars, minutes, blacklistReasons: [] });
+  const r5 = r.rules[4];
+  ok(r5.matched === false, '688289 形态（价创新高但量能放大+有接力）+ 盘后零量条目 → 规则5 不得命中');
+  ok(r5.dataGaps.some(g => /成交量未呈逐级萎缩/.test(g)), '未命中原因：量能实际未逐级萎缩（末桶最大）');
+  ok(r5.dataGaps.some(g => /新增量能脉冲/.test(g)), '未命中原因：尾盘存在量能脉冲接力');
+  // A/B：旧口径（原始数组位置取末尾 40/20 分钟，含 25 条零量盘后条目）在同一数据上两条件恒真 → 旧代码会误命中
+  const mvOld = [];
+  for (let i = 1; i < minutes.minutes.length; i++) mvOld.push(Math.max(0, minutes.minutes[i].cumVol - minutes.minutes[i - 1].cumVol));
+  const ob1 = mvOld.slice(-40, -30).reduce((a, b) => a + b, 0);
+  const ob2 = mvOld.slice(-30, -20).reduce((a, b) => a + b, 0);
+  const ob3 = mvOld.slice(-20, -10).reduce((a, b) => a + b, 0);
+  const ob4 = mvOld.slice(-10).reduce((a, b) => a + b, 0);
+  const oldShrink = ob1 > ob2 && ob2 >= ob3 && ob3 > ob4 && ob4 < ob1 * 0.6;
+  const oldPrev = mvOld.slice(0, -20).reduce((a, b) => a + b, 0) / Math.max(1, mvOld.slice(0, -20).length);
+  const oldNoRelay = oldPrev > 0 && Math.max(...mvOld.slice(-20)) <= oldPrev * 1.2;
+  ok(oldShrink && oldNoRelay, `旧口径在此数据上 shrink+noRelay 恒真（b1=${ob1.toFixed(0)} b2=${ob2.toFixed(0)} b3=${ob3.toFixed(0)} b4=${ob4.toFixed(0)}）——复现误命中根因，新口径必须不命中`);
+  // B. 防过度修正：同样带 25 条盘后条目，但交易时段量能真实逐级萎缩 + 无接力 → 仍应命中
+  const minutes2 = mkPolluted(i => 40 - i * 0.15);
+  const r2 = ve.computeVolumeEngine({ symbol: '600000', name: '测试', bars, minutes: minutes2, blacklistReasons: [] });
+  ok(r2.rules[4].matched === true, '真实逐级萎缩 + 无接力（带盘后条目）→ 规则5 仍命中（修复不误杀合法场景）');
+  // C. 交易时段条目不足 40 分钟 → 数据不足，不冒判
+  const few = { minutes: tradeTimes.slice(0, 30).map((time, i) => ({ time, price: 15.5 + i * 0.001, avg: 15.5, cumVol: 100 + i * 10 })), prevClose: 15.5 };
+  const r3 = ve.computeVolumeEngine({ symbol: '600000', name: '测试', bars, minutes: few, blacklistReasons: [] });
+  ok(r3.rules[4].matched === false && r3.rules[4].dataGaps.some(g => /交易时段数据不足/.test(g)), '交易时段不足 40 分钟 → 数据不足（不冒判）');
 }
 
 // ============ [7] 位置×量能组合矩阵 ============
@@ -656,11 +706,19 @@ console.log('\n[13] 输出结构完整性 + 禁交易指令扫描');
   ok(r.rules.length === 5, '五条生死位规则全部输出（含未命中）');
   // 20261019d：新增 expectedVolumeSummary 归集（该放/该缩缺口补充）与 signal.bullSupport → schema 升至 20261019d。
   // 20261019f：定档标准改市场标准量比（÷5日均量 0.8/1.2 单独定档，60 日确认降级为分歧披露）→ schema 升至 20261019f。
-  ok(r.schema === 'volume-engine-20261019f', `schema 已升级 20261019f（实际 ${r.schema}）`);
+  // 20261020a：新增 bottomPhase 底部区域相位分类（该放/该缩期望由相位单源推导、两侧互斥）→ schema 升至 20261020a。
+  // 20261020b：口诀4 阈值具象化（均值×0.7=阈值 + 实际近3日量能同屏，detail 新增 avg60/shrinkThreshold/vols3）→ schema 升至 20261020b。
+  // 20261020c：规则5 尾盘窗口按 time 时间戳剔除盘后条目（零量盘后条目曾致系统性误命中）→ schema 升至 20261020c。
+  // 20261020d：11.3.1「该放量未放量」结论文案阈值具象化（均值×1.5=阈值 + 当日实际量同屏）→ schema 升至 20261020d。
+  ok(r.schema === 'volume-engine-20261020d', `schema 已升级 20261020d（实际 ${r.schema}）`);
   ok(r.volumeTier && typeof r.volumeTier.tier === 'string', '输出含 volumeTier（统一量能档位真值源）');
   ok(r.volumeState.level === r.volumeTier.tier, `引擎展示档位等于统一档位（${r.volumeState.level}）`);
   ok('ratio5Level' in r.volumeState, 'volumeState 保留 ratio5Level（原始 ÷5日均量档位）供追溯');
   ok(typeof r.volumeTier.amplified === 'boolean' && typeof r.volumeTier.shrunk === 'boolean', 'volumeTier 输出 amplified/shrunk 判定（与 _comboEngine 同式）');
+  // 20261020a：bottomPhase 字段齐全（相位/依据/观察清单三件套）
+  ok(r.bottomPhase && typeof r.bottomPhase.phase === 'string' && r.bottomPhase.phase.length > 0, '输出含 bottomPhase.phase');
+  ok(typeof r.bottomPhase.basis === 'string' && r.bottomPhase.basis.length > 0, 'bottomPhase.basis 非空');
+  ok(r.bottomPhase.detail && typeof r.bottomPhase.detail === 'object', 'bottomPhase.detail 观察清单输出');
   // 20261017f：三个归集总结逐条完整输出（spec 11.2/11.3/11.4）
   ok(r.positionVolumeSummary.items.length === 4, '位置量价归集 4 项（高位放量滞涨/低位放量震荡/缩量上涨/缩量下跌）');
   ok(r.contradictionSummary.items.length === 4, '矛盾信号归集 4 项');
@@ -834,20 +892,21 @@ console.log('\n[16] 7.5 五句量比口诀：开盘/均价线/尾盘（分时）
     ok(k1.tag === '开盘量比超3放量待确认', '标签：开盘量比超3放量待确认');
     ok(/不直接输出看多信号/.test(k1.conclusion), '结论限定为观察/确认（不直接看多）');
   }
-  // 20261017g：单位换算按日K通道自适应——腾讯日K为「手」、东财/同花顺为「股」（同日相差 100 倍）
+  // 20261021h 单位表修正（实测成交额反验）：东财日K=「手」、腾讯日K=「手」、同花顺日K=「股」。
+  // 旧注释把东财当「股」，会让 5 日均量基准缩 100 倍 → 开盘量比虚高 100 倍。
   {
     const minutes = mkMinutes({ rate: i => (i < 30 ? 133.33 : 0), price: i => (i === 241 ? 10.5 : 10) });
-    const pcShare = mkPc({ avg5: 1000000 });   // 东财/同花顺口径：100 万股
-    const pcHand = mkPc({ avg5: 10000 });      // 腾讯口径：1 万手（= 100 万股）
-    const rEM = ve._ratioRules(pcShare, { minutes, position: { label: '低位区间' }, barsSource: 'eastmoney' });
+    const pcShare = mkPc({ avg5: 1000000 });   // 同花顺口径：100 万股
+    const pcHand = mkPc({ avg5: 10000 });      // 东财/腾讯口径：1 万手（= 100 万股）
+    const rEM = ve._ratioRules(pcHand, { minutes, position: { label: '低位区间' }, barsSource: 'eastmoney' });
     const rTHS = ve._ratioRules(pcShare, { minutes, position: { label: '低位区间' }, barsSource: 'ths' });
     const rTX = ve._ratioRules(pcHand, { minutes, position: { label: '低位区间' }, barsSource: 'tencent' });
-    ok(Math.abs(rEM.items[0].detail.openRatio - 3.2) < 0.05, `东财（股）通道开盘量比 3.2（实际 ${rEM.items[0].detail.openRatio}）`);
-    ok(Math.abs(rTHS.items[0].detail.openRatio - 3.2) < 0.05, `同花顺（股）通道开盘量比 3.2（实际 ${rTHS.items[0].detail.openRatio}）`);
-    ok(Math.abs(rTX.items[0].detail.openRatio - 3.2) < 0.05, `腾讯（手）通道换算后开盘量比同为 3.2（实际 ${rTX.items[0].detail.openRatio}）`);
-    // 反向校验：若腾讯「手」数据误按「股」换算（÷100），量比会虚高 100 倍（≈320）必然误判
-    const wrong = ve._ratioRules(pcHand, { minutes, position: { label: '低位区间' }, barsSource: 'eastmoney' });
-    ok(wrong.items[0].detail.openRatio > 100, `误按「股」换算时腾讯手数据量比虚高至 ${wrong.items[0].detail.openRatio}（反向印证必须按通道区分）`);
+    ok(Math.abs(rEM.items[0].detail.openRatio - 3.2) < 0.05, `东财（手）通道开盘量比 3.2（实际 ${rEM.items[0].detail.openRatio}）`);
+    ok(Math.abs(rTHS.items[0].detail.openRatio - 3.2) < 0.05, `同花顺（股）通道换算后开盘量比 3.2（实际 ${rTHS.items[0].detail.openRatio}）`);
+    ok(Math.abs(rTX.items[0].detail.openRatio - 3.2) < 0.05, `腾讯（手）通道开盘量比同为 3.2（实际 ${rTX.items[0].detail.openRatio}）`);
+    // 反向校验：把同花顺的「股」数据误当「手」（不除 100）→ 基准放大 100 倍 → 量比塌陷到 1/100
+    const wrong = ve._ratioRules(pcShare, { minutes, position: { label: '低位区间' }, barsSource: 'eastmoney' });
+    ok(wrong.items[0].detail.openRatio < 0.1, `把「股」数据当「手」时量比塌陷至 ${wrong.items[0].detail.openRatio}（反向印证必须按通道区分）`);
     ok(rTX.items[0].matched === true, '腾讯通道命中口径与其余通道一致（不因单位虚高/塌陷）');
   }
   // 口诀1 未命中：开盘量比不足（rate 低）→ 未命中
@@ -935,6 +994,10 @@ console.log('\n[16] 7.5 五句量比口诀：开盘/均价线/尾盘（分时）
     const k4 = ve._ratioRules(pc, { minutes: null, position: { label: '低位区间' } }).items[3];
     ok(k4.matched === true && k4.confirmed === false && k4.tag === '连续低成交不再新低待放量阳线', '口诀4 命中且未确认（等待放量阳线）');
     ok(/不得直接输出看多信号/.test(k4.hint), '口诀4 未确认前禁直接看多');
+    // 20261020b：阈值具象化——均值×0.7=阈值与实际近 3 日量能同屏展示（用户要求「展示数据计算结果」）
+    ok(/近 3 日成交量 600 \/ 600 \/ 600，均低于 60 日均量 1000 ×0\.7 = 700/.test(k4.conclusion), `口诀4 命中文案展示阈值计算过程与实际近 3 日量能（实际：${k4.conclusion}）`);
+    ok(k4.detail.avg60 === 1000 && k4.detail.shrinkThreshold === 700, `detail 具象化字段 avg60/shrinkThreshold（实际 ${k4.detail.avg60}/${k4.detail.shrinkThreshold}）`);
+    ok(JSON.stringify(k4.detail.vols3) === '[600,600,600]', `detail.vols3 近 3 日量能数组（实际 ${JSON.stringify(k4.detail.vols3)}）`);
   }
   // 口诀4 已确认：当日放量阳线 → confirmed
   {
@@ -943,13 +1006,25 @@ console.log('\n[16] 7.5 五句量比口诀：开盘/均价线/尾盘（分时）
     const pc = mkPc({ vols, avg60: 1000, chgPct: 2.5, confirm: '放量' });
     const k4 = ve._ratioRules(pc, { minutes: null, position: { label: '低位区间' } }).items[3];
     ok(k4.matched === true && k4.confirmed === true && k4.tag === null, '口诀4 已出现放量阳线 → 确认成立不再限制');
+    ok(/60 日均量 1000 ×0\.7 = 700/.test(k4.conclusion), '口诀4 已确认分支同样展示阈值计算过程');
   }
   // 口诀4 未命中：股价仍创新低
   {
     const vols = Array.from({ length: 60 }, () => 1000);
     vols[57] = 600; vols[58] = 600; vols[59] = 600;
     const pc = mkPc({ vols, avg60: 1000, chgPct: -0.2, lowToday: 9.4 });
-    ok(ve._ratioRules(pc, { minutes: null, position: { label: '低位区间' } }).items[3].matched === false, '仍创新低 → 口诀4 未命中');
+    const k4 = ve._ratioRules(pc, { minutes: null, position: { label: '低位区间' } }).items[3];
+    ok(k4.matched === false, '仍创新低 → 口诀4 未命中');
+    ok(/低成交线 60 日均量 1000 ×0\.7 = 700，近 3 日实际 600 \/ 600 \/ 600/.test(k4.conclusion), '未命中文案展示低成交线与实际近 3 日量能（便于核对差在哪一步）');
+  }
+  // 口诀4 未命中：量能未达低成交线（20261020b：文案需展示阈值计算过程与实际值）
+  {
+    const vols = Array.from({ length: 60 }, () => 1000);
+    vols[57] = 900; vols[58] = 950; vols[59] = 800;
+    const pc = mkPc({ vols, avg60: 1000, chgPct: -0.2, confirm: '缩量' });
+    const k4 = ve._ratioRules(pc, { minutes: null, position: { label: '低位区间' } }).items[3];
+    ok(k4.matched === false && k4.detail.low3 === false, '近 3 日量未全部低于低成交线 → 未命中');
+    ok(/低成交线 60 日均量 1000 ×0\.7 = 700，近 3 日实际 900 \/ 950 \/ 800/.test(k4.conclusion), `未命中文案展示阈值计算过程与实际近 3 日量能（实际：${k4.conclusion}）`);
   }
   // 口诀5 命中：量比 2.5 但滞涨
   {
@@ -1076,6 +1151,159 @@ console.log('\n[17] 11.2/11.3/11.4 归集总结：逐条完整 + 常态模板 + 
     const r3 = ve.computeVolumeEngine({ symbol: '600000', name: '测试', bars, minutes: { minutes: fullMinutes.minutes.slice(0, 100), prevClose: 10 }, blacklistReasons: [] });
     ok(r3.ratioSummary.items[2].status === '数据不足' && r3.ratioSummary.items[0].status !== '数据不足', '盘中未收盘分时 → 仅口诀3 标数据不足（口诀1 开盘已完整可判）');
     ok(r3.dataGaps.some(g => /尚未覆盖收盘/.test(g)), '集成层 dataGaps 收录未收盘说明');
+  }
+}
+
+// ============ [18] 底部区域相位分类（20261020a） ============
+console.log('\n[18] 底部相位分类：构筑期/启动确认区/方向不明单源推导，该放/该缩两侧互斥');
+{
+  // 低位+平台价格基底（260 根）：前 180 日自 20 阴跌进入平台区，其后在 [9.9,10.6] 震荡（带宽约 7%，
+  // 满足 _sidewaysAndPlatform 平台口径）；平台前 30 日（199..228）放量 200 抬升 60 日均量，
+  // 使平台后地量 30 ≤ 60 日均量×50%（地量线），供 _bottomPhase 六维度框架判定。
+  const lpPrice = i => (i < 180 ? 20 - i * 0.055 : 10.25 + 0.35 * Math.sin((i - 180) * 0.7));
+  const lpBars = (volFn, overrides = {}) => mkBars(260, i => (overrides[i] ? overrides[i] : flatBar(lpPrice(i), volFn(i))));
+  const run = bars => ve.computeVolumeEngine({ symbol: '600000', name: '测试', bars, minutes: null, blacklistReasons: [] });
+  const ampItem = r => r.contradictionSummary.items[0];    // 该放量未放量
+  const shrinkItem = r => r.contradictionSummary.items[1]; // 该缩量反放巨量
+
+  // 场景1 构筑期（缩量磨底）：地量持续 10/10 日 + 未创新低 + 未突破平台上沿 + 均线走平 → 该缩量是预期
+  {
+    const r = run(lpBars(i => (i < 199 ? 500 : (i <= 228 ? 200 : 30)), { 258: flatBar(10.25, 30), 259: flatBar(10.25, 25) }));
+    ok(r.position.label === '低位区间', '场景1（构筑期）：位置 = 低位区间');
+    ok(r.bottomPhase.phase === '构筑期', `场景1：相位 = 构筑期（实际 ${r.bottomPhase.phase}）`);
+    ok(/卖压衰竭/.test(r.bottomPhase.basis), '场景1：相位依据 = 卖压衰竭验证（地量持续+低点不再下移）');
+    ok(r.bottomPhase.detail.lowVolDays >= 6, `场景1：观察清单 lowVolDays ≥6（实际 ${r.bottomPhase.detail.lowVolDays}）`);
+    ok(!ampItem(r).matched, '场景1：构筑期不施加「该放量」期望 → 该放量未放量未命中');
+    ok(!shrinkItem(r).matched, '场景1：缩量磨底且量能未达巨量 → 该缩量反放巨量未命中');
+    ok(/底部相位判定为【构筑期】/.test(r.contradictionSummary.summary), '场景1：归集总结追加相位说明（构筑期）');
+  }
+  // 场景2 截图复刻（核心回归）：低位+平台+量比 1.15 平量+60 日 confirm=放量
+  // 旧代码双命中：该放量侧「低位吸筹确认场景」（isHugeVol=false）+ 该缩量侧「横盘整理+confirm 放量」
+  {
+    const r = run(lpBars(i => (i < 199 ? 500 : (i <= 228 ? 200 : (i <= 255 ? 30 : (i <= 257 ? 400 : (i === 258 ? 150 : 232))))), { 258: flatBar(10.25, 150), 259: flatBar(10.25, 232) }));
+    ok(r.position.label === '低位区间', '场景2（截图复刻）：位置 = 低位区间');
+    ok(r.bottomPhase.phase === '构筑期', `场景2：相位 = 构筑期（实际 ${r.bottomPhase.phase}）`);
+    ok(r.volumeState.confirm === '放量', '场景2：60 日均量口径确认为放量（旧口径污染前提成立）');
+    ok(r.volumeState.level === '平量', `场景2：÷5 日档位 = 平量（实际 ${r.volumeState.level}）`);
+    ok(Math.abs(r.volumeState.ratio5 - 1.15) < 0.01, `场景2：量比 ≈1.15（实际 ${r.volumeState.ratio5}）`);
+    ok(r.rules[0].matched === false, '场景2：规则1 低位吸筹未命中（近3日未连续放量）');
+    ok(!ampItem(r).matched, '场景2：该放量未放量未命中（构筑期不施加该放量期望——相位门控生效）');
+    ok(!shrinkItem(r).matched, '场景2：该缩量反放巨量未命中（档位平量，60 日 confirm 不参与巨量判定——口径收严生效）');
+    ok(/横盘整理/.test(shrinkItem(r).scenario), '场景2：该缩量侧场景仍在（横盘整理）——未命中源于巨量口径而非无场景');
+    ok(/卖压衰竭/.test(ampItem(r).conclusion), '场景2：该放量侧未命中文案带相位依据');
+  }
+  // 场景3 启动确认区（放量突破）：近3日放量持续 + 收盘突破平台上沿 → 该放量是预期；
+  // 当日巨量+阴线（旧代码「低位洗盘+天量」误命中来源）不再触发该缩量侧
+  {
+    const r = run(lpBars(i => (i < 199 ? 500 : (i <= 228 ? 200 : (i <= 256 ? 30 : (i <= 258 ? 1000 : 3000)))), { 257: flatBar(10.8, 1000), 258: flatBar(10.9, 1000), 259: flatBar(10.7, 3000) }));
+    ok(r.position.label === '低位区间', '场景3（启动确认区）：位置 = 低位区间');
+    ok(r.bottomPhase.phase === '启动确认区', `场景3：相位 = 启动确认区（实际 ${r.bottomPhase.phase}）`);
+    ok(/买盘验证/.test(r.bottomPhase.basis), '场景3：相位依据 = 买盘验证成立（放量持续+价格抬升）');
+    ok(r.rules[0].matched === false, '场景3：规则1 未命中（重心未企稳：今收 10.7 < 3 日前 10.8）');
+    ok(/底部启动确认场景/.test(ampItem(r).scenario), '场景3：该放量侧纳入「底部启动确认场景」');
+    ok(!ampItem(r).matched, '场景3：启动确认区且量能已有效放大 → 该放量未放量未命中');
+    ok(!shrinkItem(r).matched, '场景3：启动确认区放量是预期行为 → 该缩量反放巨量未命中（旧代码此处误命中）');
+    ok(/买盘验证/.test(shrinkItem(r).conclusion), '场景3：该缩量侧未命中文案带相位依据');
+  }
+  // 场景4 低位单日脉冲豁免：构筑期内单日倍量脉冲 = 噪音（框架「假信号识别」），不判启动也不判分歧
+  {
+    const r = run(lpBars(i => (i < 199 ? 500 : (i <= 228 ? 200 : (i === 259 ? 90 : 30))), { 258: flatBar(10.1, 30), 259: flatBar(10.5, 90) }));
+    ok(r.bottomPhase.phase === '构筑期', `场景4（脉冲豁免）：脉冲不判启动 → 仍为构筑期（实际 ${r.bottomPhase.phase}）`);
+    ok(/单日脉冲噪音/.test(r.bottomPhase.basis), '场景4：相位依据标注单日脉冲为构筑期内噪音');
+    ok(r.checks.pulse === true, '场景4：单日脉冲爆量判定成立');
+    ok(/横盘整理/.test(shrinkItem(r).scenario), '场景4：该缩量侧场景仍在（横盘整理）');
+    ok(!shrinkItem(r).matched, '场景4：低位单日脉冲豁免 → 该缩量反放巨量未命中（旧代码此处误命中）');
+    ok(!ampItem(r).matched, '场景4：该放量未放量未命中（量能已有效放大）');
+  }
+  // 场景5 非低位回归保护：相位门控只影响低位平台——上涨中途缩量回调+大量仍应命中
+  {
+    const upBars = mkBars(260, i => flatBar(i < 100 ? 9 + i * 0.05 : (i < 200 ? 13.95 - (i - 100) * 0.04 : 10.5 + (i - 200) * 0.015), 1000));
+    upBars[258] = flatBar(11.42, 1000);
+    upBars[259] = flatBar(11.3, 5000);
+    const r = run(upBars);
+    ok(r.position.label === '上涨中途', `场景5（回归保护）：位置 = 上涨中途（实际 ${r.position.label}）`);
+    ok(r.bottomPhase.phase === '不适用', '场景5：非低位 → 相位不适用');
+    ok(shrinkItem(r).matched === true, '场景5：上涨中途缩量回调+大量 → 该缩量反放巨量仍命中（门控不影响非低位）');
+    ok(/上涨中途缩量回调/.test(shrinkItem(r).scenario), '场景5：场景文案保持');
+  }
+  // 场景6 _bottomPhase 单元：不适用 / 数据不足分支
+  {
+    const upBars = mkBars(260, i => flatBar(i < 100 ? 9 + i * 0.05 : (i < 200 ? 13.95 - (i - 100) * 0.04 : 10.5 + (i - 200) * 0.015), 1000));
+    upBars[258] = flatBar(11.42, 1000);
+    upBars[259] = flatBar(11.3, 5000);
+    const pc5 = ve._precompute(upBars);
+    ok(ve._bottomPhase(pc5, { position: { label: '上涨中途' }, platform: null }).phase === '不适用', '_bottomPhase：非低位区间 → 不适用');
+    const shortBars = mkBars(24, i => flatBar(i === 0 ? 20 : 10, 1000));
+    const pcS = ve._precompute(shortBars);
+    const platS = ve._sidewaysAndPlatform(shortBars).platform;
+    ok(platS !== null, '场景6：24 根仍可识别平台（供相位判定消费）');
+    ok(ve._bottomPhase(pcS, { position: ve._detectPosition(pcS, platS), platform: platS }).phase === '数据不足', '_bottomPhase：样本 24 根 <25 → 数据不足（不臆断相位）');
+  }
+  // 场景7 互斥不变量扫描：低位平台基底上扫量比×涨跌幅，「该放量未放量」与「该缩量反放巨量」不得同时命中
+  {
+    const ratios = [0.3, 0.6, 0.9, 1.15, 1.5, 2.0, 3.0, 5.0];
+    const chgs = [-4, -1.5, 0, 1.5, 4];
+    let viol = 0, badPhase = 0;
+    for (const r5 of ratios) for (const c of chgs) {
+      const r = run(lpBars(i => (i < 199 ? 500 : (i <= 228 ? 200 : (i === 259 ? Math.round(30 * r5) : 30))), { 258: flatBar(10.25, 30), 259: flatBar(+(10.25 * (1 + c / 100)).toFixed(4), Math.round(30 * r5)) }));
+      if (ampItem(r).matched && shrinkItem(r).matched) viol++;
+      if (!['构筑期', '启动确认区', '方向不明'].includes(r.bottomPhase.phase)) badPhase++;
+    }
+    ok(viol === 0, `互斥不变量：${ratios.length * chgs.length} 组合扫描双信号无同时命中（违例 ${viol}）`);
+    ok(badPhase === 0, `相位取值合法：${ratios.length * chgs.length} 组合均在 {构筑期,启动确认区,方向不明}（异常 ${badPhase}）`);
+  }
+}
+
+// ============ [19] 11.3.1 该放量未放量阈值具象化（20261020d） ============
+console.log('\n[19] 该放量未放量：「60 日均量 ×1.5」同屏展示均值×1.5=阈值与当日实际量');
+{
+  // 与 [16] 节同模式的节内私有 mkPc（预计算 pc 夹具；avg60/volToday 等可由 over 覆盖；
+  // highs/closes 供 _contradictionRules 攻击压力位与 _bottomPhase 相位判定消费）
+  const mkPc = (over = {}) => {
+    const n = over.n || 60;
+    const lows = over.lows || Array.from({ length: n }, () => 9.5);
+    return {
+      n, level: '平量', ratio5: 1, ratio5Prev: 1, ratio10: 1, ratio20: 1,
+      avg5: 1000, avg10: 1000, avg20: 1000, avg60: 1000,
+      confirm: null, chgPct: 0, closePrev: 10, closeToday: 10, highToday: 10.02,
+      volToday: 1000, vols: Array.from({ length: n }, () => 1000),
+      highs: Array.from({ length: n }, () => 10), closes: Array.from({ length: n }, () => 10),
+      ma20: Array.from({ length: n }, () => 10), ma60: Array.from({ length: n }, () => 10),
+      lows, lowToday: 9.95,
+      drawdownFromHigh: -5, pricePct12m: 0.5,
+      ...over,
+    };
+  };
+  const baseCtx = { position: { label: '上涨中途' }, levels: {}, sequence: {}, rules: [], platform: null, breakThrough: false, currentSideways: false };
+  // 命中：上涨确认场景（chgPct≥1.2）+ 档位平量（非巨量）→ 文案展示阈值计算过程与当日实际量
+  {
+    const pc = mkPc({ chgPct: 1.5, avg60: 1000, volToday: 800, level: '平量', ratio5: 0.8 });
+    const item = ve._contradictionRules(pc, baseCtx).shouldAmpNot;
+    ok(item.matched === true && /上涨确认/.test(item.scenario), '命中：上涨确认场景且量能未达巨量 → 该放量未放量命中');
+    // 20261021h：文案现在同时给出「当日量 ÷ 阈值」的倍数，便于用户自己核对，不再只凭档位下结论
+    ok(/但成交量未达 60 日均量 1000 ×1\.5 = 1500（当日量 800）（当日量为阈值的 0\.53 倍）/.test(item.conclusion),
+      `命中文案展示「60 日均量 1000 ×1.5 = 1500（当日量 800）」计算过程（实际：${item.conclusion}）`);
+    ok(!/未达 60 日均量 ×1\.5 也未/.test(item.conclusion), '命中文案不再残留纯符号「60 日均量 ×1.5」');
+  }
+  // 当日量缺失：仅展示均值×1.5=阈值，不拼「当日量」（禁 null 入文案）
+  {
+    const pc = mkPc({ chgPct: 1.5, avg60: 1000, volToday: 0, level: '平量', ratio5: 0.8 });
+    const item = ve._contradictionRules(pc, baseCtx).shouldAmpNot;
+    ok(/但成交量未达 60 日均量 1000 ×1\.5 = 1500 也未进入温和放量区/.test(item.conclusion) && !/当日量/.test(item.conclusion),
+      `当日量缺失 → 只展示阈值不拼「当日量」（实际：${item.conclusion}）`);  }
+  // avg60≤0 数据不足：退回原纯符号文本（禁「null ×1.5 = null」）
+  {
+    const pc = mkPc({ chgPct: 1.5, avg60: 0, volToday: 800, level: '平量', ratio5: 0.8 });
+    const item = ve._contradictionRules(pc, baseCtx).shouldAmpNot;
+    ok(item.matched === true && /但成交量未达 60 日均量 ×1\.5 也未进入温和放量区/.test(item.conclusion) && !/null/.test(item.conclusion),
+      `avg60≤0 → 退回原纯文本且无 null（实际：${item.conclusion}）`);
+  }
+  // 未命中分支不涉及阈值文案，保持原状
+  {
+    const pc = mkPc({ chgPct: 0.3, avg60: 1000, volToday: 800, level: '平量', ratio5: 0.8 });
+    const item = ve._contradictionRules(pc, baseCtx).shouldAmpNot;
+    ok(item.matched === false && /未命中「该放量未放量、资金未跟上」（当前无本应放量场景/.test(item.conclusion),
+      '无放量场景 → 未命中文案保持原状');
   }
 }
 

@@ -453,12 +453,15 @@ group('11. 当日 bar 实时行情终值对齐（20261019b，000902 实测缺陷
   const starQuote = { price: 15.85, open: 15.56, high: 15.95, low: 15.46, volume: 2612565, amount: 41366868, date: T }; // 源头归一后
   const r8 = VE._reconcileTodayBar(starBars, starQuote, 'ths', T);
   ok(r8.note === null, '科创板（源头归一后）覆写幂等无动作');
-  // 若源头未归一（quote.volume 虚增 100 倍 = 旧缺陷），覆写将产生 73 倍假量比——锁死回归
+  // 若源头未归一（quote.volume 虚增 100 倍 = 旧缺陷），20261021h 起由「量级守卫」直接拒绝覆写。
   const badQuote = { ...starQuote, volume: 261256500 };
   const starBarsBad = JSON.parse(JSON.stringify(starBars));
   const rBad = VE._reconcileTodayBar(starBarsBad, badQuote, 'ths', T);
-  ok(rBad.note === 'overwritten' && starBarsBad[1].volume === 261256500,
-    '（对照）未归一的 quote 会覆写出 100 倍假量——此为已被源头修复拦截的旧缺陷形态');
+  ok(rBad.note === 'unit_mismatch',
+    `（对照）未归一的 quote 被判为单位异常并拒绝覆写（note=${rBad.note}）`);
+  ok(starBarsBad[1].volume === 2612565,
+    `量级异常时日K原值不被污染（仍为 ${starBarsBad[1].volume}）`);
+  ok(typeof rBad.mag === 'number' && rBad.mag > 20, `上报量级差 ${rBad.mag} 倍，便于溯源`);
 });
 
 // ============================================================
@@ -613,7 +616,11 @@ group('13. 预期量能规则（20261019d：该放/该缩缺口补充，3 风险
   }
   const e2e = VE.computeVolumeEngine({ symbol: 'X', name: 'X', bars, barsSource: 'tencent' });
   const e2eHvd = e2e.expectedVolumeSummary.items.find(i => i.form === '高位放量下跌');
-  ok(e2e.schema === 'volume-engine-20261019f', `schema 已升 20261019f（实际 ${e2e.schema}）`);
+  // 20261020a：新增 bottomPhase 底部区域相位分类 → schema 升至 20261020a
+  // 20261020b：口诀4 阈值具象化（均值×0.7=阈值 + 实际近3日量能同屏）→ schema 升至 20261020b
+  // 20261020c：规则5 尾盘窗口按 time 时间戳剔除盘后条目（零量盘后条目曾致系统性误命中）→ schema 升至 20261020c
+  // 20261020d：11.3.1「该放量未放量」结论文案阈值具象化（均值×1.5=阈值 + 当日实际量同屏）→ schema 升至 20261020d
+  ok(e2e.schema === 'volume-engine-20261020d', `schema 已升 20261020d（实际 ${e2e.schema}）`);
   ok(e2eHvd.matched === true && e2eHvd.status === '命中', `端到端高位放量大跌命中（位置 ${e2e.position.label}）`);
   ok(e2e.riskTags.includes('高位放量大阴线派发风险'), '命中 → 风险标签「高位放量大阴线派发风险」同步输出');
   ok(!/看多信号/.test(e2e.signal.category), `高位放量大跌不得输出看多信号（实际 ${e2e.signal.category}）`);

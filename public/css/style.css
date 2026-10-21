@@ -1086,6 +1086,126 @@ body {
 .pa-zone-row.support { background: var(--green-light); }
 .pa-zone-row .pz-range { font-weight: 600; color: var(--text-primary); }
 .pa-zone-row .pz-src { color: var(--text-light); font-size: 11px; }
+/* 侵蚀标记（20261020m）：区间近端被无放量侵入收紧过 → 价格侧已「长回去」的部分不计入，
+   右侧小标签提示，完整「原区间 → 收紧后」在 title 里。 */
+.pa-zone-row .pz-erode {
+  margin-left: 6px; padding: 0 4px; border-radius: 3px;
+  font-size: 10px; color: var(--accent);
+  border: 1px solid var(--accent); opacity: .85;
+}
+
+/* 箱体边界条目（20261020k）：金色虚线左边框 = 结构性边界（与摆动点聚类的区间区分开） */
+.pa-zone-row.box-edge { border-left: 2px dashed var(--accent); padding-left: 8px; }
+.pa-zone-row.box-edge .pz-range { font-weight: 600; }
+.pa-zone-row.box-edge .pz-src { color: var(--accent); }
+
+/* ②卡页签（20261021d）：模型判定 / 手动添加。页签只是分区，不改变任何口径。 */
+.pa-tabs {
+  display: flex; gap: 4px; margin: 2px 0 10px;
+  border-bottom: 1px solid var(--border);
+}
+.pa-tab {
+  position: relative; padding: 6px 12px 7px; margin-bottom: -1px;
+  background: transparent; border: none; border-bottom: 2px solid transparent;
+  color: var(--text-muted); font-size: 12.5px; font-weight: 600; cursor: pointer;
+  transition: color .15s ease, border-color .15s ease;
+}
+.pa-tab:hover { color: var(--text-primary); }
+.pa-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.pa-tab-badge {
+  display: inline-block; margin-left: 5px; padding: 0 5px;
+  font-size: 10px; line-height: 14px; border-radius: 999px;
+  color: var(--accent); background: var(--accent-light);
+  border: 1px solid rgba(240, 185, 123, 0.35);
+}
+.pa-tab-body.hidden { display: none; }
+
+/* 手动区间：整块与模型口径视觉隔离（蓝紫左边框），并自带口径声明 */
+.pa-mz-tip {
+  font-size: 11.5px; color: var(--text-light); line-height: 1.55;
+  background: var(--bg-elevated); border-radius: var(--radius-sm);
+  padding: 7px 10px; margin-bottom: 10px;
+}
+.pa-mz-tip b { color: var(--accent); font-weight: 600; }
+.pa-mz-form { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pa-mz-input {
+  background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--text-primary); font-size: 12px; padding: 5px 8px; outline: none;
+}
+.pa-mz-input:focus { border-color: var(--accent); }
+.pa-mz-input[type="number"] { width: 92px; font-variant-numeric: tabular-nums; }
+.pa-mz-side { min-width: 108px; }
+.pa-mz-note { flex: 1 1 140px; min-width: 120px; }
+.pa-mz-sep { color: var(--text-muted); font-size: 12px; }
+.pa-mz-add {
+  padding: 5px 14px; border-radius: var(--radius-sm); cursor: pointer;
+  background: var(--accent-light); border: 1px solid rgba(240, 185, 123, 0.45);
+  color: var(--accent); font-size: 12px; font-weight: 600;
+}
+.pa-mz-add:hover { background: rgba(240, 185, 123, 0.22); }
+.pa-mz-add:disabled { opacity: .55; cursor: default; }
+.pa-mz-err { min-height: 16px; margin: 6px 0 2px; font-size: 11.5px; color: var(--red); }
+.pa-mz-empty { font-size: 12px; color: var(--text-muted); padding: 10px 2px; }
+.pa-mz-group { margin-top: 8px; }
+.pa-mz-group-title { font-size: 12px; font-weight: 700; margin-bottom: 5px; }
+.pa-mz-group.resistance .pa-mz-group-title { color: var(--red); }
+.pa-mz-group.support .pa-mz-group-title { color: var(--green); }
+.pa-mz-count { margin-left: 5px; font-size: 11px; color: var(--text-muted); font-weight: 500; }
+.pa-mz-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px; margin-bottom: 4px; font-size: 12px;
+  background: var(--bg-elevated); border-radius: var(--radius-sm);
+  border-left: 2px solid rgba(139, 148, 255, 0.55);
+}
+.pa-mz-row .pa-mz-range { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text-primary); }
+.pa-mz-row .pa-mz-note-text {
+  flex: 1; color: var(--text-light); font-size: 11px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pa-mz-del {
+  padding: 2px 8px; font-size: 11px; cursor: pointer;
+  background: transparent; color: var(--text-muted);
+  border: 1px solid var(--border); border-radius: 3px;
+}
+.pa-mz-del:hover { color: var(--red); border-color: rgba(246, 70, 93, 0.5); }
+/* 检验结果徽标（20261021e）：手动区间与模型区间同一条有效性检验，通过/未通过都要看得见 */
+.pa-mz-badge {
+  padding: 1px 6px; border-radius: 3px; font-size: 10px; line-height: 15px;
+  border: 1px solid var(--border); color: var(--text-muted); white-space: nowrap;
+}
+.pa-mz-badge.ok { color: var(--green); border-color: rgba(14, 203, 129, 0.45); background: var(--green-light); }
+.pa-mz-badge.invalid { color: var(--red); border-color: rgba(246, 70, 93, 0.45); background: var(--red-light); cursor: help; }
+.pa-mz-badge.unknown { color: var(--text-muted); }
+.pa-mz-row.invalid { opacity: .82; }
+.pa-mz-row.invalid .pa-mz-range { text-decoration: line-through; text-decoration-color: rgba(246, 70, 93, 0.6); }
+/* 混在模型清单里的手动条目：蓝紫虚线左边框 + 「手动」小标 */
+.pa-zone-row.manual { border-left: 2px dashed rgba(139, 148, 255, 0.75); padding-left: 8px; }
+.pa-zone-row .pz-manual {
+  margin-left: 6px; padding: 0 4px; border-radius: 3px;
+  font-size: 10px; color: rgba(160, 168, 255, 0.95);
+  border: 1px solid rgba(139, 148, 255, 0.5);
+}
+/* 单箱体精简一行（20261020j）：一行读完「起始日 / 持续天数 / 失效线 / 是否触发失效」。
+   上沿=阻力侧用红、下沿=支撑侧用绿（红涨绿跌），与下方区间行同色语义。 */
+.pa-box-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px;
+  padding: 7px 10px; margin: 10px 0 4px;
+  background: var(--accent-light);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--radius-sm);
+  font-size: 12px; font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+.pa-box-row .pb-tag { font-size: 11px; font-weight: 700; color: var(--accent); letter-spacing: .04em; }
+.pa-box-row .pb-kv { color: var(--text-light); }
+.pa-box-row .pb-kv b { color: var(--text-primary); font-weight: 600; }
+.pa-box-row .pb-kv b.up { color: var(--red); }
+.pa-box-row .pb-kv b.down { color: var(--green); }
+.pa-box-row .pb-kv.sub { font-size: 11px; }
+.pa-box-row .pb-risk { margin-left: auto; font-size: 11px; color: var(--text-light); }
+.pa-box-row .pb-risk.warn { color: #F0B90B; font-weight: 600; }
+.pa-box-row.none { background: rgba(255, 255, 255, 0.02); border-left-color: var(--text-light); }
+.pa-box-row .pb-empty { font-size: 11px; color: var(--text-light); line-height: 1.5; }
 
 .pa-scenario {
   font-size: 15px; font-weight: 700; color: #F0B90B;
@@ -3246,6 +3366,46 @@ body {
   color: var(--accent);
   background: var(--accent-light);
   border: 1px solid rgba(240, 185, 123, 0.35);
+  border-radius: 3px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+/* 美债10年期收益率卡（20261021a）：与道指/纳指/标普同处一行，但量纲不同——
+   主值是收益率%（配 bp 变动），不是指数点位。用金色描边与「日线·MM-DD」小标签与三个指数卡区分，
+   标签同时承担"这不是实时行情"的告知责任（数据源为美国财政部日度收益率曲线）。 */
+.mo-tile.bond { border-color: rgba(240, 185, 123, 0.35); }
+.mo-tile.bond .mo-price { font-variant-numeric: tabular-nums; }
+/* 可点击卡片（20261021b）：整卡是 <a>，必须抹掉链接的默认蓝字下划线，否则卡片文字全变蓝；
+   ↗ 角标说明「可跳转」，hover 时加深描边强化可点感。 */
+a.mo-tile-link,
+a.mo-tile-link:hover,
+a.mo-tile-link:visited {
+  text-decoration: none;
+  color: inherit;
+  position: relative;
+  cursor: pointer;
+}
+a.mo-tile-link:hover { border-color: var(--accent); }
+.mo-link-mark {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--accent);
+  opacity: 0.75;
+}
+a.mo-tile-link:hover .mo-link-mark { opacity: 1; }
+.mo-bond-tag {
+  display: inline-block;
+  margin-left: 5px;
+  padding: 0 4px;
+  font-size: 9.5px;
+  font-weight: 500;
+  line-height: 14px;
+  color: var(--accent);
+  background: var(--accent-light);
+  border: 1px solid rgba(240, 185, 123, 0.3);
   border-radius: 3px;
   vertical-align: middle;
   white-space: nowrap;

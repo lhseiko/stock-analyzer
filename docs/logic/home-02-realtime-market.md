@@ -13,7 +13,8 @@
 | 「📉 行业板块跌幅前5」一行 | 同上，升序取 5 | stockData.js:754；app.js:6111 |
 | 涨幅组末尾金色「涨停最多」卡 | 当日涨停家数最多的板块：板块名 + 封板最早个股 + N 家涨停；缺失不渲染 | stockData.js:755、1029-1036；app.js:6127-6134、6182-6186 |
 | 跌幅组末尾「跌停最多」卡 | 当日跌停家数最多的板块：板块名 + 代表股 + N 家跌停 | stockData.js:756；app.js:6187-6191 |
-| 「🇺🇸 美国指数」一行 | 道指/纳指/标普等美股指数实时报价 | stockData.js:749；app.js:6112 |
+| 「🇺🇸 美国指数」一行 | 道指/纳指/标普三个美股指数实时报价（腾讯行情） | stockData.js（MARKET_INDEX_GROUPS.us + group()）；app.js（renderMarketOverview → renderTile） |
+| 美国指数行末尾「美债10年期」卡 | 美债 10 年期收益率**日线**：主值 `5.15%`、变动 `+6.0bp`、右上角「日线·MM-DD」；悬停见截至日/来源/前值。收益率上行=红、下行=绿 | `lib/usTreasury.js`（20261021a）；app.js `renderTile` 的 `kind==='yield'` 分支 |
 | 行首右侧来源标签 | 逐行标注真实数据源；非东财口径时标签变黄并附说明 | stockData.js:751-752、757-762；app.js:6169 |
 | 「涨N · 跌N · 平N」 | **板块**涨跌平家数（不是个股涨跌家数；个股口径在市场情绪模块） | stockData.js:763-766；app.js:6162-6164 |
 | 「截至 X · 收盘口径」标签 | 面板走东财数据中心（收盘报表）通道时显示，防止误以为盘中卡死 | stockData.js:768-769；app.js:6166-6168 |
@@ -21,9 +22,21 @@
 | 榜单内「7日高频板块」小卡 | 近一周涨/跌幅前五出现次数提醒，从缓存同步渲染进槽位 | server.js:700-706；app.js:6170-6171 |
 | 「#moCapitalFlow」容器 | 行业资金流向（主力净流入/流出前五）同步渲染 | app.js:6196-6201 |
 | 「更新于 hh:mm」 | 前端渲染时刻 | app.js:5614-5620 |
+| 美债卡「↗」角标 | 该卡可点击跳转东方财富同指数行情页（盘中实时报价，与本卡日线口径不同） | `lib/usTreasury.js` LINK_URL → app.js .mo-link-mark |
+| 美债卡「日线·MM-DD」标签 | 数据频率 + 截至交易日，明示非实时（数据源为日度收益率曲线） | `lib/usTreasury.js` buildItem → app.js .mo-bond-tag |
 | 普跌/普涨空态文案 | 涨幅组 0 家时显示「市场普跌，暂无上涨板块」，反之亦然 | app.js:6153-6157 |
 
 ## 二、核心取数链（判定=取数优先级）
+
+**美债 10 年期收益率**（`lib/usTreasury.js`，20261021a，追加在「美国指数」行末尾）：
+1. **为什么是日线**：本机实测（2026-10-21）东财 push2/push2delay/datacenter（TLS 被掐，curl 返回 000）、CNBC quote API（Access Denied）、Yahoo ^TNX（429）、TradingView scanner（空响应）、华尔街见闻 market/real（接口已下线，连 DJI 都返回空 snapshot）全部不可达；腾讯 qt 与新浪 hq 都没有美债收益率代码（usTNX / us10Y / usUST10Y / gb_$tnx / gb_tnx … 全空）。可达且权威的只有日度收益率曲线。
+2. **主备链**：美国财政部官方 `daily-treasury-yield-curve` CSV（当年 → 去年跨年 → FRED `DGS10`）→ 上次成功缓存（仅当未过期）→ 无则**不渲染该卡**。
+3. **解析纪律**：统一按日期重排（不依赖源站行序）；空值行跳过（**空值 ≠ 0**）；没有 `10 Yr` 列 / 表头首列不是 `Date` / 全脏行 → 返回 null，绝不揣测。
+4. **展示口径**：主值 = 收益率百分数（`5.15%`），变动 = 基点（`+6.0bp`，1bp=0.01 个百分点），**不套**指数的 `fmt()/fmtPct()`，避免「5.15」被读成点位、「+1.18%」被读成涨跌幅。
+5. **诚实标注**：该卡与道指/纳指同排但不同源 → 行的来源标签改用 `usSource`＝「腾讯行情 + 美国财政部（日线）」；卡片自带「日线·MM-DD」+ tooltip 截至日。
+6. **过期守门**：>3 自然日未更新 → 打 `⚠`（周末/美国假日属正常，仍展示）；>10 天 → 不展示（不拿过期数据当现行）。
+7. **失败隔离**：取数失败只 `console.warn`，不追加卡片，不影响同排三个美股指数。
+8. **点击跳转（20261021b）**：整卡是 `<a target=_blank rel=noopener noreferrer>`，跳东方财富「美国10年期国债收益率(US10Y)」行情页 `https://quote.eastmoney.com/unify/r/171.US10Y`。secid 由东财 suggest 接口实查（QuoteID=171.US10Y，market 171=全球债券），页面 title 实测为该指数，不是猜的 URL。右上角 `↗` 提示可点，缺 `linkUrl` 时降级为不可点 `div`。
 
 **指数行**（stockData.js:511-546）：
 1. 四组指数（cn / us / sectors / topbar）按 code 去重（:513-514）；
@@ -46,6 +59,7 @@
 | 指标 | 口径 | 出处 |
 |---|---|---|
 | 指数涨跌幅 | (现价−前收)÷前收，腾讯字段直取 | stockData.js:615-616 |
+| 美债10年期收益率 | 财政部 `10 Yr` 列（票面恒定到期收益率，%）；变动 =(最新−前一交易日)×100 基点，四舍五入到 0.1bp | lib/usTreasury.js buildItem |
 | 板块涨跌幅 | 同花顺/东财行业板块实时或收盘口径，按申万二级统一分级（SW_LEVEL_UNIFIED） | stockData.js:778-779；app.js:6124 |
 | 板块点位为 0 的处理 | 数据中心报表不提供点位 → 回退显示领涨股或涨/跌家数，不显示 "0.00" 误导 | app.js:6137-6144 |
 | 当日最多涨停板块 | 东财涨停池按行业（hybk）计数 top1；并列取先出现；leader=该行业池内首只（封板最早） | stockData.js:1029-1036 |
@@ -55,7 +69,7 @@
 
 | 层 | 内容 |
 |---|---|
-| 数据源 | 腾讯 qt.gtimg.cn（A股/港股/美股指数主源）；新浪（全球指数 + 腾讯整批失败兜底）；同花顺行业板块一览（`scripts/ths_sector_summary.py`，30s 缓存，25s 超时）；东财 push2/数据中心（面板口径 + 涨跌停池）；腾讯行业指数（第三级降缺） |
+| 数据源 | 腾讯 qt.gtimg.cn（A股/港股/美股指数主源）；美债10年期＝美国财政部日度收益率曲线 CSV（备源美联储 FRED DGS10，30 分钟进程内缓存）；新浪（全球指数 + 腾讯整批失败兜底）；同花顺行业板块一览（`scripts/ths_sector_summary.py`，30s 缓存，25s 超时）；东财 push2/数据中心（面板口径 + 涨跌停池）；腾讯行业指数（第三级降缺） |
 | 采集时机 | 前端加载/刷新时实时请求，无独立定时任务；同花顺板块 30s 进程内缓存 |
 | 副作用 | 路由内顺带记录行业涨跌前五（供 7 日高频提醒）+ 首次种子回填 | server.js:700-706 |
 | 前端取数 | `GET /api/market-overview`（app.js:5606）；加载后联动读大盘 AI 解读缓存、7 日提醒、行业资金流向 | app.js:5622-5627 |
@@ -70,6 +84,8 @@
 | 东财面板盘中陈旧 | 切同花顺实时源 + 明示切换原因；同花顺也不可用时保留东财收盘口径并标注「收盘口径」 | stockData.js:691-718 |
 | 涨跌停池获取失败 | topLimitUpBoard/topLimitDownBoard 为 null，**不渲染该卡，不伪造** | stockData.js:684-690；app.js:6184、6189 |
 | 点位缺失 | 回退领涨股/涨跌家数 | app.js:6137-6144 |
+| 美债取数全部失败 | 不追加该卡（并 `console.warn`），同排三个美股指数不受影响；绝不编造或用过期数据冒充 | lib/usTreasury.js getUs10yYield → stockData.js getMarketOverview |
+| 美债数据滞后 | ≤3 天照常展示；3~10 天打 `⚠` 并在 tooltip 说明；>10 天直接不展示 | lib/usTreasury.js（STALE_WARN_DAYS / MAX_STALE_DAYS） |
 
 ## 六、逻辑漏洞自查清单（审计用）
 
@@ -84,6 +100,10 @@
 - [ ] **AI 解读条与数据解耦**：AI 文本按 aiKey 缓存，行情刷新后 AI 文本可能对应旧数据——检查 lastMarketAITexts 的失效策略（app.js:6159-6161）
 - [ ] **指数解析字段位**：f[31]/f[32] 硬编码字段位，腾讯改协议会静默错位——确认有解析失败保护（stockData.js:606-617）
 - [ ] **unavailable tile 的 0 值**：price=0 与 unavailable 用 `--`，但 change=0 的平盘 tile 显示 `0.00%`——检查平盘与缺失的视觉区分（app.js:6136-6139）
+- [ ] **美债卡的量纲混淆**：收益率 `5.15%` 与指数点位同排，容易被读成「美债指数 5.15」——检查「日线·MM-DD」标签与 tooltip 是否始终可见（app.js renderTile 的 yield 分支）
+- [ ] **美债卡被误当实时**：数据源是日度收益率曲线，美国假日/周末会滞后 1~3 天——检查 `staleWarn` 的 ⚠ 是否随数据滞后出现，而不是被吞掉（lib/usTreasury.js buildItem）
+- [ ] **跳转页与本卡数值不一致**：链接页是东财 push2 **盘中实时**报价，本卡是美国财政部**日度**收益率——两个口径本就会给出不同数字（实测同一指数：财政部/东财数据中心 5.15%，东财行情页 2.78%）。tooltip 已声明，**不得**为了「看起来一致」把卡片改成那个数或把链接去掉（app.js yield 分支 tip）
+- [ ] **美债行来源语义**：美国指数行的来源标签必须打 `usSource`（含财政部），不能写死 `indexSource`／「腾讯行情」——否则是虚假标注（app.js groups 定义）
 - [ ] **12 样本兜底的代表性**：最后级降缺只有 12 个固定指数，「前5」实际是 12 选 5——检查该路径的 sectorSource 标注是否醒目（stockData.js:666）
 
 ## 七、可配置项
@@ -95,3 +115,5 @@
 | 同花顺板块缓存 | 30s；脚本超时 25s | stockData.js:783、792 |
 | 申万统一层级 | SW_LEVEL_UNIFIED（二级） | stockData.js:778 |
 | 涨跌停池 pagesize | 10000 | stockData.js:LIMIT_POOL_COMMON |
+| 美债缓存 TTL | 30 分钟 | lib/usTreasury.js TTL_MS |
+| 美债过期阈值 | 警告 3 天 / 不展示 10 天 | lib/usTreasury.js STALE_WARN_DAYS / MAX_STALE_DAYS |

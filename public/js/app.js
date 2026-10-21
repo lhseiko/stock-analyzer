@@ -2453,6 +2453,9 @@ const App = {
         this._renderPaError(data?.error || '价格行为推演数据获取失败');
         return;
       }
+      // 20261021d：手动阻力/支撑区间与主数据**一起取**，保证 ②卡 一次渲染成型
+      // （若在渲染后再补，模型清单会先少两条再跳出来）。失败按空处理，不影响模型内容。
+      this.manualZones = await this._fetchManualZones(symbol);
       this.paData = data;
       this.paLoadedSymbol = symbol;
       this.renderPriceAction(data);
@@ -2477,6 +2480,225 @@ const App = {
     if (v === '上行' || v === '偏上' || v === '超跌反弹') return 'up';
     if (v === '下行' || v === '偏下' || v === '冲高回落') return 'down';
     return 'side';
+  },
+
+  // 单箱体精简一行（20261020j）：旧版「多窗口箱体表格」已彻底移除，此处只留一行结论。
+  // 口径来源 lib/rangeDetector.js；与②卡下方阻力/支撑区间的有效性检验（lib/zoneValidity.js）
+  // 是两套完全独立的口径，禁止互相引用或互相当作验证。
+  // ---- 20261021d：手动阻力/支撑区间（②卡「手动添加」页签）----
+  // 口径：用户自填，只做展示；**不进** zoneValidity 的有效性检验、**不进**侵蚀、不影响方向判断与准确率统计。
+  // 落盘在服务端 data/manual-zones/<symbol>.json（换设备/清缓存都不丢），与模型数据互不相干。
+  _emptyManualZones() {
+    return { resistances: [], supports: [], total: 0, limits: { maxPerSide: 20, noteMax: 40 } };
+  },
+
+  async _fetchManualZones(symbol) {
+    try {
+      const r = await fetch(`/api/manual-zones/${encodeURIComponent(symbol)}`);
+      const d = await r.json();
+      if (!d || !d.success) return this._emptyManualZones();
+      return {
+        resistances: d.resistances || [],
+        supports: d.supports || [],
+        total: d.total || 0,
+        limits: d.limits || this._emptyManualZones().limits,
+      };
+    } catch (e) {
+      console.warn('[ManualZones] 读取失败（按空处理，不影响模型内容）:', e && e.message);
+      return this._emptyManualZones();
+    }
+  },
+
+  async _saveManualZone(side, low, high, note) {
+    const symbol = this.currentSymbol;
+    try {
+      const r = await fetch(`/api/manual-zones/${encodeURIComponent(symbol)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ side, low, high, note }),
+      });
+      const d = await r.json();
+      if (!d || !d.success) return { ok: false, error: (d && d.error) || '保存失败' };
+      this.manualZones = {
+        resistances: d.resistances || [], supports: d.supports || [],
+        total: d.total || 0, limits: d.limits || this._emptyManualZones().limits,
+      };
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: '网络异常：' + (e && e.message ? e.message : '') };
+    }
+  },
+
+  async _deleteManualZone(id) {
+    const symbol = this.currentSymbol;
+    try {
+      const r = await fetch(`/api/manual-zones/${encodeURIComponent(symbol)}/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      const d = await r.json();
+      if (!d || !d.success) return { ok: false, error: (d && d.error) || '删除失败' };
+      this.manualZones = {
+        resistances: d.resistances || [], supports: d.supports || [],
+        total: d.total || 0, limits: d.limits || this._emptyManualZones().limits,
+      };
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: '网络异常：' + (e && e.message ? e.message : '') };
+    }
+  },
+
+  /** 「手动添加」页签正文：表单 + 已添加清单（含有效性检验结果） */
+  _renderManualZonesPanel(shortTerm) {
+    const mz = this.manualZones || this._emptyManualZones();
+    const fmt = (v) => (v == null ? '—' : Storage.formatNumber(v));
+    const rowTxt = (z) => (Number(z.low) === Number(z.high)
+      ? fmt(z.low)
+      : `${fmt(z.low)} ~ ${fmt(z.high)}`);
+    // 20261021e：后端已把手动区间并入短期清单并跑过两条有效性检验，这里按 manualId 取回结论，
+    // 让用户在「手动添加」页签里就能看到「通过 / 未通过 + 原因」，而不是纳闷"为什么模型清单里没有"。
+    const checked = {};
+    const st = shortTerm || {};
+    [].concat(st.resistances || [], st.supports || []).forEach(z => {
+      if (z && z.isManual && z.manualId) checked[z.manualId] = z;
+    });
+    const group = (arr, side, title) => {
+      if (!arr.length) return '';
+      return `<div class="pa-mz-group ${side}">
+        <div class="pa-mz-group-title">${title}<span class="pa-mz-count">${arr.length}</span></div>
+        ${arr.map(z => {
+          const info = checked[z.id];
+          const invalid = info && info.valid === false;
+          const reasons = invalid && Array.isArray(info.invalidReasons) ? info.invalidReasons.join('；') : '';
+          const badge = !info
+            ? '<span class="pa-mz-badge unknown">未检验</span>'
+            : invalid
+              ? `<span class="pa-mz-badge invalid" title="${this.escapeHtml(reasons)}">检验未通过</span>`
+              : '<span class="pa-mz-badge ok">通过检验</span>';
+          const tip = invalid
+            ? `${reasons}\n（未通过有效性检验，因此不在下方/上方的模型清单里显示；你仍可删除它）`
+            : '已通过本模块的两条有效性检验：无放量轻松突破 / 三天来回穿越';
+          return `<div class="pa-mz-row ${side}${invalid ? ' invalid' : ''}" title="${this.escapeHtml(tip)}">
+            <span class="pa-mz-range">${rowTxt(z)}</span>
+            <span class="pa-mz-note-text">${this.escapeHtml(z.note || '')}</span>
+            ${badge}
+            <button type="button" class="pa-mz-del" data-mz-del="${this.escapeHtml(z.id)}" title="删除这条手动区间">删除</button>
+          </div>`;
+        }).join('')}
+      </div>`;
+    };
+    const body = (mz.resistances.length || mz.supports.length)
+      ? group(mz.resistances, 'resistance', '手动阻力') + group(mz.supports, 'support', '手动支撑')
+      : '<div class="pa-mz-empty">还没有手动区间。上面填一个价位（只填一个就代表单点），点「添加」即可。</div>';
+    return `
+      <div class="pa-mz-tip">手动区间与模型区间<b>走同一条有效性检验</b>（无放量轻松突破 / 三天来回穿越 → 无效的不会进入上方清单，本页会标出原因）；
+        但<b>不参与</b>侵蚀收缩，也不影响方向判断、概率与准确率统计。</div>
+      <div class="pa-mz-form">
+        <select id="paMzSide" class="pa-mz-input pa-mz-side">
+          <option value="resistance">加为上方阻力</option>
+          <option value="support">加为下方支撑</option>
+        </select>
+        <input id="paMzLow" class="pa-mz-input" type="number" step="0.01" min="0" placeholder="价位（下沿）">
+        <span class="pa-mz-sep">~</span>
+        <input id="paMzHigh" class="pa-mz-input" type="number" step="0.01" min="0" placeholder="上沿（留空=单点）">
+        <input id="paMzNote" class="pa-mz-input pa-mz-note" type="text" maxlength="${mz.limits.noteMax}" placeholder="备注（可选）">
+        <button type="button" id="paMzAdd" class="pa-mz-add">添加</button>
+      </div>
+      <div class="pa-mz-err" id="paMzErr"></div>
+      ${body}
+    `;
+  },
+
+  /** 绑定 ②卡 页签与手动区间表单（每次重渲染后重新绑定；DOM 是新的） */
+  _wirePriceActionTabs(stEl) {
+    const tabs = stEl.querySelectorAll('[data-pa-tab]');
+    const bodies = stEl.querySelectorAll('[data-pa-body]');
+    const activate = (key) => {
+      this._paTab = key;
+      tabs.forEach(b => b.classList.toggle('active', b.getAttribute('data-pa-tab') === key));
+      bodies.forEach(b => b.classList.toggle('hidden', b.getAttribute('data-pa-body') !== key));
+    };
+    tabs.forEach(btn => {
+      btn.addEventListener('click', () => activate(btn.getAttribute('data-pa-tab')));
+    });
+    // 恢复上次停留的页签（同一页面内反复增删/刷新不会跳回模型页）
+    activate(this._paTab === 'manual' ? 'manual' : 'model');
+
+    const addBtn = stEl.querySelector('#paMzAdd');
+    if (!addBtn) return;
+    const errEl = stEl.querySelector('#paMzErr');
+    const showErr = (msg) => { if (errEl) errEl.textContent = msg || ''; };
+    addBtn.addEventListener('click', async () => {
+      const side = (stEl.querySelector('#paMzSide') || {}).value || 'resistance';
+      const lowRaw = ((stEl.querySelector('#paMzLow') || {}).value || '').trim();
+      const highRaw = ((stEl.querySelector('#paMzHigh') || {}).value || '').trim();
+      const note = ((stEl.querySelector('#paMzNote') || {}).value || '').trim();
+      if (!lowRaw) { showErr('请先填价位'); return; }
+      const low = Number(lowRaw);
+      const high = highRaw ? Number(highRaw) : low;   // 只填一个 = 单点区间
+      if (!Number.isFinite(low) || !Number.isFinite(high)) { showErr('价格必须是数字'); return; }
+      if (low > high) { showErr('下沿不能高于上沿'); return; }
+      addBtn.disabled = true;
+      const r = await this._saveManualZone(side, low, high, note);
+      addBtn.disabled = false;
+      if (!r.ok) { showErr(r.error || '保存失败'); return; }
+      this._paTab = 'manual';
+      if (this.paData) this.renderPriceAction(this.paData);   // 重渲染：模型清单同步出现该条（带「手动」标）
+    });
+    stEl.querySelectorAll('[data-mz-del]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-mz-del');
+        btn.disabled = true;
+        const r = await this._deleteManualZone(id);
+        if (!r.ok) { showErr(r.error || '删除失败'); btn.disabled = false; return; }
+        this._paTab = 'manual';
+        if (this.paData) this.renderPriceAction(this.paData);
+      });
+    });
+  },
+
+  _renderSingleBoxRow(sr) {
+    if (!sr || sr.ok === false) return '';   // 数据不足/异常 → 整行隐藏，不占位
+    const fmt = (v) => (v == null ? '—' : Storage.formatNumber(v));
+    const basis = (sr.tolerance && sr.tolerance.basis) || '';
+    const rule = (sr.invalidation && sr.invalidation.rule) || '';
+    const commonTip = [
+      `箱体口径：${basis}`,
+      `失效规则：${rule}`,
+      '箱体区间=箱体存续期内的收盘实际区间；失效线=中轴±容差（连续 3 日收盘越过失效线即箱体失效，与是否放量无关）。',
+      '注意：与本卡下方「阻力/支撑区间」的有效性检验是两套独立口径，不可互相验证。',
+    ].filter(Boolean).join('\n');
+
+    if (sr.state !== 'active' || !sr.box) {
+      const li = sr.lastInvalid;
+      const nf = sr.nextFormation || {};
+      let txt;
+      if (li) {
+        txt = `上一个箱体 ${li.startDate}~${li.endDate}（${li.days} 日）已于 ${li.invalidDate} 失效：连续 ${li.invalidStreak} 日收盘${li.invalidDir}突破 ${fmt(li.invalidLevel)}`
+          + (nf.remaining > 0 ? ` · 新箱体还差 ${nf.remaining} 个交易日` : ' · 已够 20 日种子，但振幅尚未收窄到容差内');
+      } else {
+        txt = sr.conclusion || '未形成箱体';
+      }
+      return `<div class="pa-box-row none" title="${this.escapeHtml(`${sr.conclusion || ''}\n${commonTip}`)}"><span class="pb-tag">箱体</span><span class="pb-empty">${this.escapeHtml(txt)}</span></div>`;
+    }
+
+    const b = sr.box;
+    const inv = sr.invalidation || {};
+    const tip = [
+      sr.conclusion,
+      `中轴 ${fmt(b.mid)}｜容差 ±${b.tolPct}%｜收盘区间 ${fmt(b.envL)}~${fmt(b.envU)}（振幅 ${b.ampEnvPct}%，最大半幅 ${b.halfDevPct}%）｜假突破 ${b.fakeBreaks} 次`,
+      `上下限已并入下方清单：上沿 ${fmt(b.envU)} 列入「上方关键阻力区间」、下沿 ${fmt(b.envL)} 列入「下方关键支撑区间」。`,
+      commonTip,
+    ].filter(Boolean).join('\n');
+    // 20261020l：**绝不显示「距失效还需 N 日」这种倒计时**——失效条件是「连续 3 日收盘在失效线外」，
+    // 股价还在箱体里震荡时该条件根本没被触发，倒数会让人误以为「三日后自动失效」（用户实测报障）。
+    // 只有真的已连续越界（currentStreak>0）才显示「已连续 N 日在外，再有 M 日失效」。
+    const riskTxt = inv.currentStreak > 0
+      ? `已连续 ${inv.currentStreak} 日在失效线外，再有 ${inv.remainDays} 日失效`
+      : '未触发失效';
+    return `<div class="pa-box-row" title="${this.escapeHtml(tip)}">
+      <span class="pb-tag">箱体</span>
+      <span class="pb-main">自 ${this.escapeHtml(b.startDate || '')} 起 <b>${b.days}</b> 个交易日</span>
+      <span class="pb-kv">失效线 <b class="up">${fmt(b.bandU)}</b> / <b class="down">${fmt(b.bandL)}</b></span>
+      <span class="pb-risk ${inv.currentStreak > 0 ? 'warn' : ''}">${riskTxt}</span>
+    </div>`;
   },
 
   renderPriceAction(data) {
@@ -2510,13 +2732,71 @@ const App = {
     // 2. 短期动向预判（未来1-5个交易日）
     const stEl = document.getElementById('paShortTerm');
     if (stEl) {
-      const zoneRow = (z, cls) => `<div class="pa-zone-row ${cls}"><span class="pz-range">${Storage.formatNumber(z.low)} ~ ${Storage.formatNumber(z.high)}</span><span class="pz-src">${this.escapeHtml(z.source)}</span></div>`;
+      // 20261020j：②卡恢复箱体，但改为「单箱体精简一行」；20261020i 删掉的是旧「固定多窗口」表格版。
+      // 阻力/支撑仍为「先过有效性检验再展示」——无效区间不展示（规则见 lib/zoneValidity.js）：
+      //   标准1 最近一次方向性穿越日量比 ≤1.2（不需要放量就突破/跌破）→ 无效
+      //   标准2 当前连续站外 >3 天，或窗内内外反转 >3 次（在区间处来回穿越）→ 无效
+      const boxRow = this._renderSingleBoxRow(data.singleRange);
+      const validOnly = (arr) => (arr || []).filter(z => z && z.valid !== false);
+      const sortDesc = (arr) => arr.slice().sort((a, b) => (Number(b.high) || 0) - (Number(a.high) || 0));
+      // 20261020k：箱体上下限并入「上方关键阻力区间 / 下方关键支撑区间」（用户要求合并展示）。
+      // 铁律：箱体条目 isBox=true，**不得**交给 zoneValidity 过滤（用户第六条：两套检验必须独立），
+      // 箱体是否失效只由 rangeDetector「连续 3 日突破」判定；无效区间过滤只作用于摆动点/MA 区间。
+      const edges = (data.singleRange && data.singleRange.edges) || null;
+      const asZone = (e) => (e ? { low: e.price, high: e.price, source: e.source, isBox: true, note: e.note } : null);
+      const boxRes = asZone(edges && edges.upper);
+      const boxSup = asZone(edges && edges.lower);
+      // 20261021e：手动区间**由后端并入** shortTerm.resistances/supports（同一条有效性检验），
+      // 前端不再自己 concat，否则会重复渲染两条；是否展示统一按 valid !== false 过滤。
+      const mz = this.manualZones || this._emptyManualZones();
+      const resAll = sortDesc(validOnly(shortTerm.resistances).concat(boxRes ? [boxRes] : []));
+      const supAll = sortDesc(validOnly(shortTerm.supports).concat(boxSup ? [boxSup] : []));
+      const zoneRow = (z, cls) => {
+        const ck = z.zoneCheck;
+        const er = z.erosion;
+        // 20261020m：侵蚀说明（无放量侵入但没打穿 → 近端收紧、远端不变）
+        const eroTip = er
+          ? `侵蚀：${er.date || '近'}收盘 ${er.close} 侵入区间内部（量比 ${er.vr} ≤ ${er.volRatioMax}，未放量且未打穿）→ 区间由 ${er.rangeFrom} 收紧为 ${er.rangeTo}，远端不变`
+          : '';
+        const tip = z.isManual
+          ? ['你手动添加的区间（保存在服务端，换设备也在）', '与模型区间**走同一条有效性检验**（无放量轻松突破 / 三天来回穿越 → 无效则不在本清单显示）', '但不参与侵蚀收缩，也不影响方向判断与准确率统计']
+          : z.isBox
+            ? [z.note, '该条目为箱体边界（本模块判定），与上方/下方其余区间的有效性检验是两套独立口径，不参与其过滤'].filter(Boolean).join('\n')
+            : (ck ? [
+              `近${ck.lookbackDays}日价格在本位置反复往返 ${ck.touchTransitions} 次（上限 ${ck.crossMax} 次，超过即无效；触及区间即计一次）`,
+              ck.streakNow > 0
+                ? `当前已连续 ${ck.streakNow} 天在区间外（上限 ${ck.outStreakMax} 天，超过即无效）`
+                : '当前收盘在区间内',
+              ck.lastBreakDate
+                ? `最近一次${ck.side === 'resistance' ? '向上突破' : '向下跌破'} ${ck.lastBreakDate}，量比 ${ck.lastBreakVr == null ? '数据不足' : ck.lastBreakVr}（需 >${ck.breakVolMin} 才算放量；未放量即穿越则无效）`
+                : `近${ck.lookbackDays}日未发生收盘穿越（该位置尚未被测试，保留）`,
+              eroTip,
+              '区间有效性已通过检验才展示',
+            ].filter(Boolean).join('\n') : eroTip);
+        // 箱体边界是单点价（low===high）→ 渲染单值，避免「8.54 ~ 8.54」
+        const single = Number(z.low) === Number(z.high);
+        const txt = single ? Storage.formatNumber(z.low) : `${Storage.formatNumber(z.low)} ~ ${Storage.formatNumber(z.high)}`;
+        const eroTag = er ? '<span class="pz-erode">已收紧</span>' : '';
+        const manTag = z.isManual ? '<span class="pz-manual">手动</span>' : '';
+        const rowCls = `pa-zone-row ${cls}${z.isBox ? ' box-edge' : ''}${z.isManual ? ' manual' : ''}`;
+        return `<div class="${rowCls}"${tip ? ` title="${this.escapeHtml(tip)}"` : ''}><span class="pz-range">${txt}</span><span class="pz-src">${this.escapeHtml(z.source)}${manTag}${eroTag}</span></div>`;
+      };
+      const mzCount = (mz.resistances || []).length + (mz.supports || []).length;
       stEl.innerHTML = `
         <h4>② 短期动向预判（1-5个交易日） <span class="pa-verdict ${this._paVerdictClass(shortTerm.direction)}">${shortTerm.direction} · 概率${shortTerm.probability}</span></h4>
-        <ul class="pa-evidence">${shortTerm.evidence.map(e => `<li>${this.escapeHtml(e)}</li>`).join('')}</ul>
-        ${shortTerm.resistances.length ? `<div class="pa-zone-title resistance">上方关键阻力区间</div>${[...shortTerm.resistances].sort((a, b) => b.low - a.low).map(z => zoneRow(z, 'resistance')).join('')}` : ''}
-        ${shortTerm.supports.length ? `<div class="pa-zone-title support">下方关键支撑区间</div>${[...shortTerm.supports].sort((a, b) => b.low - a.low).map(z => zoneRow(z, 'support')).join('')}` : ''}
+        <div class="pa-tabs">
+          <button type="button" class="pa-tab active" data-pa-tab="model">模型判定</button>
+          <button type="button" class="pa-tab" data-pa-tab="manual">手动添加${mzCount ? `<span class="pa-tab-badge">${mzCount}</span>` : ''}</button>
+        </div>
+        <div class="pa-tab-body" data-pa-body="model">
+          <ul class="pa-evidence">${shortTerm.evidence.map(e => `<li>${this.escapeHtml(e)}</li>`).join('')}</ul>
+          ${boxRow}
+          ${resAll.length ? `<div class="pa-zone-title resistance">上方关键阻力区间</div>${resAll.map(z => zoneRow(z, 'resistance')).join('')}` : ''}
+          ${supAll.length ? `<div class="pa-zone-title support">下方关键支撑区间</div>${supAll.map(z => zoneRow(z, 'support')).join('')}` : ''}
+        </div>
+        <div class="pa-tab-body hidden" data-pa-body="manual">${this._renderManualZonesPanel(shortTerm)}</div>
       `;
+      this._wirePriceActionTabs(stEl);
     }
 
     // 3. 长短周期协调性评估
@@ -6343,7 +6623,9 @@ const App = {
       { key: 'cn', country: '中国指数', flag: '🇨🇳', cls: 'mo-cn', aiKey: 'cn', source: data.indexSource, isEm: data.indexIsEastmoney },
       { key: 'sectorsUp', country: '行业板块涨幅前5', flag: '📈', cls: 'mo-up', aiKey: 'gainers', source: data.panelSource || data.sectorSource, isEm: data.panelIsEastmoney != null ? data.panelIsEastmoney : data.sectorIsEastmoney, reminderSlot: 'up' },
       { key: 'sectorsDown', country: '行业板块跌幅前5', flag: '📉', cls: 'mo-down', aiKey: 'losers', source: data.panelSource || data.sectorSource, isEm: data.panelIsEastmoney != null ? data.panelIsEastmoney : data.sectorIsEastmoney, reminderSlot: 'down' },
-      { key: 'us', country: '美国指数', flag: '🇺🇸', cls: 'mo-us', aiKey: null, source: data.indexSource, isEm: data.indexIsEastmoney },
+      // 20261021a：美国指数行的来源标签单独取 usSource——该行末尾追加了「美债10年期收益率（日线）」，
+      // 数据来自美国财政部而非腾讯行情，混在「腾讯行情」标签下就是虚假标注（诚实合规）。
+      { key: 'us', country: '美国指数', flag: '🇺🇸', cls: 'mo-us', aiKey: null, source: data.usSource || data.indexSource, isEm: data.indexIsEastmoney },
     ];
     const fmt = (n) => (n === null || n === undefined || isNaN(n)) ? '--' : n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const fmtPct = (n) => (n === null || n === undefined || isNaN(n)) ? '--' : (n >= 0 ? '+' : '') + n.toFixed(2) + '%';
@@ -6368,6 +6650,33 @@ const App = {
         </div>`;
       }
       const dir = (!it.unavailable && it.changePct > 0) ? 'up' : ((!it.unavailable && it.changePct < 0) ? 'down' : 'flat');
+      // 20261021a：美债 10 年期收益率（日线）——收益率与点位是两种量纲，不能套 fmt()/fmtPct()：
+      //   · 主值：5.15%（收益率百分数），不是「点位」
+      //   · 变动：+6.0bp（基点，1bp = 0.01 个百分点，债券市场通用表达），不是「+1.18%」
+      //   · 红涨绿跌沿用：收益率上行=红、下行=绿
+      //   · 右上角「日线 · MM-DD」= 数据频率 + 截至日期，明示这不是实时报价，避免与道指/纳指误读
+      if (it.kind === 'yield') {
+        const bp = (it.changeBp === null || it.changeBp === undefined || isNaN(it.changeBp)) ? null : Number(it.changeBp);
+        const yDir = bp == null ? 'flat' : (bp > 0 ? 'up' : (bp < 0 ? 'down' : 'flat'));
+        const priceTxt = (it.price === null || it.price === undefined || isNaN(it.price)) ? '--' : Number(it.price).toFixed(2) + '%';
+        const bpTxt = bp == null ? '--' : (bp >= 0 ? '+' : '') + bp.toFixed(1) + 'bp';
+        const tip = [
+          `截至 ${it.asOf || '--'}（日线，非实时行情）`,
+          `来源：${it.sourceLabel || '美国财政部'}`,
+          (it.prevClose != null) ? `前一交易日 ${Number(it.prevClose).toFixed(2)}%，变动 ${bpTxt}` : '',
+          it.staleWarn ? `⚠ 该数据已 ${it.staleDays} 天未更新（周末/美国假日或源站延迟）` : '',
+          it.linkUrl ? `点击打开 ${it.linkLabel || '东方财富行情页'}——该页是盘中实时报价，与本卡日线口径不同，数值可能不一致` : '',
+        ].filter(Boolean).join('\n');
+        const inner = `<div class="mo-name">${this.escapeHtml(it.name || '美债10年期')}<span class="mo-bond-tag">日线·${this.escapeHtml(it.dateLabel || '--')}</span></div>
+          <div class="mo-price">${priceTxt}</div>
+          <div class="mo-chg">${bpTxt}${it.staleWarn ? ' ⚠' : ''}</div>`;
+        // 20261021b：整卡可点，跳东财「美国10年期国债收益率」行情页（用户 2026-10-21 要求）。
+        // 用 <a> 而不是给 div 挂 click——浏览器原生行为（中键新窗口、复制链接、状态栏显示目标）都保留。
+        if (it.linkUrl) {
+          return `<a class="mo-tile bond mo-tile-link ${yDir}" href="${this.escapeHtml(it.linkUrl)}" target="_blank" rel="noopener noreferrer" title="${this.escapeHtml(tip)}">${inner}<span class="mo-link-mark">↗</span></a>`;
+        }
+        return `<div class="mo-tile bond ${yDir}" title="${this.escapeHtml(tip)}">${inner}</div>`;
+      }
       // 20260924：数据中心报表不提供板块指数点位（price=0）→ 视为缺失回退显示领涨/涨跌家数，
       // 否则会渲染出 "0.00" 误导用户以为数据卡死。
       let priceTxt = (it.price && Number(it.price) !== 0) ? fmt(it.price) : '--';

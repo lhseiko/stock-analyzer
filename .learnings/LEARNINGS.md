@@ -591,3 +591,735 @@
 - Recurrence-Count: 1
 - First-Seen: 2026-10-18
 - Last-Seen: 2026-10-20
+
+## [LRN-20261020-002] 互斥期望必须单源推导：双清单并行收集把同一股票判成自相矛盾
+
+**Logged**: 2026-10-20T06:30:00Z
+**Type**: correction
+**Priority**: high
+
+### Summary
+个股量能卡同时显示「该放量未放量，资金没有跟上」+「该缩量反放巨量，分歧未结束」——两个互斥期望同时命中（用户截图报障）。根因是该放量/该缩量两侧场景清单独立收集，「低位区间+前期平台整理」无条件同时进两侧，且该缩量侧的巨量判定被 60 日 confirm 口径污染（÷5 量比 1.15 的平量股因 confirm=放量命中「反放巨量」）。
+
+### Details
+- 用户给出六维度框架（时间/量能形态/价格行为/确认逻辑/假信号/观察清单）区分「底部构筑期（该缩量：卖压衰竭）」与「底部启动/确认区（该放量：买盘验证）」，要求把原判定升级。
+- 实现为 `_bottomPhase` 相位分类器：启动确认区（充分条件：倍量或放量持续≥2日+价格抬升+交叉验证）> 构筑期（必要条件：近10日≥6日地量+低点不再下移+未突破平台上沿+均线非空头发散）> 方向不明（未定性不臆断期望）；非低位/无平台→不适用；样本不足→数据不足。
+- 期望由相位单源推导：该放量侧平台场景加 `bpPhase==='启动确认区'` 门控；该缩量侧低位场景加 `lowSideOk`（仅构筑期）；`hugeVol` 剔除 60 日 confirm 只认 ÷5 日档位（20261019f 铁律复用：确认机制不许有改判权力）；低位+单日脉冲豁免（框架「假信号识别」）。
+- 结构性保证：该放量未放量要求 `!isHugeVol`（ratio5≤1.2），该缩量反放巨量要求档位∈{大量,天量}（ratio5>2.5），量能区间不相交——永不同时命中。
+- A/B 实证（git HEAD 旧版 vs 新版，合成复刻截图场景）：旧版双命中矛盾；场景3（启动确认区+当日巨量阴线）、场景4（构筑期单日脉冲）旧版均误命中「该缩量反放巨量」。
+- 实测 10 只自选股（含 000902）：无一双命中；7 只低位股全部「方向不明」并逐条列明理由（地量 0-5/10 日/低点仍在下移/均线空头排列发散）——未定性不臆断期望，符合诚实合规原则。
+
+### Suggested Action（已实施，schema 20261020a）
+1. lib/volumeEngine.js：新增 `_bottomPhase` + 7 个相位常量（阈值取用户框架范围内保守值，注释对标来源）；`_contradictionRules` 两侧门控 + 巨量口径收严 + 低位脉冲豁免 + 返回 bottomPhase；`_buildSummaries` 归集总结追加相位说明；主入口输出 bottomPhase；schema volume-engine-20261019f→20261020a。
+2. scripts/test_volume_engine.js：[18] 节 40 项断言（构筑期/截图复刻核心回归/启动确认区/脉冲豁免/非低位回归保护/_bottomPhase 单元/40 组合互斥不变量扫描）；schema 与 bottomPhase 字段断言同步。276/276 全绿。
+3. scripts/test_volume_consistency.js：schema 断言同步 20261020a，227/227 全绿。
+4. docs/logic/stock-13-capital.md 新增 8.12 节（框架映射/根因四层/修复表/实测影响面/护栏）。
+
+### Prevention
+- **互斥期望必须单源推导**：当两个结论（该放量 vs 该缩量、看多 vs 看空、买入 vs 卖出）在语义上互斥时，禁止用两个独立清单分别收集触发条件——必须先从「相位/状态」单源推导当前处于哪一侧，另一侧才谈得上触发条件。双清单并行收集是自相矛盾的通用产生器。
+- **口径污染要连坐排查**：一个判定（巨量）混用两个口径（÷5 日档位 + 60 日 confirm）时，松口径会悄悄制造矛盾结论。凡「A 或 B」形式的布尔条件，先问「B 有没有权力触发基于 A 阈值的判定」——本案与 20261019f「确认机制不许有改判权力」同族，修的时候要主动 grep 全模块其余同类或项。
+- **阈值取框架范围内保守值并注释对标**：用户给区间（30%-50%）时取上限为认定线（50%）、持续日数取区间中值以上（≥6/10），宁严勿宽——宽阈值把未定性场景误判进某一侧，同样制造矛盾；每个常量注释标注对标来源，后续审计有据。
+- **测试要能捕获旧 bug**：新增场景测试后，用 `git show HEAD:<file>` 取旧版跑同数据 A/B 对比，确认旧版确实违反新断言（本案旧版场景2 双命中、场景3/4 误命中），防止「测试永远绿但什么都没测」。
+
+### Metadata
+- Source: user_feedback
+- Reproducible: yes（scripts/test_volume_engine.js [18] 节零网络可复现；A/B 对比脚本已删除，可用 git show HEAD:lib/volumeEngine.js 重建）
+- Related Files: lib/volumeEngine.js, scripts/test_volume_engine.js, scripts/test_volume_consistency.js, docs/logic/stock-13-capital.md
+- Tags: contradiction-signals, bottom-phase, single-source-derivation, confirm-basis-pollution, mutual-exclusion
+- Pattern-Key: backend.mutually_exclusive_expectations_need_single_source
+- Recurrence-Count: 1
+- First-Seen: 2026-10-20
+- Last-Seen: 2026-10-20
+
+---
+
+## LRN-20261020-003：抽象阈值必须同屏具象化，用户无法核对纯符号计算式
+
+**Issue**: 用户截图指出量比实战口诀卡第 4 条结论「（近 3 日均低于 60 日均量 ×0.7）这里最好把数据计算结果展示出来，60日均量乘以0.7是多少」——判定阈值写成计算式而非计算值，用户看不到均值、乘积、实际近 3 日量能，无法核对「为什么命中/为什么不命中」。同卡口诀 1/2/3/5 均已展示实际量比/均量倍数，唯口诀 4 是纯符号表述，卡片内部口径不齐。临界场景最致命：实测 000902 命中项中间日与阈值仅差 1.8%、601318 未命中项仅差 0.006%——没有数值在场，用户无法分辨「差得远」与「差一点」。
+
+**Root Cause**: 结论文案模板把阈值当作「规则说明」写（`60 日均量 ×0.7`），而非当作「本次数据的计算结果」写。规则说明对调试规则的开发者足够，对需要核对判定的终端用户不够——用户是零代码背景，唯一可做的就是拿界面上的数字做心算验证。
+
+### Suggested Action（已实施，schema 20261020b）
+1. lib/volumeEngine.js 口诀 4：命中/未命中两个分支均同屏展示「60 日均量 X ×0.7 = 阈值」+ 近 3 日实际量能（早→晚）；avg60≤0 或 n<3 时未命中分支退回原文案（不输出「null ×0.7 = null」）；detail 增加 avg60/shrinkThreshold/vols3（附加字段，既有消费方不受影响）；schema 20261020a→20261020b。
+2. scripts/test_volume_engine.js：口诀 4 测试块新增 4 项断言（命中文案含计算过程与实际值/已确认分支/两类未命中/detail 三字段），283/283 全绿；test_volume_consistency.js schema 断言同步，227/227 全绿。
+3. docs/logic/stock-13-capital.md：8.5 清单 #22 + 8.13 新节（含实测四只股票节选表 + 同类 6 处待确认清单）；修正 8.6 配置表过时的 schema 值（20261019f→20261020b，任务六遗留）。
+
+### Prevention
+- **面向终端用户的阈值必须是「本次数据的计算结果」而非「规则符号」**：凡结论文案出现「X 均量 ×系数」形式，默认应同屏展示均值实际值、乘积结果、被比较的实际值三件套；用户核对不了的心算就是没展示。
+- **量单位随数据通道变化的场景，只展示数值与相对关系、不写死单位**：东财/同花顺=股、腾讯=手（科创板恒为股），比较关系本身与单位无关，写死「手/股」会在降级通道上给出错误单位——比不给单位更糟。
+- **扩大范围前先列清单问用户**：同类模式在引擎内还有 6 处（分歧披露 note/persistence note/规则1 dataGap/攻击压力位 detail/跌破 dataGap/该放量未放量结论），本次仅按截图所指修改口诀 4，其余在汇报中列明待用户确认——小步快跑，不擅自churn 用户未指摘的文案。
+- **数据不齐全时优雅退回**：具象化依赖 avg60>0 且 n>=3，缺数据时未命中分支必须退回原纯文本文案，禁止输出「null ×0.7 = null」这类半成品。
+
+### Metadata
+- Source: user_feedback
+- Reproducible: yes（scripts/test_volume_engine.js 口诀4 测试块零网络可复现；实测脚本已删，可用 lib/volumeEngine.js analyzeVolume 重建）
+- Related Files: lib/volumeEngine.js, scripts/test_volume_engine.js, scripts/test_volume_consistency.js, docs/logic/stock-13-capital.md
+- Tags: threshold-concretization, user-verifiability, ratio-rules, unit-agnostic-display
+- Pattern-Key: frontend.abstract_thresholds_need_computed_values
+- Recurrence-Count: 1
+- First-Seen: 2026-10-20
+- Last-Seen: 2026-10-20
+
+---
+
+## LRN-20261020-004：分钟级尾盘窗口必须按时间戳截取，盘后零量条目会把「萎缩/无接力」类条件抹成恒真
+
+**Issue**: 用户截图报障圣湘生物（688289）生死位规则第 5 点「分时无量拉升」误命中——结论称「分时价格持续走高创出日内新高，但分时成交量逐级萎缩且无新增量能接力」，用户同时追问「分时成交量逐渐萎缩是如何判定的，工作台有记录分时成交量然后对比吗」。
+
+**Root Cause**: 腾讯分时收盘后追加 15:01-15:30 盘后条目（688289 实测追加 25 条，cumVol 恒定等于收盘累计值）→ 盘后分钟差分量恒为 0。规则 5 用**原始数组位置**取「最后 40/20 分钟」，窗口混入约 25 分钟零量盘后数据：第 3/4 桶被抹成 3/0（「末桶不足首桶 60%」恒真）、末 20 分钟最大分钟量≈0（「无新增接力」恒真）。于是 shrink+noRelay 对任何收盘股近乎恒真，只剩 priceAtHigh 一道闸——688289 收盘 15.95 距日内最高 15.98 仅 0.19% 恰好过线。与 20261017g 口诀 3 修掉的「尾盘窗口按位置截取」完全同族，当年只修了口诀 3、规则 5 遗漏。实测当日 4 只自选股全被追加 25 条盘后条目——系统性缺陷，不是个案。
+
+### Suggested Action（已实施，schema 20261020c）
+1. lib/volumeEngine.js 规则 5：按 `time` 时间戳过滤出交易时段（≤'1500'）条目，priceAtHigh/分桶/无接力全部基于交易时段序列（与口诀 3 同口径）；新增「交易时段可解析条目 <40 分钟 → 数据不足」分支；注释完整记录根因与 688289 实证数据。
+2. scripts/test_volume_engine.js：新增 4 项断言——误命中复现（242 真实 HHMM 交易分钟 + 尾盘创新高价 + 量能放大 + 25 条盘后零量条目含 1 条 +3 复刻实测）、A/B 对照（内联旧口径在同数据上 shrink+noRelay 恒真，证明断言确能捕获旧 bug）、防过度修正（真实萎缩仍命中）、数据不足分支；既有 3 个夹具从旧 mock 格式 '09:30'（带冒号不可解析）迁移为真实 'HHMM'。289/289 全绿。
+3. scripts/test_volume_consistency.js：schema 断言同步 20261020c，227/227 全绿。
+4. docs/logic/stock-13-capital.md：8.5 清单 #23 + 8.14 新节（含分时量能判定机制说明、污染/修正口径对照表、修复表、实测影响面、护栏）；spec 表五大生死位行同步标注时间戳口径。
+
+### Prevention
+- **分钟级「最后 N 分钟」窗口必须按 time 时间戳截取，禁止用原始数组位置**：分时数据源会在收盘后追加盘后条目（cumVol 恒定 → 差分为 0），任何「末尾窗口 + 递减/极值类条件」都会被零量条目污染成恒真。20261017g 修口诀 3 时就得出的结论，这次以 checklist 形式固化：凡新增/修改分钟级尾盘逻辑，先 grep 既有实现是否还有 `slice(-N)` 直接作用在原始分时数组上（本次审计确认规则 5 是最后一处，口诀 1 用数组头部不受影响、口诀 3/规则 2 已安全）。
+- **「恒真条件」是 bear/看空类规则的隐形误报发生器**：一个看空规则若其触发条件对全体样本恒真，就退化为「价格形态单闸」——本次只剩 priceAtHigh 一道闸，等于「尾盘收在高点附近即看空」。写规则时对每个条件问一句「这个条件有没有可能对任何股票都为真」。
+- **A/B 对照要内联进测试**：复现误命中根因时，把旧口径计算直接写在测试里同数据对比（旧 shrink+noRelay 恒真 vs 新口径不命中），比口头论证「旧代码会错」强得多，也防回归。
+- **mock 夹具必须跟随真实数据契约演进**：规则 5 夹具用了 20261017g 之前的旧时间格式（'09:30' 带冒号），因当年规则不读 time 而一直潜伏；这次加时间戳过滤后立刻暴露。夹具迁移要跟着数据契约走，不能「能跑就行」。
+
+### Metadata
+- Source: user_feedback
+- Reproducible: yes（scripts/test_volume_engine.js 规则5 测试块零网络可复现；688289 形态忠实复刻含盘后 +3 条目）
+- Related Files: lib/volumeEngine.js, scripts/test_volume_engine.js, scripts/test_volume_consistency.js, docs/logic/stock-13-capital.md
+- Tags: minute-window-timestamp, after-hours-entries, false-positive, life-rule-5, always-true-condition
+- Pattern-Key: backend.minute_tail_windows_must_use_timestamps
+- Recurrence-Count: 1
+- First-Seen: 2026-10-20
+- Last-Seen: 2026-10-20
+
+## LRN-20261020-005：LRN-20261020-003 模式首次后续执行——用户按清单指名单点，不擅自扩大范围
+
+**Logged**: 2026-10-20T20:10:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: backend | tests | docs
+
+### Summary
+LRN-20261020-003「同类 6 处 ×0.7/×1.5 纯符号站点」清单中的第 ⑥ 项（11.3.1「该放量未放量」结论）由用户截图指名实施（20261020d），其余 5 处仍挂起。
+
+### Details
+用户看到 8.13 遗留清单后并未说「全部改」，而是在实际使用中遇到哪处就指名哪处（本次是常见矛盾信号卡的 ×1.5）。这验证了 003 的「扩大范围先列清单问用户」策略是对的：**清单是给用户做选择题的，不是给自己批量执行的**。执行口径与 003 完全一致：均值 X ×系数 = 阈值 + 当日实际量同屏；数据不齐（volToday≤0 只展示阈值；avg60≤0 退回原文本）优雅降级；单位不写死；schema 升 20261020d；测试新增 [19] 节 6 项（命中/纯符号残留/当日量缺失/avg60≤0/未命中原状）；295/295 + 227/227 + 全量回归 50/53 零新增。
+
+### Suggested Action
+后续用户再指名清单中其他项时，按同模式单点实施；若用户说「剩下的一起改」，再批量执行 ①—⑤。
+
+### Metadata
+- Source: conversation
+- Related Files: lib/volumeEngine.js, scripts/test_volume_engine.js, scripts/test_volume_consistency.js, docs/logic/stock-13-capital.md（8.15 新节）
+- Tags: threshold-concretization, follow-up-execution, scope-discipline
+- See Also: LRN-20261020-003（模式源头）、LRN-20261020-004
+- Pattern-Key: frontend.abstract_thresholds_need_computed_values
+- Recurrence-Count: 2
+- First-Seen: 2026-10-20
+- Last-Seen: 2026-10-20
+
+## LRN-20261020-006：跨模块「检验结论联动」必须挂路由层 + 口径声明同屏——不得把下游因子拖入新的网络依赖
+
+**Logged**: 2026-10-20T21:30:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: backend | frontend | tests | docs
+
+### Summary
+技术面分析卡新增「⑤ 关键位有效性检验」（20261020e）：把资金量能引擎生死位规则（规则3 缩量假突破/规则4 放量破位/有效突破/有效跌破/突破后回踩缩量）既有结论联动到价格行为卡，回答用户「对上方关键阻力区间和下方关键支撑区间有没有有效性检验」的提问。
+
+### Details
+调研发现价格行为推演的支撑/阻力区间是近 60 日摆动点聚类口径（`findSupportResistance`/`clusterLevels`），只推演不检验；真检验在资金量能引擎。联动实施要点：
+1. **接入点挂路由层**（`server.js` /api/price-action 响应合并 `levelValidity` 字段，放 `...data` 之后防覆盖），不动 `priceAction.js` 内核、不动 hub 快照语义——因为同一快照还被 sameDayJudgment 的 technicalShort/Long 因子消费，若在快照生成链路里加入引擎调用（分钟线+公告网络依赖），会把只读内存因子的判断拖成重网络请求。
+2. **独立出口+独立缓存+失败 null**：`priceActionHub.getLevelValidity`（`_lvCache` 同 TTL、12s 超时、getQuote 兜底），纯函数 `_extractLevelValidity` 导出供单测；失败只降级本卡，不阻塞主链路。
+3. **两套口径必须同屏声明**：②「近 60 日摆动点区间」（推演）与⑤「引擎 _keyLevels 口径 + 生死位规则检验」是不同口径，meta 行明示「为两套口径」+ 引擎结论基于的日K日期 + 引擎版本，禁止把任一方表述为对另一方的验证。
+4. **前端细节**：`#paLevelValidity` 全宽卡放 pa-grid 外（保 2×2 对称）；`.pa-lv-card.hidden` 必须显式声明 CSS（本项目 .hidden 非全局类——style.css:3113/5052 两次踩过）；复用 ve-rule 样式与红涨绿跌；`_renderPaError`/`resetTransientPanels` 两处占位清单都要加新卡 id（防残留上一只股票数据）。
+5. **护栏**：新测试 31 项全绿；既有量能三套件零回归（295/295+227/227+13/13）；全量回归 51/54 零新增（3 个在档旧失败）；swallow guard 的「空 catch」判定=体仅空白/注释，本轮新增 catch 均带 console.warn/赋值，未新增空 catch（+4 为历史基线）。
+
+### Suggested Action
+后续任何「把 X 模块结论联动到 Y 页面」的需求，先问三个问题：①Y 的快照/缓存是否被其他因子消费（有→挂路由层，勿改内核）；②两套口径是否同屏声明；③失败降级是否只影响新卡。三问答完再动手。
+
+### Metadata
+- Source: conversation
+- Related Files: lib/priceActionHub.js, server.js, public/index.html, public/css/style.css, public/js/app.js, scripts/test_price_action_level_validity.js, docs/logic/stock-13-capital.md（8.16 新节）
+- Tags: cross-module-linkage, route-level-injection, dual-caliber-declaration, hidden-css-trap, snapshot-purity
+- See Also: LRN-20261020-004（分钟级尾盘窗口铁律，同为「挂载点选择」家族）
+- Pattern-Key: backend.cross_module_linkage_mount_at_route_layer
+- Recurrence-Count: 1
+- First-Seen: 2026-10-20
+- Last-Seen: 2026-10-20
+
+## LRN-20261020-007：用户给的判定规范里，**约束不能做成加权罚项**——否则优化器永远选最宽松的解
+
+**Logged**: 2026-10-20T21:35:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: backend | algorithm | tests | docs
+
+### Summary
+按用户七段式箱体规范新建 `lib/rangeDetector.js`（20261020f）。首次实现把「越界段数/假突破/振幅/占比」全部做成加权罚项，真实数据校准发现引擎**系统性选出宽区间**（601318 60 日选出振幅 14.2%、250 日选出 39.4% 的"箱体"），60 日振幅中位 22.2%、稳定命中 0/6。改为「振幅分池硬门槛 + 池内按硬约束违反度排序」后，60 日振幅中位降到 11.3%、000902 新洋丰真实命中（13.08~14.50，振幅 10.3%、占比 91.7%、假突破 3 次、漂移 2.7%）。
+
+### Details
+1. **根因**：`粗评分 = 越界段×3 + 假突破×2 + 振幅×0.5 + 越界占比×0.3` 里「0 越界」的边际收益远大于「窄 5% 振幅」，于是宽到 39% 的区间（0 越界）永远赢过窄到 8% 的区间（2-3 次假突破）。而用户规范第五条明确「优先满足：占比≥90%、振幅≤20%、假突破≤3」——是**约束**不是偏好。
+2. **修法**：先按振幅分池（`ampPct ≤ 阈值` 进合规池），**只要合规池非空就只在池内选**，哪怕合规候选假突破超标（据实报原因）；合规池全空才退回全池取最小振幅者。此时选出的才是"在振幅约束下最好的区间"，符合用户意图。
+3. **阈值必须实测标定**：用户原始 20% 振幅 / 5% 漂移 / 250 日窗，实测 6 只自选股振幅 24.6–49.3%、漂移 10.5–52.1%，全部落空。改为随窗口缩放（12/18/25/35%、8/10/15/20%）后命中 1/6（60 日），既不空也不滥。**规范里的数字是"意图"，落地必须用真实数据校准**。
+4. **假突破的「差一」陷阱**：「首次突破后 5 个交易日内（含第 5 个）」→ 突破日算第 1 个，收回日的下标差 ≤ **4**。写成 `≤5` 会把第 6 天收回也判成假突破，与用户明确要求相反。已在代码注释写明推导，单测 [2] 锁定"第 6 天收回=有效突破"。
+5. **手工对账是最强验证**：只用单测通过不足以证明计数正确，实测把 000902 的 3 个越界段逐日列出（起始日/越界天数/收回日/距突破天数/判定）与引擎对账，完全一致后才认为可交付。
+6. **一个计数器只表示一种单位**：`upBreak` 是"段数"，`intraUp` 是"天数"，同屏展示时必须分别标注「次/天」，否则用户必然误读。
+
+### Suggested Action
+后续凡"用户给了判定规范"的需求：先把每条读成「硬约束 / 软偏好」两类；硬约束实现为**过滤或分池**，软偏好才做加权；规范里的阈值默认视为待校准意向值，必须用真实数据跑一遍命中分布再定稿。
+
+### Metadata
+- Source: conversation
+- Related Files: lib/rangeDetector.js, lib/priceActionHub.js, public/js/app.js, public/css/style.css, scripts/test_range_detector.js, docs/logic/stock-17-range.md
+- Tags: constraint-vs-weight, threshold-calibration, off-by-one, manual-reconciliation, multi-window
+- See Also: LRN-20261020-003（阈值具象化）、LRN-20261020-006（跨模块联动三问）
+- Pattern-Key: backend.constraints_must_be_filters_not_weights
+- Recurrence-Count: 1
+- First-Seen: 2026-10-20
+- Last-Seen: 2026-10-20
+
+## LRN-20261020-008：阈值要相对"个股自身波动"，且多窗口结果不能平权——主判定窗 + 置信度分级
+
+**Logged**: 2026-10-20T21:45:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: backend | algorithm | frontend | docs
+
+### Summary
+箱体引擎第二轮升级（20261020g），用户指出「不要只按窗口缩放，要结合波动率；漂移不要用上下沿绝对漂移；主判定只用 250 日；置信度要分级」。四条全部落地，并发现两条新的经验性结论。
+
+### Details
+1. **固定阈值对不同波动率股票不公平**：同一 25% 振幅，对 σ=10% 的低波动股是"很宽"，对 σ=50% 的高波动股是"很窄"。改为 `ampMax = clamp(1.5×σ250年化, 窗口基准×0.6, min(窗口基准×1.4, 35%))`——低波动股收到 15%、高波动股放到 35%（用户「不应低于 1.5–2 倍波动率，但不超过上表上限」）。下限 `×0.6` 是防呆：σ=2% 时若纯按 1.5σ 只有 3%，任何箱体都不合格。
+2. **「上下沿绝对漂移」会误杀边界扩张但中轴未动的情形**：中国平安 250 日上下沿漂移 28.6%（旧口径直接判死），但中轴相对漂移只有 12.8%。边界被单边插针撑开 ≠ 区间中枢在移动。用户明确要求改用中轴漂移后，原口径降级为 `edgeDriftPct` **仅披露**——这种"降级为披露字段"的处理方式比直接删除更好（审计时还能看到边界形态）。
+3. **多窗口不能平权**：4 个窗口各自独立判 stable 会让用户不知道该信哪个（60 日稳、250 日不稳时更迷惑）。必须显式指定主判定窗（用户指定 250 日），其余只做稳健性检验、**不一票否决**；主窗数据不足按 120→60 降级并写进 dataGaps。
+4. **二值判定信息量不足**：「有/无稳定区间」丢掉了"主窗稳但辅助全不稳"这种真实状态。改三级置信度（高=跨窗口一致、中=仅主窗稳或连续越界过长、低=主窗不稳），并在低置信度时把"辅助窗稳定"作为提示而非结论。
+5. **自适应的副作用必须用分级兜住**：σ 高的股票阈值顶到 35% 后，振幅几乎失去筛选力（实测 6 只全部 33%+），筛选实际由占比/假突破/有效突破承担。若不配「窄幅/常规/宽幅」分级，用户会把 35% 的宽幅箱体当成 18% 的窄幅箱体看待——用户提前警告过这一点（「500 日 35% 只能算宽幅箱体，不能和 250 日 18% 的窄幅箱体同等宣传」）。
+
+### Suggested Action
+后续凡"阈值判据"类需求：先问「这个阈值是绝对的还是相对于标的自身属性（波动率/规模/行业）」；凡"多时间尺度"类需求：先问「哪个尺度是结论、哪些只是佐证」，并把主/辅角色写进输出结构（role 字段），前端也要可见。
+
+### Metadata
+- Source: conversation
+- Related Files: lib/rangeDetector.js, public/js/app.js, public/css/style.css, scripts/test_range_detector.js, docs/logic/stock-17-range.md
+- Tags: volatility-adaptive-threshold, main-judgment-window, confidence-grading, drift-caliber, disclosure-vs-judgment
+- See Also: LRN-20261020-007（约束不能做成加权项）
+- Pattern-Key: backend.thresholds_should_be_relative_to_own_volatility
+- Recurrence-Count: 1
+- First-Seen: 2026-10-20
+- Last-Seen: 2026-10-20
+
+## LRN-20261020-009：同一份数据要展示在两个列表里时，把「归属/标注/排序」收敛成一个纯函数
+
+**Logged**: 2026-10-20T22:05:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: backend | frontend | docs
+
+### Summary
+用户要求把各窗口箱体的上沿/下沿「拆开」并进②卡已有的「上方关键阻力区间 / 下方关键支撑区间」，右侧标注所属窗口，整卡自上而下按价格由高到低（20261020h）。
+
+### Details
+1. **最省事的做法是错的**：第一版直接在 `app.js` 里写了 `_boxZoneLevels()` + 前端排序，跑起来没问题。但这种「哪条进阻力、怎么排序、标签写什么」的规则一旦落在渲染层，就**无法单测**，而且下一次改文案/改顺序时很容易只改一处——这与 20261019e「标签 + 解释 + 评分 + 配色必须四处同改」是同一类陷阱。改为放进 `lib/rangeDetector.mergeZoneLevels`（纯映射 + 排序），路由层 `zoneLevels` 下发、前端只渲染，一次性获得 30 项单测（`test_range_detector.js [15]`）。
+2. **要不要放进 hub 快照**：不能。`priceActionHub` 的快照被 sameDayJudgment 的 technicalShort/Long 消费，往里塞展示字段会把只读因子拖进展示口径。与 20261020e 一致：**挂在路由层 `...data` 之后追加**，实时算、不缓存、不改快照语义。
+3. **单点 vs 波段**：箱体边界是收盘统计得到的**点位**（low==high），摆动点区间是**波段**。混在一列里如果沿用 `low ~ high` 渲染会出现 `33.63 ~ 33.63`，必须按 `low===high` 渲染单值。
+4. **等同点排序会看起来"乱序"**：按 `high` 降序时，单点 33.63 与波段 33.29~33.63 同顶点，稳定排序会让波段在前，视觉上像"更低的价格排在更高的上面"。追加 `low` 降序作次序键，让单点边界排在波段之前，顺序才可解释。
+5. **未确认的边界要不要显示**：要显示（用户要的是"所有箱体的上下沿"），但必须让"未构成箱体"这件事在视觉上可辨——`stable=false` → 标注「未确认」+ 整行淡显；主判定窗即使未确认也保留「主判定」字样（否则 250 日就失去身份）。
+
+### Suggested Action
+凡"同一批数值要出现在两个视图/两个列表"的需求：先问「归属规则、排序规则、标注文案有几份」，超过一份就抽成纯函数放 `lib/` + 路由层下发 + 单测锁定；单值边界与波段混排时，先固定「单点优先」之类的次序键，再谈降序。
+
+### Metadata
+- Source: conversation
+- Related Files: lib/rangeDetector.js, server.js, public/js/app.js, public/css/style.css, scripts/test_range_detector.js, docs/logic/stock-17-range.md
+- Tags: single-source-of-truth, route-layer-enrichment, point-vs-band, tie-break-ordering, unconfirmed-state
+- See Also: LRN-20261020-006（跨模块联动三问）, LRN-20261019-004（口径四处同改）
+- Pattern-Key: frontend.presentation_mapping_must_be_a_tested_pure_function
+- Recurrence-Count: 1
+- First-Seen: 2026-10-20
+- Last-Seen: 2026-10-20
+
+## LRN-20261020-010：用「窗口内累计天数」当判据会系统性误杀趋势股——判据必须带方向性且看"事件"不看"占用时长"
+
+**Logged**: 2026-10-20T22:15:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: backend | algorithm | frontend
+
+### Summary
+用户给阻力/支撑有效性检验两条标准（无放量即突破→无效；超过三天在该处来回突破→无效）。第一版把第二条实现成「近60日收盘在区间外的天数 > 3」，实测 600909 三个上方价位全部被判无效——因为它们确实有 43/36/33 天收在上方。**卡片直接空白**。改成「方向性 + 内外反转次数」后恢复正常。
+
+### Details
+1. **缺方向性 = 语义错位**：「阻力」只对「向上穿越」敏感。股价从 9 元跌到 7 元，一路穿过 7.94/7.79/7.54 三个价位，那是**跌下来的**，不是「向上突破阻力」。用 `close > high` 的天数（不分方向）计数，等于把「历史上价格曾在它上方」当成「被突破了 43 次」。
+2. **「占用时长」不是「事件」**：同一批 43 天其实只是**一段**持续在上方的行情，反转次数只有 1 次。判「来回突破」必须数**内外反转（in↔out）次数**，而不是在外侧待了多少天。这是本轮最贵的教训：一个可解释的指标（外侧天数）在趋势行情里会退化成"恒真条件"（与 LRN-20261020-004 的「恒真条件=隐形误报发生器」同型）。
+3. **「超过三天」的两种合理落法都要实现**：a) 当前已站上/跌破且**连续 > 3 天**（已突破并站住 → 不再是阻力/支撑）；b) 窗内反转 **> 3 次**（约 2 个完整来回）。只做 b) 会漏掉"放量突破后一路不回"的情形——那种价位继续挂在「上方阻力」里同样误导。
+4. **测试先行抓到了 null → 0 的坑**：`Number(null) === 0`、`Number('') === 0`，缺字段被当成价格 0 后 `close > 0` 恒成立，整段被判「当前站在外侧」。`_num()` 必须先挡 `null/''/boolean`。这条是单测 [9] 直接抓出来的，不是线上事故。
+5. **打标而不是删除**：区间在 `priceAction.js` 原地加 `valid/invalidReasons/zoneCheck`，前端过滤、④卡反转边界取首个有效项。若在各处各自 `filter`，很快会出现「前端隐藏、后端仍当有效用」的双口径。
+
+### Suggested Action
+凡「有效性/失效」类判据：①先问方向性（对上穿敏感还是对下穿敏感）；②问计数对象是**事件**还是**占用时长**，优先事件；③把「当前状态已越界且持续」与「历史反复穿越」拆成两条独立条件；④打标不删条目，过滤只在一处发生。
+
+### Metadata
+- Source: conversation
+- Related Files: lib/zoneValidity.js, lib/priceAction.js, public/js/app.js, scripts/test_zone_validity.js, docs/logic/stock-18-zone-validity.md
+- Tags: directional-judgment, event-vs-duration, null-coercion, flag-not-delete, invalid-level-filtering
+- See Also: LRN-20261020-004（恒真条件）, LRN-20261020-007（约束做成过滤而非加权）
+- Pattern-Key: algorithm.validity_must_be_directional_and_event_based
+- Recurrence-Count: 1
+- First-Seen: 2026-10-20
+- Last-Seen: 2026-10-20
+
+## LRN-20261020-011：「固定回看窗口」是形态判定最难察觉的错——形态的长度应由形态自己决定，而不是由我们的窗口决定
+
+**Logged**: 2026-10-20T23:40:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: backend | algorithm | frontend
+
+### Summary
+箱体检测先后做了两版：20261020f/g/h 版用固定窗口（60/120/250/500 日）+ 窗口基准振幅上限；20261020j 版改为**单箱体状态机**（20 日种子 + 无长度上限 + 容差随长度放宽 + 连续 3 日突破失效）。触发改版的证据：600909 在 7/28~10/20 这 55 个交易日里收盘占比 100%、越界段 0、中轴漂移 4.8%（几乎完美箱体），却被旧版判「不构成」——只因振幅 19.4% 超过 60 日窗口的 16.8% 阈值。
+
+### Details
+1. **错不在阈值高低，在「窗口」这个概念本身**：把 55 天的形态塞进 60 日窗口再拿 60 日的振幅标准衡量，等于用错误的尺量。用户原话「箱体只要没失效就是一直随时间而延长的」点破了根因——**形态的长度是输出，不是输入**。凡「形态检测」类需求（箱体、三角收敛、平台整理），先问一句「它的长度是给定的还是算出来的」。
+2. **中轴用中位数而非均值**：用户要求「振幅距离中轴」，中位数对单日长影线/跳空更稳健；且中位数是段内实际存在的价格水平，解释性更强。
+3. **容差放宽必须给天花板**：`min(10%×√(len/20), 15%)`。√ 来自随机游走位移 ∝ √t，线性放宽会让久箱体的带宽迅速失去意义；不封顶则任何长周期股票都能套成箱体（用户此前已批评过「500 日 35% 只能算宽幅箱体」）。**放宽规则要能一句话说清依据**，否则就是拍数字。
+4. **失效判据必须与「有效性检验」物理隔离**：用户明确要求箱体失效（连续 3 日突破，不看量）与阻力/支撑有效性（放量 + 反转次数）两套独立。实现上做了**源码级双向守卫**（互不 require、不共用常量、源码里不出现对方标识），而不是只写在注释里——否则半年后有人「顺手复用一下量比」，两套口径就悄悄合并了。
+5. **展示层要给两个数，不是折中成一个**：箱体行同时展示「收盘区间（实际高低，用户核对形态用）」与「失效线（中轴±容差，判定用）」。只给实际区间会让人以为「破了最高点箱体就废了」（实际失效线更高）；只给失效线则与用户观察对不上。**给人看的数和给机器判的数不是同一个数时必须都露面**，中轴/振幅/假突破次数收进悬停。
+6. **接线守卫是最便宜的回归测试**：新增 `[15]` 节，用源码扫描断言「引擎被 require、快照挂了字段、②卡调用了渲染函数、旧函数没复活」。历史上「引擎写好了却没接上」是静默回归的高发模式，一次断言覆盖全部。
+
+### Suggested Action
+新增形态/结构检测前先确认三件事：①长度是输入还是输出；②放宽/收紧规则的对标依据能否一句话说明；③它与既有口径是否必须隔离（能隔离就加源码级守卫，不要只写注释）。展示层若「实际值」与「判定阈值」不同，两者必须同屏并注明用途。
+
+### Metadata
+- Source: conversation
+- Related Files: lib/rangeDetector.js, lib/priceActionHub.js, public/js/app.js, public/css/style.css, scripts/test_range_detector.js, docs/logic/stock-17-range.md, docs/logic/stock-18-zone-validity.md
+- Tags: pattern-length-as-output, median-axis, tolerance-cap, caliber-isolation, dual-number-display, wiring-guard
+- See Also: LRN-20261020-007（约束做成过滤而非加权）, LRN-20261020-009（同一数据两个列表收敛成纯函数）
+- Pattern-Key: algorithm.formation_length_must_be_derived_not_assumed
+- Recurrence-Count: 1
+- First-Seen: 2026-10-20
+- Last-Seen: 2026-10-20
+
+## LRN-20261020-012：前端读后端的字段名漂移不会报错，只会静默显示 undefined——改了 zoneCheck 却忘了改 tooltip
+
+**Logged**: 2026-10-20T23:42:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+20261020i 把阻力/支撑标准2 的判据从「区间外天数」改成「内外反转次数」，后端 `zoneCheck` 字段随之从 `outDays/maxOutDays/breakDate/breakVr` 改为 `transitions/crossMax/streakNow/outStreakMax/lastBreakDate/lastBreakVr`。后端单测 54/54 全绿，但前端 tooltip 仍在读旧字段名 —— 悬停会显示「近60日收盘在区间外 undefined 天（上限 undefined 天）」且**不抛错、不进日志**。
+
+### Details
+1. JS 读不存在的属性只得到 `undefined`，`escapeHtml(undefined)` 也不报错，所以这类不一致**零噪声**：没有异常、没有 console.warn，只有用户把鼠标放上去才看见。
+2. 单测只覆盖后端纯函数，看不见「前端字符串里引用了哪个字段名」。这类接缝必须有源码级断言：`test_range_detector.js [15]` 现在同时守着「②卡调用的函数存在」，可作为同类问题的模板。
+3. 修复时顺手把 tooltip 改成分行明细（反转次数/当前站外天数/最近穿越日与量比/未穿越说明/展示条件），并把「上限」数字从常量里读（`ck.crossMax/ck.outStreakMax`），不再硬编码 3。
+
+### Suggested Action
+后端改 `zoneCheck` 之类「只给前端消费」的结构体时：①同一次改动里 grep 前端对该结构体所有字段的引用；②在前端侧加一条源码扫描断言（字段名清单）；③字段名保留期加 `deprecated` 别名比直接改名安全，但优先级低于前两条。
+
+### Metadata
+- Source: conversation
+- Related Files: public/js/app.js, lib/zoneValidity.js, scripts/test_range_detector.js
+- Tags: field-name-drift, silent-undefined, frontend-backend-contract, source-scan-guard
+- See Also: LRN-20261020-011（接线守卫）
+- Pattern-Key: frontend.contract_field_names_need_source_scan_guard
+- Recurrence-Count: 1
+- First-Seen: 2026-10-20
+- Last-Seen: 2026-10-20
+
+## LRN-20261020-013：把「形态边界」并入价位清单时，要并的是**实际上下沿**而不是**判定阈值**；而过滤顺序本身就是约束
+
+**Logged**: 2026-10-20T23:55:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: backend | frontend
+
+### Summary
+用户要求「把箱体的上下限合并到上方阻力和下方支撑区间里面」。箱体有两个候选"上下限"：实际收盘区间 `envU/envL`（600909 = 8.54 / 7.03）与中轴±容差的失效线 `bandU/bandL`（9.35 / 6.91）。并入清单时取了**前者**，失效线继续留在箱体行。
+
+### Details
+1. **「能交易的价位」与「判定的阈值」不是同一类东西**：失效线是纯数学边界（中轴×1.15），离现价 33%、从未被价格触碰；摆在「上方阻力」里既不可交易，也会与用户「箱体上沿就应该是 8.54」的直觉正面冲突。判据：**这个数字有没有被价格验证过**——没有就不能当阻力/支撑。
+2. **两个数各司其职，不要合并成一个**：清单收实际上下沿（可交易），箱体行留失效线（可判生死），tooltip 明示「越过 9.35 连续 3 日才判箱体失效」。合并会让两件事都被削弱。
+3. **并入后必须删掉原处的重复展示**：箱体行原本有「收盘区间 7.03~8.54」，并入清单后同屏出现两次同一组数字会制造"这两个是不是不一样"的疑问，故行内只留起止天数/失效线/距失效。
+4. **过滤顺序即约束**：箱体条目 `isBox:true`，前端必须写成 `validOnly(摆动点).concat(箱体条目)`——**把箱体条目写在 validOnly 里面，它就会被区间有效性检验静默吞掉**，而箱体检验与区间检验本来就要求独立（用户第六条）。这种"只差一层括号"的耦合无法靠输出断言发现，只能靠源码正则守卫（单测 [16]）。
+5. **单侧越界要单侧省略**：现价已收在某侧边界之外时，该侧条目不再当阻力/支撑（否则「刚破的上沿」会继续挂在"上方阻力"里误导），另一侧照常保留。
+6. **单点价渲染单值**：箱体边界 `low===high`，若沿用 `a ~ b` 模板会输出 `8.54 ~ 8.54`，前端必须判等后渲染单值（与 20261020h 同一坑，第二次踩，已写进单测）。
+
+### Suggested Action
+凡「把 A 的边界并入 B 的清单」：①先问并的是实际观察值还是判定阈值，默认取前者、后者留在原处；②并入后删掉原处的重复展示；③若 B 有过滤规则而 A 的检验独立，用「先过滤 B 再 concat A」的写法并用正则守卫锁死顺序；④单点价一律判等渲染单值。
+
+### Metadata
+- Source: conversation
+- Related Files: lib/rangeDetector.js, public/js/app.js, public/css/style.css, scripts/test_range_detector.js, docs/logic/stock-17-range.md, docs/logic/stock-18-zone-validity.md
+- Tags: observed-vs-threshold, filter-order-as-constraint, dedup-display, single-point-rendering, caliber-independence
+- See Also: LRN-20261020-011（单箱体模型）, LRN-20261020-009（同一数据两个列表收敛成纯函数）, LRN-20261020-010（有效性判据方向性）
+- Pattern-Key: presentation.merge_observed_bounds_not_thresholds
+- Recurrence-Count: 1
+- First-Seen: 2026-10-20
+- Last-Seen: 2026-10-20
+
+## LRN-20261020-014：用户说「删掉这个模块」时，必须用截图锚定到**具体元素**再动手——我上一轮就删错了模块
+
+**Logged**: 2026-10-20T23:45:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: process | backend | frontend
+
+### Summary
+20261020i 那一轮，用户给了两张截图并说「把图片里这个模块本身和与短期动向预判模块的联动一起删除」。当时同一句话里还有大量关于「箱体判定不构成」的讨论，我据此断定要删的是**箱体区块**，于是删了箱体、保留了「关键位有效性检验」卡。本轮用户又贴出那张卡质问：「之前的任务我不是让你删除这个模块吗？」——**我删错了模块，而且用户是隔了两轮才发现的**。
+
+### Details
+1. **代价不对称**：删错的成本不是"多删了一个东西"，而是"用户以为交付了、实际没交付"。期间我还基于"模块已删"继续做了三件事（单箱体重建、上下限并入清单），全部建立在错误前提上。
+2. **正确的锚定方式**：截图里的**标题文字**是唯一可靠的主键（「关键位有效性检验」/「生死位规则口径」/「箱体判定」），拿它去 grep 代码里的 `<h4>` / 注释 / 类名，能精确落到组件 id（本例 `#paLevelValidity`）。**讨论上下文不能当主键**——同一段对话里可能同时在说三四个模块。
+3. **动手前用一句话回读**：「您指的是这张『关键位有效性检验（生死位规则口径）』卡，我会连同 X/Y/Z 一起删」，用户点头再删。一次回读的成本远低于删错。
+4. **删除必须有完整清单**：模块本体（组件/样式/路由/引擎函数/单测/文档）缺一项就会留下孤儿代码。本轮清单：`getLevelValidity` `_extractLevelValidity` `_lvCache` `LV_TIMEOUT_MS`（hub）+ 路由 `levelValidity` 注入 + `#paLevelValidity` `_renderLevelValidity` 复位/错误占位（前端）+ `.pa-lv-*`（CSS）+ 单测文件 + 文档 8.16 节下线声明 + 清理连带失效的 `analyzeVolume`/`getQuote` require。
+5. **连带清理**：删掉唯一调用者后，`require` 与被依赖常量会变成死代码，`swallow_catch_guard` 之类的扫描反而会误报"空 catch 增加"。删模块要顺带把死依赖删干净。
+
+### Suggested Action
+凡"删模块"类指令：①用截图标题文字 grep 定位到组件 id；②列删除清单并回读一句确认；③按「前端 → 后端 → 路由 → 样式 → 单测 → 文档」六层依次清；④清死依赖；⑤留下"下文仅作历史存档"的下线声明，防后人恢复。
+
+### Metadata
+- Source: conversation
+- Related Files: lib/priceActionHub.js, server.js, public/index.html, public/js/app.js, public/css/style.css, docs/logic/stock-13-capital.md
+- Tags: module-identification, screenshot-as-key, deletion-checklist, dead-dependency-cleanup
+- See Also: LRN-20261020-013（并入清单的是实际值还是阈值）
+- Pattern-Key: process.identify_module_by_screenshot_title_before_delete
+- Recurrence-Count: 1
+- First-Seen: 2026-10-20
+- Last-Seen: 2026-10-20
+
+## LRN-20261020-015：展示出来的每个数字都是一句断言——「还剩 3 天」是断言在倒数，「只统计突破」是断言到达不算数
+
+**Logged**: 2026-10-20T23:50:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: backend | frontend
+
+### Summary
+同一条报障里暴露了两个方向相反、根因相同的错误：①箱体行显示「距失效还需 3 日」——可股价一直在箱体内，失效条件（连续 3 日收盘在失效线外）**根本没被触发**，这个"剩余"不存在；②阻力/支撑的有效性检验在该触发时不触发——因为「越界」被实现成「越过区间远端」，而价格只是在区间近端反复进出。
+
+### Details
+1. **倒计时类字段必须在条件未触发时为 null**：`remainDays` 原本无条件算成 `OUT_BREAK_DAYS - outStreak`，`outStreak=0` 时就得到 3，前端照渲染成"还剩 3 日"。正确语义：`currentStreak === 0 → remainDays = null`，UI 只能说「未触发失效」；只有真越界才允许出现数字。**"还剩 N"本身就是断言"正在倒数"，不是中性描述。**
+2. **区间（带）天然有两种越界语义，必须分别定义**：
+   - `beyondOf` 真突破 = 越过远端（阻力 `>high` / 支撑 `<low`）→ 谈"有没有放量"才有意义；
+   - `touchOf` 到达 = 到达近端（阻力 `>=low` / 支撑 `<=high`）→ 谈"来回了几次"才有意义。
+   只用前者：603288 在 34.33~34.67 反复进出 7 次却从未收在 34.67 之上 → 一次都不计 → 永远"有效"（用户直问"为什么不触发"）。只用后者：单次穿过去也会被算成"反复"，且"放量"判据失去基准。
+3. **字段改名而不是改语义**：`transitions`（远端口径）改名为 `touchTransitions`（近端口径）后，任何消费方不改就取到 `undefined`，会立刻暴露而不是静默错——比保留同名换含义安全得多。
+4. **守卫要守着"文案不存在"**：单测断言 `app.js` 出现「距失效还需」即红（注释除外），把"旧说法不许复活"变成可执行约束，而不是靠记性。
+
+### Suggested Action
+凡涉及"剩余/倒数/还有 N 次"的字段：先问"这个条件是持续态还是事件"，持续态未触发时必须给 `null`，UI 只声明状态。凡对"区间/带"做穿越判定：把"到达"与"穿越"拆成两个谓词，各用各的，并在注释里写明为什么不能合并。
+
+### Metadata
+- Source: conversation
+- Related Files: lib/rangeDetector.js, lib/zoneValidity.js, public/js/app.js, scripts/test_range_detector.js, scripts/test_zone_validity.js, docs/logic/stock-17-range.md, docs/logic/stock-18-zone-validity.md
+- Tags: countdown-semantics, null-when-not-triggered, predicate-granularity, reach-vs-breakout, copy-guard
+- See Also: LRN-20261020-010（判据要带方向性、看事件不看占用时长）, LRN-20261020-004（恒真条件）
+- Pattern-Key: presentation.every_number_is_an_assertion
+- Recurrence-Count: 1
+- First-Seen: 2026-10-20
+- Last-Seen: 2026-10-20
+
+## LRN-20261020-016 · 「单调侵蚀」：区间只能被动消耗，不能随价格回落在数值上长回去
+
+**Logged**: 2026-10-20T23:59:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: backend | frontend
+
+### Summary
+用户给区间（带）加了第二条几何规则：**无放量侵入内部但没打穿 → 近端收紧、远端不变**。实现时最容易写错的不是条件，而是「取哪一次收盘」——取最后一次会让区间跟着价格回落在数值上「长回去」，等于没侵蚀。
+
+### Details
+1. **三条件缺一不可**：`low < close < high`（真进入内部且未打穿） + 量比 `<= 1.2`（与标准1 同源同阈值） + 量比可算（`!= null`）。少掉"量能可算"，就会在数据缺失时靠 `null <= 1.2` 这种隐式转换把区间收掉。
+2. **单调侵蚀取极值**：阻力取窗口内所有合规侵入日的**最高**收盘、支撑取**最低**收盘。反例：8.48 → 8.52 → 8.50，取最后一次得 8.50，区间从 `8.52~` 退回 `8.50~`，与"已消耗"事实矛盾。
+3. **顺序是语义的一部分**：`assessZones`（要不要展示）→ `erodeZones`（展示成多大），**不可颠倒**；且侵蚀结果**不回灌**有效性计数——若把收紧后的近端喂回 `assessZone`，原先算到的往返次数会消失，形成「越侵蚀 → 越算不出往返 → 越有效」的自我强化循环。这是 LRN-20261019f「确认机制不许有改判权」的同构版本：**几何调整不许有改判权**。
+4. **无效区间不侵蚀**：不展示的区间没有"剩下多大"的问题；对它做收缩只会在统计上制造假象。
+5. **接线要守顺序**：单测用源码 `indexOf` 比较 `assessZones(daily` 与 `erodeZones(daily` 的先后，把"顺序铁律"变成可执行断言，而不是注释里的口头约定。
+
+### Suggested Action
+凡"状态会因历史事件单向变化"的字段（消耗、侵蚀、封顶、累计）：① 必须在定义里写明"只许单调"，② 取极值而非末值，③ 提供反例单测（先大后小 → 结果仍取大）。凡两步判定的流水线：把顺序写进单测，而不是只写注释。
+
+### Metadata
+- Source: conversation
+- Related Files: lib/zoneValidity.js, lib/priceAction.js, public/js/app.js, public/css/style.css, scripts/test_zone_validity.js, docs/logic/stock-18-zone-validity.md
+- Tags: monotonic-erosion, order-invariant, no-feedback-loop, threshold-reuse, source-level-guard
+- See Also: LRN-20261019f（确认机制无改判权）, LRN-20261020-015（每个数字都是断言）, LRN-20261020-013（过滤顺序即约束）
+- Pattern-Key: state.monotonic_only_absorbs
+- Recurrence-Count: 1
+- First-Seen: 2026-10-20
+- Last-Seen: 2026-10-20
+
+## LRN-20261021-001 · 同排不同量纲：收益率不是点位，涨跌幅不是基点
+
+**Logged**: 2026-10-21T00:45:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: backend | frontend
+
+### Summary
+用户要求在「🇺🇸 美国指数」三个卡（道指/纳指/标普）后面加「美债10年期收益率」。看似只是多一个卡，实际是把**两种量纲**塞进同一行：指数是「点位 + 涨跌幅%」，国债收益率是「收益率% + 基点bp」。直接套用同排的 `fmt()` / `fmtPct()`，会渲染出「5.15」（被读成点位）和「+1.18%」（被读成涨跌幅，实际是收益率相对变动），两个数字都是错的表达。
+
+### Details
+1. **先定"这行是什么"，再决定能不能共享渲染**：三个卡共享 `renderTile`，是因为它们同量纲同语义；新增项若量纲不同，必须走**独立分支 + 独立 return**，而不是往模板里塞条件。条目带 `kind:'yield'` 作为分派键。
+2. **单位必须写在值上，不能靠上下文**：`5.15%`（收益率）与 `+6.0bp`（变动）都自带单位；`bp` 是债券市场通用表达（1bp = 0.01 个百分点），比「+0.06」或「+1.18%」都更不容易被误读。
+3. **频率也是数据的一部分**：日线数据混进实时行里，必须在卡片上写「日线·MM-DD」，并把整行来源标签从「腾讯行情」改成「腾讯行情 + 美国财政部（日线）」——否则就是拿真实数据做虚假标注。
+4. **数据源选型必须先实测可达性，不能看文档选**：本项目此前的东财 push2 族、CNBC、Yahoo、TradingView、华尔街见闻 market API 全部不可达/下线，腾讯与新浪根本没有美债收益率代码。可达且权威的只有**美国财政部官方日度收益率曲线 CSV**（比 FRED 还新一个交易日：10/19 vs 10/16）。选型结论要写进模块头注释，避免下一个人再猜。
+5. **过期要分两档**：>3 天打 ⚠（周末/美国假日常见，属正常）、>10 天不展示（不拿过期数据当现行）。只有"展示/不展示"两态会把正常的周末误判成故障，只有"永远展示"又违反数据最新性。
+6. **降级要有总预算**：单源 9s × 3 级 = 最坏 27s，首页等不起 → `Promise.race` 卡 12s，超时先返回 null（本次不渲染卡片），后台链路继续跑并可写缓存，下次刷新命中。**不能为了一个附加字段拖慢整块首页。**
+
+### Suggested Action
+新增任何"往既有列表里塞一项"的需求时，先问三句：① 它的**量纲/单位**和邻居一致吗？② 它的**更新频率**和邻居一致吗？③ 它的**数据来源**和邻居一致吗？任一不同 → 独立渲染分支 + 卡内自带单位与频率 + 行级来源标签按项合并写明。数据源选型一律以"本机 curl 实测可达"为准，并把不可达清单写进代码注释。
+
+### Metadata
+- Source: conversation
+- Related Files: lib/usTreasury.js, lib/stockData.js, public/js/app.js, public/css/style.css, scripts/test_us_treasury.js, docs/logic/home-02-realtime-market.md
+- Tags: unit-mismatch, percent-vs-bp, freshness-labeling, source-reachability, total-timeout-budget
+- See Also: LRN-20261020-015（每个数字都是断言）, LRN-20261020-013（过滤顺序即约束）
+- Pattern-Key: presentation.unit_travels_with_value
+- Recurrence-Count: 1
+- First-Seen: 2026-10-21
+- Last-Seen: 2026-10-21
+
+## LRN-20261021-002 · 外链要「实查 secid」而不是猜 URL；链接页与本地卡口径不同时必须显式声明
+
+**Logged**: 2026-10-21T00:55:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: backend | frontend
+
+### Summary
+用户要求「美债收益率链接这个指数」，给了一张东财行情页截图。凭经验猜 URL 会踩两个坑：① 东财的页面路径与 secid 一一对应且**不统一**（`/usbond/US10Y.html`、`/globalbond/US10Y.html` 都是 404）；② 找对了页面，页面上的数字（盘中实时 2.78%）与卡片上的数字（财政部日线 5.15%）**本来就不是一个东西**，用户点进去会以为程序算错了。
+
+### Details
+1. **用搜索接口实查，不要猜路径**：`searchapi.eastmoney.com/api/suggest/get?input=美国10年期国债收益率&type=14` 返回 `QuoteID=171.US10Y`（market 171 = 全球债券）；东财有**通用行情页** `https://quote.eastmoney.com/unify/r/<市场号>.<代码>`，对任意 secid 都成立（实测 A股 1.600519 同样 200）。要验证 URL 正确，看返回 HTML 的 `<title>` 是否为该指数名——这是唯一可靠的确认方式。
+2. **URL 由数据侧下发，前端不硬编码**：`lib/usTreasury.js` 的条目带 `linkUrl/linkLabel`，前端只负责渲染。这样以后换指数/换站点只需改一处，且缺 `linkUrl` 时天然降级为不可点卡片。
+3. **用 `<a>` 而不是给 div 挂 onclick**：中键新窗口、复制链接地址、状态栏预览目标、无障碍语义全部免费获得；只需 CSS 抹掉 `text-decoration` 并继承色（否则整卡文字变蓝带下划线）。
+4. **两套口径必须在 tooltip 里说清**：本卡＝美国财政部日度收益率；链接页＝东财 push2 盘中实时报价。同一时点实测 5.15% vs 2.78%（东财自己的数据中心给的也是 5.15%），说明是「实时口径 vs 日度口径」的差异，不是本卡的 bug。**绝不能为了让两个数字「看起来一致」去改卡片数值或删掉链接**——那是拿真实数据做假一致。
+5. **点击目标要带 `rel="noopener noreferrer"`**：`target=_blank` 不加 rel，新页面可通过 `window.opener` 反向操作本页。
+
+### Suggested Action
+凡"让某个卡片指向某个网站/页面"的需求：① 先用该站的搜索/联想接口查真实 ID，再用页面 `<title>` 反验 URL；② URL 放数据层、前端只渲染；③ 用原生 `<a>` + `rel`；④ 若链接页与本地卡的数据口径/频率不同，tooltip 必须写明，并在文档审计清单里留一条"禁止为了一致而改数"。
+
+### Metadata
+- Source: conversation
+- Related Files: lib/usTreasury.js, public/js/app.js, public/css/style.css, scripts/test_us_treasury.js, docs/logic/home-02-realtime-market.md
+- Tags: external-link, secid-lookup, title-verification, caliber-disclosure, a-tag-native
+- See Also: LRN-20261021-001（同排不同量纲）, LRN-20261020-013（过滤顺序即约束）
+- Pattern-Key: integration.verify_target_before_linking
+- Recurrence-Count: 1
+- First-Seen: 2026-10-21
+- Last-Seen: 2026-10-21
+
+## LRN-20261021-003 · 结算类字段不能盲信存储值：写入时过日历，结算时再审一遍
+
+**Logged**: 2026-10-21T11:10:00+08:00
+**Priority**: critical
+**Status**: resolved
+**Area**: backend
+
+### Summary
+用户反复报障「老是出现无法结算准确率」（截图：大盘技术分析卡「⚠ 2 条过期未结算」）。根因不是结算算法，而是**记录里存的目标日不是交易日**：旧口径的 `nextTradingDay` 只跳周末不跳法定节假日，把 `2026-09-24` 的次日写成中秋 `09-25`、`09-30` 的次日写成国庆 `10-01`。结算逻辑老老实实按存储值去 K 线里找那一天 —— K 线永远没有节假日 —— 于是 `return rec` 不结算，同时因为 `targetDate < today` 被永久计入「过期未结算」。**一个错误的输入字段，把"未结算"变成永久状态。**
+
+### Details
+1. **存储值是历史快照，不是当前事实**：任何"由规则推导出来"的字段（目标日、下一交易日、到期日）在写入时是对的，但**规则本身会变**（日历补入节假日、口径改版）。结算方必须按**当前规则重算**，只在重算结果与存储值冲突时以重算为准，并留痕（`targetDateFixed`），而不是无条件信任。
+2. **纠错要有边界**：目标日没有 K 线还有第二种成因——数据缺口。此时可以退到"其后首个有 K 线的交易日"，但必须**限距**（这里 5 个自然日）并留痕（`shortTargetFallback`）；超过就拒绝结算并写 `settleError`。否则"次日"会被静默替换成"半个月后"，准确率统计直接失真。
+3. **只读接口 = 永不推进**：准确率条命中 `/api/market-tech/records`，该接口原来只有 `?settle=1` 才结算 → 用户不点「结算」就永远看到旧状态。读路径应顺带结算（带节流 3 分钟），让系统自愈，而不是把"记得点按钮"当成用户义务。
+4. **顺手把 N 次网络请求压成 1 次**：`settleAll` 原来每条记录各拉一次指数日K，19 条=19 次请求；改成整批共享一次。修 bug 时顺手看一眼循环里的 IO 是划算的。
+5. **改字段的位置要先问"它是不是键"**：`sameDayJudgment` 里 `rec.targetDate` 同时是**文件名语义键**，所以那边只把修正值用于本次查找、**不改写字段**；而 `marketTechJudgment` 的文件名是 `baseDate`，改写 `targetDate` 安全。同一个字段在不同模块的可写性不同。
+
+### Suggested Action
+任何"记录里有推导出来的日期/状态字段"的模块：① 写入前过权威日历；② 结算/核对时按当前规则重算并对比，冲突以重算为准 + 留痕；③ 重算也找不到对应数据时，兜底要限距并留痕，超距就报错不结算；④ 让读取路径自动结算（带节流），别让用户手动点；⑤ 改字段前确认它是不是文件名/去重键。
+
+### Metadata
+- Source: conversation
+- Related Files: lib/marketTechJudgment.js, lib/sameDayJudgment.js, lib/cnTradingCalendar.js, server.js, scripts/test_market_tech_settle.js, docs/logic/home-03-market-technical.md
+- Tags: settlement, stale-derived-field, holiday-calendar, self-healing, throttled-autosettle
+- See Also: LRN-20261020-001（兜底日期落库前必须过交易日历）, LRN-20261020-015（每个数字都是断言）
+- Pattern-Key: settlement.recompute_derived_target
+- Recurrence-Count: 2
+- First-Seen: 2026-10-20
+- Last-Seen: 2026-10-21
+
+## LRN-20261021-004 · 用户手工标注与模型输出必须分层：可以同屏，不能让模型裁决用户的标注
+
+**Logged**: 2026-10-21T11:30:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: frontend | backend
+
+### Summary
+用户要在②卡加一条 tab 自己填阻力/支撑。最省事的实现是"把手动条目直接 push 进模型数组"——但那样它会经过 `validOnly` 的有效性检验、也会被 `erodeZone` 收缩。结果是：**用户加了，模型判它"无效"或"已被吃过"，界面上看不见**，用户会以为功能坏了，而且无从解释。
+
+### Details
+1. **谁的数据谁裁决**：模型区间的展示与否由 `zoneValidity` 决定；用户标注的展示与否只由用户自己决定（他自己点删除）。实现上手动条目必须在 `validOnly(...)` **之后** concat 追加，且不经过侵蚀。
+2. **同屏但可辨识**：手动条目与模型条目并列在同一清单（用户要的就是"补上模型漏掉的位"），但用不同的左边框样式 + 「手动」小标 + tooltip 说明口径，一眼能分清责任归属。
+3. **口径要写在卡片上，不是只写在文档里**：手动页签顶部直接写「不参与模型的有效性检验与侵蚀收缩，也不影响方向判断、概率与准确率统计」——否则用户会以为加了就能影响判断。
+4. **表单的"省略即默认"要在接口层再兜一次**：前端"只填一个价=单点"是 UI 约定；后端如果不兜，任何直接调 API 的场景（或前端漏传）就会报「请填写有效价格」。**前端约定不能当成后端不变量。**
+5. **持久化位置决定体验**：存 localStorage 会在换设备/清缓存后丢；这类"用户自己录进去的数据"应存服务端（`data/manual-zones/<code>.json`），与用户"手机端继续用"的用法一致。
+6. **重渲染后要恢复页签**：增删触发整卡重渲染，若不复原 `activeTab`，用户每次点「添加」都会被弹回模型页，看起来像"没成功"。
+
+### Suggested Action
+凡是"引入用户手工输入、与机器计算结果并列展示"的功能：① 两条数据流分开存、分开算，只在渲染层合并；② 机器口径**不得**过滤/修正用户数据；③ 合并处必须可辨识（样式+文案+tooltip 三件套）；④ 用户数据的校验在服务端重做一遍；⑤ 用户数据存服务端；⑥ 增删后重渲染要恢复交互态（页签/滚动/展开）。
+
+### Metadata
+- Source: conversation
+- Related Files: lib/manualZones.js, server.js, public/js/app.js, public/css/style.css, scripts/test_manual_zones.js, docs/logic/stock-19-manual-zones.md
+- Tags: user-input-vs-model, layering, no-model-veto, server-side-persistence, ui-state-restore
+- See Also: LRN-20261020-013（过滤顺序即约束）, LRN-20261020-014（删模块要锚定组件）
+- Pattern-Key: ux.user_data_never_vetoed_by_model
+- Recurrence-Count: 1
+- First-Seen: 2026-10-21
+- Last-Seen: 2026-10-21
+- **Superseded-By（2026-10-21 用户改口）**: 用户随后明确要求「手动添加的阻力和支撑区间同样接受本模块的两个有效性检验」——第 1 条「不参与有效性检验」作废，改为"同权检验、但不侵蚀、不影响判定"。保留此条是因为第 2~6 条（可辨识、口径上屏、服务端校验兜底、服务端持久化、重渲染恢复交互态）仍然成立。见 LRN-20261021-005。
+
+## LRN-20261021-005 · 用户改口径时，代码之外还有三处会变成"假话"
+
+**Logged**: 2026-10-21T15:40:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: frontend | backend | docs
+
+### Summary
+20261021d 按"用户标注不受模型裁决"实现，手动区间不进有效性检验；当天用户改口「手动添加的阻力和支撑区间**同样接受**本模块的两个有效性检验」。代码改动不算大，真正危险的是**代码之外的表述会继续骗人**：卡片的 tooltip、页签顶部的口径说明、文档里的"铁律"章节、单测里的断言——它们全都写着旧口径，而界面照样在跑新逻辑。
+
+### Details
+1. **口径迁移要数四处**：① 代码分支 ② **界面文案/tooltip**（用户唯一会读的地方）③ 文档的"口径纪律"章节 ④ **单测断言**（否则测试在守护一个已废弃的约束，比如 `ok(!manualRes...)` 会一直绿着骗人）。
+2. **"同权"不等于"全同权"，要把边界说清楚**：用户说的是「两个有效性检验」，侵蚀是第三条规则。实现上就要让 `attachManualZones` 在 `erodeZones` **之后** append —— 顺序即语义（LRN-20261020-013 同源）。
+3. **改了"谁过滤"就要想"用户还看得见吗"**：手动区间一旦判无效就从清单消失，用户会觉得"我刚加的就没了"。所以「手动添加」页签必须**始终列出全部**（含无效）并标红+原因——**"被过滤"与"被隐藏"是两件事**：前者是规则，后者是信息丢失。
+4. **接进缓存体系就要有失效路径**：手动区间并入快照后，增删必须 `invalidateSnapshot(symbol)`，否则非盘中 TTL 24h → 用户加完看不到，会被当成"功能坏了"。任何"用户可写数据 + 快照缓存"的组合都必须成对提供失效函数。
+5. **旧学习要显式作废**：LRN-20261021-004 第 1 条已与用户决策冲突，必须标 `Superseded-By`，否则下一个人（或下一轮 AI）会拿旧"铁律"去回滚新需求。
+
+### Suggested Action
+用户改变某条口径时，按清单改：代码 → 界面文案 → 文档 → 单测 → 旧学习条目（标 Superseded）。任何"过滤/检验"类规则变更，都要同时回答"被过滤掉的东西用户还能不能看见、怎么看"。任何进缓存的数据，都要同时交付失效入口。
+
+### Metadata
+- Source: user_feedback
+- Related Files: lib/priceActionHub.js, lib/manualZones.js, server.js, public/js/app.js, public/css/style.css, scripts/test_manual_zones.js, docs/logic/stock-19-manual-zones.md, docs/logic/stock-18-zone-validity.md
+- Tags: caliber-migration, tooltip-truth, filtered-vs-hidden, cache-invalidation, superseded-learning
+- See Also: LRN-20261021-004（Superseded 部分）, LRN-20261020-013（过滤顺序即约束）
+- Pattern-Key: docs.caliber_change_four_places
+- Recurrence-Count: 1
+- First-Seen: 2026-10-21
+- Last-Seen: 2026-10-21
+
+## LRN-20261021-006 · 同一张卡片里两个不同窗口的指标，文案必须各写各的窗口
+
+**Logged**: 2026-10-21T16:10:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: backend
+
+### Summary
+用户报障：「量能状态是平量，风险提示却写 量价背离（放量下跌或量价齐跌）」——看着像算错，其实是**文案把两个不同窗口的结论缝成了一句**：
+- 量能状态 = **当日**成交量 ÷ 近20日均量 → 平量；
+- 量价形态 = **近5日**价格趋势 × **近3日**量能趋势 → 量价齐跌。
+两者可以同时成立且完全自洽，但旧文案写成「量价背离（放量下跌或量价齐跌）」，把三种互斥形态并列，于是"平量 + 放量下跌"同屏出现，等于自打脸。
+
+### Details
+1. **枚举比符号更可靠**：`pv.score` 只有正/负，负分下面藏着「齐跌 / 量升价跌 / 量缩价升」三种形态。只凭符号写文案必然只能写"最多数情形"或"全部并列"。给 `calcPriceVolume` 加 `kind` 枚举，下游按 kind 查表，才是单一来源。
+2. **文案必须带窗口**：`近3日`/`近5日` 不是修辞，是让用户能把两个数字对上的唯一线索。凡是 3/5/20 日混用的模块，文案里不带窗口就一定会有下一次同类报障。
+3. **把文案抽成可测的纯函数**：原本文案内联在 `computeMarketEmotion` 里，只能靠整条链路跑通才能验证。抽成 `pvRiskText(vp)` + `PV_RISK_TEXT` 后，可以单测「形态→文案」映射、可以断言「齐跌文案不含'放量'」这类不变量，也能被接线守卫检查"旧固定文案不许复活"。
+4. **顺带发现真故障**：排查时上证日线返回 501，导致量能因子整块降级（卡片上没有量能状态）。这说明"文案怪"有时和"数据空"是两回事，**先看 issues/降级标记再判文案**。
+
+### Suggested Action
+任何卡片里同时出现"当日值"和"N日趋势值"时：① 文案各带窗口；② 形态用枚举而不是符号；③ 文案抽成纯函数并写"不变量单测"（如"非放量形态不得出现'放量'二字"）；④ 排查顺序固定为「先看降级标记 → 再看口径 → 最后看文案」。
+
+### Metadata
+- Source: user_feedback
+- Related Files: lib/marketEmotionModel.js, scripts/test_market_emotion_volume_text.js, docs/logic/home-01-market-emotion.md
+- Tags: window-mismatch, enum-over-sign, testable-copy, self-consistency
+- See Also: LRN-20261019f（确认机制不许有改判权）, LRN-20261020-015（每个数字都是断言）
+- Pattern-Key: copy.window_must_be_explicit
+- Recurrence-Count: 1
+- First-Seen: 2026-10-21
+- Last-Seen: 2026-10-21
+
+## LRN-20261021-007 · 单主机写死＝把整条数据链押在一个域名上（501 静默降级）
+
+**Logged**: 2026-10-21T16:10:00+08:00
+**Priority**: critical
+**Status**: resolved
+**Area**: infra | backend
+
+### Summary
+排查上一条文案问题时发现：`ifzq.gtimg.cn/appstock/app/fqkline/get` 对**所有代码**整段返回 501（sh000001/sz399001/sh600519/sz000902 全一样），而同一路径在 `web.ifzq.gtimg.cn` 正常 200。项目里 6 处 fqkline 调用点都写死了前一台主机 → 个股日K、大盘技术分析、市场情绪量价、准确率结算**同时降级**，而日志只有一条 `Request failed with status code 501`。
+
+### Details
+1. **同一路径的两个主机通常此消彼长**：历史上还出现过相反情况（旧注释写着"web.ifzq 已停用 501"）。所以正确做法不是"换成能用的那台"，而是**主机降级链**。
+2. **降级只换主机，不改路径与参数**：把 `getKlineJson(pathQuery, opts)` 做成唯一入口，调用方拿到的仍是原响应体，解析逻辑一行都不用动——这让改动风险从"改 6 个模块"降到"改 6 行"。
+3. **只对 5xx / 网络错误换主机**：4xx 是参数问题，换主机只是浪费一次超时。
+4. **别把"空数据"当业务结论**：降级后因子归零、风险提示缺项、准确率全部挂起，这些表现都像是业务逻辑坏了。凡是数据驱动模块，**先看 issues/降级标记**。
+5. **守卫要断言"没有裸 URL"**：`scripts/test_tkline_host.js` 直接扫源码，任何文件里再出现 `https://ifzq.gtimg.cn/appstock/app/fqkline` 就算红——否则下次有人新写一个调用点就绕过了降级。
+
+### Suggested Action
+接入任何第三方 HTTP 数据源时：① 确认它有没有等价域名，有就做成降级链；② 抽唯一入口函数，禁止业务代码直接拼 URL；③ 单测覆盖"第一台 5xx 切第二台 / 4xx 不切 / 全失败抛错"；④ 守卫扫源码禁裸 URL；⑤ 日志里带上"用了哪台主机"，否则排查时看不出降级发生过。
+
+### Metadata
+- Source: error
+- Related Files: lib/tklineHost.js, lib/stockData.js, lib/marketTechnical.js, lib/marketTechJudgment.js, lib/deep/yield.js, server.js, scripts/test_tkline_host.js, docs/logic/common-01-data-source.md
+- Tags: single-host-risk, host-fallback, silent-degradation, no-bare-url-guard
+- See Also: LRN-20261021-006（同次排查发现）, LRN-20261021-003（只读接口永不推进）
+- Pattern-Key: infra.host_fallback_chain
+- Recurrence-Count: 1
+- First-Seen: 2026-10-21
+- Last-Seen: 2026-10-21
+
+## LRN-20261021-008 · 「同一单位」的假设散落在多处＝同一份错误被复制三遍
+
+**Logged**: 2026-10-21T16:20:00+08:00
+**Priority**: critical
+**Status**: resolved
+**Area**: backend
+
+### Summary
+用户截图报障：「60 日均量 113900 ×1.5 = 170850（当日量 7358800）」——当日量是阈值的 43 倍，文案却说「未达阈值」。根因不是算术，而是**当日 K 线被实时行情覆写时单位换错**：代码假设"非腾讯通道的日K是股"，而**东财日K实测是「手」**，于是把「股」写进了「手」序列，当日量凭空 ×100。顺着这条线全台排查，同一份错误假设一共被复制到**三处**，方向还相反（两处 ×100、一处 ÷100）。
+
+### Details
+1. **判断单位别看文档、看成交额**：`volume ≈ 成交额 ÷ 收盘价 ÷ 100` 是唯一硬证据。000902：73,588 手 ×13.87×100 = 1.02 亿 = 实时成交额 → 东财是「手」；600519 同为「手」。旧注释"东财/同花顺日K为股"是错的（同花顺确实为股，东财不是）。
+2. **同一份知识复制三遍 = 三份 bug**：`_reconcileTodayBar`（×100）、口诀1 开盘量比 `tencent ? 1 : 100`（÷100，基准缩 100 倍→量比虚高 100 倍）、`capitalFlow VOLUME_TO_LOT`（÷100，绝对量小 100 倍）。修复必须收敛成**唯一来源** `lib/volUnit.js`，并加源码守卫禁止"按是否 tencent 二分"的写法回潮。
+3. **给数据流加"量级守卫"比修好单位更重要**：同一天同一只股票，实时量与日K量不可能差 20 倍以上。换算后差 >20 倍 → 判单位异常、**拒绝覆写**、写进 dataGaps。这样即使将来又多一个通道、又写错一次，也只是"少一次覆写 + 一条告警"，而不是静默污染整条序列再产出荒谬结论。
+4. **旧测试会把错的行为锁成"预期"**：三条断言原本写的是「东财=股 → ÷100」「未归一的 quote 会覆写出 100 倍假量」，它们一直在绿灯守护 bug。修口径时必须同步改测试并把"为什么改"写进断言文案，否则下一个人会拿它回滚。
+5. **数值同屏 = 必须能自洽核对**：文案既然打印了「均值 ×1.5 = 阈值（当日量）」，就必须同时给出「当日量为阈值的 X 倍」；否则用户只能靠肉眼比大小，一旦单位错就立刻变成荒唐话。
+
+### Suggested Action
+凡涉及单位（股/手/万手/元/万元/亿）的字段：① 用「量×价≈成交额」这类恒等式反验，不靠注释和记忆；② 单位换算收敛到单一模块，源码守卫禁止就地二分；③ 数据写入前加量级守卫（同对象同日不应差 10 倍以上），异常就拒写+告警；④ 只要界面并排打印两个量，就要给出它们的关系（倍数/差值），让用户能自己核对；⑤ 修口径时同步翻测试里的"预期"，避免旧断言守护旧 bug。
+
+### Metadata
+- Source: user_feedback
+- Related Files: lib/volUnit.js, lib/volumeEngine.js, lib/capitalFlow.js, lib/stockData.js, scripts/test_volume_unit_contract.js, docs/logic/stock-13-capital.md, docs/logic/common-01-data-source.md
+- Tags: unit-mismatch, single-source-of-truth, magnitude-guard, test-locked-bug, self-checkable-copy
+- See Also: LRN-20261021-006（文案必须带窗口）, LRN-20261019b 相关（腾讯科创板量单位）
+- Pattern-Key: data.unit_single_source
+- Recurrence-Count: 2
+- First-Seen: 2026-10-19
+- Last-Seen: 2026-10-21
+
+## LRN-20261021-009 · 「已完结的历史方案」被当成「当前状态」+「未足额却说已用尽」
+
+**Logged**: 2026-10-21T17:00:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: backend
+
+### Summary
+用户截图报障：新洋丰（000902）的「股份回购」子卡片，① 根本没有当前回购行为却被照四要素展示；② 显示「完成实施（已达承诺上限 24%）」、理由却写「承诺买入力量已用尽」——1.44 亿 vs 承诺 3~6 亿，钱没花完却宣称已用尽。两处观感都是"虚构/自相矛盾的回购状态"。
+
+### Details
+1. **历史方案≠当前状态**：`lib/buybackEmDc.js` 默认把"最新一档"当成"当前进行中"展示。000902 最新一档是 **2021-07-23 完成实施**（5 年前）。任何"回购/增发/减持"这类有起止时间的方案，展示前必须先判**是否还在有效期内**——完结超过合理窗口（回购设 `HISTORICAL_DAYS=730` 自然日）就必须标"历史方案"，卡片主语改成"当前无进行中的回购"，旧方案降为脚注。否则用户会以为它现在还在回购。
+2. **「完成」不等于「足额」**：进度码 `006 完成实施` 是"方案结束"，但可能只回购到承诺上限的 24%（到期结束、没买完）。旧代码一律 `signal=0 中性 + 理由"承诺买入力量已用尽"` 是错的——钱没花完就不能说"已用尽"。必须按**实际完成率**分支：`<95%` → stage「已结束（未足额）」、理由说"只回购到承诺上限 X%，未足额买完，剩余额度不再兑现"；`≥95%` 才说"已用尽"。
+3. **改展示不改结构 → 必须升 LAYOUT_VERSION**：本次只动文案/状态标记，因子结构哈希没变，但旧判断快照会静默复用 → 页面仍显示旧文案。凡是改了"卡片里用户能看到的内容"却没动因子字段结构，都要升 `LAYOUT_VERSION` 强制重算。这条是此类修复反复踩的坑（同 008 的量纲修复、006 的窗口文案同理）。
+4. **措辞自洽校验**：进度文案里同时出现"完成实施"和"已达承诺上限 24%"本身就在自相矛盾（完成了却只达 24%）。凡并排出现"状态词 + 百分比"，必须能通过"百分比能否支撑状态词"的直觉核对——不能让"已完成/已用尽"和"<100%"同屏。
+
+### Suggested Action
+凡展示"有起止时间的公司行为"（回购/增减持/增发/承诺），一律先算**时效闸门**（完结超过 N 天 → 历史，不作为当前状态）；进度文案按**实际完成率**分支，禁止"状态词"与"百分比"自相矛盾；改展示不改结构时记得升 LAYOUT_VERSION 强制重算；卡片里并排出现的两个量必须能互相印证。
+
+### Metadata
+- Source: user_feedback
+- Related Files: lib/buybackEmDc.js, lib/sameDayJudgment.js, scripts/test_buyback_plan.js, docs/logic/stock-04-short-term.md
+- Tags: stale-plan-as-current, unfulfilled-but-claimed-done, layout-version-guard, self-contradictory-copy
+- See Also: LRN-20261021-006（文案必须带窗口）, LRN-20261021-008（量纲单一来源）
+- Pattern-Key: data.temporal_state_gate
+- Recurrence-Count: 1
+- First-Seen: 2026-10-21
+- Last-Seen: 2026-10-21

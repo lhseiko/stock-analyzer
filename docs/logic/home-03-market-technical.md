@@ -163,6 +163,9 @@ score>0 偏鹰；<0 偏鸽；=0 中性
 | macroNews 失败 | gaugeExternal 收到 null → 空数组 → 外部中性 + 免责声明「外部未捕获到明确信号」 | marketTechnical.js:474-487, 733-735 |
 | 判断落盘 | 仅 marketClosed 后记（避免把盘中未定方向当收盘判断）；重复调用同日覆盖 | server.js:733-735；marketTechJudgment.js:73 |
 | 结算数据未就绪 | 保持未结算，由 overdueCount 在前端暴露告警 | marketTechJudgment.js:155, 286；app.js:5740 |
+| **目标日落在法定节假日** | **20261021c 修复**：不采信存储 targetDate，按 `nextTradingDay(baseDate)` 重算并就地纠正（留 `targetDateFixed`）。旧记录里 09-24→09-25（中秋）、09-30→10-01（国庆）两条因此永远找不到 K 线、永不结算，并永久计入「过期未结算」——这就是用户报障「老是无法结算」的根因 | marketTechJudgment.js settleRecord；测试 scripts/test_market_tech_settle.js [1] |
+| 目标日是交易日但当日无 K 线 | 取其后首个有 K 线的交易日兜底，**仅在 ≤5 个自然日内**（`TARGET_FALLBACK_MAX_DAYS`），并留 `shortTargetFallback`；超过则拒绝结算并写 `settleError`，绝不把半个月后的 K 线当「次日」 | marketTechJudgment.js；测试 [2][3] |
+| 页面打开时没人点「结算」 | **20261021c**：`/api/market-tech/records` 读取即自动结算（`settleIfDue`，3 分钟节流）；此前只读不算，必须手动点结算才会推进 | server.js 路由；测试 [7] |
 | ⚠️ 注意 | 外部变量是**语义词频**（鹰/鸽词计数），卡片明示「非精确实时报价」——不可当作利率/油价数据用 | marketTechnical.js:733-735 |
 
 ## 六、逻辑漏洞自查清单（审计用）
@@ -183,6 +186,7 @@ score>0 偏鹰；<0 偏鸽；=0 中性
 - [ ] **step6.strategy 与 fused.position 两套仓位**：每指数卡显示 step6 六档文字仓位（7-8 成/6 成…），融合块显示 fused 计算区间——同一卡片两个仓位口径，数值可能不一致（如 step6 说 6 成、fused 算 5-6 成），用户以哪个为准？（marketTechnical.js:450-454 vs 642-674）
 - [ ] **synthesize 与 synthesizeFused 两套跨指数结论**：卡底 synthesis 用 midTerm 方向文本投票（:548-558），融合块 resonance.cross 又显示同一 synthesize——若 fused.fusionSignal 与 synthesis 冲突（如 fusionSignal=反弹但 synthesis 说共振偏空），以哪个为准？优先级未定义。（marketTechnical.js:548-558, 742）
 - [ ] **中期支撑/压力回退不对称**：midSupport 回退 MA250、midResistance 回退 MA60（:435-436）——支撑用年线、压力用季线，量级不对称，可视化对比时可能误导。（marketTechnical.js:435-436）
+- [ ] **目标日必须是交易日**：任何「次日/第N个交易日」字段落库前都过 `cnTradingCalendar`；结算侧也不能盲信存储值——非交易日目标日会让记录永久卡在待验证并误报「过期未结算」（20261021c 已修，测试 test_market_tech_settle.js）
 - [ ] **准确率只记上证**：recordDailyJudgment 固定取 BENCH=上证（:39, 80）——深证/创业板的判断从不进准确率库，「三大指数分析」只结算 1/3。（marketTechJudgment.js:39, 80）
 - [ ] **震荡命中容差 0.5%**：FLAT_TOLERANCE=0.5%（:34）——上证日波动经常 >0.5%，「看震荡」判定天然偏严，震荡类判断准确率可能系统性偏低；容差是否该按标的波动率自适应？（marketTechJudgment.js:34, 179-181）
 - [ ] **fusionSignal 归一化歧义**：normalizeDir 把「反弹」归入涨（:63）——融合信号「反弹」（中期看空下的技术反弹）被记入「涨」方向参与准确率结算，语义上是逆势反弹，结算口径是否失真？（marketTechJudgment.js:63 vs marketTechnical.js:595）

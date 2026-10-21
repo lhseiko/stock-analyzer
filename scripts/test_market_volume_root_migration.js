@@ -238,6 +238,13 @@ function check(name, actual, expect) {
     console.log('  新:', JSON.stringify(actual));
   }
 }
+// 20261021f：calcPriceVolume 新增 label / kind（附加字段，供风险提示按形态取词）。
+// 本测试比较的是「同一份 bars 的得分与文案是否零变化」——附加字段不属于语义差异，
+// 若继续整对象逐字比较，任何"加字段"都会被误判成回归。
+function semantic(pv) {
+  if (!pv) return pv;
+  return { score: pv.score, degraded: pv.degraded, value: pv.value, detail: pv.detail };
+}
 function deepEq(a, b) {
   try { require('assert').deepStrictEqual(a, b); return true; } catch (e) { return false; }
 }
@@ -249,7 +256,7 @@ for (const [label, bars] of SCENARIOS) {
     const vaOld = oldCalcVolumeActivity(d), vaNew = calcVolumeActivity(d);
     const pvOld = oldCalcPriceVolume(d), pvNew = calcPriceVolume(d);
     check(`量能活跃度 · ${label} · ${bLabel}`, vaNew, vaOld);
-    check(`量价配合度 · ${label} · ${bLabel}`, pvNew, pvOld);
+    check(`量价配合度 · ${label} · ${bLabel}`, semantic(pvNew), semantic(pvOld));
   }
 }
 
@@ -265,7 +272,7 @@ console.log('\n===== 2) 窗口不变性：新实现(320) vs 旧实现(260) —�
     const pvOld260 = oldCalcPriceVolume({ index: { bars: base }, breadth });
     const pvNew320 = calcPriceVolume({ index: { bars: bars320 }, breadth });
     check(`量能活跃度 · 旧260 vs 新320 · ${bLabel}`, vaNew320, vaOld260);
-    check(`量价配合度 · 旧260 vs 新320 · ${bLabel}`, pvNew320, pvOld260);
+    check(`量价配合度 · 旧260 vs 新320 · ${bLabel}`, semantic(pvNew320), semantic(pvOld260));
   }
   // 反向 sanity：320 窗口里 win20 / year(250) 样本集必须与 260 窗口完全相同
   const vols260 = base.map(b => b.vol), vols320 = bars320.map(b => b.vol);
@@ -273,6 +280,18 @@ console.log('\n===== 2) 窗口不变性：新实现(320) vs 旧实现(260) —�
   const sameYear = JSON.stringify(vols260.slice(-250)) === JSON.stringify(vols320.slice(-250));
   check('320 与 260 的 20 日窗口（不含今日）样本集相同', sameWin20, true);
   check('320 与 260 的 250 根（≈1年）分位样本集相同', sameYear, true);
+}
+
+console.log('\n===== 2b) 附加字段自洽（20261021f：label 必须等于 detail 的前缀，kind 必须在枚举内）=====');
+{
+  const ALLOWED = ['bothRise', 'bothFall', 'volUpPriceDown', 'priceUpVolDown', 'flat'];
+  const bars = lcgBars(260, 4242, { spikeLast: 1.6 });
+  const pv = calcPriceVolume({ index: { bars }, breadth: { up: 2000, down: 3000, limitUp: 30, limitDown: 5 } });
+  check('label 是 detail 的前缀', String(pv.detail).startsWith(pv.label), true);
+  check('kind 在枚举内', ALLOWED.includes(pv.kind), true);
+  // 合成层透传：这里不做 eval 执行（calcVolumePrice 未纳入新旧对比），改断言源码透传
+  check('合成因子透传 pvKind', NEW_SRC.indexOf('pvKind: pv.kind') >= 0, true);
+  check('合成因子透传 pvLabel', NEW_SRC.indexOf('pvLabel: pv.label') >= 0, true);
 }
 
 console.log('\n===== 3) 根函数直出指标 vs 旧实现手算（防止指标本身漂移）=====');

@@ -61,6 +61,31 @@
 | 落盘 | SQLite 主库 `data/stock_analyzer.db`（lib/db.js:15）；AI 只读缓存 `data/ai_cache/`；深度分析 `data/cache/deep-analysis/`；行业 `data/cache/industry_*`；F10 `data/f10-status/`；指数 `data/index_cache/` | 各文件 |
 | 调度 | 过期重采（isFresh=false / 版本不符 / 核心数据空 / 交易日守卫 / 事件变更 invalidate / `?refresh=1`）；定时任务 15:30 盘后落盘（server.js:2191-2262）、事件扫描四槽位（server.js:2266-2291） | server.js |
 
+### 4.x 腾讯 K 线「主机族」降级（20261021g）
+
+`ifzq.gtimg.cn/appstock/app/fqkline/get` 曾对**所有代码**整段返回 **HTTP 501**（sh000001 / sz399001 / sh600519 / sz000902 全是 501），而**同一路径**在 `web.ifzq.gtimg.cn` 正常 200。两个域名历史上此消彼长，写死任何一个都会在某天让「个股日K / 大盘技术分析 / 市场情绪量价因子 / 准确率结算」同时降级，而日志里只有一条 `Request failed with status code 501`，极易被误判成业务 bug。
+
+- 统一入口：`lib/tklineHost.js#getKlineJson(pathQuery, axiosOpts)` → 依次尝试 `ifzq.gtimg.cn` → `web.ifzq.gtimg.cn`，**只换主机、不改路径与参数**，调用方拿到的仍是原响应体。
+- 只对 5xx / 网络错误换主机；4xx 是参数问题，换主机没用，直接抛。
+- 接入点：`lib/stockData.js`（两处日K）、`lib/marketTechnical.js#fetchKline`、`lib/marketTechJudgment.js#fetchIndexDaily`、`lib/deep/yield.js#fetchBfqBars`、`server.js#_lastTradeDateViaFetch`。
+- `mkline`（分钟）与 `minute/query`（分时）不在同一路径、未被封，保持原样。
+- 守卫：`scripts/test_tkline_host.js`（28 项）断言五个调用点**不再出现裸 ifzq fqkline URL**。
+
+### 4.y 成交量「单位契约」（20261021h）
+
+同一份「成交量」在不同接口相差 100 倍是历史常客，一旦跨通道比较就会产生「7,358,800 小于 170,850」这类荒谬结论。
+
+| 来源 | 单位 | 反验方式 |
+|---|---|---|
+| 东财 kline `f56` | **手** | 73,588 手 × 13.87 × 100 = 1.02 亿 = 实时成交额 |
+| 腾讯 `fetchTencentHistory`（已归一） | **手** | 科创板 688/689 的「股」在取数时 ÷100 |
+| 同花顺 `last.js` | **股** | 量级恒为东财的约 100 倍 |
+| 实时 quote（腾讯快照 fields[36]） | **股** | 与日K手数恒差 100 倍 |
+
+- 唯一入口：`lib/volUnit.js`（`BAR_VOL_UNIT` / `sharesToBarUnit` / `toLotDivisor`）。**禁止**再按"是否 tencent"二分。
+- `_reconcileTodayBar` 覆写当日K线前先换算；换算后若与当日 bar 相差 >20 倍，判为单位异常 → **拒绝覆写**，写 `unit_mismatch` 进 dataGaps（序列绝不被污染）。
+- 守卫：`scripts/test_volume_unit_contract.js`（28 项）覆盖单位表、三通道覆写、量级守卫、capitalFlow 同源、源码防回潮、文案自洽。
+
 ## 五、降级 / 容错 / 诚实性设计
 
 - **回退链**：`getQuote` 腾讯→雅虎；`getHistory` CN/HK 腾讯→东财(重试)→新浪；板块排名 同花顺→东财→腾讯→合成空块；涨停池单池失败对应字段 `null`（前端不渲染）。

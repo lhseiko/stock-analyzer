@@ -1,15 +1,15 @@
 # 测试回归报告（docs/test-report.md）
 
-> 生成时间：2026-10-20T04:18:47.787Z
+> 生成时间：2026-10-20T13:27:44.138Z
 > 模式：full
 > 命令：`node scripts/run_all_tests.js`
 
 ## 结论
 
-**❌ 50/53 通过，失败 3 项**
+**❌ 52/55 通过，失败 3 项**
 
-- 执行测试数：53
-- 通过：50　失败：3
+- 执行测试数：55
+- 通过：52　失败：3
 
 ## 明细
 
@@ -49,6 +49,8 @@
 | ✅ | `test_news_sector_scoring.js` | 0 |
 | ✅ | `test_news_time.js` | 0 |
 | ✅ | `test_notes_scope_switch.js` | 0 |
+| ✅ | `test_price_action_level_validity.js` | 0 |
+| ✅ | `test_range_detector.js` | 0 |
 | ✅ | `test_sanxi_selling_expense.js` | 0 |
 | ✅ | `test_schema_version_guard.js` | 0 |
 | ✅ | `test_sector_crowding.js` | 0 |
