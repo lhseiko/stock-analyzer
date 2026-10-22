@@ -140,6 +140,105 @@ const Charts = {
     return v;
   },
 
+  // ============ 20261022i：主图「区间最高/最低」自动追踪光标 ============
+  // 光标计算失败的累计次数（只做诊断用，不阻断绘图）。
+  // 刻意不写成空 catch —— 项目回归守卫 test_swallow_catch_guard 按计数比对基线，
+  // 新增空 catch 会被判为"新增静默吞错"；这里如实记账、可被调试读取。
+  _rangeCursorErrCount: 0,
+  /**
+   * 当前可视区间（dataZoom 百分比 → 数组下标）。
+   * 3月/6月/1年/3年 按钮会带新的 history 重新走 candlestick()，滚轮/拖动则只改 dataZoom，
+   * 两条路径最终都收敛到这里，保证光标与用户真正看到的区间一致。
+   */
+  _visibleRange(chart, total) {
+    let start = 60, end = 100;   // 与 dataZoom 初始值保持一致
+    try {
+      const opt = chart.getOption();
+      const dz = (opt && opt.dataZoom && opt.dataZoom[0]) || {};
+      if (typeof dz.start === 'number' && isFinite(dz.start)) start = dz.start;
+      if (typeof dz.end === 'number' && isFinite(dz.end)) end = dz.end;
+    } catch (e) { this._rangeCursorErrCount++; }   // 取不到就用默认区间，不阻断绘图
+    let i0 = Math.floor(total * start / 100);
+    let i1 = Math.ceil(total * end / 100) - 1;
+    i0 = Math.max(0, Math.min(total - 1, i0));
+    i1 = Math.max(i0, Math.min(total - 1, i1));
+    return [i0, i1];
+  },
+
+  /** 区间内的最高价 / 最低价及其发生位置（下标） */
+  _rangeExtremes(history, i0, i1) {
+    let hi = null, lo = null, hiIdx = -1, loIdx = -1;
+    const a = Math.max(0, i0), b = Math.min(history.length - 1, i1);
+    for (let i = a; i <= b; i++) {
+      const d = history[i];
+      if (!d) continue;
+      const h = Number(d.high), l = Number(d.low);
+      if (isFinite(h) && (hi === null || h > hi)) { hi = h; hiIdx = i; }
+      if (isFinite(l) && (lo === null || l < lo)) { lo = l; loIdx = i; }
+    }
+    return { hi, lo, hiIdx, loIdx };
+  },
+
+  /**
+   * 两条水平光标（区间最高=红 / 区间最低=绿），右端带价签。
+   * 固定两条 data，便于 dataZoom 时按索引原地合并更新（数组按索引 merge，不会残留旧条目）。
+   */
+  _rangeMarkLine(history, i0, i1) {
+    const { hi, lo } = this._rangeExtremes(history, i0, i1);
+    const mk = (v, text, color, position) => {
+      // 缺失值（理论上只有整段 high/low 全非法才会出现）用 index 占位：既不画线也不显示价签。
+      // 关键：数组**长度必须恒为 2** —— ECharts 的 markLine.data 是按索引合并的，
+      // 若某次只给 1 条，上一次的第 2 条会作为脏数据残留（表现为轨道上多出一条错误光标）。
+      if (v == null) return { yAxis: null, lineStyle: { opacity: 0 }, label: { show: false } };
+      return {
+        yAxis: v,
+        lineStyle: { color, type: 'dashed', width: 1, opacity: 0.9 },
+        label: {
+          show: true,
+          formatter: `${text} ${this.fmtNum(v)}`,
+          position,
+          color: '#0B0E11',
+          backgroundColor: color,
+          padding: [3, 7],
+          borderRadius: 4,
+          fontSize: 10,
+          fontWeight: 700,
+        },
+      };
+    };
+    return {
+      silent: true,
+      symbol: 'none',
+      animation: false,
+      data: [
+        mk(hi, '高', this.colors.up, 'insideEndTop'),
+        mk(lo, '低', this.colors.down, 'insideEndBottom'),
+      ],
+    };
+  },
+
+  /**
+   * 把区间光标同步到当前可视范围。挂在 dataZoom 上，用 rAF 节流：
+   * 拖动缩放时该事件每帧多次触发，直接 setOption 会明显掉帧。
+   */
+  _bindRangeMarkLine(chart, history) {
+    if (!chart || !history || history.length < 2) return;
+    let raf = 0;
+    const sync = () => {
+      if (raf) return;
+      raf = (window.requestAnimationFrame || ((fn) => setTimeout(fn, 16)))(() => {
+        raf = 0;
+        try {
+          const [a, b] = this._visibleRange(chart, history.length);
+          chart.setOption({ series: [{ markLine: this._rangeMarkLine(history, a, b) }] });
+        } catch (e) { this._rangeCursorErrCount++; }   // 图表已销毁等瞬态：记账即可，不做弹窗打扰
+      });
+    };
+    chart.on('dataZoom', sync);
+    // 首次挂载后立刻按真实可视区间校正一次（初始 setOption 时用的是全区间）
+    sync();
+  },
+
   // Candlestick chart with MA and volume
   candlestick(id, history) {
     const chart = this.get(id);
@@ -164,11 +263,8 @@ const Charts = {
       };
     });
 
-    // 现价标线（Robinhood 式最新价虚线 + 右端价签）：颜色取最新一日涨跌语义色
-    const lastDay = history[history.length - 1];
-    const prevDay = history[history.length - 2] || lastDay;
-    const lastColor = lastDay.close >= prevDay.close ? this.colors.up : this.colors.down;
-
+    // 20261022i：删除「今日收盘价」标线（右端 5.77 那个价签），改为**两条自动追踪光标**——
+    // 区间最高价 / 区间最低价，随「当前选定时间范围」（3月/6月/1年/3年 + 滚轮缩放/拖动）实时重算。
     const series = [{
       name: 'K线',
       type: 'candlestick',
@@ -180,22 +276,8 @@ const Charts = {
         borderColor: this.colors.up,
         borderColor0: this.colors.down,
       },
-      markLine: {
-        silent: true,
-        symbol: 'none',
-        data: [{ yAxis: lastDay.close }],
-        lineStyle: { color: lastColor, type: 'dashed', width: 1, opacity: 0.85 },
-        label: {
-          formatter: this.fmtNum(lastDay.close),
-          color: '#0B0E11',
-          backgroundColor: lastColor,
-          padding: [3, 7],
-          borderRadius: 4,
-          fontSize: 10,
-          fontWeight: 700,
-          position: 'insideEndTop',
-        },
-      },
+      // 初次渲染先按完整历史算，setOption 之后立即用真实可视区间校正一次（见下方 _syncRangeMarkLine）
+      markLine: this._rangeMarkLine(history, 0, history.length - 1),
     }];
 
     // 均线 MA5/10/20/60：白/黄/紫/绿 1.5px 细线。
@@ -318,6 +400,8 @@ const Charts = {
 
     // 双击复位缩放（滚轮缩放 / 拖拽平移由 inside dataZoom 覆盖）
     this._bindChartGestures(chart);
+    // 区间最高/最低光标：跟随可视范围自动重算（20261022i）
+    this._bindRangeMarkLine(chart, history);
   },
 
   // ============ 20261017h：分时走势图（主图「分时」按钮） ============

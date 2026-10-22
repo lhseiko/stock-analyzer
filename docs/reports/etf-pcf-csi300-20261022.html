@@ -1,0 +1,3885 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>沪深300 ETF 当日申赎清单（PCF）统计 · 2026-10-22</title>
+<style>
+  :root{
+    --bg:#0d1117; --card:#161B22; --elev:#1c2128; --bd:#2b323b;
+    --tx:#E6EDF3; --tx2:#9aa4b2; --tx3:#6b7683;
+    --accent:#F0B97B; --red:#F6465D; --green:#0ECB81; --blue:#58a6ff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    font-size:13px;line-height:1.65;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1280px;margin:0 auto;padding:28px 20px 80px}
+  h1{font-size:21px;margin:0 0 6px;font-weight:700;letter-spacing:.2px}
+  .sub{color:var(--tx2);font-size:12.5px;margin-bottom:22px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:22px}
+  .kpi{background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:12px 14px}
+  .kpi .k{color:var(--tx3);font-size:11px;letter-spacing:.3px}
+  .kpi .v{font-size:20px;font-weight:700;margin-top:3px;font-variant-numeric:tabular-nums}
+  .kpi .v small{font-size:12px;font-weight:500;color:var(--tx2);margin-left:3px}
+  section{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:16px 18px;margin-bottom:18px}
+  h2{font-size:14px;margin:0 0 4px;font-weight:700}
+  h2 .tag{font-size:10.5px;font-weight:600;color:var(--accent);border:1px solid rgba(240,185,123,.45);
+    background:rgba(240,185,123,.1);border-radius:3px;padding:1px 5px;margin-left:7px;vertical-align:1px}
+  .note{color:var(--tx2);font-size:12px;margin:6px 0 12px}
+  .note b{color:var(--accent);font-weight:600}
+  .scroll{max-height:520px;overflow:auto;border-radius:6px;border:1px solid var(--bd)}
+  table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+  th{position:sticky;top:0;z-index:1;background:var(--elev);color:var(--tx3);
+    font-size:11px;font-weight:600;text-align:left;padding:8px 10px;border-bottom:1px solid var(--bd);white-space:nowrap}
+  td{padding:7px 10px;border-bottom:1px solid rgba(43,50,59,.6);vertical-align:top}
+  tbody tr:hover{background:rgba(255,255,255,.028)}
+  .num{text-align:right;white-space:nowrap}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px}
+  .dim{color:var(--tx2);font-size:12px}
+  .ok{color:var(--green)}
+  .warn{color:var(--accent)}
+  .pill{display:inline-block;padding:0 6px;border-radius:3px;font-size:11px;border:1px solid var(--bd)}
+  .pill.full{color:var(--green);border-color:rgba(14,203,129,.45);background:rgba(14,203,129,.1)}
+  .pill.most{color:var(--accent);border-color:rgba(240,185,123,.45);background:rgba(240,185,123,.08)}
+  .pill.part{color:var(--tx2)}
+  ul.caveat{margin:8px 0 0;padding-left:18px;color:var(--tx2);font-size:12.2px}
+  ul.caveat li{margin-bottom:5px}
+  ul.caveat b{color:var(--tx)}
+  .foot{color:var(--tx3);font-size:11.5px;text-align:center;margin-top:26px}
+  code{background:var(--elev);border:1px solid var(--bd);border-radius:3px;padding:1px 5px;font-size:11.5px;color:var(--accent)}
+</style></head><body><div class="wrap">
+
+<h1>沪深300 ETF · 当日申购赎回清单（PCF）统计</h1>
+<div class="sub">数据日期 <b style="color:var(--tx)">2026-10-22</b> · 来源 上海证券交易所 ETF 公告申购赎回清单 · 生成 2026/10/22 19:03:29</div>
+
+<div class="grid">
+  <div class="kpi"><div class="k">入组 ETF</div><div class="v">19<small>只</small></div></div>
+  <div class="kpi"><div class="k">并集标的</div><div class="v">300<small>只</small></div></div>
+  <div class="kpi"><div class="k">被全部持有</div><div class="v">300<small>只</small></div></div>
+  <div class="kpi"><div class="k">篮子覆盖率</div><div class="v warn">97.38%<small>均值 94.4%~99.4%</small></div></div>
+  <div class="kpi"><div class="k">行情缺失</div><div class="v">0<small>条</small></div></div>
+</div>
+
+<section>
+  <h2>一、这份数据是什么（以及不是什么）</h2>
+  <ul class="caveat">
+    <li><b>是</b>：ETF 当日「申购/赎回一篮子」的<b>清单</b>——包含每只成分券的代码、名称、数量、现金替代标志、溢价/折价率、挂牌市场，以及最小申赎单位、单篮净值、现金差额、当日累计可申赎上限。</li>
+    <li><b>不是</b>：<b>不是当日实际净申购/净赎回份额</b>。PCF 只是「模板」，无论今天有没有人申赎，清单都照发。想知道「今天哪只 ETF 被净申购多少」，要另取<b>基金份额</b>数据（T 日份额通常 T+1 披露），本报告不含该口径。</li>
+    <li><b>不是</b>：不是基金真实持仓的完整还原。PCF 按申赎单位取整（例如每篮若干手茅台），与基金实际持股有舍入差异；停牌股会变成「必须现金替代」。</li>
+    <li><b>两个权重口径</b>：① <b>篮内权重</b> = 单只成分市值 ÷ 该 ETF 篮子成分市值合计（本报告第四~七节用这个，各 ETF 自身归一，跨 ETF 才可比）；② <b>篮子覆盖率</b> = 篮子成分市值合计 ÷ 单篮净值（第三节用这个，看篮子有没有把净值全额还原）。</li>
+    <li><b>覆盖率为什么不到 100%</b>：差额来自 ① 现金差额（<code>ESTIMATED_CASH_COMPONENT</code>，正=篮子比净值多备现金，负=反）；② 部分成分在清单里以「必须现金替代」出现，不计股数；③ 申赎单位取整；④ 行情是实时价而清单净值可能取 T-1 收盘。实测覆盖 <b>94.4% ~ 99.4%</b>，属正常区间，<b>不是抓取错误</b>。</li>
+  </ul>
+</section>
+
+<section>
+  <h2>二、家族识别 <span class="tag">为什么不是「名称含沪深300 就算」</span></h2>
+  <div class="note">名称里带「沪深300」的不一定是纯指数复制——实测有 <b>沪深300医药卫生(20只)</b>、<b>沪深300红利(50只)</b>、<b>沪深300ESG(233只)</b>、<b>沪深300增强策略(144只)</b>。故判定标准为：<b>成分正好 300 只 + 名称不含行业/策略/增强关键词</b>，并用与 510300 的篮子 Jaccard 相似度做交叉验证。</div>
+  <div class="note">入组 19 只（Jaccard 与基准 510300 的相似度区间 <b>100.0% ~ 100.0%</b>）；排除 21 只。</div>
+  <div class="scroll" style="max-height:280px">
+    <table><thead><tr><th>代码</th><th>基金全称</th><th>排除原因</th></tr></thead>
+    <tbody><tr><td class="mono">512010</td><td>易方达沪深300医药卫生交易型开放式指数证券投资基金</td><td class="dim">成分为 20 只，非「纯沪深300」（属行业/策略/增强衍生）</td></tr><tr><td class="mono">512070</td><td>易方达沪深300非银行金融交易型开放式指数证券投资基金</td><td class="dim">成分为 26 只，非「纯沪深300」（属行业/策略/增强衍生）</td></tr><tr><td class="mono">512530</td><td>建信沪深300红利交易型开放式指数证券投资基金</td><td class="dim">成分为 50 只，非「纯沪深300」（属行业/策略/增强衍生）</td></tr><tr><td class="mono">515300</td><td>嘉实沪深300红利低波动交易型开放式指数证券投资基金</td><td class="dim">成分为 50 只，非「纯沪深300」（属行业/策略/增强衍生）</td></tr><tr><td class="mono">516040</td><td>华夏沪深300自由现金流交易型开放式指数证券投资基金</td><td class="dim">成分为 50 只，非「纯沪深300」（属行业/策略/增强衍生）</td></tr><tr><td class="mono">516830</td><td>富国沪深300ESG基准交易型开放式指数证券投资基金</td><td class="dim">成分为 233 只，非「纯沪深300」（属行业/策略/增强衍生）</td></tr><tr><td class="mono">560180</td><td>南方沪深300ESG基准交易型开放式指数证券投资基金</td><td class="dim">成分为 233 只，非「纯沪深300」（属行业/策略/增强衍生）</td></tr><tr><td class="mono">560330</td><td>申万菱信沪深300价值交易型开放式指数证券投资基金</td><td class="dim">成分为 100 只，非「纯沪深300」（属行业/策略/增强衍生）</td></tr><tr><td class="mono">561000</td><td>华安沪深300增强策略交易型开放式指数证券投资基金</td><td class="dim">成分为 122 只，非「纯沪深300」（属行业/策略/增强衍生）</td></tr><tr><td class="mono">561300</td><td>国泰沪深300增强策略交易型开放式指数证券投资基金</td><td class="dim">成分为 144 只，非「纯沪深300」（属行业/策略/增强衍生）</td></tr><tr><td class="mono">561420</td><td>汇添富沪深300自由现金流交易型开放式指数证券投资基金</td><td class="dim">成分为 50 只，非「纯沪深300」（属行业/策略/增强衍生）</td></tr><tr><td class="mono">561690</td><td>农银汇理沪深300质量交易型开放式指数证券投资基金</td><td class="dim">成分为 50 只，非「纯沪深300」（属行业/策略/增强衍生）</td></tr><tr><td class="mono">561900</td><td>招商沪深300ESG基准交易型开放式指数证券投资基金</td><td class="dim">成分为 233 只，非「纯沪深300」（属行业/策略/增强衍生）</td></tr><tr><td class="mono">561990</td><td>招商沪深300增强策略交易型开放式指数证券投资基金</td><td class="dim">成分为 119 只，非「纯沪深300」（属行业/策略/增强衍生）</td></tr><tr><td class="mono">562070</td><td>华宝沪深300增强策略交易型开放式指数证券投资基金</td><td class="dim">成分为 168 只，非「纯沪深300」（属行业/策略/增强衍生）</td></tr><tr><td class="mono">562080</td><td>华宝沪深300自由现金流交易型开放式指数证券投资基金</td><td class="dim">成分为 50 只，非「纯沪深300」（属行业/策略/增强衍生）</td></tr><tr><td class="mono">562170</td><td>易方达沪深300自由现金流交易型开放式指数证券投资基金</td><td class="dim">成分为 50 只，非「纯沪深300」（属行业/策略/增强衍生）</td></tr><tr><td class="mono">562310</td><td>银华沪深300成长交易型开放式指数证券投资基金</td><td class="dim">成分为 100 只，非「纯沪深300」（属行业/策略/增强衍生）</td></tr><tr><td class="mono">562320</td><td>银华沪深300价值交易型开放式指数证券投资基金</td><td class="dim">成分为 100 只，非「纯沪深300」（属行业/策略/增强衍生）</td></tr><tr><td class="mono">563900</td><td>摩根沪深300自由现金流交易型开放式指数证券投资基金</td><td class="dim">成分为 50 只，非「纯沪深300」（属行业/策略/增强衍生）</td></tr><tr><td class="mono">563960</td><td>兴全沪深300质量交易型开放式指数证券投资基金</td><td class="dim">成分为 50 只，非「纯沪深300」（属行业/策略/增强衍生）</td></tr></tbody></table>
+  </div>
+</section>
+
+<section>
+  <h2>三、申赎参数对比 <span class="tag">按代码排序</span></h2>
+  <div class="note">同一指数的 19 只 ETF，门槛(<b>最小申赎单位</b>)差异可达 <b>8.0 倍</b>；单篮净值从 <b>2,778,734.19</b> 到 <b>5,051,648.36</b> 元不等——同样申购一次，资金占用差很多。</div>
+  <div class="scroll">
+    <table><thead><tr>
+      <th>代码</th><th>基金全称</th><th>管理人</th><th class="num">份额净值</th>
+      <th class="num">最小申赎单位</th><th class="num">单篮净值(元)</th>
+      <th class="num">现金差额(T-1)</th><th class="num">现金差额(预估T)</th>
+      <th class="num">申购上限</th><th class="num">赎回上限</th><th class="num">成分</th><th class="num">0股行</th><th class="num">必须替代</th><th class="num">篮子覆盖率</th>
+    </tr></thead><tbody><tr>
+      <td class="mono">510300</td>
+      <td>华泰柏瑞沪深300交易型开放式指数证券投资基金</td>
+      <td class="dim">华泰柏瑞基金管理有限公司</td>
+      <td class="num">4.1856</td>
+      <td class="num">900,000</td>
+      <td class="num">3,767,071.68</td>
+      <td class="num">94,651.68</td>
+      <td class="num">96,866.68</td>
+      <td class="num">—</td>
+      <td class="num">36 亿</td>
+      <td class="num">300</td>
+      <td class="num dim">21</td>
+      <td class="num dim">21</td>
+      <td class="num warn">95.69%</td>
+    </tr><tr>
+      <td class="mono">510310</td>
+      <td>易方达沪深300交易型开放式指数发起式证券投资基金</td>
+      <td class="dim">易方达基金管理有限公司</td>
+      <td class="num">4.0664</td>
+      <td class="num">900,000</td>
+      <td class="num">3,659,788.53</td>
+      <td class="num">-5,286.47</td>
+      <td class="num">305.53</td>
+      <td class="num">—</td>
+      <td class="num">27 亿</td>
+      <td class="num">300</td>
+      <td class="num dim">25</td>
+      <td class="num dim">25</td>
+      <td class="num warn">98.21%</td>
+    </tr><tr>
+      <td class="mono">510320</td>
+      <td>中金沪深300交易型开放式指数证券投资基金</td>
+      <td class="dim">中金基金管理有限公司</td>
+      <td class="num">1.1270</td>
+      <td class="num">3,000,000</td>
+      <td class="num">3,381,072.93</td>
+      <td class="num">-9,740.07</td>
+      <td class="num">-6,026.07</td>
+      <td class="num">—</td>
+      <td class="num">1.5 亿</td>
+      <td class="num">300</td>
+      <td class="num dim">22</td>
+      <td class="num dim">22</td>
+      <td class="num warn">98.32%</td>
+    </tr><tr>
+      <td class="mono">510330</td>
+      <td>华夏沪深300交易型开放式指数证券投资基金</td>
+      <td class="dim">华夏基金管理有限公司</td>
+      <td class="num">4.3645</td>
+      <td class="num">900,000</td>
+      <td class="num">3,928,067.26</td>
+      <td class="num">1,929.68</td>
+      <td class="num">1,863.46</td>
+      <td class="num">—</td>
+      <td class="num">19.8 亿</td>
+      <td class="num">300</td>
+      <td class="num dim">18</td>
+      <td class="num dim">18</td>
+      <td class="num warn">98.18%</td>
+    </tr><tr>
+      <td class="mono">510350</td>
+      <td>工银瑞信沪深300交易型开放式指数证券投资基金</td>
+      <td class="dim">工银瑞信基金管理有限公司</td>
+      <td class="num">4.4044</td>
+      <td class="num">900,000</td>
+      <td class="num">3,963,925.36</td>
+      <td class="num">46,381.36</td>
+      <td class="num">45,932.36</td>
+      <td class="num">—</td>
+      <td class="num">6,300 万</td>
+      <td class="num">300</td>
+      <td class="num dim">16</td>
+      <td class="num dim">16</td>
+      <td class="num warn">97.07%</td>
+    </tr><tr>
+      <td class="mono">510360</td>
+      <td>广发沪深300交易型开放式指数证券投资基金</td>
+      <td class="dim">广发基金管理有限公司</td>
+      <td class="num">1.6004</td>
+      <td class="num">3,000,000</td>
+      <td class="num">4,801,177.48</td>
+      <td class="num">726.48</td>
+      <td class="num">1,112.48</td>
+      <td class="num">—</td>
+      <td class="num">1.5 亿</td>
+      <td class="num">300</td>
+      <td class="num dim">11</td>
+      <td class="num dim">12</td>
+      <td class="num warn">98.17%</td>
+    </tr><tr>
+      <td class="mono">510370</td>
+      <td>兴业沪深300交易型开放式指数证券投资基金</td>
+      <td class="dim">兴业基金管理有限公司</td>
+      <td class="num">0.9262</td>
+      <td class="num">3,000,000</td>
+      <td class="num">2,778,734.19</td>
+      <td class="num">222.19</td>
+      <td class="num">1,011.19</td>
+      <td class="num">—</td>
+      <td class="num">2,100 万</td>
+      <td class="num">300</td>
+      <td class="num dim">30</td>
+      <td class="num dim">30</td>
+      <td class="num warn">98.16%</td>
+    </tr><tr>
+      <td class="mono">510380</td>
+      <td>国寿安保沪深300交易型开放式指数证券投资基金</td>
+      <td class="dim">国寿安保基金管理有限公司</td>
+      <td class="num">1.2475</td>
+      <td class="num">3,000,000</td>
+      <td class="num">3,742,366.03</td>
+      <td class="num">10,715.03</td>
+      <td class="num">10,428.03</td>
+      <td class="num">—</td>
+      <td class="num">2.1 亿</td>
+      <td class="num">300</td>
+      <td class="num dim">10</td>
+      <td class="num dim">11</td>
+      <td class="num warn">97.95%</td>
+    </tr><tr>
+      <td class="mono">510390</td>
+      <td>平安沪深300交易型开放式指数证券投资基金</td>
+      <td class="dim">平安基金管理有限公司</td>
+      <td class="num">4.7495</td>
+      <td class="num">900,000</td>
+      <td class="num">4,274,590.19</td>
+      <td class="num">49,160.19</td>
+      <td class="num">45,498.19</td>
+      <td class="num">—</td>
+      <td class="num">1,800 万</td>
+      <td class="num">300</td>
+      <td class="num dim">16</td>
+      <td class="num dim">19</td>
+      <td class="num warn">97.13%</td>
+    </tr><tr>
+      <td class="mono">515130</td>
+      <td>博时沪深300交易型开放式指数证券投资基金</td>
+      <td class="dim">博时基金管理有限公司</td>
+      <td class="num">1.3865</td>
+      <td class="num">3,000,000</td>
+      <td class="num">4,159,378.74</td>
+      <td class="num">3,014.74</td>
+      <td class="num">86.74</td>
+      <td class="num">—</td>
+      <td class="num">600 万</td>
+      <td class="num">300</td>
+      <td class="num dim">18</td>
+      <td class="num dim">21</td>
+      <td class="num warn">98.17%</td>
+    </tr><tr>
+      <td class="mono">515310</td>
+      <td>汇添富沪深300交易型开放式指数证券投资基金</td>
+      <td class="dim">汇添富基金管理股份有限公司</td>
+      <td class="num">1.2456</td>
+      <td class="num">3,500,000</td>
+      <td class="num">4,359,520.42</td>
+      <td class="num">-47,341.38</td>
+      <td class="num">-50,196.58</td>
+      <td class="num">—</td>
+      <td class="num">1,400 万</td>
+      <td class="num">300</td>
+      <td class="num dim">18</td>
+      <td class="num dim">18</td>
+      <td class="num warn">99.37%</td>
+    </tr><tr>
+      <td class="mono">515330</td>
+      <td>天弘沪深300交易型开放式指数证券投资基金</td>
+      <td class="dim">天弘基金管理有限公司</td>
+      <td class="num">1.2026</td>
+      <td class="num">3,000,000</td>
+      <td class="num">3,607,784.88</td>
+      <td class="num">7,283.88</td>
+      <td class="num">7,541.88</td>
+      <td class="num">—</td>
+      <td class="num">18 亿</td>
+      <td class="num">300</td>
+      <td class="num dim">20</td>
+      <td class="num dim">20</td>
+      <td class="num warn">97.94%</td>
+    </tr><tr>
+      <td class="mono">515350</td>
+      <td>民生加银沪深300交易型开放式指数证券投资基金</td>
+      <td class="dim">民生加银基金管理有限公司</td>
+      <td class="num">5.6129</td>
+      <td class="num">900,000</td>
+      <td class="num">5,051,648.36</td>
+      <td class="num">210,410.36</td>
+      <td class="num">196,274.36</td>
+      <td class="num">—</td>
+      <td class="num">270 万</td>
+      <td class="num">300</td>
+      <td class="num dim">15</td>
+      <td class="num dim">15</td>
+      <td class="num warn">94.42%</td>
+    </tr><tr>
+      <td class="mono">515360</td>
+      <td>方正富邦沪深300交易型开放式指数证券投资基金</td>
+      <td class="dim">方正富邦基金管理有限公司</td>
+      <td class="num">6.0968</td>
+      <td class="num">500,000</td>
+      <td class="num">3,048,401.15</td>
+      <td class="num">109,551.15</td>
+      <td class="num">109,764.15</td>
+      <td class="num">—</td>
+      <td class="num">150 万</td>
+      <td class="num">300</td>
+      <td class="num dim">31</td>
+      <td class="num dim">31</td>
+      <td class="num warn">94.74%</td>
+    </tr><tr>
+      <td class="mono">515380</td>
+      <td>泰康沪深300交易型开放式指数证券投资基金</td>
+      <td class="dim">泰康基金管理有限公司</td>
+      <td class="num">4.8655</td>
+      <td class="num">900,000</td>
+      <td class="num">4,378,909.50</td>
+      <td class="num">33,983.50</td>
+      <td class="num">37,103.50</td>
+      <td class="num">1 亿</td>
+      <td class="num">5,000 万</td>
+      <td class="num">300</td>
+      <td class="num dim">15</td>
+      <td class="num dim">18</td>
+      <td class="num warn">97.35%</td>
+    </tr><tr>
+      <td class="mono">515390</td>
+      <td>华安沪深300交易型开放式指数证券投资基金</td>
+      <td class="dim">华安基金管理有限公司</td>
+      <td class="num">1.2203</td>
+      <td class="num">4,000,000</td>
+      <td class="num">4,881,006.71</td>
+      <td class="num">-7,085.29</td>
+      <td class="num">-5,816.29</td>
+      <td class="num">—</td>
+      <td class="num">2.4 亿</td>
+      <td class="num">300</td>
+      <td class="num dim">5</td>
+      <td class="num dim">5</td>
+      <td class="num warn">98.31%</td>
+    </tr><tr>
+      <td class="mono">515660</td>
+      <td>国联安沪深300交易型开放式指数证券投资基金</td>
+      <td class="dim">国联安基金管理有限公司</td>
+      <td class="num">5.2354</td>
+      <td class="num">900,000</td>
+      <td class="num">4,711,900.98</td>
+      <td class="num">-1,361.02</td>
+      <td class="num">-714.02</td>
+      <td class="num">—</td>
+      <td class="num">3.11 亿</td>
+      <td class="num">300</td>
+      <td class="num dim">5</td>
+      <td class="num dim">27</td>
+      <td class="num warn">98.22%</td>
+    </tr><tr>
+      <td class="mono">561930</td>
+      <td>招商沪深300交易型开放式指数证券投资基金</td>
+      <td class="dim">招商基金管理有限公司</td>
+      <td class="num">1.4143</td>
+      <td class="num">3,000,000</td>
+      <td class="num">4,242,830.21</td>
+      <td class="num">144,175.21</td>
+      <td class="num">145,013.21</td>
+      <td class="num">—</td>
+      <td class="num">4,500 万</td>
+      <td class="num">300</td>
+      <td class="num dim">20</td>
+      <td class="num dim">20</td>
+      <td class="num warn">94.86%</td>
+    </tr><tr>
+      <td class="mono">563520</td>
+      <td>永赢沪深300交易型开放式指数证券投资基金</td>
+      <td class="dim">永赢基金管理有限公司</td>
+      <td class="num">1.0753</td>
+      <td class="num">3,000,000</td>
+      <td class="num">3,225,913.26</td>
+      <td class="num">8,375.38</td>
+      <td class="num">8,076.86</td>
+      <td class="num">—</td>
+      <td class="num">3,600 万</td>
+      <td class="num">300</td>
+      <td class="num dim">28</td>
+      <td class="num dim">28</td>
+      <td class="num warn">97.89%</td>
+    </tr></tbody></table>
+  </div>
+</section>
+
+<section>
+  <h2>四、成分股抱团排行 <span class="tag">被多少只 ETF 同时纳入</span></h2>
+  <div class="note">「纳入 N/19」= 有多少只 ETF 的当日篮子里有这只股票。全 19 只都纳入的有 <b>300</b> 只；只被 1 只纳入的有 <b>0</b> 只。<b>平均权重</b>与<b>权重极差</b>反映各家的复制方式差异（完全复制 vs 抽样/替代）。</div>
+  <div class="scroll">
+    <table><thead><tr>
+      <th class="num">#</th><th>代码</th><th>名称</th><th class="num">市场</th>
+      <th class="num">纳入 ETF</th><th class="num">平均权重</th><th class="num">权重区间</th><th class="num">极差</th><th class="num">必须替代</th>
+    </tr></thead><tbody><tr>
+      <td class="num dim">1</td>
+      <td class="mono">600519</td>
+      <td>贵州茅台</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">3.635%</td>
+      <td class="num dim">2.748% ~ 6.087%</td>
+      <td class="num dim">3.339%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">2</td>
+      <td class="mono">300308</td>
+      <td>中际旭创</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">2.889%</td>
+      <td class="num dim">2.043% ~ 3.737%</td>
+      <td class="num dim">1.694%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">3</td>
+      <td class="mono">300750</td>
+      <td>宁德时代</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">2.569%</td>
+      <td class="num dim">2.286% ~ 3.232%</td>
+      <td class="num dim">0.946%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">4</td>
+      <td class="mono">688072</td>
+      <td>拓荆科技</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">2.498%</td>
+      <td class="num dim">2.498% ~ 2.498%</td>
+      <td class="num dim">0.000%</td>
+      <td class="num dim">19</td>
+    </tr><tr>
+      <td class="num dim">5</td>
+      <td class="mono">601318</td>
+      <td>中国平安</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">2.386%</td>
+      <td class="num dim">2.298% ~ 2.551%</td>
+      <td class="num dim">0.252%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">6</td>
+      <td class="mono">688256</td>
+      <td>寒武纪</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">2.297%</td>
+      <td class="num dim">2.297% ~ 2.297%</td>
+      <td class="num dim">0.000%</td>
+      <td class="num dim">18</td>
+    </tr><tr>
+      <td class="num dim">7</td>
+      <td class="mono">600036</td>
+      <td>招商银行</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">2.280%</td>
+      <td class="num dim">2.218% ~ 2.367%</td>
+      <td class="num dim">0.149%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">8</td>
+      <td class="mono">601899</td>
+      <td>紫金矿业</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">2.018%</td>
+      <td class="num dim">1.949% ~ 2.101%</td>
+      <td class="num dim">0.152%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">9</td>
+      <td class="mono">000333</td>
+      <td>美的集团</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">1.836%</td>
+      <td class="num dim">1.659% ~ 1.967%</td>
+      <td class="num dim">0.308%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">10</td>
+      <td class="mono">600900</td>
+      <td>长江电力</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">1.614%</td>
+      <td class="num dim">1.547% ~ 1.659%</td>
+      <td class="num dim">0.113%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">11</td>
+      <td class="mono">300502</td>
+      <td>新易盛</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">1.604%</td>
+      <td class="num dim">1.264% ~ 1.923%</td>
+      <td class="num dim">0.660%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">12</td>
+      <td class="mono">603259</td>
+      <td>药明康德</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">1.528%</td>
+      <td class="num dim">1.342% ~ 1.702%</td>
+      <td class="num dim">0.359%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">13</td>
+      <td class="mono">002371</td>
+      <td>北方华创</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">1.428%</td>
+      <td class="num dim">1.130% ~ 1.987%</td>
+      <td class="num dim">0.857%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">14</td>
+      <td class="mono">601166</td>
+      <td>兴业银行</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">1.377%</td>
+      <td class="num dim">1.335% ~ 1.440%</td>
+      <td class="num dim">0.105%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">15</td>
+      <td class="mono">688012</td>
+      <td>中微公司</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">1.295%</td>
+      <td class="num dim">0.687% ~ 1.673%</td>
+      <td class="num dim">0.987%</td>
+      <td class="num dim">4</td>
+    </tr><tr>
+      <td class="num dim">16</td>
+      <td class="mono">601398</td>
+      <td>工商银行</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">1.222%</td>
+      <td class="num dim">1.190% ~ 1.267%</td>
+      <td class="num dim">0.077%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">17</td>
+      <td class="mono">600030</td>
+      <td>中信证券</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">1.088%</td>
+      <td class="num dim">1.041% ~ 1.138%</td>
+      <td class="num dim">0.097%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">18</td>
+      <td class="mono">002475</td>
+      <td>立讯精密</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">1.061%</td>
+      <td class="num dim">0.990% ~ 1.139%</td>
+      <td class="num dim">0.150%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">19</td>
+      <td class="mono">688041</td>
+      <td>海光信息</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">1.007%</td>
+      <td class="num dim">0.796% ~ 1.401%</td>
+      <td class="num dim">0.604%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">20</td>
+      <td class="mono">688111</td>
+      <td>金山办公</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">1.005%</td>
+      <td class="num dim">0.987% ~ 1.024%</td>
+      <td class="num dim">0.036%</td>
+      <td class="num dim">17</td>
+    </tr><tr>
+      <td class="num dim">21</td>
+      <td class="mono">300059</td>
+      <td>东方财富</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.985%</td>
+      <td class="num dim">0.957% ~ 1.039%</td>
+      <td class="num dim">0.082%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">22</td>
+      <td class="mono">601328</td>
+      <td>交通银行</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.967%</td>
+      <td class="num dim">0.945% ~ 1.005%</td>
+      <td class="num dim">0.060%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">23</td>
+      <td class="mono">002594</td>
+      <td>比亚迪</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.963%</td>
+      <td class="num dim">0.865% ~ 1.108%</td>
+      <td class="num dim">0.244%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">24</td>
+      <td class="mono">688008</td>
+      <td>澜起科技</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.947%</td>
+      <td class="num dim">0.731% ~ 1.286%</td>
+      <td class="num dim">0.555%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">25</td>
+      <td class="mono">601288</td>
+      <td>农业银行</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.936%</td>
+      <td class="num dim">0.921% ~ 0.968%</td>
+      <td class="num dim">0.047%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">26</td>
+      <td class="mono">600276</td>
+      <td>恒瑞医药</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.895%</td>
+      <td class="num dim">0.830% ~ 0.964%</td>
+      <td class="num dim">0.134%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">27</td>
+      <td class="mono">688981</td>
+      <td>中芯国际</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.880%</td>
+      <td class="num dim">0.734% ~ 1.040%</td>
+      <td class="num dim">0.306%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">28</td>
+      <td class="mono">601138</td>
+      <td>工业富联</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.830%</td>
+      <td class="num dim">0.759% ~ 0.933%</td>
+      <td class="num dim">0.174%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">29</td>
+      <td class="mono">600919</td>
+      <td>江苏银行</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.791%</td>
+      <td class="num dim">0.763% ~ 0.821%</td>
+      <td class="num dim">0.058%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">30</td>
+      <td class="mono">601211</td>
+      <td>国泰海通</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.790%</td>
+      <td class="num dim">0.758% ~ 0.841%</td>
+      <td class="num dim">0.083%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">31</td>
+      <td class="mono">000725</td>
+      <td>京东方A</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.779%</td>
+      <td class="num dim">0.763% ~ 0.811%</td>
+      <td class="num dim">0.048%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">32</td>
+      <td class="mono">600887</td>
+      <td>伊利股份</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.778%</td>
+      <td class="num dim">0.749% ~ 0.816%</td>
+      <td class="num dim">0.067%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">33</td>
+      <td class="mono">603986</td>
+      <td>兆易创新</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.729%</td>
+      <td class="num dim">0.577% ~ 1.015%</td>
+      <td class="num dim">0.438%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">34</td>
+      <td class="mono">000651</td>
+      <td>格力电器</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.728%</td>
+      <td class="num dim">0.676% ~ 0.785%</td>
+      <td class="num dim">0.109%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">35</td>
+      <td class="mono">601857</td>
+      <td>中国石油</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.725%</td>
+      <td class="num dim">0.698% ~ 0.748%</td>
+      <td class="num dim">0.049%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">36</td>
+      <td class="mono">600183</td>
+      <td>生益科技</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.700%</td>
+      <td class="num dim">0.572% ~ 0.822%</td>
+      <td class="num dim">0.250%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">37</td>
+      <td class="mono">600150</td>
+      <td>中国船舶</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.677%</td>
+      <td class="num dim">0.633% ~ 0.727%</td>
+      <td class="num dim">0.094%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">38</td>
+      <td class="mono">002916</td>
+      <td>深南电路</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.675%</td>
+      <td class="num dim">0.592% ~ 0.805%</td>
+      <td class="num dim">0.212%</td>
+      <td class="num dim">9</td>
+    </tr><tr>
+      <td class="num dim">39</td>
+      <td class="mono">601816</td>
+      <td>京沪高铁</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.666%</td>
+      <td class="num dim">0.652% ~ 0.689%</td>
+      <td class="num dim">0.037%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">40</td>
+      <td class="mono">002384</td>
+      <td>东山精密</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.649%</td>
+      <td class="num dim">0.524% ~ 0.832%</td>
+      <td class="num dim">0.308%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">41</td>
+      <td class="mono">002463</td>
+      <td>沪电股份</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.638%</td>
+      <td class="num dim">0.515% ~ 0.784%</td>
+      <td class="num dim">0.269%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">42</td>
+      <td class="mono">000858</td>
+      <td>五 粮 液</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.630%</td>
+      <td class="num dim">0.526% ~ 0.745%</td>
+      <td class="num dim">0.219%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">43</td>
+      <td class="mono">601088</td>
+      <td>中国神华</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.614%</td>
+      <td class="num dim">0.545% ~ 0.695%</td>
+      <td class="num dim">0.150%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">44</td>
+      <td class="mono">600000</td>
+      <td>浦发银行</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.564%</td>
+      <td class="num dim">0.548% ~ 0.589%</td>
+      <td class="num dim">0.040%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">45</td>
+      <td class="mono">300408</td>
+      <td>三环集团</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.548%</td>
+      <td class="num dim">0.443% ~ 0.674%</td>
+      <td class="num dim">0.231%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">46</td>
+      <td class="mono">600309</td>
+      <td>万华化学</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.541%</td>
+      <td class="num dim">0.456% ~ 0.626%</td>
+      <td class="num dim">0.170%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">47</td>
+      <td class="mono">603993</td>
+      <td>洛阳钼业</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.531%</td>
+      <td class="num dim">0.508% ~ 0.552%</td>
+      <td class="num dim">0.044%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">48</td>
+      <td class="mono">002415</td>
+      <td>海康威视</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.529%</td>
+      <td class="num dim">0.475% ~ 0.564%</td>
+      <td class="num dim">0.088%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">49</td>
+      <td class="mono">688521</td>
+      <td>芯原股份</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.526%</td>
+      <td class="num dim">0.321% ~ 0.685%</td>
+      <td class="num dim">0.364%</td>
+      <td class="num dim">15</td>
+    </tr><tr>
+      <td class="num dim">50</td>
+      <td class="mono">301308</td>
+      <td>江波龙</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.526%</td>
+      <td class="num dim">0.504% ~ 0.583%</td>
+      <td class="num dim">0.079%</td>
+      <td class="num dim">15</td>
+    </tr><tr>
+      <td class="num dim">51</td>
+      <td class="mono">300394</td>
+      <td>天孚通信</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.519%</td>
+      <td class="num dim">0.411% ~ 0.722%</td>
+      <td class="num dim">0.312%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">52</td>
+      <td class="mono">002714</td>
+      <td>牧原股份</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.509%</td>
+      <td class="num dim">0.457% ~ 0.581%</td>
+      <td class="num dim">0.123%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">53</td>
+      <td class="mono">000338</td>
+      <td>潍柴动力</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.505%</td>
+      <td class="num dim">0.467% ~ 0.535%</td>
+      <td class="num dim">0.067%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">54</td>
+      <td class="mono">002142</td>
+      <td>宁波银行</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.497%</td>
+      <td class="num dim">0.465% ~ 0.539%</td>
+      <td class="num dim">0.075%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">55</td>
+      <td class="mono">688271</td>
+      <td>联影医疗</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.491%</td>
+      <td class="num dim">0.290% ~ 0.619%</td>
+      <td class="num dim">0.329%</td>
+      <td class="num dim">12</td>
+    </tr><tr>
+      <td class="num dim">56</td>
+      <td class="mono">000001</td>
+      <td>平安银行</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.486%</td>
+      <td class="num dim">0.465% ~ 0.509%</td>
+      <td class="num dim">0.043%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">57</td>
+      <td class="mono">603019</td>
+      <td>中科曙光</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.484%</td>
+      <td class="num dim">0.395% ~ 0.568%</td>
+      <td class="num dim">0.173%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">58</td>
+      <td class="mono">300476</td>
+      <td>胜宏科技</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.469%</td>
+      <td class="num dim">0.371% ~ 0.653%</td>
+      <td class="num dim">0.282%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">59</td>
+      <td class="mono">600031</td>
+      <td>三一重工</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.468%</td>
+      <td class="num dim">0.438% ~ 0.496%</td>
+      <td class="num dim">0.058%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">60</td>
+      <td class="mono">300033</td>
+      <td>同花顺</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.465%</td>
+      <td class="num dim">0.397% ~ 0.572%</td>
+      <td class="num dim">0.176%</td>
+      <td class="num dim">6</td>
+    </tr><tr>
+      <td class="num dim">61</td>
+      <td class="mono">601728</td>
+      <td>中国电信</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.459%</td>
+      <td class="num dim">0.443% ~ 0.486%</td>
+      <td class="num dim">0.043%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">62</td>
+      <td class="mono">601225</td>
+      <td>陕西煤业</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.458%</td>
+      <td class="num dim">0.425% ~ 0.492%</td>
+      <td class="num dim">0.067%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">63</td>
+      <td class="mono">603893</td>
+      <td>瑞芯微</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.457%</td>
+      <td class="num dim">0.410% ~ 0.537%</td>
+      <td class="num dim">0.127%</td>
+      <td class="num dim">17</td>
+    </tr><tr>
+      <td class="num dim">64</td>
+      <td class="mono">601988</td>
+      <td>中国银行</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.456%</td>
+      <td class="num dim">0.442% ~ 0.482%</td>
+      <td class="num dim">0.040%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">65</td>
+      <td class="mono">300760</td>
+      <td>迈瑞医疗</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.451%</td>
+      <td class="num dim">0.356% ~ 0.627%</td>
+      <td class="num dim">0.271%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">66</td>
+      <td class="mono">601919</td>
+      <td>中远海控</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.450%</td>
+      <td class="num dim">0.417% ~ 0.477%</td>
+      <td class="num dim">0.060%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">67</td>
+      <td class="mono">300274</td>
+      <td>阳光电源</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.448%</td>
+      <td class="num dim">0.366% ~ 0.526%</td>
+      <td class="num dim">0.160%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">68</td>
+      <td class="mono">601688</td>
+      <td>华泰证券</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.442%</td>
+      <td class="num dim">0.412% ~ 0.476%</td>
+      <td class="num dim">0.064%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">69</td>
+      <td class="mono">601939</td>
+      <td>建设银行</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.434%</td>
+      <td class="num dim">0.421% ~ 0.454%</td>
+      <td class="num dim">0.034%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">70</td>
+      <td class="mono">601601</td>
+      <td>中国太保</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.426%</td>
+      <td class="num dim">0.390% ~ 0.477%</td>
+      <td class="num dim">0.087%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">71</td>
+      <td class="mono">000100</td>
+      <td>TCL科技</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.422%</td>
+      <td class="num dim">0.414% ~ 0.439%</td>
+      <td class="num dim">0.025%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">72</td>
+      <td class="mono">601229</td>
+      <td>上海银行</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.411%</td>
+      <td class="num dim">0.395% ~ 0.422%</td>
+      <td class="num dim">0.027%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">73</td>
+      <td class="mono">300124</td>
+      <td>汇川技术</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.410%</td>
+      <td class="num dim">0.346% ~ 0.474%</td>
+      <td class="num dim">0.129%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">74</td>
+      <td class="mono">601668</td>
+      <td>中国建筑</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.410%</td>
+      <td class="num dim">0.395% ~ 0.426%</td>
+      <td class="num dim">0.031%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">75</td>
+      <td class="mono">600406</td>
+      <td>国电南瑞</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.410%</td>
+      <td class="num dim">0.376% ~ 0.453%</td>
+      <td class="num dim">0.077%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">76</td>
+      <td class="mono">688047</td>
+      <td>龙芯中科</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.395%</td>
+      <td class="num dim">0.395% ~ 0.395%</td>
+      <td class="num dim">0.000%</td>
+      <td class="num dim">19</td>
+    </tr><tr>
+      <td class="num dim">77</td>
+      <td class="mono">600941</td>
+      <td>中国移动</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.395%</td>
+      <td class="num dim">0.270% ~ 0.515%</td>
+      <td class="num dim">0.244%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">78</td>
+      <td class="mono">600111</td>
+      <td>北方稀土</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.392%</td>
+      <td class="num dim">0.340% ~ 0.444%</td>
+      <td class="num dim">0.105%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">79</td>
+      <td class="mono">000063</td>
+      <td>中兴通讯</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.387%</td>
+      <td class="num dim">0.346% ~ 0.424%</td>
+      <td class="num dim">0.079%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">80</td>
+      <td class="mono">600089</td>
+      <td>特变电工</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.386%</td>
+      <td class="num dim">0.361% ~ 0.421%</td>
+      <td class="num dim">0.060%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">81</td>
+      <td class="mono">300498</td>
+      <td>温氏股份</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.378%</td>
+      <td class="num dim">0.352% ~ 0.402%</td>
+      <td class="num dim">0.051%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">82</td>
+      <td class="mono">600584</td>
+      <td>长电科技</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.374%</td>
+      <td class="num dim">0.306% ~ 0.440%</td>
+      <td class="num dim">0.134%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">83</td>
+      <td class="mono">600016</td>
+      <td>民生银行</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.374%</td>
+      <td class="num dim">0.363% ~ 0.390%</td>
+      <td class="num dim">0.027%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">84</td>
+      <td class="mono">600926</td>
+      <td>杭州银行</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.370%</td>
+      <td class="num dim">0.344% ~ 0.402%</td>
+      <td class="num dim">0.057%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">85</td>
+      <td class="mono">600660</td>
+      <td>福耀玻璃</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.367%</td>
+      <td class="num dim">0.294% ~ 0.434%</td>
+      <td class="num dim">0.140%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">86</td>
+      <td class="mono">601169</td>
+      <td>北京银行</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.359%</td>
+      <td class="num dim">0.348% ~ 0.370%</td>
+      <td class="num dim">0.022%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">87</td>
+      <td class="mono">600938</td>
+      <td>中国海油</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.348%</td>
+      <td class="num dim">0.305% ~ 0.383%</td>
+      <td class="num dim">0.078%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">88</td>
+      <td class="mono">601985</td>
+      <td>中国核电</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.344%</td>
+      <td class="num dim">0.327% ~ 0.368%</td>
+      <td class="num dim">0.041%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">89</td>
+      <td class="mono">600028</td>
+      <td>中国石化</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.343%</td>
+      <td class="num dim">0.334% ~ 0.360%</td>
+      <td class="num dim">0.026%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">90</td>
+      <td class="mono">601766</td>
+      <td>中国中车</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.340%</td>
+      <td class="num dim">0.325% ~ 0.352%</td>
+      <td class="num dim">0.027%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">91</td>
+      <td class="mono">600176</td>
+      <td>中国巨石</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.335%</td>
+      <td class="num dim">0.294% ~ 0.369%</td>
+      <td class="num dim">0.075%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">92</td>
+      <td class="mono">002050</td>
+      <td>三花智控</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.333%</td>
+      <td class="num dim">0.279% ~ 0.366%</td>
+      <td class="num dim">0.087%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">93</td>
+      <td class="mono">600522</td>
+      <td>中天科技</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.332%</td>
+      <td class="num dim">0.298% ~ 0.382%</td>
+      <td class="num dim">0.084%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">94</td>
+      <td class="mono">000988</td>
+      <td>华工科技</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.332%</td>
+      <td class="num dim">0.219% ~ 0.411%</td>
+      <td class="num dim">0.193%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">95</td>
+      <td class="mono">688183</td>
+      <td>生益电子</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.331%</td>
+      <td class="num dim">0.225% ~ 0.374%</td>
+      <td class="num dim">0.149%</td>
+      <td class="num dim">16</td>
+    </tr><tr>
+      <td class="num dim">96</td>
+      <td class="mono">601995</td>
+      <td>中金公司</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.329%</td>
+      <td class="num dim">0.282% ~ 0.366%</td>
+      <td class="num dim">0.084%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">97</td>
+      <td class="mono">600690</td>
+      <td>海尔智家</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.322%</td>
+      <td class="num dim">0.287% ~ 0.341%</td>
+      <td class="num dim">0.053%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">98</td>
+      <td class="mono">601009</td>
+      <td>南京银行</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.316%</td>
+      <td class="num dim">0.297% ~ 0.330%</td>
+      <td class="num dim">0.033%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">99</td>
+      <td class="mono">002352</td>
+      <td>顺丰控股</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.313%</td>
+      <td class="num dim">0.275% ~ 0.345%</td>
+      <td class="num dim">0.070%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">100</td>
+      <td class="mono">002230</td>
+      <td>科大讯飞</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.313%</td>
+      <td class="num dim">0.269% ~ 0.381%</td>
+      <td class="num dim">0.112%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">101</td>
+      <td class="mono">000792</td>
+      <td>盐湖股份</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.307%</td>
+      <td class="num dim">0.274% ~ 0.337%</td>
+      <td class="num dim">0.063%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">102</td>
+      <td class="mono">601600</td>
+      <td>中国铝业</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.303%</td>
+      <td class="num dim">0.288% ~ 0.317%</td>
+      <td class="num dim">0.029%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">103</td>
+      <td class="mono">601012</td>
+      <td>隆基绿能</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.297%</td>
+      <td class="num dim">0.283% ~ 0.310%</td>
+      <td class="num dim">0.028%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">104</td>
+      <td class="mono">600436</td>
+      <td>片仔癀</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.297%</td>
+      <td class="num dim">0.253% ~ 0.366%</td>
+      <td class="num dim">0.112%</td>
+      <td class="num dim">6</td>
+    </tr><tr>
+      <td class="num dim">105</td>
+      <td class="mono">600050</td>
+      <td>中国联通</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.296%</td>
+      <td class="num dim">0.287% ~ 0.310%</td>
+      <td class="num dim">0.023%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">106</td>
+      <td class="mono">603501</td>
+      <td>豪威集团</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.291%</td>
+      <td class="num dim">0.203% ~ 0.390%</td>
+      <td class="num dim">0.186%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">107</td>
+      <td class="mono">002602</td>
+      <td>世纪华通</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.290%</td>
+      <td class="num dim">0.272% ~ 0.309%</td>
+      <td class="num dim">0.037%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">108</td>
+      <td class="mono">600809</td>
+      <td>山西汾酒</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.286%</td>
+      <td class="num dim">0.226% ~ 0.398%</td>
+      <td class="num dim">0.172%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">109</td>
+      <td class="mono">002028</td>
+      <td>思源电气</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.284%</td>
+      <td class="num dim">0.225% ~ 0.396%</td>
+      <td class="num dim">0.171%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">110</td>
+      <td class="mono">300014</td>
+      <td>亿纬锂能</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.283%</td>
+      <td class="num dim">0.228% ~ 0.349%</td>
+      <td class="num dim">0.121%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">111</td>
+      <td class="mono">601658</td>
+      <td>邮储银行</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.271%</td>
+      <td class="num dim">0.264% ~ 0.280%</td>
+      <td class="num dim">0.016%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">112</td>
+      <td class="mono">600999</td>
+      <td>招商证券</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.262%</td>
+      <td class="num dim">0.233% ~ 0.289%</td>
+      <td class="num dim">0.055%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">113</td>
+      <td class="mono">600489</td>
+      <td>中金黄金</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.261%</td>
+      <td class="num dim">0.228% ~ 0.289%</td>
+      <td class="num dim">0.060%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">114</td>
+      <td class="mono">000938</td>
+      <td>紫光股份</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.260%</td>
+      <td class="num dim">0.228% ~ 0.286%</td>
+      <td class="num dim">0.058%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">115</td>
+      <td class="mono">000977</td>
+      <td>浪潮信息</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.259%</td>
+      <td class="num dim">0.170% ~ 0.320%</td>
+      <td class="num dim">0.150%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">116</td>
+      <td class="mono">601006</td>
+      <td>大秦铁路</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.256%</td>
+      <td class="num dim">0.248% ~ 0.272%</td>
+      <td class="num dim">0.024%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">117</td>
+      <td class="mono">688036</td>
+      <td>传音控股</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.253%</td>
+      <td class="num dim">0.143% ~ 0.306%</td>
+      <td class="num dim">0.163%</td>
+      <td class="num dim">7</td>
+    </tr><tr>
+      <td class="num dim">118</td>
+      <td class="mono">000425</td>
+      <td>徐工机械</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.252%</td>
+      <td class="num dim">0.240% ~ 0.269%</td>
+      <td class="num dim">0.030%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">119</td>
+      <td class="mono">603288</td>
+      <td>海天味业</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.249%</td>
+      <td class="num dim">0.201% ~ 0.284%</td>
+      <td class="num dim">0.083%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">120</td>
+      <td class="mono">601628</td>
+      <td>中国人寿</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.248%</td>
+      <td class="num dim">0.204% ~ 0.287%</td>
+      <td class="num dim">0.084%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">121</td>
+      <td class="mono">601818</td>
+      <td>光大银行</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.247%</td>
+      <td class="num dim">0.241% ~ 0.254%</td>
+      <td class="num dim">0.014%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">122</td>
+      <td class="mono">000776</td>
+      <td>广发证券</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.244%</td>
+      <td class="num dim">0.223% ~ 0.272%</td>
+      <td class="num dim">0.049%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">123</td>
+      <td class="mono">300866</td>
+      <td>安克创新</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.244%</td>
+      <td class="num dim">0.219% ~ 0.286%</td>
+      <td class="num dim">0.068%</td>
+      <td class="num dim">17</td>
+    </tr><tr>
+      <td class="num dim">124</td>
+      <td class="mono">605499</td>
+      <td>东鹏饮料</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.240%</td>
+      <td class="num dim">0.211% ~ 0.287%</td>
+      <td class="num dim">0.076%</td>
+      <td class="num dim">10</td>
+    </tr><tr>
+      <td class="num dim">125</td>
+      <td class="mono">002353</td>
+      <td>杰瑞股份</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.236%</td>
+      <td class="num dim">0.186% ~ 0.328%</td>
+      <td class="num dim">0.141%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">126</td>
+      <td class="mono">601872</td>
+      <td>招商轮船</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.233%</td>
+      <td class="num dim">0.206% ~ 0.253%</td>
+      <td class="num dim">0.047%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">127</td>
+      <td class="mono">300433</td>
+      <td>蓝思科技</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.232%</td>
+      <td class="num dim">0.191% ~ 0.270%</td>
+      <td class="num dim">0.079%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">128</td>
+      <td class="mono">600760</td>
+      <td>中航沈飞</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.230%</td>
+      <td class="num dim">0.163% ~ 0.298%</td>
+      <td class="num dim">0.135%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">129</td>
+      <td class="mono">300661</td>
+      <td>圣邦股份</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.229%</td>
+      <td class="num dim">0.181% ~ 0.318%</td>
+      <td class="num dim">0.137%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">130</td>
+      <td class="mono">600019</td>
+      <td>宝钢股份</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.228%</td>
+      <td class="num dim">0.219% ~ 0.238%</td>
+      <td class="num dim">0.019%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">131</td>
+      <td class="mono">002241</td>
+      <td>歌尔股份</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.227%</td>
+      <td class="num dim">0.200% ~ 0.253%</td>
+      <td class="num dim">0.053%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">132</td>
+      <td class="mono">688396</td>
+      <td>华润微</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.227%</td>
+      <td class="num dim">0.133% ~ 0.283%</td>
+      <td class="num dim">0.150%</td>
+      <td class="num dim">11</td>
+    </tr><tr>
+      <td class="num dim">133</td>
+      <td class="mono">000807</td>
+      <td>云铝股份</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.226%</td>
+      <td class="num dim">0.181% ~ 0.258%</td>
+      <td class="num dim">0.078%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">134</td>
+      <td class="mono">300896</td>
+      <td>爱美客</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.225%</td>
+      <td class="num dim">0.202% ~ 0.264%</td>
+      <td class="num dim">0.062%</td>
+      <td class="num dim">17</td>
+    </tr><tr>
+      <td class="num dim">135</td>
+      <td class="mono">600893</td>
+      <td>航发动力</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.225%</td>
+      <td class="num dim">0.181% ~ 0.288%</td>
+      <td class="num dim">0.107%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">136</td>
+      <td class="mono">601888</td>
+      <td>中国中免</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.224%</td>
+      <td class="num dim">0.147% ~ 0.277%</td>
+      <td class="num dim">0.130%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">137</td>
+      <td class="mono">301269</td>
+      <td>华大九天</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.222%</td>
+      <td class="num dim">0.203% ~ 0.266%</td>
+      <td class="num dim">0.063%</td>
+      <td class="num dim">16</td>
+    </tr><tr>
+      <td class="num dim">138</td>
+      <td class="mono">002027</td>
+      <td>分众传媒</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.221%</td>
+      <td class="num dim">0.214% ~ 0.235%</td>
+      <td class="num dim">0.020%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">139</td>
+      <td class="mono">601825</td>
+      <td>沪农商行</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.221%</td>
+      <td class="num dim">0.206% ~ 0.238%</td>
+      <td class="num dim">0.032%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">140</td>
+      <td class="mono">601100</td>
+      <td>恒立液压</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.221%</td>
+      <td class="num dim">0.175% ~ 0.307%</td>
+      <td class="num dim">0.133%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">141</td>
+      <td class="mono">600104</td>
+      <td>上汽集团</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.211%</td>
+      <td class="num dim">0.192% ~ 0.233%</td>
+      <td class="num dim">0.041%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">142</td>
+      <td class="mono">000538</td>
+      <td>云南白药</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.210%</td>
+      <td class="num dim">0.144% ~ 0.274%</td>
+      <td class="num dim">0.130%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">143</td>
+      <td class="mono">601838</td>
+      <td>成都银行</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.210%</td>
+      <td class="num dim">0.193% ~ 0.236%</td>
+      <td class="num dim">0.043%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">144</td>
+      <td class="mono">002422</td>
+      <td>科伦药业</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.209%</td>
+      <td class="num dim">0.148% ~ 0.271%</td>
+      <td class="num dim">0.123%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">145</td>
+      <td class="mono">600905</td>
+      <td>三峡能源</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.209%</td>
+      <td class="num dim">0.203% ~ 0.218%</td>
+      <td class="num dim">0.015%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">146</td>
+      <td class="mono">601998</td>
+      <td>中信银行</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.208%</td>
+      <td class="num dim">0.194% ~ 0.223%</td>
+      <td class="num dim">0.029%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">147</td>
+      <td class="mono">000408</td>
+      <td>藏格矿业</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.207%</td>
+      <td class="num dim">0.155% ~ 0.291%</td>
+      <td class="num dim">0.135%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">148</td>
+      <td class="mono">600010</td>
+      <td>包钢股份</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.206%</td>
+      <td class="num dim">0.201% ~ 0.215%</td>
+      <td class="num dim">0.014%</td>
+      <td class="num dim">1</td>
+    </tr><tr>
+      <td class="num dim">149</td>
+      <td class="mono">603799</td>
+      <td>华友钴业</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.205%</td>
+      <td class="num dim">0.169% ~ 0.242%</td>
+      <td class="num dim">0.073%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">150</td>
+      <td class="mono">600547</td>
+      <td>山东黄金</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.205%</td>
+      <td class="num dim">0.178% ~ 0.244%</td>
+      <td class="num dim">0.066%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">151</td>
+      <td class="mono">600989</td>
+      <td>宝丰能源</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.204%</td>
+      <td class="num dim">0.172% ~ 0.226%</td>
+      <td class="num dim">0.054%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">152</td>
+      <td class="mono">000568</td>
+      <td>泸州老窖</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.202%</td>
+      <td class="num dim">0.147% ~ 0.289%</td>
+      <td class="num dim">0.142%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">153</td>
+      <td class="mono">600795</td>
+      <td>国电电力</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.199%</td>
+      <td class="num dim">0.192% ~ 0.210%</td>
+      <td class="num dim">0.019%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">154</td>
+      <td class="mono">601916</td>
+      <td>浙商银行</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.195%</td>
+      <td class="num dim">0.189% ~ 0.204%</td>
+      <td class="num dim">0.016%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">155</td>
+      <td class="mono">300442</td>
+      <td>润泽科技</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.195%</td>
+      <td class="num dim">0.138% ~ 0.271%</td>
+      <td class="num dim">0.133%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">156</td>
+      <td class="mono">002938</td>
+      <td>鹏鼎控股</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.193%</td>
+      <td class="num dim">0.146% ~ 0.294%</td>
+      <td class="num dim">0.148%</td>
+      <td class="num dim">1</td>
+    </tr><tr>
+      <td class="num dim">157</td>
+      <td class="mono">600958</td>
+      <td>东方证券</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.192%</td>
+      <td class="num dim">0.182% ~ 0.209%</td>
+      <td class="num dim">0.027%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">158</td>
+      <td class="mono">000596</td>
+      <td>古井贡酒</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.192%</td>
+      <td class="num dim">0.172% ~ 0.225%</td>
+      <td class="num dim">0.053%</td>
+      <td class="num dim">17</td>
+    </tr><tr>
+      <td class="num dim">159</td>
+      <td class="mono">601390</td>
+      <td>中国中铁</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.189%</td>
+      <td class="num dim">0.182% ~ 0.206%</td>
+      <td class="num dim">0.023%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">160</td>
+      <td class="mono">600585</td>
+      <td>海螺水泥</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.188%</td>
+      <td class="num dim">0.165% ~ 0.207%</td>
+      <td class="num dim">0.042%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">161</td>
+      <td class="mono">002648</td>
+      <td>卫星化学</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.185%</td>
+      <td class="num dim">0.148% ~ 0.208%</td>
+      <td class="num dim">0.061%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">162</td>
+      <td class="mono">603296</td>
+      <td>华勤技术</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.183%</td>
+      <td class="num dim">0.145% ~ 0.255%</td>
+      <td class="num dim">0.110%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">163</td>
+      <td class="mono">002179</td>
+      <td>中航光电</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.182%</td>
+      <td class="num dim">0.147% ~ 0.233%</td>
+      <td class="num dim">0.086%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">164</td>
+      <td class="mono">002202</td>
+      <td>金风科技</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.181%</td>
+      <td class="num dim">0.161% ~ 0.205%</td>
+      <td class="num dim">0.044%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">165</td>
+      <td class="mono">002920</td>
+      <td>德赛西威</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.180%</td>
+      <td class="num dim">0.154% ~ 0.222%</td>
+      <td class="num dim">0.068%</td>
+      <td class="num dim">6</td>
+    </tr><tr>
+      <td class="num dim">166</td>
+      <td class="mono">000630</td>
+      <td>铜陵有色</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.179%</td>
+      <td class="num dim">0.171% ~ 0.188%</td>
+      <td class="num dim">0.017%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">167</td>
+      <td class="mono">605117</td>
+      <td>德业股份</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.179%</td>
+      <td class="num dim">0.142% ~ 0.249%</td>
+      <td class="num dim">0.108%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">168</td>
+      <td class="mono">601336</td>
+      <td>新华保险</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.178%</td>
+      <td class="num dim">0.122% ~ 0.248%</td>
+      <td class="num dim">0.126%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">169</td>
+      <td class="mono">002600</td>
+      <td>领益智造</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.178%</td>
+      <td class="num dim">0.160% ~ 0.198%</td>
+      <td class="num dim">0.038%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">170</td>
+      <td class="mono">301165</td>
+      <td>锐捷网络</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.178%</td>
+      <td class="num dim">0.159% ~ 0.209%</td>
+      <td class="num dim">0.049%</td>
+      <td class="num dim">17</td>
+    </tr><tr>
+      <td class="num dim">171</td>
+      <td class="mono">002625</td>
+      <td>光启技术</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.175%</td>
+      <td class="num dim">0.140% ~ 0.197%</td>
+      <td class="num dim">0.057%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">172</td>
+      <td class="mono">600015</td>
+      <td>华夏银行</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.174%</td>
+      <td class="num dim">0.167% ~ 0.185%</td>
+      <td class="num dim">0.018%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">173</td>
+      <td class="mono">600549</td>
+      <td>厦门钨业</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.174%</td>
+      <td class="num dim">0.123% ~ 0.225%</td>
+      <td class="num dim">0.102%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">174</td>
+      <td class="mono">002460</td>
+      <td>赣锋锂业</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.174%</td>
+      <td class="num dim">0.123% ~ 0.225%</td>
+      <td class="num dim">0.102%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">175</td>
+      <td class="mono">000166</td>
+      <td>申万宏源</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.173%</td>
+      <td class="num dim">0.165% ~ 0.182%</td>
+      <td class="num dim">0.017%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">176</td>
+      <td class="mono">000657</td>
+      <td>中钨高新</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.172%</td>
+      <td class="num dim">0.114% ~ 0.232%</td>
+      <td class="num dim">0.118%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">177</td>
+      <td class="mono">000975</td>
+      <td>山金国际</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.172%</td>
+      <td class="num dim">0.141% ~ 0.200%</td>
+      <td class="num dim">0.058%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">178</td>
+      <td class="mono">600362</td>
+      <td>江西铜业</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.172%</td>
+      <td class="num dim">0.115% ~ 0.218%</td>
+      <td class="num dim">0.103%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">179</td>
+      <td class="mono">601727</td>
+      <td>上海电气</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.170%</td>
+      <td class="num dim">0.156% ~ 0.190%</td>
+      <td class="num dim">0.033%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">180</td>
+      <td class="mono">601669</td>
+      <td>中国电建</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.170%</td>
+      <td class="num dim">0.161% ~ 0.185%</td>
+      <td class="num dim">0.024%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">181</td>
+      <td class="mono">002001</td>
+      <td>新和成</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.169%</td>
+      <td class="num dim">0.136% ~ 0.209%</td>
+      <td class="num dim">0.072%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">182</td>
+      <td class="mono">600160</td>
+      <td>巨化股份</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.169%</td>
+      <td class="num dim">0.136% ~ 0.208%</td>
+      <td class="num dim">0.071%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">183</td>
+      <td class="mono">600048</td>
+      <td>保利发展</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.168%</td>
+      <td class="num dim">0.158% ~ 0.178%</td>
+      <td class="num dim">0.020%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">184</td>
+      <td class="mono">601377</td>
+      <td>兴业证券</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.166%</td>
+      <td class="num dim">0.159% ~ 0.172%</td>
+      <td class="num dim">0.014%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">185</td>
+      <td class="mono">601077</td>
+      <td>渝农商行</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.166%</td>
+      <td class="num dim">0.154% ~ 0.183%</td>
+      <td class="num dim">0.029%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">186</td>
+      <td class="mono">002466</td>
+      <td>天齐锂业</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.165%</td>
+      <td class="num dim">0.111% ~ 0.210%</td>
+      <td class="num dim">0.099%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">187</td>
+      <td class="mono">300015</td>
+      <td>爱尔眼科</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.165%</td>
+      <td class="num dim">0.151% ~ 0.177%</td>
+      <td class="num dim">0.026%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">188</td>
+      <td class="mono">002709</td>
+      <td>天赐材料</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.164%</td>
+      <td class="num dim">0.134% ~ 0.193%</td>
+      <td class="num dim">0.059%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">189</td>
+      <td class="mono">600886</td>
+      <td>国投电力</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.163%</td>
+      <td class="num dim">0.143% ~ 0.180%</td>
+      <td class="num dim">0.036%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">190</td>
+      <td class="mono">601689</td>
+      <td>拓普集团</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.163%</td>
+      <td class="num dim">0.110% ~ 0.220%</td>
+      <td class="num dim">0.110%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">191</td>
+      <td class="mono">600426</td>
+      <td>华鲁恒升</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.162%</td>
+      <td class="num dim">0.139% ~ 0.197%</td>
+      <td class="num dim">0.058%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">192</td>
+      <td class="mono">002532</td>
+      <td>天山铝业</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.158%</td>
+      <td class="num dim">0.140% ~ 0.172%</td>
+      <td class="num dim">0.032%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">193</td>
+      <td class="mono">302132</td>
+      <td>中航成飞</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.157%</td>
+      <td class="num dim">0.135% ~ 0.195%</td>
+      <td class="num dim">0.060%</td>
+      <td class="num dim">7</td>
+    </tr><tr>
+      <td class="num dim">194</td>
+      <td class="mono">003816</td>
+      <td>中国广核</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.157%</td>
+      <td class="num dim">0.150% ~ 0.165%</td>
+      <td class="num dim">0.015%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">195</td>
+      <td class="mono">600066</td>
+      <td>宇通客车</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.157%</td>
+      <td class="num dim">0.127% ~ 0.201%</td>
+      <td class="num dim">0.074%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">196</td>
+      <td class="mono">000625</td>
+      <td>长安汽车</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.152%</td>
+      <td class="num dim">0.145% ~ 0.163%</td>
+      <td class="num dim">0.018%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">197</td>
+      <td class="mono">300418</td>
+      <td>昆仑万维</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.151%</td>
+      <td class="num dim">0.103% ~ 0.196%</td>
+      <td class="num dim">0.093%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">198</td>
+      <td class="mono">600674</td>
+      <td>川投能源</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.150%</td>
+      <td class="num dim">0.127% ~ 0.180%</td>
+      <td class="num dim">0.053%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">199</td>
+      <td class="mono">600875</td>
+      <td>东方电气</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.149%</td>
+      <td class="num dim">0.120% ~ 0.183%</td>
+      <td class="num dim">0.063%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">200</td>
+      <td class="mono">002493</td>
+      <td>荣盛石化</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.148%</td>
+      <td class="num dim">0.135% ~ 0.164%</td>
+      <td class="num dim">0.030%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">201</td>
+      <td class="mono">600482</td>
+      <td>中国动力</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.147%</td>
+      <td class="num dim">0.104% ~ 0.191%</td>
+      <td class="num dim">0.086%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">202</td>
+      <td class="mono">000768</td>
+      <td>中航西飞</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.145%</td>
+      <td class="num dim">0.112% ~ 0.177%</td>
+      <td class="num dim">0.066%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">203</td>
+      <td class="mono">002311</td>
+      <td>海大集团</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.144%</td>
+      <td class="num dim">0.102% ~ 0.201%</td>
+      <td class="num dim">0.099%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">204</td>
+      <td class="mono">600011</td>
+      <td>华能国际</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.144%</td>
+      <td class="num dim">0.135% ~ 0.156%</td>
+      <td class="num dim">0.022%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">205</td>
+      <td class="mono">601868</td>
+      <td>中国能建</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.143%</td>
+      <td class="num dim">0.139% ~ 0.150%</td>
+      <td class="num dim">0.011%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">206</td>
+      <td class="mono">600346</td>
+      <td>恒力石化</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.143%</td>
+      <td class="num dim">0.125% ~ 0.167%</td>
+      <td class="num dim">0.043%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">207</td>
+      <td class="mono">002049</td>
+      <td>紫光国微</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.142%</td>
+      <td class="num dim">0.112% ~ 0.197%</td>
+      <td class="num dim">0.085%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">208</td>
+      <td class="mono">600188</td>
+      <td>兖矿能源</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.141%</td>
+      <td class="num dim">0.115% ~ 0.163%</td>
+      <td class="num dim">0.049%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">209</td>
+      <td class="mono">601127</td>
+      <td>赛力斯</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.141%</td>
+      <td class="num dim">0.100% ~ 0.197%</td>
+      <td class="num dim">0.097%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">210</td>
+      <td class="mono">688126</td>
+      <td>沪硅产业</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.141%</td>
+      <td class="num dim">0.113% ~ 0.160%</td>
+      <td class="num dim">0.046%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">211</td>
+      <td class="mono">601058</td>
+      <td>赛轮轮胎</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.139%</td>
+      <td class="num dim">0.126% ~ 0.157%</td>
+      <td class="num dim">0.031%</td>
+      <td class="num dim">1</td>
+    </tr><tr>
+      <td class="num dim">212</td>
+      <td class="mono">300832</td>
+      <td>新产业</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.139%</td>
+      <td class="num dim">0.112% ~ 0.197%</td>
+      <td class="num dim">0.085%</td>
+      <td class="num dim">1</td>
+    </tr><tr>
+      <td class="num dim">213</td>
+      <td class="mono">000301</td>
+      <td>东方盛虹</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.136%</td>
+      <td class="num dim">0.122% ~ 0.152%</td>
+      <td class="num dim">0.030%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">214</td>
+      <td class="mono">300450</td>
+      <td>先导智能</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.134%</td>
+      <td class="num dim">0.095% ~ 0.174%</td>
+      <td class="num dim">0.079%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">215</td>
+      <td class="mono">600438</td>
+      <td>通威股份</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.134%</td>
+      <td class="num dim">0.120% ~ 0.154%</td>
+      <td class="num dim">0.034%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">216</td>
+      <td class="mono">002837</td>
+      <td>英维克</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.134%</td>
+      <td class="num dim">0.100% ~ 0.188%</td>
+      <td class="num dim">0.088%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">217</td>
+      <td class="mono">600221</td>
+      <td>海航控股</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.133%</td>
+      <td class="num dim">0.130% ~ 0.140%</td>
+      <td class="num dim">0.010%</td>
+      <td class="num dim">2</td>
+    </tr><tr>
+      <td class="num dim">218</td>
+      <td class="mono">600460</td>
+      <td>士兰微</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.133%</td>
+      <td class="num dim">0.094% ~ 0.178%</td>
+      <td class="num dim">0.084%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">219</td>
+      <td class="mono">300803</td>
+      <td>指南针</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.132%</td>
+      <td class="num dim">0.105% ~ 0.184%</td>
+      <td class="num dim">0.079%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">220</td>
+      <td class="mono">600118</td>
+      <td>中国卫星</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.132%</td>
+      <td class="num dim">0.105% ~ 0.184%</td>
+      <td class="num dim">0.079%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">221</td>
+      <td class="mono">600415</td>
+      <td>小商品城</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.132%</td>
+      <td class="num dim">0.117% ~ 0.150%</td>
+      <td class="num dim">0.032%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">222</td>
+      <td class="mono">600026</td>
+      <td>中远海能</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.132%</td>
+      <td class="num dim">0.109% ~ 0.153%</td>
+      <td class="num dim">0.045%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">223</td>
+      <td class="mono">001280</td>
+      <td>中国铀业</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.131%</td>
+      <td class="num dim">0.118% ~ 0.154%</td>
+      <td class="num dim">0.036%</td>
+      <td class="num dim">17</td>
+    </tr><tr>
+      <td class="num dim">224</td>
+      <td class="mono">600570</td>
+      <td>恒生电子</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.130%</td>
+      <td class="num dim">0.107% ~ 0.154%</td>
+      <td class="num dim">0.046%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">225</td>
+      <td class="mono">002736</td>
+      <td>国信证券</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.130%</td>
+      <td class="num dim">0.114% ~ 0.148%</td>
+      <td class="num dim">0.034%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">226</td>
+      <td class="mono">600219</td>
+      <td>南山铝业</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.130%</td>
+      <td class="num dim">0.123% ~ 0.143%</td>
+      <td class="num dim">0.019%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">227</td>
+      <td class="mono">600196</td>
+      <td>复星医药</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.130%</td>
+      <td class="num dim">0.105% ~ 0.166%</td>
+      <td class="num dim">0.062%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">228</td>
+      <td class="mono">601360</td>
+      <td>三六零</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.129%</td>
+      <td class="num dim">0.117% ~ 0.150%</td>
+      <td class="num dim">0.033%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">229</td>
+      <td class="mono">002236</td>
+      <td>大华股份</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.129%</td>
+      <td class="num dim">0.107% ~ 0.152%</td>
+      <td class="num dim">0.045%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">230</td>
+      <td class="mono">601066</td>
+      <td>中信建投</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.128%</td>
+      <td class="num dim">0.104% ~ 0.165%</td>
+      <td class="num dim">0.061%</td>
+      <td class="num dim">1</td>
+    </tr><tr>
+      <td class="num dim">231</td>
+      <td class="mono">000157</td>
+      <td>中联重科</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.127%</td>
+      <td class="num dim">0.121% ~ 0.136%</td>
+      <td class="num dim">0.015%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">232</td>
+      <td class="mono">600233</td>
+      <td>圆通速递</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.127%</td>
+      <td class="num dim">0.101% ~ 0.143%</td>
+      <td class="num dim">0.042%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">233</td>
+      <td class="mono">601698</td>
+      <td>中国卫通</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.126%</td>
+      <td class="num dim">0.102% ~ 0.161%</td>
+      <td class="num dim">0.060%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">234</td>
+      <td class="mono">600009</td>
+      <td>上海机场</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.125%</td>
+      <td class="num dim">0.083% ~ 0.157%</td>
+      <td class="num dim">0.074%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">235</td>
+      <td class="mono">002074</td>
+      <td>国轩高科</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.124%</td>
+      <td class="num dim">0.088% ~ 0.160%</td>
+      <td class="num dim">0.073%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">236</td>
+      <td class="mono">600600</td>
+      <td>青岛啤酒</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.124%</td>
+      <td class="num dim">0.104% ~ 0.150%</td>
+      <td class="num dim">0.046%</td>
+      <td class="num dim">3</td>
+    </tr><tr>
+      <td class="num dim">237</td>
+      <td class="mono">001979</td>
+      <td>招商蛇口</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.122%</td>
+      <td class="num dim">0.110% ~ 0.136%</td>
+      <td class="num dim">0.026%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">238</td>
+      <td class="mono">601186</td>
+      <td>中国铁建</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.122%</td>
+      <td class="num dim">0.111% ~ 0.134%</td>
+      <td class="num dim">0.024%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">239</td>
+      <td class="mono">601901</td>
+      <td>方正证券</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.120%</td>
+      <td class="num dim">0.110% ~ 0.135%</td>
+      <td class="num dim">0.024%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">240</td>
+      <td class="mono">600372</td>
+      <td>中航机载</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.119%</td>
+      <td class="num dim">0.101% ~ 0.145%</td>
+      <td class="num dim">0.044%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">241</td>
+      <td class="mono">600115</td>
+      <td>中国东航</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.118%</td>
+      <td class="num dim">0.113% ~ 0.122%</td>
+      <td class="num dim">0.009%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">242</td>
+      <td class="mono">601456</td>
+      <td>国联民生</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.118%</td>
+      <td class="num dim">0.105% ~ 0.129%</td>
+      <td class="num dim">0.024%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">243</td>
+      <td class="mono">601788</td>
+      <td>光大证券</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.117%</td>
+      <td class="num dim">0.098% ~ 0.138%</td>
+      <td class="num dim">0.041%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">244</td>
+      <td class="mono">601898</td>
+      <td>中煤能源</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.116%</td>
+      <td class="num dim">0.101% ~ 0.138%</td>
+      <td class="num dim">0.037%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">245</td>
+      <td class="mono">601111</td>
+      <td>中国国航</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.114%</td>
+      <td class="num dim">0.105% ~ 0.123%</td>
+      <td class="num dim">0.018%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">246</td>
+      <td class="mono">601877</td>
+      <td>正泰电器</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.114%</td>
+      <td class="num dim">0.076% ~ 0.145%</td>
+      <td class="num dim">0.069%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">247</td>
+      <td class="mono">002558</td>
+      <td>巨人网络</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.113%</td>
+      <td class="num dim">0.091% ~ 0.145%</td>
+      <td class="num dim">0.054%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">248</td>
+      <td class="mono">601117</td>
+      <td>中国化学</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.113%</td>
+      <td class="num dim">0.101% ~ 0.125%</td>
+      <td class="num dim">0.024%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">249</td>
+      <td class="mono">601881</td>
+      <td>中国银河</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.113%</td>
+      <td class="num dim">0.095% ~ 0.129%</td>
+      <td class="num dim">0.034%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">250</td>
+      <td class="mono">000895</td>
+      <td>双汇发展</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.113%</td>
+      <td class="num dim">0.075% ~ 0.143%</td>
+      <td class="num dim">0.068%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">251</td>
+      <td class="mono">600029</td>
+      <td>南方航空</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.112%</td>
+      <td class="num dim">0.103% ~ 0.121%</td>
+      <td class="num dim">0.018%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">252</td>
+      <td class="mono">601878</td>
+      <td>浙商证券</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.108%</td>
+      <td class="num dim">0.096% ~ 0.122%</td>
+      <td class="num dim">0.026%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">253</td>
+      <td class="mono">600741</td>
+      <td>华域汽车</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.104%</td>
+      <td class="num dim">0.084% ~ 0.123%</td>
+      <td class="num dim">0.040%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">254</td>
+      <td class="mono">601319</td>
+      <td>中国人保</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.102%</td>
+      <td class="num dim">0.091% ~ 0.112%</td>
+      <td class="num dim">0.021%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">255</td>
+      <td class="mono">000963</td>
+      <td>华东医药</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.100%</td>
+      <td class="num dim">0.068% ~ 0.135%</td>
+      <td class="num dim">0.067%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">256</td>
+      <td class="mono">000002</td>
+      <td>万科A</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.099%</td>
+      <td class="num dim">0.094% ~ 0.104%</td>
+      <td class="num dim">0.010%</td>
+      <td class="num dim">1</td>
+    </tr><tr>
+      <td class="num dim">257</td>
+      <td class="mono">601021</td>
+      <td>春秋航空</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.099%</td>
+      <td class="num dim">0.078% ~ 0.138%</td>
+      <td class="num dim">0.060%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">258</td>
+      <td class="mono">300628</td>
+      <td>亿联网络</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.098%</td>
+      <td class="num dim">0.078% ~ 0.136%</td>
+      <td class="num dim">0.059%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">259</td>
+      <td class="mono">600039</td>
+      <td>四川路桥</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.097%</td>
+      <td class="num dim">0.088% ~ 0.109%</td>
+      <td class="num dim">0.022%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">260</td>
+      <td class="mono">002304</td>
+      <td>洋河股份</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.096%</td>
+      <td class="num dim">0.076% ~ 0.133%</td>
+      <td class="num dim">0.057%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">261</td>
+      <td class="mono">601800</td>
+      <td>中国交建</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.095%</td>
+      <td class="num dim">0.086% ~ 0.106%</td>
+      <td class="num dim">0.019%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">262</td>
+      <td class="mono">600023</td>
+      <td>浙能电力</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.093%</td>
+      <td class="num dim">0.086% ~ 0.103%</td>
+      <td class="num dim">0.016%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">263</td>
+      <td class="mono">001965</td>
+      <td>招商公路</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.092%</td>
+      <td class="num dim">0.076% ~ 0.107%</td>
+      <td class="num dim">0.032%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">264</td>
+      <td class="mono">603369</td>
+      <td>今世缘</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.091%</td>
+      <td class="num dim">0.068% ~ 0.128%</td>
+      <td class="num dim">0.060%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">265</td>
+      <td class="mono">301236</td>
+      <td>软通动力</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.091%</td>
+      <td class="num dim">0.072% ~ 0.126%</td>
+      <td class="num dim">0.055%</td>
+      <td class="num dim">1</td>
+    </tr><tr>
+      <td class="num dim">266</td>
+      <td class="mono">600027</td>
+      <td>华电国际</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.090%</td>
+      <td class="num dim">0.082% ~ 0.107%</td>
+      <td class="num dim">0.025%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">267</td>
+      <td class="mono">600803</td>
+      <td>新奥股份</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.085%</td>
+      <td class="num dim">0.054% ~ 0.111%</td>
+      <td class="num dim">0.056%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">268</td>
+      <td class="mono">300316</td>
+      <td>晶盛机电</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.085%</td>
+      <td class="num dim">0.067% ~ 0.118%</td>
+      <td class="num dim">0.051%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">269</td>
+      <td class="mono">600588</td>
+      <td>用友网络</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.084%</td>
+      <td class="num dim">0.069% ~ 0.098%</td>
+      <td class="num dim">0.029%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">270</td>
+      <td class="mono">600025</td>
+      <td>华能水电</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.082%</td>
+      <td class="num dim">0.071% ~ 0.097%</td>
+      <td class="num dim">0.026%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">271</td>
+      <td class="mono">601607</td>
+      <td>上海医药</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.079%</td>
+      <td class="num dim">0.056% ~ 0.103%</td>
+      <td class="num dim">0.047%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">272</td>
+      <td class="mono">002294</td>
+      <td>信立泰</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.079%</td>
+      <td class="num dim">0.062% ~ 0.110%</td>
+      <td class="num dim">0.047%</td>
+      <td class="num dim">1</td>
+    </tr><tr>
+      <td class="num dim">273</td>
+      <td class="mono">601618</td>
+      <td>中国中冶</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.078%</td>
+      <td class="num dim">0.073% ~ 0.090%</td>
+      <td class="num dim">0.017%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">274</td>
+      <td class="mono">688303</td>
+      <td>大全能源</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.077%</td>
+      <td class="num dim">0.043% ~ 0.092%</td>
+      <td class="num dim">0.049%</td>
+      <td class="num dim">6</td>
+    </tr><tr>
+      <td class="num dim">275</td>
+      <td class="mono">601633</td>
+      <td>长城汽车</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.077%</td>
+      <td class="num dim">0.050% ~ 0.106%</td>
+      <td class="num dim">0.056%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">276</td>
+      <td class="mono">600918</td>
+      <td>中泰证券</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.075%</td>
+      <td class="num dim">0.067% ~ 0.083%</td>
+      <td class="num dim">0.015%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">277</td>
+      <td class="mono">603260</td>
+      <td>合盛硅业</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.074%</td>
+      <td class="num dim">0.062% ~ 0.090%</td>
+      <td class="num dim">0.028%</td>
+      <td class="num dim">3</td>
+    </tr><tr>
+      <td class="num dim">278</td>
+      <td class="mono">600018</td>
+      <td>上港集团</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.073%</td>
+      <td class="num dim">0.065% ~ 0.084%</td>
+      <td class="num dim">0.019%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">279</td>
+      <td class="mono">300251</td>
+      <td>光线传媒</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.072%</td>
+      <td class="num dim">0.057% ~ 0.086%</td>
+      <td class="num dim">0.029%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">280</td>
+      <td class="mono">688223</td>
+      <td>晶科能源</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.071%</td>
+      <td class="num dim">0.065% ~ 0.083%</td>
+      <td class="num dim">0.017%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">281</td>
+      <td class="mono">000617</td>
+      <td>中油资本</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.070%</td>
+      <td class="num dim">0.060% ~ 0.082%</td>
+      <td class="num dim">0.022%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">282</td>
+      <td class="mono">600061</td>
+      <td>国投资本</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.069%</td>
+      <td class="num dim">0.063% ~ 0.079%</td>
+      <td class="num dim">0.016%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">283</td>
+      <td class="mono">300999</td>
+      <td>金龙鱼</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.067%</td>
+      <td class="num dim">0.053% ~ 0.094%</td>
+      <td class="num dim">0.040%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">284</td>
+      <td class="mono">300413</td>
+      <td>芒果超媒</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.067%</td>
+      <td class="num dim">0.050% ~ 0.094%</td>
+      <td class="num dim">0.044%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">285</td>
+      <td class="mono">600845</td>
+      <td>宝信软件</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.066%</td>
+      <td class="num dim">0.045% ~ 0.089%</td>
+      <td class="num dim">0.044%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">286</td>
+      <td class="mono">000999</td>
+      <td>华润三九</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.066%</td>
+      <td class="num dim">0.052% ~ 0.092%</td>
+      <td class="num dim">0.040%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">287</td>
+      <td class="mono">300122</td>
+      <td>智飞生物</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.066%</td>
+      <td class="num dim">0.046% ~ 0.086%</td>
+      <td class="num dim">0.041%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">288</td>
+      <td class="mono">600515</td>
+      <td>海南机场</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.066%</td>
+      <td class="num dim">0.062% ~ 0.080%</td>
+      <td class="num dim">0.018%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">289</td>
+      <td class="mono">600085</td>
+      <td>同仁堂</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.065%</td>
+      <td class="num dim">0.051% ~ 0.090%</td>
+      <td class="num dim">0.039%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">290</td>
+      <td class="mono">603392</td>
+      <td>万泰生物</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.063%</td>
+      <td class="num dim">0.052% ~ 0.079%</td>
+      <td class="num dim">0.027%</td>
+      <td class="num dim">2</td>
+    </tr><tr>
+      <td class="num dim">291</td>
+      <td class="mono">601018</td>
+      <td>宁波港</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.061%</td>
+      <td class="num dim">0.056% ~ 0.073%</td>
+      <td class="num dim">0.017%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">292</td>
+      <td class="mono">000708</td>
+      <td>中信特钢</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.058%</td>
+      <td class="num dim">0.038% ~ 0.072%</td>
+      <td class="num dim">0.034%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">293</td>
+      <td class="mono">600930</td>
+      <td>华电新能</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.057%</td>
+      <td class="num dim">0.053% ~ 0.071%</td>
+      <td class="num dim">0.018%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">294</td>
+      <td class="mono">688009</td>
+      <td>中国通号</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.057%</td>
+      <td class="num dim">0.051% ~ 0.071%</td>
+      <td class="num dim">0.020%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">295</td>
+      <td class="mono">688472</td>
+      <td>阿特斯</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.052%</td>
+      <td class="num dim">0.041% ~ 0.067%</td>
+      <td class="num dim">0.026%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">296</td>
+      <td class="mono">601238</td>
+      <td>广汽集团</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.049%</td>
+      <td class="num dim">0.041% ~ 0.062%</td>
+      <td class="num dim">0.022%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">297</td>
+      <td class="mono">601136</td>
+      <td>首创证券</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.036%</td>
+      <td class="num dim">0.028% ~ 0.050%</td>
+      <td class="num dim">0.021%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">298</td>
+      <td class="mono">001391</td>
+      <td>国货航</td>
+      <td class="num">深</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">0.026%</td>
+      <td class="num dim">0.021% ~ 0.039%</td>
+      <td class="num dim">0.019%</td>
+      <td class="num dim">—</td>
+    </tr><tr>
+      <td class="num dim">299</td>
+      <td class="mono">688082</td>
+      <td>盛美上海</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">—</td>
+      <td class="num dim">— ~ —</td>
+      <td class="num dim">0.000%</td>
+      <td class="num dim">19</td>
+    </tr><tr>
+      <td class="num dim">300</td>
+      <td class="mono">688506</td>
+      <td>百利天恒</td>
+      <td class="num">沪</td>
+      <td class="num"><span class="pill full">19/19</span></td>
+      <td class="num">—</td>
+      <td class="num dim">— ~ —</td>
+      <td class="num dim">0.000%</td>
+      <td class="num dim">19</td>
+    </tr></tbody></table>
+  </div>
+</section>
+
+<section>
+  <h2>五、权重最分散的标的 <span class="tag">同一指数、不同篮子</span></h2>
+  <div class="note">同一只股票在 19 只 ETF 里的<b>篮内权重</b>本应几乎一致。极差越大 = 各家复制偏差越大（取整、抽样复制、停牌替代、替代券替换）。<b>已排除数量为 0 的纯现金替代行</b>（那些行权重算出来必然是 0，会伪造出「0%~2.5%」的假极差），只统计有实物股数、且覆盖过半 ETF 的标的。</div>
+  <div class="scroll" style="max-height:420px">
+    <table><thead><tr><th>代码</th><th>名称</th><th class="num">最低权重</th><th class="num">最高权重</th><th class="num">绝对极差</th><th class="num">覆盖</th></tr></thead>
+    <tbody><tr>
+      <td class="mono">600519</td><td>贵州茅台</td>
+      <td class="num">2.748%</td><td class="num">6.087%</td>
+      <td class="num">3.339%</td>
+      <td class="num dim">19/19</td>
+    </tr><tr>
+      <td class="mono">300308</td><td>中际旭创</td>
+      <td class="num">2.043%</td><td class="num">3.737%</td>
+      <td class="num">1.694%</td>
+      <td class="num dim">19/19</td>
+    </tr><tr>
+      <td class="mono">688012</td><td>中微公司</td>
+      <td class="num">0.687%</td><td class="num">1.673%</td>
+      <td class="num">0.987%</td>
+      <td class="num dim">19/19</td>
+    </tr><tr>
+      <td class="mono">300750</td><td>宁德时代</td>
+      <td class="num">2.286%</td><td class="num">3.232%</td>
+      <td class="num">0.946%</td>
+      <td class="num dim">19/19</td>
+    </tr><tr>
+      <td class="mono">002371</td><td>北方华创</td>
+      <td class="num">1.130%</td><td class="num">1.987%</td>
+      <td class="num">0.857%</td>
+      <td class="num dim">19/19</td>
+    </tr><tr>
+      <td class="mono">300502</td><td>新易盛</td>
+      <td class="num">1.264%</td><td class="num">1.923%</td>
+      <td class="num">0.660%</td>
+      <td class="num dim">19/19</td>
+    </tr><tr>
+      <td class="mono">688041</td><td>海光信息</td>
+      <td class="num">0.796%</td><td class="num">1.401%</td>
+      <td class="num">0.604%</td>
+      <td class="num dim">19/19</td>
+    </tr><tr>
+      <td class="mono">688008</td><td>澜起科技</td>
+      <td class="num">0.731%</td><td class="num">1.286%</td>
+      <td class="num">0.555%</td>
+      <td class="num dim">19/19</td>
+    </tr><tr>
+      <td class="mono">603986</td><td>兆易创新</td>
+      <td class="num">0.577%</td><td class="num">1.015%</td>
+      <td class="num">0.438%</td>
+      <td class="num dim">19/19</td>
+    </tr><tr>
+      <td class="mono">603259</td><td>药明康德</td>
+      <td class="num">1.342%</td><td class="num">1.702%</td>
+      <td class="num">0.359%</td>
+      <td class="num dim">19/19</td>
+    </tr><tr>
+      <td class="mono">300394</td><td>天孚通信</td>
+      <td class="num">0.411%</td><td class="num">0.722%</td>
+      <td class="num">0.312%</td>
+      <td class="num dim">19/19</td>
+    </tr><tr>
+      <td class="mono">000333</td><td>美的集团</td>
+      <td class="num">1.659%</td><td class="num">1.967%</td>
+      <td class="num">0.308%</td>
+      <td class="num dim">19/19</td>
+    </tr><tr>
+      <td class="mono">002384</td><td>东山精密</td>
+      <td class="num">0.524%</td><td class="num">0.832%</td>
+      <td class="num">0.308%</td>
+      <td class="num dim">19/19</td>
+    </tr><tr>
+      <td class="mono">688981</td><td>中芯国际</td>
+      <td class="num">0.734%</td><td class="num">1.040%</td>
+      <td class="num">0.306%</td>
+      <td class="num dim">19/19</td>
+    </tr><tr>
+      <td class="mono">300476</td><td>胜宏科技</td>
+      <td class="num">0.371%</td><td class="num">0.653%</td>
+      <td class="num">0.282%</td>
+      <td class="num dim">19/19</td>
+    </tr><tr>
+      <td class="mono">300760</td><td>迈瑞医疗</td>
+      <td class="num">0.356%</td><td class="num">0.627%</td>
+      <td class="num">0.271%</td>
+      <td class="num dim">19/19</td>
+    </tr><tr>
+      <td class="mono">002463</td><td>沪电股份</td>
+      <td class="num">0.515%</td><td class="num">0.784%</td>
+      <td class="num">0.269%</td>
+      <td class="num dim">19/19</td>
+    </tr><tr>
+      <td class="mono">601318</td><td>中国平安</td>
+      <td class="num">2.298%</td><td class="num">2.551%</td>
+      <td class="num">0.252%</td>
+      <td class="num dim">19/19</td>
+    </tr><tr>
+      <td class="mono">600183</td><td>生益科技</td>
+      <td class="num">0.572%</td><td class="num">0.822%</td>
+      <td class="num">0.250%</td>
+      <td class="num dim">19/19</td>
+    </tr><tr>
+      <td class="mono">600941</td><td>中国移动</td>
+      <td class="num">0.270%</td><td class="num">0.515%</td>
+      <td class="num">0.244%</td>
+      <td class="num dim">19/19</td>
+    </tr></tbody></table>
+  </div>
+</section>
+
+<section>
+  <h2>六、权重相对离散度 <span class="tag">极差 ÷ 均值，去掉量级干扰</span></h2>
+  <div class="note">绝对极差对权重大的股票天然更大，所以再看<b>相对极差</b>（极差 ÷ 平均权重）。这一列高 = 各家对这个位子的配置分歧大，往往来自成分调整期、停牌替代或跟踪误差管理差异。</div>
+  <div class="scroll" style="max-height:400px">
+    <table><thead><tr><th>代码</th><th>名称</th><th class="num">平均权重</th><th class="num">中位权重</th><th class="num">区间</th><th class="num">相对极差</th><th class="num">覆盖</th></tr></thead>
+    <tbody><tr>
+      <td class="mono">600519</td><td>贵州茅台</td>
+      <td class="num">3.635%</td>
+      <td class="num">3.426%</td>
+      <td class="num">2.748% ~ 6.087%</td>
+      <td class="num warn">92%</td>
+      <td class="num dim">19/19</td>
+    </tr><tr>
+      <td class="mono">688012</td><td>中微公司</td>
+      <td class="num">1.295%</td>
+      <td class="num">1.294%</td>
+      <td class="num">0.687% ~ 1.673%</td>
+      <td class="num warn">76%</td>
+      <td class="num dim">15/19</td>
+    </tr><tr>
+      <td class="mono">000568</td><td>泸州老窖</td>
+      <td class="num">0.202%</td>
+      <td class="num">0.189%</td>
+      <td class="num">0.147% ~ 0.289%</td>
+      <td class="num warn">70%</td>
+      <td class="num dim">19/19</td>
+    </tr><tr>
+      <td class="mono">000408</td><td>藏格矿业</td>
+      <td class="num">0.207%</td>
+      <td class="num">0.187%</td>
+      <td class="num">0.155% ~ 0.291%</td>
+      <td class="num warn">65%</td>
+      <td class="num dim">19/19</td>
+    </tr><tr>
+      <td class="mono">688036</td><td>传音控股</td>
+      <td class="num">0.253%</td>
+      <td class="num">0.259%</td>
+      <td class="num">0.143% ~ 0.306%</td>
+      <td class="num warn">64%</td>
+      <td class="num dim">13/19</td>
+    </tr><tr>
+      <td class="mono">603501</td><td>豪威集团</td>
+      <td class="num">0.291%</td>
+      <td class="num">0.287%</td>
+      <td class="num">0.203% ~ 0.390%</td>
+      <td class="num warn">64%</td>
+      <td class="num dim">19/19</td>
+    </tr><tr>
+      <td class="mono">600941</td><td>中国移动</td>
+      <td class="num">0.395%</td>
+      <td class="num">0.415%</td>
+      <td class="num">0.270% ~ 0.515%</td>
+      <td class="num warn">62%</td>
+      <td class="num dim">19/19</td>
+    </tr><tr>
+      <td class="mono">000538</td><td>云南白药</td>
+      <td class="num">0.210%</td>
+      <td class="num">0.221%</td>
+      <td class="num">0.144% ~ 0.274%</td>
+      <td class="num warn">62%</td>
+      <td class="num dim">19/19</td>
+    </tr><tr>
+      <td class="mono">002353</td><td>杰瑞股份</td>
+      <td class="num">0.236%</td>
+      <td class="num">0.232%</td>
+      <td class="num">0.186% ~ 0.328%</td>
+      <td class="num warn">60%</td>
+      <td class="num dim">19/19</td>
+    </tr><tr>
+      <td class="mono">300760</td><td>迈瑞医疗</td>
+      <td class="num">0.451%</td>
+      <td class="num">0.444%</td>
+      <td class="num">0.356% ~ 0.627%</td>
+      <td class="num warn">60%</td>
+      <td class="num dim">19/19</td>
+    </tr><tr>
+      <td class="mono">300661</td><td>圣邦股份</td>
+      <td class="num">0.229%</td>
+      <td class="num">0.225%</td>
+      <td class="num">0.181% ~ 0.318%</td>
+      <td class="num warn">60%</td>
+      <td class="num dim">19/19</td>
+    </tr><tr>
+      <td class="mono">600809</td><td>山西汾酒</td>
+      <td class="num">0.286%</td>
+      <td class="num">0.282%</td>
+      <td class="num">0.226% ~ 0.398%</td>
+      <td class="num warn">60%</td>
+      <td class="num dim">19/19</td>
+    </tr><tr>
+      <td class="mono">603986</td><td>兆易创新</td>
+      <td class="num">0.729%</td>
+      <td class="num">0.718%</td>
+      <td class="num">0.577% ~ 1.015%</td>
+      <td class="num warn">60%</td>
+      <td class="num dim">19/19</td>
+    </tr><tr>
+      <td class="mono">688041</td><td>海光信息</td>
+      <td class="num">1.007%</td>
+      <td class="num">0.991%</td>
+      <td class="num">0.796% ~ 1.401%</td>
+      <td class="num warn">60%</td>
+      <td class="num dim">19/19</td>
+    </tr><tr>
+      <td class="mono">002371</td><td>北方华创</td>
+      <td class="num">1.428%</td>
+      <td class="num">1.405%</td>
+      <td class="num">1.130% ~ 1.987%</td>
+      <td class="num warn">60%</td>
+      <td class="num dim">19/19</td>
+    </tr></tbody></table>
+  </div>
+</section>
+
+<section>
+  <h2>七、必须现金替代的标的 <span class="tag">39 只</span></h2>
+  <div class="note">「必须现金替代」= 申购时不能用股票、只能用现金顶替。实测一致呈现一个现象：<b>688 开头的科创板成分在 19 只 ETF 里全部为「必须现金替代」且股数给 0</b>（龙芯中科 / 拓荆科技 / 盛美上海 / 寒武纪等）——即这些位子在篮子里是「虚位」，权重看着有、实物拿不到。<b>制度层面的确切原因（科创板适当性/交易规则）建议核对基金合同与申赎清单说明，本报告只呈现数据事实、不推断规则来源。</b>「有实物」列 = 有多少只 ETF 真的给了股数。</div>
+  <div class="scroll" style="max-height:420px">
+    <table><thead><tr><th>代码</th><th>名称</th><th class="num">必须替代 ETF 数</th><th class="num">其中 0 股</th><th class="num">有实物</th><th class="num">平均权重(仅实物)</th></tr></thead>
+    <tbody><tr>
+      <td class="mono">688047</td><td>龙芯中科</td>
+      <td class="num">19/19</td>
+      <td class="num dim">18/19</td>
+      <td class="num">1/19</td>
+      <td class="num">—</td>
+    </tr><tr>
+      <td class="mono">688072</td><td>拓荆科技</td>
+      <td class="num">19/19</td>
+      <td class="num dim">18/19</td>
+      <td class="num">1/19</td>
+      <td class="num">—</td>
+    </tr><tr>
+      <td class="mono">688082</td><td>盛美上海</td>
+      <td class="num">19/19</td>
+      <td class="num dim">19/19</td>
+      <td class="num">0/19</td>
+      <td class="num">—</td>
+    </tr><tr>
+      <td class="mono">688506</td><td>百利天恒</td>
+      <td class="num">19/19</td>
+      <td class="num dim">19/19</td>
+      <td class="num">0/19</td>
+      <td class="num">—</td>
+    </tr><tr>
+      <td class="mono">688256</td><td>寒武纪</td>
+      <td class="num">18/19</td>
+      <td class="num dim">18/19</td>
+      <td class="num">1/19</td>
+      <td class="num">—</td>
+    </tr><tr>
+      <td class="mono">000596</td><td>古井贡酒</td>
+      <td class="num">17/19</td>
+      <td class="num dim">16/19</td>
+      <td class="num">3/19</td>
+      <td class="num">0.192%</td>
+    </tr><tr>
+      <td class="mono">001280</td><td>中国铀业</td>
+      <td class="num">17/19</td>
+      <td class="num dim">16/19</td>
+      <td class="num">3/19</td>
+      <td class="num">0.131%</td>
+    </tr><tr>
+      <td class="mono">300866</td><td>安克创新</td>
+      <td class="num">17/19</td>
+      <td class="num dim">16/19</td>
+      <td class="num">3/19</td>
+      <td class="num">0.244%</td>
+    </tr><tr>
+      <td class="mono">300896</td><td>爱美客</td>
+      <td class="num">17/19</td>
+      <td class="num dim">16/19</td>
+      <td class="num">3/19</td>
+      <td class="num">0.225%</td>
+    </tr><tr>
+      <td class="mono">301165</td><td>锐捷网络</td>
+      <td class="num">17/19</td>
+      <td class="num dim">16/19</td>
+      <td class="num">3/19</td>
+      <td class="num">0.178%</td>
+    </tr><tr>
+      <td class="mono">603893</td><td>瑞芯微</td>
+      <td class="num">17/19</td>
+      <td class="num dim">16/19</td>
+      <td class="num">3/19</td>
+      <td class="num">0.457%</td>
+    </tr><tr>
+      <td class="mono">688111</td><td>金山办公</td>
+      <td class="num">17/19</td>
+      <td class="num dim">16/19</td>
+      <td class="num">3/19</td>
+      <td class="num">1.005%</td>
+    </tr><tr>
+      <td class="mono">301269</td><td>华大九天</td>
+      <td class="num">16/19</td>
+      <td class="num dim">15/19</td>
+      <td class="num">4/19</td>
+      <td class="num">0.222%</td>
+    </tr><tr>
+      <td class="mono">688183</td><td>生益电子</td>
+      <td class="num">16/19</td>
+      <td class="num dim">15/19</td>
+      <td class="num">4/19</td>
+      <td class="num">0.331%</td>
+    </tr><tr>
+      <td class="mono">301308</td><td>江波龙</td>
+      <td class="num">15/19</td>
+      <td class="num dim">14/19</td>
+      <td class="num">5/19</td>
+      <td class="num">0.526%</td>
+    </tr><tr>
+      <td class="mono">688521</td><td>芯原股份</td>
+      <td class="num">15/19</td>
+      <td class="num dim">13/19</td>
+      <td class="num">6/19</td>
+      <td class="num">0.526%</td>
+    </tr><tr>
+      <td class="mono">688271</td><td>联影医疗</td>
+      <td class="num">12/19</td>
+      <td class="num dim">11/19</td>
+      <td class="num">8/19</td>
+      <td class="num">0.491%</td>
+    </tr><tr>
+      <td class="mono">688396</td><td>华润微</td>
+      <td class="num">11/19</td>
+      <td class="num dim">10/19</td>
+      <td class="num">9/19</td>
+      <td class="num">0.227%</td>
+    </tr><tr>
+      <td class="mono">605499</td><td>东鹏饮料</td>
+      <td class="num">10/19</td>
+      <td class="num dim">9/19</td>
+      <td class="num">10/19</td>
+      <td class="num">0.240%</td>
+    </tr><tr>
+      <td class="mono">002916</td><td>深南电路</td>
+      <td class="num">9/19</td>
+      <td class="num dim">8/19</td>
+      <td class="num">11/19</td>
+      <td class="num">0.675%</td>
+    </tr><tr>
+      <td class="mono">302132</td><td>中航成飞</td>
+      <td class="num">7/19</td>
+      <td class="num dim">6/19</td>
+      <td class="num">13/19</td>
+      <td class="num">0.157%</td>
+    </tr><tr>
+      <td class="mono">688036</td><td>传音控股</td>
+      <td class="num">7/19</td>
+      <td class="num dim">6/19</td>
+      <td class="num">13/19</td>
+      <td class="num">0.253%</td>
+    </tr><tr>
+      <td class="mono">002920</td><td>德赛西威</td>
+      <td class="num">6/19</td>
+      <td class="num dim">5/19</td>
+      <td class="num">14/19</td>
+      <td class="num">0.180%</td>
+    </tr><tr>
+      <td class="mono">300033</td><td>同花顺</td>
+      <td class="num">6/19</td>
+      <td class="num dim">5/19</td>
+      <td class="num">14/19</td>
+      <td class="num">0.465%</td>
+    </tr><tr>
+      <td class="mono">600436</td><td>片仔癀</td>
+      <td class="num">6/19</td>
+      <td class="num dim">5/19</td>
+      <td class="num">14/19</td>
+      <td class="num">0.297%</td>
+    </tr><tr>
+      <td class="mono">688303</td><td>大全能源</td>
+      <td class="num">6/19</td>
+      <td class="num dim">5/19</td>
+      <td class="num">14/19</td>
+      <td class="num">0.077%</td>
+    </tr><tr>
+      <td class="mono">688012</td><td>中微公司</td>
+      <td class="num">4/19</td>
+      <td class="num dim">4/19</td>
+      <td class="num">15/19</td>
+      <td class="num">1.295%</td>
+    </tr><tr>
+      <td class="mono">600600</td><td>青岛啤酒</td>
+      <td class="num">3/19</td>
+      <td class="num dim">3/19</td>
+      <td class="num">16/19</td>
+      <td class="num">0.124%</td>
+    </tr><tr>
+      <td class="mono">603260</td><td>合盛硅业</td>
+      <td class="num">3/19</td>
+      <td class="num dim">3/19</td>
+      <td class="num">16/19</td>
+      <td class="num">0.074%</td>
+    </tr><tr>
+      <td class="mono">600221</td><td>海航控股</td>
+      <td class="num">2/19</td>
+      <td class="num dim">0/19</td>
+      <td class="num">19/19</td>
+      <td class="num">0.133%</td>
+    </tr></tbody></table>
+  </div>
+</section>
+
+<section>
+  <h2>八、未被全部 ETF 纳入的标的 <span class="tag">共 0 只</span></h2>
+  <div class="note">纯指数复制下，300 只成分应被 19 只 ETF 全部收录。没被全部收录的，说明该 ETF 用了<b>替代券/抽样复制</b>。</div>
+  <div class="scroll" style="max-height:360px">
+    <table><thead><tr><th>代码</th><th>名称</th><th class="num">纳入</th><th class="num">平均权重</th></tr></thead>
+    <tbody><tr><td colspan="4" class="dim">无 —— 19 只全部收录全部 300 只成分</td></tr></tbody></table>
+  </div>
+</section>
+
+<section>
+  <h2>九、权重前十（跨 ETF 平均）</h2>
+  <div class="note">把 19 只 ETF 的篮子里同一只股票的权重取平均，近似「这一篮子指数此时的真实结构」。</div>
+  <table><thead><tr><th class="num">#</th><th>代码</th><th>名称</th><th class="num">平均权重</th><th class="num">纳入 ETF</th></tr></thead>
+  <tbody><tr><td class="num dim">1</td><td class="mono">600519</td><td>贵州茅台</td><td class="num">3.635%</td><td class="num dim">19/19</td></tr><tr><td class="num dim">2</td><td class="mono">300308</td><td>中际旭创</td><td class="num">2.889%</td><td class="num dim">19/19</td></tr><tr><td class="num dim">3</td><td class="mono">300750</td><td>宁德时代</td><td class="num">2.569%</td><td class="num dim">19/19</td></tr><tr><td class="num dim">4</td><td class="mono">688072</td><td>拓荆科技</td><td class="num">2.498%</td><td class="num dim">19/19</td></tr><tr><td class="num dim">5</td><td class="mono">601318</td><td>中国平安</td><td class="num">2.386%</td><td class="num dim">19/19</td></tr><tr><td class="num dim">6</td><td class="mono">688256</td><td>寒武纪</td><td class="num">2.297%</td><td class="num dim">19/19</td></tr><tr><td class="num dim">7</td><td class="mono">600036</td><td>招商银行</td><td class="num">2.280%</td><td class="num dim">19/19</td></tr><tr><td class="num dim">8</td><td class="mono">601899</td><td>紫金矿业</td><td class="num">2.018%</td><td class="num dim">19/19</td></tr><tr><td class="num dim">9</td><td class="mono">000333</td><td>美的集团</td><td class="num">1.836%</td><td class="num dim">19/19</td></tr><tr><td class="num dim">10</td><td class="mono">600900</td><td>长江电力</td><td class="num">1.614%</td><td class="num dim">19/19</td></tr></tbody></table>
+</section>
+
+<section>
+  <h2>十、需人工核实的孤立异常 <span class="tag">某只 ETF 对单个成分权重 ≥ 中位数 1.5 倍</span></h2>
+  <div class="note">同一指数、同一只成分，各家权重本应几乎一致。出现 ≥1.5 倍偏离时，<b>不判定谁对谁错</b>——可能是基金对个别成分的主动配置、申赎单位取整、或清单发布差异。列出以便人工核对原始 PCF。</div>
+  <div class="scroll" style="max-height:380px">
+    <table><thead><tr><th>代码</th><th>名称</th><th class="num">中位权重</th><th class="num">最高权重</th><th class="num">倍数</th><th>偏离最大的 ETF</th></tr></thead>
+    <tbody><tr>
+      <td class="mono">600519</td><td>贵州茅台</td>
+      <td class="num">3.426%</td><td class="num">6.087%</td>
+      <td class="num warn">1.78×</td>
+      <td class="dim">515310 6.09% · 510370 4.83% · 515360 4.57%</td>
+    </tr><tr>
+      <td class="mono">002938</td><td>鹏鼎控股</td>
+      <td class="num">0.182%</td><td class="num">0.294%</td>
+      <td class="num warn">1.61×</td>
+      <td class="dim">515350 0.29% · 510370 0.26% · 515360 0.24%</td>
+    </tr><tr>
+      <td class="mono">001391</td><td>国货航</td>
+      <td class="num">0.025%</td><td class="num">0.039%</td>
+      <td class="num warn">1.60×</td>
+      <td class="dim">510330 0.04% · 510350 0.03% · 561930 0.03%</td>
+    </tr><tr>
+      <td class="mono">000408</td><td>藏格矿业</td>
+      <td class="num">0.187%</td><td class="num">0.291%</td>
+      <td class="num warn">1.55×</td>
+      <td class="dim">515660 0.29% · 510360 0.29% · 515350 0.28%</td>
+    </tr><tr>
+      <td class="mono">300413</td><td>芒果超媒</td>
+      <td class="num">0.061%</td><td class="num">0.094%</td>
+      <td class="num warn">1.55×</td>
+      <td class="dim">515660 0.09% · 510360 0.09% · 515350 0.09%</td>
+    </tr><tr>
+      <td class="mono">002837</td><td>英维克</td>
+      <td class="num">0.121%</td><td class="num">0.188%</td>
+      <td class="num warn">1.55×</td>
+      <td class="dim">515660 0.19% · 510360 0.18% · 515350 0.18%</td>
+    </tr><tr>
+      <td class="mono">603369</td><td>今世缘</td>
+      <td class="num">0.082%</td><td class="num">0.128%</td>
+      <td class="num warn">1.55×</td>
+      <td class="dim">515660 0.13% · 510360 0.13% · 515350 0.12%</td>
+    </tr><tr>
+      <td class="mono">000568</td><td>泸州老窖</td>
+      <td class="num">0.189%</td><td class="num">0.289%</td>
+      <td class="num warn">1.53×</td>
+      <td class="dim">510360 0.29% · 515350 0.29% · 515390 0.28%</td>
+    </tr><tr>
+      <td class="mono">002311</td><td>海大集团</td>
+      <td class="num">0.132%</td><td class="num">0.201%</td>
+      <td class="num warn">1.52×</td>
+      <td class="dim">510390 0.20% · 515380 0.20% · 515310 0.19%</td>
+    </tr><tr>
+      <td class="mono">300442</td><td>润泽科技</td>
+      <td class="num">0.178%</td><td class="num">0.271%</td>
+      <td class="num warn">1.52×</td>
+      <td class="dim">510390 0.27% · 515380 0.26% · 515310 0.26%</td>
+    </tr><tr>
+      <td class="mono">601127</td><td>赛力斯</td>
+      <td class="num">0.130%</td><td class="num">0.197%</td>
+      <td class="num warn">1.52×</td>
+      <td class="dim">510390 0.20% · 515380 0.19% · 515310 0.19%</td>
+    </tr></tbody></table>
+  </div>
+</section>
+
+<div class="foot">数据源：上海证券交易所 ETF 公告申购赎回清单（query.sse.com.cn）· 行情：腾讯行情 qt.gtimg.cn · 本报告为数据统计，不构成投资建议</div>
+</div></body></html>

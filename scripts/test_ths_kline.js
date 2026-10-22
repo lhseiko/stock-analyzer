@@ -6,7 +6,7 @@
  *   [1] last.js 明文解析（字段顺序 date,open,high,low,close,volume(股),amount(元),turnover(%)）
  *   [2] all.js 压缩解码（每天 4 个 price 值 = (最低价, 开盘−最低, 最高−最低, 收盘−最低) × priceFactor；
  *       volumn=股；dates=MMDD 按 sortYear 逐年展开）
- *   [3] 结构闸门（三列不等长/坏 MMDD/sortYear 计数不符 → null，绝不返回半可信数据）
+ *   [3] 结构闸门（三列不等长/坏 MMDD/sortYear 欠计或超容忍 → null；末尾多计 1~2 容忍并从最后一年扣掉）
  *   [4] 真实黄金样本（scripts/fixtures/ths_000902_tail.json，2026-10-18 自 d.10jqka 捕获）：
  *       解码 all.js 尾部 30 根 vs last.js 明文尾部 30 根，OHLC/volume 必须逐根一致
  *   [5] 合并闸门（重叠段 close 逐日一致才采信 all.js 向过去延伸；不一致/重叠不足 → 只用 last.js）
@@ -107,8 +107,11 @@ console.log('\n[3] 结构闸门：不符结构 → null（绝不返回半可信�
   ok(sd._decodeThsAll({ ...good, dates: '9999' }) === null, 'MMDD 非法（9999）→ null');
   ok(sd._decodeThsAll({ ...good, dates: '1301' }) === null, 'MMDD 月份越界（13月）→ null');
   ok(sd._decodeThsAll({ ...good, dates: '0232' }) === null, 'MMDD 日期越界（32日）→ null');
-  ok(sd._decodeThsAll({ ...good, sortYear: [[2026, 2]] }) === null, 'sortYear 计数与 dates 不符（2≠1）→ null');
-  ok(sd._decodeThsAll({ ...good, sortYear: [[2026, 1], [2025, 1]] }) === null, 'sortYear 多一年（计数和 2≠1）→ null');
+  // 20261022e：末尾多计 1（当日条目未落入 dates）→ 容忍并从最后一年扣掉；多计 3 超容忍 → null
+  const tolerate = sd._decodeThsAll({ ...good, sortYear: [[2026, 2]] });
+  ok(tolerate && tolerate.length === 1, 'sortYear 末尾多计 1（2 vs dates 1）→ 容忍，解码 1 根');
+  ok(sd._decodeThsAll({ ...good, sortYear: [[2026, 4]] }) === null, 'sortYear 多计 3（超容忍上限 2）→ null');
+  ok(sd._decodeThsAll({ ...good, sortYear: [[2026, 1], [2025, 1]] }) === null, 'sortYear 多一年（计数和 2≠1，最后一年不足扣减）→ null');
   ok(sd._decodeThsAll({ ...good, sortYear: [[2026, 0]] }) === null, 'sortYear 计数为 0 → null');
   ok(sd._decodeThsAll({ ...good, price: good.price.replace('5101', 'x') }) === null, 'price 含非数字 → null（fail-closed：解析出 NaN 直接拒绝）');
 }
@@ -152,7 +155,9 @@ console.log('\n[5] 合并闸门：重叠段 close 一致才采信 all.js 延伸'
   ok(merged.length === 240, '闸门通过 → 历史 100 + 近期 140 合并为 240 根');
   ok(merged[0].date === hist[0].date && merged[99].date === hist[99].date, '前 100 根来自 all.js 解码延伸');
   ok(merged[140].amount > 0 && merged[140].turnover > 0, '近期 140 根保留 amount/turnover（last.js 权威）');
-  ok(merged.slice(0, 100).every(b => b.amount === undefined), '历史延伸段无 amount/turnover（交由消费方降级标注）');
+  // 20261022e：历史延伸段成交额回填（volume×close）；本例 volume 递增而 turnover 恒定 → 流通盘跨期不稳 → 换手率不回填
+  ok(merged.slice(0, 100).every(b => b.amount > 0 && b.amountEstimated), '历史延伸段成交额已回填（volume×close，标记推算）');
+  ok(merged.slice(0, 100).every(b => !(b.turnover > 0)), '流通盘跨期不稳（volume 递增、turnover 恒定）→ 换手率不回填');
   // 闸门失败：overlap 中有一根 close 不一致
   const decodedBad = decodedConsistent.map((b, i) => i === 200 ? { ...b, close: b.close + 0.5 } : b);
   const mergedBad = sd._mergeThsBars(plain, decodedBad, 320);

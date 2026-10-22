@@ -1,23 +1,20 @@
 /**
- * 阻力 / 支撑区间有效性检验 · 用户两条标准回归（零网络，全合成数据）
+ * 阻力 / 支撑区间有效性检验回归（零网络，全合成数据）
  * --------------------------------------------------------------
  * 运行： node scripts/test_zone_validity.js
- * 覆盖：lib/zoneValidity.js（20261020i，用户 2026-10-20 两条标准）
+ * 覆盖：lib/zoneValidity.js
+ *   2026-10-22 用户要求彻底删除标准2，仅保留标准1「无放量轻松突破 → 无效」。
  *   [1] 区间未被测试 → 有效（未被触碰不等于无效）
  *   [2] 标准1：无放量突破 1 天即回落 → 无效
  *   [3] 放量突破 1 天即回落 → 有效
- *   [4] 标准2a：放量突破后当前已站上 4 天 → 无效（已突破并站住）
- *   [5] 边界：当前站上 3 天 → 有效（"超过三天"才失效）
- *   [6] 标准2b：窗内内外反转 4 次（两个来回）→ 无效
- *   [7] 边界：反转 3 次且未站上 → 有效
+ *   [4] 已删标准2：放量突破后连续站上 4 天 → 有效（标准2a 已移除）
  *   [8] 支撑方向：无放量跌破 → 无效；放量跌破后收回 → 有效
  *   [9] 量能缺失 / 脏数据 → 不臆断、不判死
  *   [10] close == 上下沿 → 视为区间内
  *   [11] 方向性回归：价格从上方掉下来穿过"阻力"不算突破（600909 实测场景）
- *   [12] 一直站在"阻力"上方 → 该位其实在价格下方 → 无效
+ *   [12] 已删标准2：一直站在"阻力"上方且窗内无穿越 → 标准1 无从判定 → 保留（残留边界，见报告）
  *   [13] 只看最近 60 日：更早的穿越不影响结论
  *   [14] 批量汇总计数
- *   [15] 触及口径：只在本位置进进出出、从未越过远端 → 仍判无效（20261020l）
  *   [16] 侵蚀收缩（20261020m）：无放量侵入未打穿 → 近端收紧、远端不变、单调取极值
  *   [17] 接线守卫：priceAction 先检验后侵蚀，顺序不可颠倒
  */
@@ -59,7 +56,6 @@ console.log('\n[1] 区间未被测试（价格始终在阻力下方）');
   const r = zv.assessZone(mkBars(closesWith([])), RES, 'resistance');
   ok(r.valid, '未穿越 → 有效');
   eq(r.zoneCheck.breakCount, 0, '突破次数 0');
-  eq(r.zoneCheck.streakNow, 0, '当前未站在外侧');
   eq(r.zoneCheck.lastBreakVr, null, '无突破 → 无量比');
 }
 
@@ -69,7 +65,6 @@ console.log('\n[2] 标准1：无放量突破 1 天即回落 → 无效');
   const r = zv.assessZone(bars, RES, 'resistance');
   ok(!r.valid, '无放量即穿越 → 无效');
   eq(r.zoneCheck.lastBreakVr, 1.05, '突破日量比 1.05');
-  eq(r.zoneCheck.streakNow, 1, '当前仅站上 1 天（未超过 3 天，不触发标准2a）');
   ok(r.invalidReasons.some(s => /无放量/.test(s)), '原因写明「无放量轻松穿越」');
   eq(r.invalidReasons.length, 1, '仅标准1 命中');
 }
@@ -82,43 +77,12 @@ console.log('\n[3] 放量突破 1 天即回落 → 有效');
   eq(r.zoneCheck.lastBreakVr, 1.8, '突破日量比 1.8');
 }
 
-console.log('\n[4] 标准2a：放量突破后当前已站上 4 天 → 无效');
+console.log('\n[4] 已删标准2：放量突破后连续站上 4 天 → 有效（标准2a 已移除，仅标准1）');
 {
   const bars = mkBars(closesWith([[76, 79, 8.7]]), volsAt({ 76: 1.8 }));
   const r = zv.assessZone(bars, RES, 'resistance');
-  ok(!r.valid, '连续站上 4 天 → 无效（已突破并站住）');
-  eq(r.zoneCheck.streakNow, 4, '连续站上天数 4');
-  ok(r.invalidReasons.some(s => /站上/.test(s)), '原因写明「已突破并站住」');
-  ok(!r.invalidReasons.some(s => /无放量/.test(s)), '放量充足，标准1 不命中');
-}
-
-console.log('\n[5] 边界：当前站上 3 天 → 有效（"超过三天"才失效）');
-{
-  const bars = mkBars(closesWith([[77, 79, 8.7]]), volsAt({ 77: 1.8 }));
-  const r = zv.assessZone(bars, RES, 'resistance');
-  ok(r.valid, '站上 3 天 → 有效');
-  eq(r.zoneCheck.streakNow, 3, '连续站上天数 3');
-  eq(r.zoneCheck.outStreakMax, 3, '允许天数 3');
-}
-
-console.log('\n[6] 标准2b：窗内内外反转 4 次（两个来回）→ 无效');
-{
-  const bars = mkBars(closesWith([[70, 70, 8.7], [72, 72, 8.7]]), volsAt({ 70: 1.8, 72: 1.8 }));
-  const r = zv.assessZone(bars, RES, 'resistance');
-  ok(!r.valid, '来回穿越 4 次 → 无效');
-  eq(r.zoneCheck.touchTransitions, 4, '在本位置往返 4 次');
-  eq(r.zoneCheck.streakNow, 0, '当前在区间内（不属"站上"）');
-  ok(r.invalidReasons.some(s => /反复往返/.test(s)), '原因写明「反复往返」');
-}
-
-console.log('\n[7] 边界：反转 3 次且当前未站上 → 有效');
-{
-  // 内→外(70)→内(71)→外(79)：反转 3 次，当前仅在外 1 天
-  const bars = mkBars(closesWith([[70, 70, 8.7], [79, 79, 8.7]]), volsAt({ 70: 1.8, 79: 1.8 }));
-  const r = zv.assessZone(bars, RES, 'resistance');
-  eq(r.zoneCheck.touchTransitions, 3, '在本位置往返 3 次');
-  eq(r.zoneCheck.streakNow, 1, '当前在外 1 天（未超过 3 天）');
-  ok(r.valid, '反转 3 次 → 有效（阈值是 >3）');
+  ok(r.valid, '放量突破且站上 4 天 → 标准1 不命中 → 有效（旧标准2a 会判无效，已按用户要求删除）');
+  eq(r.zoneCheck.lastBreakVr, 1.8, '突破日量比 1.8（放量 → 标准1 不命中）');
 }
 
 console.log('\n[8] 支撑方向');
@@ -130,7 +94,6 @@ console.log('\n[8] 支撑方向');
   const goodCloses = closesWith([[78, 78, 7.0]], 7.6);   // 跌破后次日收回
   const good = zv.assessZone(mkBars(goodCloses, volsAt({ 78: 1.6 })), SUP, 'support');
   ok(good.valid, '放量跌破后收回 → 有效');
-  eq(good.zoneCheck.streakNow, 0, '已收回');
 }
 
 console.log('\n[9] 量能缺失 / 脏数据');
@@ -153,9 +116,9 @@ console.log('\n[10] close == 上下沿 → 视为区间内');
 {
   const r = zv.assessZone(mkBars(closesWith([], 8.55)), RES, 'resistance');
   ok(r.valid, '收在阻力上沿不算突破 → 有效');
-  eq(r.zoneCheck.streakNow, 0, '不算站在外侧');
+  eq(r.zoneCheck.breakCount, 0, '收在上沿不算向上突破');
   const r2 = zv.assessZone(mkBars(closesWith([], 7.25)), SUP, 'support');
-  eq(r2.zoneCheck.streakNow, 0, '收在支撑下沿不算跌破');
+  eq(r2.zoneCheck.breakCount, 0, '收在下沿不算向下跌破');
 }
 
 console.log('\n[11] 方向性回归：从上方跌下来穿过"阻力"不算突破（600909 实测场景）');
@@ -165,15 +128,18 @@ console.log('\n[11] 方向性回归：从上方跌下来穿过"阻力"不算突�
   const r = zv.assessZone(mkBars(closes), RES, 'resistance');
   ok(r.valid, '下跌穿越不算「向上突破」→ 阻力仍然有效');
   eq(r.zoneCheck.breakCount, 0, '无向上突破事件');
-  eq(r.zoneCheck.streakNow, 0, '当前在阻力下方');
   ok(r.zoneCheck.lastBreakVr === null, '不产生突破量比');
 }
 
-console.log('\n[12] 一直站在"阻力"上方 → 该位其实在价格下方 → 无效');
+console.log('\n[12] 已删标准2：一直站在"阻力"上方且窗内无穿越 → 标准1 无从判定 → 保留');
 {
+  // 旧标准2a 会把「连续站上>3天」判无效；该标准已按用户要求删除，此行为随之改变。
+  // 注意：这是删除标准2 后的残留边界——swing 生成的区间通常不会出现在现价下方，
+  // 真实数据中较少触发；放量突破的场景由 zoneReversal 反转规则接管。
   const r = zv.assessZone(mkBars(closesWith([], 9.0)), RES, 'resistance');
-  ok(!r.valid, '当前价一直在区间上方 → 不该作为「上方阻力」展示');
-  eq(r.zoneCheck.streakNow, 60, '连续站上 60 天（整个检验窗）');
+  ok(r.valid, '价格一直在区间上方、窗内无穿越 → 标准1 不命中 → 保留（标准2a 已删）');
+  eq(r.zoneCheck.breakCount, 0, '窗内无「从内到外」的穿越事件');
+  eq(r.zoneCheck.lastBreakVr, null, '无穿越 → 无量比');
 }
 
 console.log('\n[13] 只看最近 60 日');
@@ -185,25 +151,7 @@ console.log('\n[13] 只看最近 60 日');
   eq(r.zoneCheck.lookbackDays, 60, '检验窗 60 日');
 }
 
-console.log('\n[15] 触及口径（20261020l）：价格只在本位置"进进出出"、从未越过远端 → 仍判无效');
-{
-  // 收盘 8.30（位置下方）与 8.50（区间内，≥ low 8.45）交替：从未 > high 8.55
-  const closes = Array.from({ length: N }, (_, i) => (i % 2 === 0 ? 8.30 : 8.50));
-  const r = zv.assessZone(mkBars(closes, volsAt({})), RES, 'resistance');
-  eq(r.zoneCheck.breakCount, 0, '真突破 0 次（从未收在 8.55 之上）');
-  ok(r.zoneCheck.touchTransitions > 3, `在本位置往返 ${r.zoneCheck.touchTransitions} 次 > 3`);
-  ok(!r.valid, '只靠「到达该位置」的来回就应判无效（旧口径会漏判 → 用户报障 603288）');
-
-  // 对照：价格始终在位置下方 0.15 元以外 → 一次都没到达 → 保留
-  const far = zv.assessZone(mkBars(Array.from({ length: N }, () => 8.30)), RES, 'resistance');
-  eq(far.zoneCheck.touchTransitions, 0, '未到达 → 往返 0 次');
-  ok(far.valid, '从未到达该位置 → 保留展示（未被测试 ≠ 无效）');
-
-  // 端点：收盘恰等于近端 low → 算「到达」（含端点）
-  const atEdge = zv.assessZone(mkBars(Array.from({ length: N }, () => RES.low)), RES, 'resistance');
-  eq(atEdge.zoneCheck.touchTransitions, 0, '一直贴着近端 → 无反转');
-  ok(atEdge.valid, '一直贴着但没来回 → 有效');
-}
+// [15] 触及口径 / 标准2b 已随标准2 一并删除（2026-10-22 用户要求），不再测试。
 
 console.log('\n[14] 批量汇总计数');
 {
@@ -308,12 +256,36 @@ console.log('\n[17] 接线守卫：priceAction 必须先检验后侵蚀，且顺
   const fs = require('fs');
   const path = require('path');
   const src = fs.readFileSync(path.join(__dirname, '..', 'lib', 'priceAction.js'), 'utf8');
-  const iAssess = src.indexOf('assessZones(daily');
-  const iErode = src.indexOf('erodeZones(daily');
-  ok(iAssess >= 0, 'priceAction 调用了 assessZones');
-  ok(iErode >= 0, 'priceAction 调用了 erodeZones（20261020m 接线）');
+  const iAssess = src.indexOf('assessZones(zoneBars');
+  const iErode = src.indexOf('erodeZones(zoneBars');
+  ok(iAssess >= 0, 'priceAction 用已收盘日K（zoneBars）调 assessZones');
+  ok(iErode >= 0, 'priceAction 用已收盘日K（zoneBars）调 erodeZones');
   ok(iErode > iAssess, '侵蚀在有效性检验之后（顺序铁律）');
   ok(/zoneErosion:\s*zoneErosionSummary/.test(src), '侵蚀汇总随短期判断一起返回');
+  ok(/finalizedBars\(daily\)/.test(src), '突破判定只用已收盘日K（20261022c 收盘价口径）');
+}
+
+console.log('\n[18] 收盘价口径（20261022c）：未收盘的当日K线不参与判定');
+{
+  const past = mkBars([7, 7.1, 7.2]);   // 2026-01-01 ~ 01-03
+  eq(zv.finalizedBars(past, new Date(2026, 9, 22, 10, 0)).length, 3, '末根为过去日期 → 全部保留');
+
+  const withToday = past.concat([{ date: '2026-10-22', open: 9, high: 9.3, low: 8.8, close: 9.1, volume: 10000 }]);
+  eq(zv.finalizedBars(withToday, new Date(2026, 9, 22, 10, 0)).length, 3, '盘中 10:00 → 丢弃当日未收盘K线');
+  eq(zv.finalizedBars(withToday, new Date(2026, 9, 22, 14, 59)).length, 3, '14:59 仍未收盘 → 丢弃');
+  eq(zv.finalizedBars(withToday, new Date(2026, 9, 22, 15, 30)).length, 4, '收盘后 15:30 → 当日收盘价可用');
+  eq(zv.finalizedBars([], new Date(2026, 9, 22, 10, 0)).length, 0, '空数组 → 空');
+
+  // 盘中价格冲破阻力（8.55）但未收盘 → 不按分时价判突破
+  const intradayBreak = mkBars(closesWith([])).concat([{ date: '2026-10-22', open: 8.4, high: 8.8, low: 8.4, close: 8.7, volume: 30000 }]);
+  const r = zv.assessZone(zv.finalizedBars(intradayBreak, new Date(2026, 9, 22, 10, 0)), RES, 'resistance');
+  ok(r.valid, '盘中冲破阻力但未收盘 → 不计入突破 → 仍有效');
+  eq(r.zoneCheck.breakCount, 0, '已收盘K线中无突破事件');
+
+  // 同一根K线在收盘后计入 → 收盘 8.7 越过阻力 high 8.55，量比 3.0 为放量 → 标准1 不命中 → 有效
+  const afterClose = zv.assessZone(zv.finalizedBars(intradayBreak, new Date(2026, 9, 22, 15, 30)), RES, 'resistance');
+  eq(afterClose.zoneCheck.breakCount, 1, '收盘后该根计入 → 突破 1 次');
+  ok(afterClose.valid, '量比 3.0 为放量 → 标准1 不命中 → 有效（放量突破交反转模块）');
 }
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`);

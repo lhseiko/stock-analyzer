@@ -214,7 +214,8 @@ const App = {
         document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         this.currentRange = btn.dataset.range;
-        if (this.currentSymbol) this.analyze(this.currentSymbol, this.currentData?.name);
+        // 换时间范围语义是"必须重取历史"，绕开同股在飞去重（20261022i）
+        if (this.currentSymbol) this.analyze(this.currentSymbol, this.currentData?.name, 0, { force: true });
       });
     });
 
@@ -229,7 +230,8 @@ const App = {
     document.getElementById('exportHTML').addEventListener('click', () => this.exportHTML());
     document.getElementById('exportJSON').addEventListener('click', () => this.exportJSON());
     document.getElementById('refreshBtn').addEventListener('click', () => {
-      if (this.currentSymbol) this.analyze(this.currentSymbol, this.currentData?.name);
+      // 手动刷新语义是"强制重取"，必须绕开同股在飞去重（20261022i）
+      if (this.currentSymbol) this.analyze(this.currentSymbol, this.currentData?.name, 0, { force: true });
     });
     const companyDeepAiBtn = document.getElementById('companyDeepAiBtn');
     if (companyDeepAiBtn) companyDeepAiBtn.addEventListener('click', () => this.loadCompanyDeep(true));
@@ -519,11 +521,22 @@ const App = {
     } catch (e) {}
   },
 
-  async analyze(symbol, name = '', _retry = 0) {
+  async analyze(symbol, name = '', _retry = 0, opts = null) {
+    // 20261022i：同一只股票的请求"在飞去重"。
+    // 症状：切股时（冷缓存 2~4 秒）用户以为没点上而连点多次，旧逻辑每次点击都 _reqToken++
+    // 并重新 fetch，前一次结果被 token 校验丢弃 → 连点等于不断重置读条，越点越切不过去。
+    // 规则：若该股票已有仍在飞的请求、且它就是当前最新请求（token === _reqToken），直接忽略本次点击。
+    // force=true（刷新按钮 / 快捷键强刷）时跳过去重，语义不变。
+    const force = !!(opts && opts.force);
+    this._inflightTokens = this._inflightTokens || {};
+    if (!force && this._inflightTokens[symbol] && this._inflightTokens[symbol] === this._reqToken) return;
     // 请求令牌：每次调用自增；后续若用户切换到别的股票/再触发分析，
     // 旧请求的返回值会被丢弃，避免"慢的旧请求覆盖快的新请求"或闪烁。
     const token = (this._reqToken = (this._reqToken || 0) + 1);
+    this._inflightTokens[symbol] = token;
     this.currentSymbol = symbol;
+    // 立刻高亮目标行：给"点击已生效"的第一时间反馈（此前要等 fetch 回来才在 renderDashboard 里高亮）
+    this.updateWatchlistSelection();
     this.updateUrlSymbol(symbol);
     this.deepDataLoaded = false;
     this.deepData = null;
@@ -549,7 +562,7 @@ const App = {
     // Update DocStore stock info
     DocStore.setStock(symbol, name);
     DeepCharts.disposeAll();
-    this.showLoading('正在获取股票数据...');
+    this.showLoading(`正在加载 ${name || symbol}…`);
 
     try {
       const range = this.currentRange;
@@ -601,11 +614,16 @@ const App = {
         this.showLoading(`连接中断，正在自动重连（${_retry + 1}/2）…`);
         await new Promise(r => setTimeout(r, 2500));
         if (token !== this._reqToken) return; // 重连期间用户已切换其他股票
+        // 递归重试前必须清掉在飞标记，否则重试自己会被"在飞去重"拦下（20261022i）
+        delete this._inflightTokens[symbol];
         return this.analyze(symbol, name, _retry + 1);
       }
       this.hideLoading();
-      this.showErrorBanner('获取数据失败: ' + e.message, () => this.analyze(symbol, name));
+      this.showErrorBanner('获取数据失败: ' + e.message, () => this.analyze(symbol, name, 0, { force: true }));
       console.error(e);
+    } finally {
+      // 无论成功/失败/被 token 丢弃，都要清掉本股的在飞标记（只清自己那一笔，避免误删后来的请求）
+      if (this._inflightTokens && this._inflightTokens[symbol] === token) delete this._inflightTokens[symbol];
     }
   },
 
@@ -1038,6 +1056,201 @@ const App = {
   },
 
   // ============ 首页·大盘量能情绪分析模型（20260917d，20261015k 起 9 因子确定性计算）============
+
+  // —— 宽基 ETF 申赎（20261022h）：页签 + 明细表 ——
+  // 数值格式化：份额按「份→万份/亿份」、金额按「元→万/亿」，只在展示层换算，不改动后端数值。
+  _fmtShares(v) {
+    if (v == null || !isFinite(v)) return '—';
+    const a = Math.abs(v);
+    if (a >= 1e8) return (v / 1e8).toFixed(2) + ' 亿份';
+    if (a >= 1e4) return (v / 1e4).toFixed(2) + ' 万份';
+    return Math.round(v) + ' 份';
+  },
+  _fmtMoney(v, sign) {
+    if (v == null || !isFinite(v)) return '—';
+    const a = Math.abs(v);
+    let s;
+    if (a >= 1e8) s = (a / 1e8).toFixed(2) + ' 亿';
+    else if (a >= 1e4) s = (a / 1e4).toFixed(1) + ' 万';
+    else s = Math.round(a) + ' 元';
+    if (sign) return (v > 0 ? '+' : v < 0 ? '−' : '') + s;
+    return s;
+  },
+  _fmtQty(v) {
+    if (v == null || !isFinite(v)) return '—';
+    const a = Math.abs(v);
+    if (a >= 1e8) return (a / 1e8).toFixed(2) + ' 亿股';
+    if (a >= 1e4) return (a / 1e4).toFixed(2) + ' 万股';
+    return Math.round(a) + ' 股';
+  },
+  _fmtBaskets(v) {
+    if (v == null || !isFinite(v)) return '—';
+    return Math.abs(v - Math.round(v)) < 0.05 ? String(Math.round(v)) : v.toFixed(2);
+  },
+  _netCls(v) { return v == null ? '' : v > 0 ? 'etf-pos' : v < 0 ? 'etf-neg' : ''; },
+
+  _renderEmoTabs(tab, data) {
+    const fs = Array.isArray(data && data.factors) ? data.factors : [];
+    const ef = fs.find(f => f.key === 'etfFlow') || null;
+    const sig = ef && typeof ef.score === 'number' ? ef.score : 0;
+    const cls = ef && !ef.degraded ? (sig > 0.05 ? 'bull' : sig < -0.05 ? 'bear' : 'flat') : 'none';
+    const tag = !ef ? '未接入' : ef.degraded ? '数据缺失' : `${sig >= 0 ? '+' : ''}${sig.toFixed(2)}`;
+    return `<div class="tp-tabs">`
+      + `<button class="tp-tab ${tab === 'etf' ? '' : 'active'}" data-action="tp-tab" data-tab="factors">情绪因子明细</button>`
+      + `<button class="tp-tab ${tab === 'etf' ? 'active' : ''}" data-action="tp-tab" data-tab="etf">宽基ETF申赎<span class="tp-tab-tag ${cls}">${tag}</span></button>`
+      + `</div>`;
+  },
+
+  /** 宽基 ETF 申赎明细页（数据源 /api/etf-flow，与情绪模型因子同源） */
+  _renderEtfFlowPane() {
+    const esc = (s) => this.escapeHtml(s == null ? '' : String(s));
+    const d = this._etfFlowData;
+    if (!d) {
+      return `<div class="etf-empty">📡 正在读取宽基 ETF 申赎数据…<div class="etf-empty-sub">首次读取需向上交所取当日申赎清单（约 2~6 秒），之后 3 分钟内走缓存。</div></div>`;
+    }
+    if (d.error || d.ok === false) {
+      return `<div class="etf-empty etf-warn">⚠ 宽基 ETF 申赎数据不可用：${esc(d.error || (d.gaps || []).join('；') || '未知原因')}`
+        + `<div class="etf-empty-sub">该因子在情绪模型里已按规则降级（权重归零并分摊），不影响其余因子。</div></div>`;
+    }
+
+    const sum = d.summary || {};
+    const etfs = Array.isArray(d.etfs) ? d.etfs : [];
+    const stocks = Array.isArray(d.stocks) ? d.stocks : [];
+    const groups = Array.isArray(sum.groups) ? sum.groups : [];
+    const settled = d.settled === true;
+    const effCount = etfs.filter(e => e.netAmount != null).length;
+    const nBuy = etfs.filter(e => e.netAmount != null && e.netAmount > 0).length;
+    const nSell = etfs.filter(e => e.netAmount != null && e.netAmount < 0).length;
+    const totalNet = sum.totalNet;
+
+    let html = '';
+
+    // ① 概览
+    html += `<div class="etf-head">`;
+    html += `<div class="etf-head-row">`;
+    html += `<span class="etf-k">数据日</span><span class="etf-v">${esc(d.date || '—')}</span>`;
+    html += `<span class="etf-k">对比基期</span><span class="etf-v">${esc(d.baseDate || '—')}</span>`;
+    html += `<span class="etf-k">口径</span><span class="etf-v">${settled ? '收盘定稿' : '盘中读数（收盘后定稿）'}</span>`;
+    html += `<span class="etf-k">有效 ETF</span><span class="etf-v">${effCount} / ${etfs.length} 只</span>`;
+    html += `</div>`;
+    if (totalNet != null) {
+      html += `<div class="etf-total ${this._netCls(totalNet)}">`
+        + `合计 ${totalNet >= 0 ? '净申购' : '净赎回'} <b>${this._fmtMoney(Math.abs(totalNet))}</b>`
+        + `<span class="etf-total-sub">${nBuy} 只净申购 / ${nSell} 只净赎回 · 累计台账 ${sum.ledgerDays || 0} 个交易日（至 ${esc(sum.ledgerDate || '—')}）</span>`
+        + `</div>`;
+    } else {
+      html += `<div class="etf-total flat">${esc(d.reason || '尚无基期快照，无法计算净申赎')}`
+        + `<span class="etf-total-sub">本模块每个交易日收盘后自动留存一份快照（份额 + 全篮成分），下一交易日即可算出净申赎。</span></div>`;
+    }
+    html += `</div>`;
+
+    // ② 家族汇总
+    if (groups.length) {
+      html += `<div class="etf-groups">`;
+      groups.forEach(g => {
+        html += `<div class="etf-group ${this._netCls(g.netAmount)}">`
+          + `<span class="etf-group-name">${esc(g.label)}</span>`
+          + `<span class="etf-group-net">${g.netAmount >= 0 ? '净申购' : '净赎回'} ${this._fmtMoney(Math.abs(g.netAmount))}</span>`
+          + `<span class="etf-group-sub">${g.etfCount} 只有效</span>`
+          + `</div>`;
+      });
+      html += `</div>`;
+    }
+
+    // ③ ETF 明细
+    if (etfs.length) {
+      html += `<div class="etf-block-title">各宽基 ETF 申赎（${etfs.length} 只）</div>`;
+      html += `<div class="etf-scroll"><table class="etf-table"><thead><tr>`
+        + `<th>代码</th><th>名称</th><th>家族</th><th class="num">最小申赎单位</th><th class="num">基金份额</th>`
+        + `<th class="num">份额变动</th><th class="num">篮数</th><th class="num">净申赎额</th><th>备注</th>`
+        + `</tr></thead><tbody>`;
+      etfs.slice().sort((a, b) => (b.netAmount == null ? -1e18 : b.netAmount) - (a.netAmount == null ? -1e18 : a.netAmount))
+        .forEach(e => {
+          html += `<tr class="${e.netAmount == null ? 'row-dim' : ''}">`
+            + `<td class="mono">${esc(e.code)}</td>`
+            + `<td class="name">${esc((e.name || '').replace(/交易型开放式指数证券投资基金|交易型开放式指数基金|ETF|交易型开放式/g, '').slice(0, 14) || e.name || '')}</td>`
+            + `<td>${esc(e.groupLabel || '')}</td>`
+            + `<td class="num">${e.unit != null ? (e.unit / 1e4).toFixed(0) + ' 万份' : '—'}</td>`
+            + `<td class="num">${this._fmtShares(e.shares)}</td>`
+            + `<td class="num ${this._netCls(e.dShares)}">${e.dShares == null ? '—' : this._fmtShares(e.dShares).replace(/^/, e.dShares > 0 ? '+' : '')}</td>`
+            + `<td class="num ${this._netCls(e.baskets)}">${this._fmtBaskets(e.baskets)}</td>`
+            + `<td class="num ${this._netCls(e.netAmount)}">${e.netAmount == null ? '—' : this._fmtMoney(e.netAmount, true)}</td>`
+            + `<td class="note">${esc(e.note || '')}</td>`
+            + `</tr>`;
+        });
+      html += `</tbody></table></div>`;
+    }
+
+    // ④ 逐股明细
+    if (stocks.length) {
+      const topBuy = stocks.slice().sort((a, b) => (b.dayBuy || 0) - (a.dayBuy || 0)).slice(0, 10);
+      const topSell = stocks.slice().sort((a, b) => (a.daySell || 0) - (b.daySell || 0)).slice(0, 10);
+      html += `<div class="etf-block-title">被申购 / 被赎回最多的成分股（当日）</div>`;
+      html += `<div class="etf-two-col">`;
+      html += `<div class="etf-col"><div class="etf-col-head etf-pos">▲ 被买入最多（净申购篮子里占比最高）</div>`;
+      topBuy.filter(s => (s.dayBuy || 0) > 0).forEach(s => {
+        html += `<div class="etf-li"><span class="etf-li-name">${esc(s.name || s.code)}<em>${esc(s.code)}</em></span>`
+          + `<span class="etf-li-val etf-pos">+${this._fmtQty(s.dayBuy)}</span></div>`;
+      });
+      html += `</div>`;
+      html += `<div class="etf-col"><div class="etf-col-head etf-neg">▼ 被卖出最多（净赎回篮子里占比最高）</div>`;
+      topSell.filter(s => (s.daySell || 0) < 0).forEach(s => {
+        html += `<div class="etf-li"><span class="etf-li-name">${esc(s.name || s.code)}<em>${esc(s.code)}</em></span>`
+          + `<span class="etf-li-val etf-neg">−${this._fmtQty(s.daySell)}</span></div>`;
+      });
+      html += `</div></div>`;
+
+      // 全量逐股表（默认收起，避免首页过长）
+      html += `<div class="etf-block-title">全部成分股累计（台账 ${sum.ledgerDays || 0} 个交易日）`
+        + `<button class="etf-more" data-action="etf-more">${this._etfShowAll ? '收起' : `展开全部 ${stocks.length} 只`}</button></div>`;
+      if (this._etfShowAll) {
+        html += `<div class="etf-scroll etf-scroll-tall"><table class="etf-table"><thead><tr>`
+          + `<th>代码</th><th>名称</th><th>所属宽基</th><th class="num">当日买</th><th class="num">当日卖</th>`
+          + `<th class="num">累计被申购</th><th class="num">累计被赎回</th><th class="num">买/卖天数</th>`
+          + `</tr></thead><tbody>`;
+        stocks.forEach(s => {
+          html += `<tr>`
+            + `<td class="mono">${esc(s.code)}</td>`
+            + `<td class="name">${esc(s.name || '—')}</td>`
+            + `<td class="dim">${esc(s.groupLabel || '')}</td>`
+            + `<td class="num ${this._netCls(s.dayBuy)}">${s.dayBuy ? '+' + this._fmtQty(s.dayBuy) : '—'}</td>`
+            + `<td class="num ${this._netCls(s.daySell)}">${s.daySell ? '−' + this._fmtQty(s.daySell) : '—'}</td>`
+            + `<td class="num etf-pos">${s.cumBuy ? '+' + this._fmtQty(s.cumBuy) : '—'}</td>`
+            + `<td class="num etf-neg">${s.cumSell ? '−' + this._fmtQty(s.cumSell) : '—'}</td>`
+            + `<td class="num dim">${s.buyDays || 0} / ${s.sellDays || 0}</td>`
+            + `</tr>`;
+        });
+        html += `</tbody></table></div>`;
+      }
+    }
+
+    // ⑤ 口径与缺口（诚实披露，不允许含糊成"申购了多少"）
+    html += `<div class="etf-notes">`;
+    html += `<div class="etf-note-item"><b>怎么算的：</b>交易所申赎清单（PCF）只说明「一篮子要交哪些股票」，不含当日实际申赎量；真实申赎看<b>基金总份额变动</b>：Δ份额 ÷ 最小申赎单位 = 篮数，篮数 × 每篮成分股数 = 该股理论增减股数。</div>`;
+    html += `<div class="etf-note-item etf-warn"><b>必须说清的口径：</b>份额本身是<b>净</b>概念（申购 − 赎回）。本模块只能给出<b>净申赎额</b>与「净申购日 / 净赎回日」的累计，<b>无法拆出申购总量与赎回总量两个绝对数</b>。逐股股数为理论值，实际受现金替代、取整影响会有偏差。</div>`;
+    html += `<div class="etf-note-item"><b>口径边界：</b>只统计宽基（${groups.map(g => esc(g.label)).join('、') || '—'}）的纯指数复制 ETF；行业/主题/红利/增强/策略类 ETF 已排除（它们的资金流不代表大盘增量资金）。</div>`;
+    if (!settled) html += `<div class="etf-note-item etf-warn"><b>盘中提示：</b>当前份额是盘中实时值，此处为预览；15:05 收盘定稿后才计入累计台账，避免把半天进度永久记成全天。</div>`;
+    if (d.baselineOnly) html += `<div class="etf-note-item etf-warn"><b>基线日：</b>本次是模块第一次留存快照，尚无对比基期；下一交易日起可算出净申赎与逐股增减。</div>`;
+    const gaps = Array.isArray(d.gaps) ? d.gaps.filter(Boolean) : [];
+    if (gaps.length) html += `<div class="etf-note-item etf-warn"><b>数据缺口（${gaps.length}）：</b>${gaps.map(esc).join('；')}</div>`;
+    html += `</div>`;
+
+    return html;
+  },
+
+  async _loadEtfFlow(force) {
+    if (this._etfFlowLoading) return;
+    this._etfFlowLoading = true;
+    try {
+      const r = await fetch('/api/etf-flow' + (force ? '?refresh=1' : ''), { cache: 'no-store' });
+      this._etfFlowData = await r.json();
+    } catch (e) {
+      this._etfFlowData = { ok: false, error: e && e.message ? e.message : String(e) };
+    }
+    this._etfFlowLoading = false;
+    if (this._emoData) this._renderEmotionPanel(this._emoData);
+  },
+
   _renderEmotionPanel(data) {
     const panel = document.getElementById('homeSentimentPanel');
     const body = document.getElementById('homeSentimentBody');
@@ -1045,6 +1258,8 @@ const App = {
     if (!body) return;
     if (panel) panel.style.display = '';
     if (updated) updated.textContent = '更新于 ' + new Date().toLocaleTimeString('zh-CN');
+    this._emoData = data;                       // 页签切换后重渲染用
+    const tab = this._emoTab === 'etf' ? 'etf' : 'factors';
 
     const score = (typeof data.totalScore === 'number') ? data.totalScore : null;
     const scoreCls = score == null ? 'flat' : score >= 0.2 ? 'bull' : score <= -0.2 ? 'bear' : 'flat';
@@ -1072,12 +1287,19 @@ const App = {
     html += line('风险提示', esc(data.riskTip || '—'), 'tp-emo-risk');
     html += `</div>`;
 
+    // 页签：情绪因子明细 / 宽基 ETF 申赎（20261022h）
+    html += this._renderEmoTabs(tab, data);
+
     html += `<div class="tp-detail-body ${detailOpen ? '' : 'collapsed'}">`;
+    if (tab === 'etf') {
+      // 宽基 ETF 申赎页签（20261022h）：独立明细视图，不挤占因子网格
+      html += this._renderEtfFlowPane();
+    } else {
 
     // 因子网格（与后端同源，数值一致）
     const fs = Array.isArray(data.factors) ? data.factors : [];
     if (fs.length) {
-      html += `<div class="tp-block-title">因子明细（7 常驻 + 2 非常驻 · 得分 × 权重计入总分）</div>`;
+      html += `<div class="tp-block-title">因子明细（8 常驻 + 2 非常驻 · 得分 × 权重计入总分）</div>`;
       html += '<div class="tp-comp-grid">';
       fs.forEach(f => {
         const sig = (typeof f.score === 'number') ? f.score : 0;
@@ -1126,9 +1348,14 @@ const App = {
     if (data.sampleNote) html += `<div class="tp-sample-note">${esc(data.sampleNote)}</div>`;
     if (Array.isArray(data.issues) && data.issues.length) html += `<div class="tp-sample-note tp-emo-warn">数据自检：${esc(data.issues.map(i => i.msg).join('；'))}</div>`;
     html += `<div class="tp-source-note">数据来源：${esc(data.source || '')}｜基准日 ${esc(data.baselineDate || data.date || '')}｜规则：大盘量能情绪分析模型（完整版）。</div>`;
+    }  // end: tab !== 'etf'
     html += `</div>`;
 
     body.innerHTML = html;
+    // 切到 ETF 页签且尚无数据时才去取（已取过则复用；refresh 由页面刷新按钮触发）
+    if (tab === 'etf' && !this._etfFlowData && !this._etfFlowLoading) {
+      setTimeout(() => App._loadEtfFlow(false), 0);
+    }
   },
 
   _renderTpPanelInto(ids, data, symbol, opts) {
@@ -2701,6 +2928,196 @@ const App = {
     </div>`;
   },
 
+  // ─────────────────────────────────────────────────────────────
+  // 20261022g：②卡「共振带」展示（紧凑清单 + 点开看详情）
+  // 数据全部来自后端 lib/zoneResonance.js，前端不重算强度/失效位，只负责排版。
+  // ─────────────────────────────────────────────────────────────
+  /**
+   * 排序：**上方 / 下方两段统一，都按价格从高到低、自上而下排列**（用户 20261022i 要求）。
+   *   → 上方阻力：最高的一条在最上面，越靠下越接近现价
+   *   → 下方支撑：最高的一条（最接近现价）在最上面，越靠下越远
+   * 整张卡自上而下价格**单调下降**，等价于一根竖直的价格轴：
+   *   6.62 … 5.48（阻力） → 4.99 … 4.59（支撑），读起来与看盘软件的纵轴方向一致。
+   * ⚠ 历史：20261022h 曾写成「阻力 low 升序 / 支撑 low 降序」（两段都是"离现价最近的在最上"），
+   *   结果两段方向相反、整卡不连续，用户指出"做错了"。现改为单一口径，不再区分 side。
+   * ⚠ 只排**副本**：后端数组顺序恒为「阻力 low 升序 / 支撑 low 降序」，
+   *   ④卡反转边界取 [0]、量能规则4 取就近位都依赖该顺序，前端不得改动接口数据。
+   */
+  _sortZones(arr, side) {
+    const list = (Array.isArray(arr) ? arr : []).slice();
+    const lo = (z) => (Number.isFinite(Number(z && z.low)) ? Number(z.low) : 0);
+    // 统一按 low 降序（高价在上、低价在下）；side 参数保留只为兼容既有调用点，不参与排序
+    list.sort((a, b) => lo(b) - lo(a));
+    return list;
+  },
+
+  /** 共振带统计条：ATR / 候选数 / 方法数 / 合并统计 / 算不出的方法
+   *  （20261022h：排序切换已删除，清单固定按价格高低排列） */
+  _renderZoneMetaBar(zm, resAll, supAll) {
+    const parts = [];
+    if (zm && Number.isFinite(zm.atr)) parts.push(`ATR(20) ${Storage.formatNumber(zm.atr)}`);
+    if (zm && zm.candidateCount != null) parts.push(`候选 ${zm.candidateCount} 条`);
+    if (zm && Array.isArray(zm.methods) && zm.methods.length) parts.push(`${zm.methods.length} 种方法命中`);
+    parts.push(`共振带 阻 ${resAll.length} / 撑 ${supAll.length}`);
+    const st = (zm && zm.stats) || {};
+    const stats = [];
+    if (st.merged) stats.push(`合并 ${st.merged} 组`);
+    if (st.overlapCut) stats.push(`切重叠 ${st.overlapCut} 处`);
+    if (st.droppedWeakOnly) stats.push(`弃单点关口 ${st.droppedWeakOnly} 个`);
+    const skipped = (zm && Array.isArray(zm.skipped)) ? zm.skipped : [];
+    return `<div class="pa-zone-bar">
+      <span class="pa-zone-bar-meta">${this.escapeHtml(parts.join(' · '))}${stats.length ? ` ｜ ${this.escapeHtml(stats.join(' / '))}` : ''}</span>
+      ${skipped.length ? `<span class="pa-zone-bar-skip">未算出：${this.escapeHtml(skipped.join('；'))}</span>` : ''}
+    </div>`;
+  },
+
+  /** 单条共振带：紧凑行 + 展开详情（详情默认隐藏，点行展开） */
+  _renderZoneRow(z, cls, zm) {
+    const fmt = (v) => (v == null || v === '' || Number.isNaN(Number(v)) ? '—' : Storage.formatNumber(v));
+    const lo = Number(z && z.low);
+    const hi = Number(z && z.high);
+    // 箱体边界是单点价（low===high）→ 渲染单值，避免「8.54 ~ 8.54」
+    const single = lo === hi;
+    const rangeTxt = single ? fmt(lo) : `${fmt(lo)} ~ ${fmt(hi)}`;
+    const er = z && z.erosion;
+    // 强度徽标：共振带给 强/中/弱；特殊条目给语义标签（避免缺失感，也不冒充强度）
+    const sm = z && z.strength
+      ? { text: z.strength, cls: z.strength === '强' ? 'strong' : z.strength === '中' ? 'mid' : 'weak' }
+      : z.isReversed ? { text: '反转', cls: 'special' }
+        : z.isManual ? { text: '自定', cls: 'special' }
+          : z.isBox ? { text: '结构', cls: 'special' }
+            : null;
+    const tags = [
+      z.isReversed ? `<span class="pz-rev">反转×${z.flipCount || 1}</span>` : '',
+      z.isManual ? '<span class="pz-manual">手动</span>' : '',
+      z.isBox ? '<span class="pz-box">箱体</span>' : '',
+      er ? '<span class="pz-erode">已收紧</span>' : '',
+    ].join('');
+    if (!(this._paZoneOpen instanceof Set)) this._paZoneOpen = new Set();
+    // 稳定 key：同一只股票重渲染/切排序后，已展开的行不会莫名收起或错位
+    const key = `${cls === 'resistance' ? 'R' : 'S'}|${lo}|${hi}|${String(z.source || '').slice(0, 40)}`;
+    const open = this._paZoneOpen.has(key);
+    const rowCls = `pa-zone-row ${cls}${z.isBox ? ' box-edge' : ''}${z.isManual ? ' manual' : ''}${z.isReversed ? ' reversed' : ''}${open ? ' open' : ''}`;
+    return `<div class="${rowCls}" data-zone-key="${this.escapeHtml(key)}" role="button" tabindex="0" aria-expanded="${open ? 'true' : 'false'}">
+        <span class="pz-badge ${sm ? sm.cls : 'none'}">${sm ? sm.text : '—'}</span>
+        <span class="pz-range">${rangeTxt}</span>
+        <span class="pz-src">${this.escapeHtml(z.source || '')}${tags}</span>
+        <span class="pz-caret">▾</span>
+      </div>
+      <div class="pa-zone-detail ${cls}${open ? '' : ' hidden'}">${this._renderZoneDetail(z, cls, zm, { single })}</div>`;
+  },
+
+  /** 展开详情：几何 / 来源明细 / 确认信号 / 失效位 / 侵蚀 / 数据说明 */
+  _renderZoneDetail(z, cls, zm, ctx) {
+    const fmt = (v) => (v == null || v === '' || Number.isNaN(Number(v)) ? '—' : Storage.formatNumber(v));
+    const atr = zm && Number.isFinite(zm.atr) ? zm.atr : null;
+    const price = zm && Number.isFinite(zm.price) ? zm.price : null;
+    const out = [];
+
+    // ── 几何
+    const geo = [];
+    if (Number.isFinite(Number(z.center))) geo.push(`中心价 <b>${fmt(z.center)}</b>`);
+    const lo = Number(z.low);
+    const hi = Number(z.high);
+    const width = (Number.isFinite(lo) && Number.isFinite(hi)) ? hi - lo : null;
+    if (width != null && width > 0) geo.push(`带宽 <b>${fmt(width)}</b>${atr ? `（ATR×${(width / atr).toFixed(2)}）` : ''}`);
+    if (width === 0) geo.push('带宽 <b>单点</b>');
+    if (z.methodCount != null) geo.push(`方法 <b>${z.methodCount}</b> / 大周期 <b>${z.majorCount || 0}</b>`);
+    if (z.touches != null) geo.push(`近60日触碰 <b>${z.touches}</b> 次${z.lastTouchDate ? `（最近 ${this.escapeHtml(z.lastTouchDate)}）` : ''}`);
+    if (price && Number.isFinite(Number(z.center))) {
+      const pct = ((Number(z.center) - price) / price) * 100;
+      geo.push(`距现价 <b>${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%</b>`);
+    }
+    if (geo.length) out.push(`<div class="pzd-grid">${geo.map(g => `<span>${g}</span>`).join('')}</div>`);
+
+    // ── 来源明细（用户规范第三部分：每个区域要知道「凭什么这么画」）
+    const srcs = Array.isArray(z.sources) ? z.sources : [];
+    if (srcs.length) {
+      const li = srcs.map(s => {
+        const slo = Number(s.low);
+        const shi = Number(s.high);
+        const rng = (Number.isFinite(slo) && Number.isFinite(shi) && slo !== shi) ? `${fmt(slo)} ~ ${fmt(shi)}` : fmt(slo);
+        return `<li>${this.escapeHtml(s.source || s.method || '')}
+          <span class="pzd-tier ${s.tier === 'major' ? 'major' : ''}">${s.tier === 'major' ? '大周期' : '日内'}</span>
+          <span class="pzd-num">${rng}</span>
+          ${s.weakOnly ? '<span class="pzd-weak">仅与其他方法重合时采用</span>' : ''}
+          ${s.note ? `<span class="pzd-note">${this.escapeHtml(s.note)}</span>` : ''}</li>`;
+      }).join('');
+      out.push(`<div class="pzd-sec"><span class="pzd-label">来源明细</span><ul class="pzd-list">${li}</ul></div>`);
+    }
+
+    // ── 确认信号
+    const sigs = Array.isArray(z.confirmSignals) ? z.confirmSignals : [];
+    if (sigs.length) {
+      out.push(`<div class="pzd-sec"><span class="pzd-label">确认信号</span><ul class="pzd-list">${sigs.map(s => `<li>${this.escapeHtml(s)}</li>`).join('')}</ul></div>`);
+    }
+
+    // ── 失效位 / 失效条件
+    if (z.invalidationText) {
+      out.push(`<div class="pzd-sec"><span class="pzd-label">失效位</span><b class="pzd-inv">${fmt(z.invalidationLevel)}</b>
+        <p class="pzd-text">${this.escapeHtml(z.invalidationText)}</p>
+        <p class="pzd-text pzd-dim">判定口径：一律以<b>当日收盘价</b>为准，不认分时价；含 ATR×0.3 缓冲，盘中短暂刺穿不算失效。</p></div>`);
+    }
+
+    // ── 特殊条目（反转 / 手动 / 箱体 / 仅过标准1的模型区间）的说明
+    const notes = [];
+    if (z.isReversed) {
+      notes.push(`由${z.reversedFrom === 'support' ? '下方支撑' : '上方阻力'}经「放量有效突破」反转而来（累计反转 ${z.flipCount || 1} 次）`);
+      notes.push('放量突破后角色互换：支撑被放量下破 → 变阻力；阻力被放量上破 → 变支撑；允许多次反转');
+      notes.push('突破/破位/打穿一律以当日收盘价为准，不认分时价');
+      const hist = Array.isArray(z.reversalHistory) ? z.reversalHistory : [];
+      hist.slice(-3).forEach(h => notes.push(`${h.date || ''} 收盘 ${fmt(h.close)}（量比 ${h.vr}）${h.from === 'support' ? '支撑→阻力' : '阻力→支撑'}`));
+      notes.push('待有效性检验（标准1：无放量轻松突破）判无效时自动从记录移除');
+    } else if (z.isManual) {
+      notes.push('你手动添加的区间（保存在服务端，换设备也在）');
+      notes.push('与模型区间走同一条有效性检验（无放量轻松突破 → 无效则不在本清单显示）');
+      notes.push('但不参与侵蚀收缩，也不影响方向判断与准确率统计');
+    } else if (z.isBox) {
+      if (z.note) notes.push(z.note);
+      notes.push('该条目为箱体边界（本模块判定），与其余区间的有效性检验是两套独立口径，不参与其过滤');
+    } else if (z.zoneCheck) {
+      const ck = z.zoneCheck;
+      notes.push(ck.lastBreakDate
+        ? `最近一次${ck.side === 'resistance' ? '向上突破' : '向下跌破'} ${ck.lastBreakDate}（按当日收盘价判定），量比 ${ck.lastBreakVr == null ? '数据不足' : ck.lastBreakVr}（需 >${ck.breakVolMin} 才算放量；无放量轻松穿越 → 判无效）`
+        : `近${ck.lookbackDays}日未发生收盘穿越（该位置尚未被测试，保留）`);
+      notes.push('区间有效性已通过检验才展示（仅标准1：无放量轻松突破 → 本次不展示；一律以当日收盘价为准）');
+    }
+    if (notes.length) {
+      out.push(`<div class="pzd-sec"><span class="pzd-label">口径说明</span><ul class="pzd-list">${notes.map(n => `<li>${this.escapeHtml(n)}</li>`).join('')}</ul></div>`);
+    }
+
+    // ── 侵蚀
+    const er = z.erosion;
+    if (er) {
+      out.push(`<div class="pzd-sec"><span class="pzd-label">侵蚀</span>
+        <p class="pzd-text">${this.escapeHtml(`${er.date || '近'} 收盘 ${er.close} 侵入区间内部（量比 ${er.vr} ≤ ${er.volRatioMax}，未放量且未打穿）→ 区间由 ${er.rangeFrom} 收紧为 ${er.rangeTo}，远端不变`)}</p>
+        ${er.guardNote ? `<p class="pzd-text pzd-warn">${this.escapeHtml(er.guardNote)}</p>` : ''}</div>`);
+    }
+
+    // ── 备注（来源方法自带的短说明）
+    if (z.note && !z.isBox) out.push(`<p class="pzd-text pzd-dim pzd-note-line">${this.escapeHtml(z.note)}</p>`);
+    return out.join('');
+  },
+
+  /** 展开/收起 + 排序切换（每次重渲染后重新绑定，DOM 是新的） */
+  _wireZoneToggle(stEl) {
+    if (!(this._paZoneOpen instanceof Set)) this._paZoneOpen = new Set();
+    stEl.querySelectorAll('.pa-zone-row[data-zone-key]').forEach(row => {
+      const toggle = () => {
+        const key = row.getAttribute('data-zone-key');
+        const panel = row.nextElementSibling;
+        const isOpen = row.classList.toggle('open');
+        if (panel && panel.classList.contains('pa-zone-detail')) panel.classList.toggle('hidden', !isOpen);
+        row.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        if (isOpen) this._paZoneOpen.add(key); else this._paZoneOpen.delete(key);
+      };
+      row.addEventListener('click', toggle);
+      row.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+      });
+    });
+  },
+
   renderPriceAction(data) {
     const { longTerm, shortTerm, coordination, falsification, meta } = data;
     const metaEl = document.getElementById('paMeta');
@@ -2733,15 +3150,19 @@ const App = {
     const stEl = document.getElementById('paShortTerm');
     if (stEl) {
       // 20261020j：②卡恢复箱体，但改为「单箱体精简一行」；20261020i 删掉的是旧「固定多窗口」表格版。
-      // 阻力/支撑仍为「先过有效性检验再展示」——无效区间不展示（规则见 lib/zoneValidity.js）：
-      //   标准1 最近一次方向性穿越日量比 ≤1.2（不需要放量就突破/跌破）→ 无效
-      //   标准2 当前连续站外 >3 天，或窗内内外反转 >3 次（在区间处来回穿越）→ 无效
+      // 20261022g：区间清单改为「共振带」——后端（zoneMethods + zoneResonance）已按 10 种方法
+      //   （筹码/枢轴/均线/斐波那契/VWAP/整数关口/缺口/趋势线/摆动点 + 周线层）聚类合并，
+      //   并为每条带给出强度、确认信号、失效位。前端只做展示，不重算任何数。
+      //
+      // 展示仍先过有效性检验（lib/zoneValidity.js，仅剩标准1）：
+      //   标准1 最近一次方向性穿越日量比 ≤1.2（不需要放量就突破/跌破）→ 本次不展示、不落永久黑名单
+      // 用户决策（20261022g）：「紧凑清单 + 点开看详情」——默认只显示强度徽标 + 区间 + 来源摘要，
+      //   点开才展开来源明细 / 确认信号 / 失效位 / 侵蚀与数据说明，保证一屏可读且信息不丢。
       const boxRow = this._renderSingleBoxRow(data.singleRange);
       const validOnly = (arr) => (arr || []).filter(z => z && z.valid !== false);
-      const sortDesc = (arr) => arr.slice().sort((a, b) => (Number(b.high) || 0) - (Number(a.high) || 0));
       // 20261020k：箱体上下限并入「上方关键阻力区间 / 下方关键支撑区间」（用户要求合并展示）。
-      // 铁律：箱体条目 isBox=true，**不得**交给 zoneValidity 过滤（用户第六条：两套检验必须独立），
-      // 箱体是否失效只由 rangeDetector「连续 3 日突破」判定；无效区间过滤只作用于摆动点/MA 区间。
+      // 铁律：箱体条目 isBox=true，**不得**交给 zoneValidity 过滤（两套检验必须独立），
+      // 箱体是否失效只由 rangeDetector「连续 3 日突破」判定；有效性过滤只作用于模型/手动区间。
       const edges = (data.singleRange && data.singleRange.edges) || null;
       const asZone = (e) => (e ? { low: e.price, high: e.price, source: e.source, isBox: true, note: e.note } : null);
       const boxRes = asZone(edges && edges.upper);
@@ -2749,38 +3170,8 @@ const App = {
       // 20261021e：手动区间**由后端并入** shortTerm.resistances/supports（同一条有效性检验），
       // 前端不再自己 concat，否则会重复渲染两条；是否展示统一按 valid !== false 过滤。
       const mz = this.manualZones || this._emptyManualZones();
-      const resAll = sortDesc(validOnly(shortTerm.resistances).concat(boxRes ? [boxRes] : []));
-      const supAll = sortDesc(validOnly(shortTerm.supports).concat(boxSup ? [boxSup] : []));
-      const zoneRow = (z, cls) => {
-        const ck = z.zoneCheck;
-        const er = z.erosion;
-        // 20261020m：侵蚀说明（无放量侵入但没打穿 → 近端收紧、远端不变）
-        const eroTip = er
-          ? `侵蚀：${er.date || '近'}收盘 ${er.close} 侵入区间内部（量比 ${er.vr} ≤ ${er.volRatioMax}，未放量且未打穿）→ 区间由 ${er.rangeFrom} 收紧为 ${er.rangeTo}，远端不变`
-          : '';
-        const tip = z.isManual
-          ? ['你手动添加的区间（保存在服务端，换设备也在）', '与模型区间**走同一条有效性检验**（无放量轻松突破 / 三天来回穿越 → 无效则不在本清单显示）', '但不参与侵蚀收缩，也不影响方向判断与准确率统计']
-          : z.isBox
-            ? [z.note, '该条目为箱体边界（本模块判定），与上方/下方其余区间的有效性检验是两套独立口径，不参与其过滤'].filter(Boolean).join('\n')
-            : (ck ? [
-              `近${ck.lookbackDays}日价格在本位置反复往返 ${ck.touchTransitions} 次（上限 ${ck.crossMax} 次，超过即无效；触及区间即计一次）`,
-              ck.streakNow > 0
-                ? `当前已连续 ${ck.streakNow} 天在区间外（上限 ${ck.outStreakMax} 天，超过即无效）`
-                : '当前收盘在区间内',
-              ck.lastBreakDate
-                ? `最近一次${ck.side === 'resistance' ? '向上突破' : '向下跌破'} ${ck.lastBreakDate}，量比 ${ck.lastBreakVr == null ? '数据不足' : ck.lastBreakVr}（需 >${ck.breakVolMin} 才算放量；未放量即穿越则无效）`
-                : `近${ck.lookbackDays}日未发生收盘穿越（该位置尚未被测试，保留）`,
-              eroTip,
-              '区间有效性已通过检验才展示',
-            ].filter(Boolean).join('\n') : eroTip);
-        // 箱体边界是单点价（low===high）→ 渲染单值，避免「8.54 ~ 8.54」
-        const single = Number(z.low) === Number(z.high);
-        const txt = single ? Storage.formatNumber(z.low) : `${Storage.formatNumber(z.low)} ~ ${Storage.formatNumber(z.high)}`;
-        const eroTag = er ? '<span class="pz-erode">已收紧</span>' : '';
-        const manTag = z.isManual ? '<span class="pz-manual">手动</span>' : '';
-        const rowCls = `pa-zone-row ${cls}${z.isBox ? ' box-edge' : ''}${z.isManual ? ' manual' : ''}`;
-        return `<div class="${rowCls}"${tip ? ` title="${this.escapeHtml(tip)}"` : ''}><span class="pz-range">${txt}</span><span class="pz-src">${this.escapeHtml(z.source)}${manTag}${eroTag}</span></div>`;
-      };
+      const resAll = this._sortZones(validOnly(shortTerm.resistances).concat(boxRes ? [boxRes] : []), 'resistance');
+      const supAll = this._sortZones(validOnly(shortTerm.supports).concat(boxSup ? [boxSup] : []), 'support');
       const mzCount = (mz.resistances || []).length + (mz.supports || []).length;
       stEl.innerHTML = `
         <h4>② 短期动向预判（1-5个交易日） <span class="pa-verdict ${this._paVerdictClass(shortTerm.direction)}">${shortTerm.direction} · 概率${shortTerm.probability}</span></h4>
@@ -2791,11 +3182,13 @@ const App = {
         <div class="pa-tab-body" data-pa-body="model">
           <ul class="pa-evidence">${shortTerm.evidence.map(e => `<li>${this.escapeHtml(e)}</li>`).join('')}</ul>
           ${boxRow}
-          ${resAll.length ? `<div class="pa-zone-title resistance">上方关键阻力区间</div>${resAll.map(z => zoneRow(z, 'resistance')).join('')}` : ''}
-          ${supAll.length ? `<div class="pa-zone-title support">下方关键支撑区间</div>${supAll.map(z => zoneRow(z, 'support')).join('')}` : ''}
+          ${this._renderZoneMetaBar(shortTerm.zoneMethods, resAll, supAll)}
+          ${resAll.length ? `<div class="pa-zone-title resistance">上方关键阻力区间<span class="pa-zone-count">${resAll.length}</span></div>${resAll.map(z => this._renderZoneRow(z, 'resistance', shortTerm.zoneMethods)).join('')}` : ''}
+          ${supAll.length ? `<div class="pa-zone-title support">下方关键支撑区间<span class="pa-zone-count">${supAll.length}</span></div>${supAll.map(z => this._renderZoneRow(z, 'support', shortTerm.zoneMethods)).join('')}` : ''}
         </div>
         <div class="pa-tab-body hidden" data-pa-body="manual">${this._renderManualZonesPanel(shortTerm)}</div>
       `;
+      this._wireZoneToggle(stEl);
       this._wirePriceActionTabs(stEl);
     }
 
@@ -3407,6 +3800,8 @@ const App = {
 
   // ---- Deep Analysis ----
   async loadDeepAnalysis(forceRefresh = false) {
+    const symbol = this.currentSymbol;
+    if (!symbol) return;
     const loadingEl = document.getElementById('deepLoading');
     const contentEl = document.getElementById('deepContent');
     const cacheBar = document.getElementById('deepCacheBar');
@@ -3414,77 +3809,94 @@ const App = {
     if (!this._deepSkeletonHTML && contentEl && document.getElementById('deepResearchReports')) {
       this._deepSkeletonHTML = contentEl.innerHTML;
     }
-    loadingEl.classList.remove('hidden');
-    contentEl.style.opacity = '0.3';
+    // 已加载且同股、非强制刷新 → 直接重渲染，不重新拉取（避免切回页面重新转圈）
+    if (!forceRefresh && this.deepLoadedSymbol === symbol && this.deepData && this.deepData.sections) {
+      this.ensureDeepSkeleton();
+      this.updateDeepCacheBar(this.deepData);
+      setTimeout(() => { try { DeepCharts.renderAll(this.deepData.sections, symbol, this.currentData?.name); } catch (e) {} try { this.syncDeepGroupsVisibility(); } catch (e) {} }, 100);
+      if (loadingEl) loadingEl.classList.add('hidden');
+      if (contentEl) contentEl.style.opacity = '1';
+      return;
+    }
+    if (forceRefresh) { this.deepData = null; this.deepLoadedSymbol = null; }
+
+    if (loadingEl) { loadingEl.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-secondary);">⏳ 正在加载深度分析…</div>'; loadingEl.classList.remove('hidden'); }
+    if (contentEl) contentEl.style.opacity = '0.3';
     if (cacheBar) cacheBar.classList.add('hidden');
 
-    try {
-      const name = this.currentData?.name || '';
-      // 前端 65s 超时保护（与后端 55s 总超时兜底配合，避免永久转圈）
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 65000);
-      let resp;
-      try {
-        const params = [];
-        if (forceRefresh) params.push('refresh=1');
-        if (name) params.push('name=' + encodeURIComponent(name));
-        const qs = params.length ? '?' + params.join('&') : '';
-        resp = await fetch(`/api/deep-analysis/${encodeURIComponent(this.currentSymbol)}${qs}`, { signal: controller.signal });
-      } finally {
-        clearTimeout(timer);
-      }
-      const data = await resp.json();
+    // 20261021k：后台任务轮询——服务端任务脱离请求生命周期，切页/断连都不中断；
+    // 本函数只负责「秒回状态 + 轮询 + 完成后渲染」，不阻塞、不 abort。
+    const pollToken = (this._deepPollToken = (this._deepPollToken || 0) + 1);
+    const startTime = Date.now();
+    const self = this;
 
-      if (data.error) {
-        contentEl.innerHTML = `<div style="text-align:center;padding:60px;color:var(--text-secondary);">
-          <h3>⚠️ ${data.error}</h3>
-          <p>深度分析目前仅支持A股市场，且需要该股票有完整的财务报表数据。</p>
-        </div>`;
-        return;
-      }
+    const showRunning = () => {
+      if (!loadingEl) return;
+      const secs = Math.floor((Date.now() - startTime) / 1000);
+      loadingEl.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text-secondary);">
+        <div style="font-size:15px;margin-bottom:8px;">📡 深度分析 / 财报解读正在<b>后台进行中</b>…（已 ${secs}s）</div>
+        <div style="font-size:13px;">可随意切换页面，完成后自动显示，无需等待。</div>
+      </div>`;
+      loadingEl.classList.remove('hidden');
+      if (contentEl) contentEl.style.opacity = '1';
+    };
 
-      this.deepData = data;
-      this.deepDataLoaded = true;
-      this.deepLoadedSymbol = this.currentSymbol; // issue2：标记已为当前股票加载
-
-      // 数据不完整兜底：避免整页空白
+    const renderDone = (data) => {
+      self.deepData = data;
+      self.deepDataLoaded = true;
+      self.deepLoadedSymbol = symbol;
       if (!data.sections) {
-        contentEl.innerHTML = `<div style="text-align:center;padding:60px;color:var(--text-secondary);">
-          <h3>⚠️ 深度分析数据不完整</h3>
-          <p>本次未能获取到完整的分析数据，请点击「刷新」重试。</p>
-        </div>`;
+        if (contentEl) contentEl.innerHTML = `<div style="text-align:center;padding:60px;color:var(--text-secondary);"><h3>⚠️ 深度分析数据不完整</h3><p>本次未能获取到完整的分析数据，请点击「刷新」重试。</p></div>`;
+        if (loadingEl) loadingEl.classList.add('hidden');
+        if (contentEl) contentEl.style.opacity = '1';
         return;
       }
+      if (data.auditWarning) { const w = document.getElementById('auditWarning'); if (w) { w.textContent = data.auditWarning; w.classList.remove('hidden'); } }
+      self.ensureDeepSkeleton();
+      self.updateDeepCacheBar(data);
+      setTimeout(() => { try { DeepCharts.renderAll(data.sections, symbol, self.currentData?.name); } catch (e) { console.error('DeepCharts render error:', e); } try { self.syncDeepGroupsVisibility(); } catch (e) {} }, 100);
+      self.toast(forceRefresh ? '已重新分析完成' : (data.fromCache ? '已加载缓存数据' : '深度分析数据加载完成'));
+      if (loadingEl) loadingEl.classList.add('hidden');
+      if (contentEl) contentEl.style.opacity = '1';
+    };
 
-      // Show audit warning if non-standard
-      if (data.auditWarning) {
-        const warnEl = document.getElementById('auditWarning');
-        warnEl.textContent = data.auditWarning;
-        warnEl.classList.remove('hidden');
+    const tryOnce = async () => {
+      if (self._deepPollToken !== pollToken) return;       // 已切股/重入，放弃本轮
+      if (self.currentSymbol !== symbol) return;
+      const params = [];
+      if (forceRefresh) params.push('refresh=1');
+      const nm = self.currentData?.name || '';
+      if (nm) params.push('name=' + encodeURIComponent(nm));
+      const qs = params.length ? '?' + params.join('&') : '';
+      let data;
+      try {
+        const resp = await fetch(`/api/deep-analysis/${encodeURIComponent(symbol)}${qs}`, { cache: 'no-store' });
+        data = await resp.json();
+      } catch (e) {
+        if (self._deepPollToken !== pollToken || self.currentSymbol !== symbol) return;
+        self.toast('深度分析请求失败: ' + (e && e.message), 'error');
+        if (loadingEl) loadingEl.classList.add('hidden');
+        if (contentEl) contentEl.style.opacity = '1';
+        return;
       }
+      if (self._deepPollToken !== pollToken || self.currentSymbol !== symbol) return;
+      if (data.error) {
+        if (contentEl) contentEl.innerHTML = `<div style="text-align:center;padding:60px;color:var(--text-secondary);"><h3>⚠️ ${data.error}</h3><p>深度分析目前仅支持A股市场，且需要该股票有完整的财务报表数据。</p></div>`;
+        if (loadingEl) loadingEl.classList.add('hidden');
+        if (contentEl) contentEl.style.opacity = '1';
+        return;
+      }
+      if (data.status === 'running') {
+        showRunning();
+        // 仅当停留在深度分析 tab 时继续轮询；切走则停（服务端任务继续跑，回来再查即出结果）
+        const deepActive = document.querySelector('.tab[data-tab="deep"]') && document.querySelector('.tab[data-tab="deep"]').classList.contains('active');
+        if (deepActive) setTimeout(tryOnce, 4000);
+        return;
+      }
+      renderDone(data); // done（含 fromCache / background）
+    };
 
-      // 若章节骨架被意外清空/覆盖，先恢复静态骨架，避免 renderAll 找不到元素而白屏
-      this.ensureDeepSkeleton();
-
-      // 显示缓存状态条（更新时间 + 刷新按钮）
-      this.updateDeepCacheBar(data);
-
-      // Render all charts
-      setTimeout(() => {
-        try { DeepCharts.renderAll(data.sections, this.currentSymbol, this.currentData?.name); } catch (e) { console.error('DeepCharts render error:', e); }
-        try { this.syncDeepGroupsVisibility(); } catch (e) {}
-      }, 100);
-
-      this.toast(forceRefresh ? '已重新分析完成' : (data.fromCache ? '已加载缓存数据' : '深度分析数据加载完成'));
-    } catch (e) {
-      const msg = (e && e.name === 'AbortError') ? '请求超时（>45秒），请检查网络或稍后重试' : (e && e.message);
-      this.toast('深度分析加载失败: ' + msg, 'error');
-      console.error('Deep analysis error:', e);
-    } finally {
-      // 统一收口：成功/失败/数据不完整各路径 loading 必定移除、内容恢复可见（防转圈残留）
-      loadingEl.classList.add('hidden');
-      contentEl.style.opacity = '1';
-    }
+    tryOnce();
   },
 
   // 恢复深度分析静态章节骨架（首屏成功渲染前调用）。
@@ -3561,6 +3973,25 @@ const App = {
     const tpBody = document.getElementById('homeSentimentBody');
     if (tpBody) {
       tpBody.addEventListener('click', (e) => {
+        // 页签切换（情绪因子明细 / 宽基 ETF 申赎，20261022h）
+        const tabBtn = e.target.closest('.tp-tab');
+        if (tabBtn) {
+          const t = tabBtn.dataset.tab === 'etf' ? 'etf' : 'factors';
+          if (App._emoTab !== t) {
+            App._emoTab = t;
+            // 切到 ETF 页签时强制展开详情区，否则用户点完看不到表格
+            if (t === 'etf') { try { localStorage.setItem('sa_tp_detail_open_v1', 'true'); } catch {} }
+            if (App._emoData) App._renderEmotionPanel(App._emoData);
+          }
+          return;
+        }
+        // 逐股全量表展开/收起
+        const more = e.target.closest('.etf-more');
+        if (more) {
+          App._etfShowAll = !App._etfShowAll;
+          if (App._emoData) App._renderEmotionPanel(App._emoData);
+          return;
+        }
         const btn = e.target.closest('.tp-detail-toggle');
         if (!btn) return;
         const detail = tpBody.querySelector('.tp-detail-body');
@@ -6928,17 +7359,46 @@ const App = {
     container.querySelectorAll('.wl-head span[data-key]').forEach(h => {
       h.addEventListener('click', () => this.toggleWatchlistSort(h.dataset.key));
     });
+    // 20261022i：行导航收敛为唯一入口 navigateToRow，由 click 和 pointerup 两条通道共同触发。
+    // 根因：默认顺序下行带 draggable="true"，指针按下时只要有几像素移动，浏览器就判定为
+    // HTML5 拖拽并**不再派发 click** → 用户必须点好几次才切得过去（触控板/手抖鼠标尤甚）。
+    // pointerup 一定会触发，因此用它做兜底：位移 ≤ 6px 且间隔 < 900ms 才认为是一次单击。
+    const navigateToRow = (row, idx) => {
+      this._wlLastNavAt = Date.now();
+      this._wlLastNavSymbol = row.dataset.symbol;
+      this.watchlistNavIndex = idx;
+      this.updateWatchlistNavHighlight();
+      this.analyze(row.dataset.symbol, row.dataset.name);
+    };
+    // pointerup 先于 click 触发；若 pointerup 已为**同一只股票**导航过，紧随其后的 click 直接忽略。
+    // 必须带 symbol 维度：否则"快速点 A 再点 B"会被误判成重复点击（20261022i）
+    const navDeduped = (symbol) => this._wlLastNavSymbol === symbol && this._wlLastNavAt && Date.now() - this._wlLastNavAt < 600;
     container.querySelectorAll('.wl-row').forEach((row, idx) => {
       row.addEventListener('click', e => {
         if (e.target.classList.contains('wl-remove')) {
           e.stopPropagation();
           this.confirmRemoveWatchlist(row.dataset.symbol);
-        } else {
-          this.watchlistNavIndex = idx;
-          this.updateWatchlistNavHighlight();
-          this.analyze(row.dataset.symbol, row.dataset.name);
+        } else if (!navDeduped(row.dataset.symbol)) {
+          navigateToRow(row, idx);
         }
       });
+      row.addEventListener('pointerdown', e => {
+        if (e.target.classList.contains('wl-remove')) return;
+        if (e.pointerType === 'mouse' && e.button !== 0) return;   // 只认左键
+        this._wlPress = { symbol: row.dataset.symbol, x: e.clientX, y: e.clientY, t: Date.now() };
+      });
+      row.addEventListener('pointerup', e => {
+        const p = this._wlPress;
+        this._wlPress = null;
+        if (!p || p.symbol !== row.dataset.symbol) return;
+        if (e.target.classList.contains('wl-remove')) return;       // 停在 × 上不导航
+        if (Date.now() - p.t > 900) return;                         // 长按不算单击
+        // 位移阈值 6px：超过即视为拖拽排序意图，绝不导航
+        if (Math.abs(e.clientX - p.x) > 6 || Math.abs(e.clientY - p.y) > 6) return;
+        if (navDeduped(row.dataset.symbol)) return;
+        navigateToRow(row, idx);
+      });
+      row.addEventListener('pointercancel', () => { this._wlPress = null; });
       row.addEventListener('contextmenu', e => this.openContextMenu(e, row.dataset.symbol, row.dataset.name));
       // 拖拽排序（仅在默认顺序下启用）
       if (row.getAttribute('draggable') === 'true') {
@@ -7154,8 +7614,32 @@ const App = {
           }
         } catch {}
       }));
-      this.renderWatchlist();
+      // 20261022i：这里原来直接调 renderWatchlist() 整体 innerHTML 重建（与上一行注释矛盾）——
+      // 每 60 秒把整个列表 DOM 推倒重来，会重置滚动位置与悬浮态，还可能吃掉"按下时有、抬起时没了"
+      // 的那一次点击。改为只 patch 价格/涨跌幅单元格；只有在按列排序时（价格变化会改变顺序）才整体重排。
+      this.patchWatchlistPrices();
     }, 60000);
+  },
+
+  // 只更新已渲染行的价格/涨跌幅，不动 DOM 结构与顺序（20261022i）
+  patchWatchlistPrices() {
+    if (this.watchlistSortKey) { this.renderWatchlist(); return; }  // 排序态：价格变化会改变行序，必须重排
+    const container = document.getElementById('watchlist');
+    if (!container) return;
+    container.querySelectorAll('.wl-row').forEach(row => {
+      const q = this.watchlistQuotes[row.dataset.symbol];
+      if (!q) return;
+      const priceEl = row.querySelector('.wl-price');
+      if (priceEl && q.price != null) priceEl.textContent = Number(q.price).toFixed(2);
+      const chgEl = row.querySelector('.wl-chg');
+      if (chgEl) {
+        const dir = q.changePct > 0 ? 'up' : (q.changePct < 0 ? 'down' : 'flat');
+        chgEl.className = `wl-chg ${dir}${this.boldClass(q.changePct)}`;
+        chgEl.textContent = q.changePct != null
+          ? (q.changePct >= 0 ? '+' : '') + Number(q.changePct).toFixed(2) + '%'
+          : '--';
+      }
+    });
   },
 
   // ---- 详情页「当前个股」实时刷新（每 60s，与左侧自选股同源 / 同频）----
@@ -7469,19 +7953,37 @@ const App = {
   },
 
   // ---- Loading & Toast ----
-  // 非阻塞加载指示：仅驱动顶部进度条，绝不使用全屏遮罩拦截交互。
+  // 非阻塞加载指示：顶部进度条 + 加载胶囊文字，绝不使用全屏遮罩拦截交互。
   // 这样在切换个股 / 搜索 / 加载分析时，用户仍可点击自选股、切 tab、滚动页面。
+  // 20261022i：此前 text 参数被完全丢弃，只剩一条 3px 进度条；切股冷缓存要 2~4 秒，
+  // 期间屏幕仍是上一只股票的内容，用户以为"没点上"而反复点击 → 每次都重新发起请求，
+  // 反而把等待时间不断重置。现在把 text 显示为胶囊，点击后立刻有可见反馈。
   showLoading(text = '正在获取数据...') {
     const bar = document.getElementById('topProgressBar');
-    if (!bar) return;
-    bar.classList.remove('hidden', 'done');
-    // 强制回流，使 width 过渡从 0 重新触发
-    void bar.offsetWidth;
-    bar.classList.add('active');
+    if (bar) {
+      bar.classList.remove('hidden', 'done');
+      // 强制回流，使 width 过渡从 0 重新触发
+      void bar.offsetWidth;
+      bar.classList.add('active');
+    }
+    const pill = document.getElementById('loadingPill');
+    if (pill) {
+      pill.textContent = text || '正在获取数据...';
+      pill.classList.remove('hidden');
+      // 强制回流，让 .on 的淡入过渡每次都重新播放
+      void pill.offsetWidth;
+      pill.classList.add('on');
+    }
   },
 
   hideLoading() {
     const bar = document.getElementById('topProgressBar');
+    const pill = document.getElementById('loadingPill');
+    if (pill) {
+      pill.classList.remove('on');
+      // 等淡出过渡结束再挂 hidden，避免文字"啪"地消失
+      setTimeout(() => { if (!pill.classList.contains('on')) pill.classList.add('hidden'); }, 200);
+    }
     if (!bar) return;
     bar.classList.add('done');
     setTimeout(() => {

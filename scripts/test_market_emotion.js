@@ -102,7 +102,7 @@ const withBars = (bars, over = {}) => baseBundle({ index: { code: 'sh000001', na
 
   console.log('\n[1] 基线：数据齐备时的结构与权重');
   let r = await computeMarketEmotion({ data: baseBundle(), macroFactors: [] });
-  ok(r.factors.length === 9, `因子数 = 9（实际 ${r.factors.length}）`);
+  ok(r.factors.length === 10, `因子数 = 10（8 常驻 + 2 非常驻，20261022h 新增宽基ETF申赎；实际 ${r.factors.length}）`);
   ok(Math.abs(r.factors.reduce((a, f) => a + f.weight, 0) - 100) < 0.1, '因子权重合计 = 100%');
   ok(r.model === 'volume-emotion-v2', '模型标识正确（v2 = 量能两因子合并）');
   ok(['看涨', '看跌', '中性'].includes(r.tendency), `短期倾向合法（${r.tendency}）`);

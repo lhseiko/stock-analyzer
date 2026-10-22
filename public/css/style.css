@@ -366,6 +366,46 @@ body {
   opacity: 0;
   transition: width 0.4s ease, opacity 0.25s ease;
 }
+
+/* ---- 加载提示胶囊（20261022i）----
+   与顶部进度条配套：进度条只表达"有事情在发生"，胶囊表达"具体在加载哪只股票"。
+   pointer-events:none —— 绝不拦截任何点击（这是它和 .loading-overlay 的关键区别），
+   因此切股等待期间用户仍可继续操作，只是不会再误以为点击没生效。 */
+.loading-pill {
+  position: fixed;
+  top: 10px; left: 50%;
+  transform: translateX(-50%) translateY(-6px);
+  z-index: 81;
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: rgba(22,27,34,0.96);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  box-shadow: var(--shadow-lg);
+  opacity: 0;
+  transition: opacity .18s ease, transform .18s ease;
+  max-width: 78vw;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.loading-pill.hidden { display: none; }
+.loading-pill.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+.loading-pill::before {
+  content: '';
+  width: 10px; height: 10px;
+  flex-shrink: 0;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
 .top-progress.active { opacity: 1; width: 85%; }
 .top-progress.done { opacity: 1; width: 100%; }
 
@@ -1077,15 +1117,43 @@ body {
 .pa-zone-title.resistance { color: var(--red); }
 .pa-zone-title.support { color: var(--green); }
 .pa-zone-row {
-  display: flex; justify-content: space-between; align-items: center;
+  display: flex; align-items: center; gap: 8px;
   padding: 6px 10px; margin-bottom: 4px;
   border-radius: var(--radius-sm); font-size: 12px;
   font-variant-numeric: tabular-nums;
+  cursor: pointer;
 }
+/* 20261022g：紧凑清单——强度徽标 / 区间 / 来源摘要（超出省略，点开看全文）/ 展开箭头 */
+.pa-zone-row:hover { filter: brightness(1.14); }
+.pa-zone-row:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+.pa-zone-row .pz-badge {
+  flex: none; padding: 0 5px; border-radius: 3px;
+  font-size: 10px; line-height: 15px; font-weight: 700;
+  border: 1px solid var(--border); color: var(--text-muted);
+}
+.pa-zone-row .pz-badge.strong {
+  color: var(--accent); border-color: rgba(240, 185, 123, 0.6);
+  background: rgba(240, 185, 123, 0.14);
+}
+.pa-zone-row .pz-badge.mid { color: var(--text-primary); border-color: rgba(255, 255, 255, 0.22); }
+.pa-zone-row .pz-badge.weak { color: var(--text-muted); border-color: rgba(255, 255, 255, 0.12); }
+.pa-zone-row .pz-badge.none { color: var(--text-muted); border-style: dashed; opacity: .7; }
+/* 特殊条目（箱体边界/手动/反转）不参与强度评分 → 徽标只标语义，不用强弱色 */
+.pa-zone-row .pz-badge.special { color: var(--text-light); border-color: rgba(255, 255, 255, 0.16); border-style: dashed; }
+.pa-zone-row .pz-caret {
+  flex: none; width: 12px; text-align: center;
+  color: var(--text-muted); font-size: 10px;
+  transition: transform .15s ease;
+}
+.pa-zone-row.open .pz-caret { transform: rotate(180deg); }
 .pa-zone-row.resistance { background: var(--red-light); }
 .pa-zone-row.support { background: var(--green-light); }
-.pa-zone-row .pz-range { font-weight: 600; color: var(--text-primary); }
-.pa-zone-row .pz-src { color: var(--text-light); font-size: 11px; }
+.pa-zone-row .pz-range { font-weight: 600; color: var(--text-primary); flex: none; }
+.pa-zone-row .pz-src {
+  flex: 1 1 auto; min-width: 0; text-align: right;
+  color: var(--text-light); font-size: 11px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 /* 侵蚀标记（20261020m）：区间近端被无放量侵入收紧过 → 价格侧已「长回去」的部分不计入，
    右侧小标签提示，完整「原区间 → 收紧后」在 title 里。 */
 .pa-zone-row .pz-erode {
@@ -1094,10 +1162,81 @@ body {
   border: 1px solid var(--accent); opacity: .85;
 }
 
+/* 反转区间（20261022b）：放量有效突破后角色互换（支撑↔阻力），可多次反转。
+   青色虚线左边框 + 「反转×N」标签，与「手动」蓝紫、「已收紧」金色区分开。 */
+.pa-zone-row.reversed { border-left: 2px dashed #12b5b0; padding-left: 8px; }
+.pa-zone-row .pz-rev {
+  margin-left: 6px; padding: 0 4px; border-radius: 3px;
+  font-size: 10px; color: #0f9b96;
+  border: 1px solid #12b5b0; opacity: .9;
+}
+
 /* 箱体边界条目（20261020k）：金色虚线左边框 = 结构性边界（与摆动点聚类的区间区分开） */
 .pa-zone-row.box-edge { border-left: 2px dashed var(--accent); padding-left: 8px; }
 .pa-zone-row.box-edge .pz-range { font-weight: 600; }
 .pa-zone-row.box-edge .pz-src { color: var(--accent); }
+.pa-zone-row .pz-box {
+  margin-left: 6px; padding: 0 4px; border-radius: 3px;
+  font-size: 10px; color: var(--accent);
+  border: 1px solid rgba(240, 185, 123, 0.5);
+}
+
+/* ②卡共振带统计条（20261022g；20261022h 移除排序切换——清单固定按价格高低排列）。
+   统计条只描述「怎么算出来的」，不参与任何判定。 */
+.pa-zone-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px;
+  margin: 10px 0 2px; padding: 5px 10px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: var(--radius-sm);
+  font-size: 11px; color: var(--text-light);
+  font-variant-numeric: tabular-nums;
+}
+.pa-zone-bar-meta { flex: 1 1 auto; min-width: 0; }
+.pa-zone-bar-skip {
+  flex: 1 1 100%; color: var(--text-muted); font-size: 10.5px; line-height: 1.5;
+}
+.pa-zone-title .pa-zone-count {
+  margin-left: 5px; font-size: 11px; font-weight: 500; color: var(--text-muted);
+}
+
+/* 共振带展开详情（20261022g）：点开才显示——来源明细 / 确认信号 / 失效位 / 侵蚀。
+   左边框继承方向语义：阻力红、支撑绿，与紧凑行保持一致。 */
+.pa-zone-detail {
+  margin: -2px 0 8px; padding: 8px 10px 9px;
+  background: var(--bg-elevated);
+  border-radius: var(--radius-sm);
+  border-left: 2px solid var(--border);
+  font-size: 11.5px; line-height: 1.62; color: var(--text-light);
+  font-variant-numeric: tabular-nums;
+}
+.pa-zone-detail.hidden { display: none; }
+.pa-zone-detail.resistance { border-left-color: rgba(246, 70, 93, 0.45); }
+.pa-zone-detail.support { border-left-color: rgba(14, 203, 129, 0.45); }
+.pzd-grid { display: flex; flex-wrap: wrap; gap: 3px 14px; }
+.pzd-grid b { color: var(--text-primary); font-weight: 600; }
+.pzd-sec { margin-top: 6px; }
+.pzd-label {
+  display: inline-block; margin-right: 6px;
+  color: var(--text-muted); font-size: 10.5px; letter-spacing: .03em;
+}
+.pzd-list { margin: 2px 0 0; padding: 0; list-style: none; }
+.pzd-list li { position: relative; padding-left: 10px; }
+.pzd-list li::before { content: '·'; position: absolute; left: 2px; color: var(--text-muted); }
+.pzd-tier {
+  margin-left: 6px; padding: 0 4px; border-radius: 3px;
+  font-size: 10px; color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+.pzd-tier.major { color: var(--accent); border-color: rgba(240, 185, 123, 0.45); }
+.pzd-num { margin-left: 6px; color: var(--text-primary); }
+.pzd-weak { margin-left: 6px; font-size: 10px; color: var(--text-muted); font-style: italic; }
+.pzd-note { display: block; padding-left: 2px; font-size: 10.5px; color: var(--text-muted); }
+.pzd-text { margin: 2px 0 0; }
+.pzd-text b { color: var(--text-primary); font-weight: 600; }
+.pzd-dim { color: var(--text-muted); font-size: 10.5px; }
+.pzd-warn { color: #F0B90B; }
+.pzd-inv { color: var(--text-primary); font-weight: 700; }
+.pzd-note-line { margin-top: 6px; }
 
 /* ②卡页签（20261021d）：模型判定 / 手动添加。页签只是分区，不改变任何口径。 */
 .pa-tabs {
@@ -3112,8 +3251,8 @@ body {
 .sn-title { font-size: 16px; color: var(--text-primary); font-weight: 600; }
 .sn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .sn-block { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; display: flex; flex-direction: column; gap: 10px; }
-.sn-block.sn-highlight { border-top: 3px solid var(--green); }
-.sn-block.sn-risk { border-top: 3px solid var(--red); }
+.sn-block.sn-highlight { border-top: 3px solid var(--red); }
+.sn-block.sn-risk { border-top: 3px solid var(--green); }
 .sn-block-head { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--text-primary); }
 .sn-count { font-size: 12px; color: var(--text-secondary); background: var(--bg-hover); border-radius: 999px; padding: 1px 8px; }
 .sn-block-body { display: flex; flex-direction: column; gap: 10px; }
@@ -3127,8 +3266,8 @@ body {
 .note-content { font-size: 13px; color: var(--text-secondary); line-height: 1.6; white-space: pre-wrap; }
 .note-ver { font-size: 12px; }
 .note-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.sn-tag.hl { font-size: 10.5px; padding: 1px 6px; border-radius: 4px; background: var(--green-light); color: var(--green); }
-.sn-tag.rk { font-size: 10.5px; padding: 1px 6px; border-radius: 4px; background: var(--red-light); color: var(--red); }
+.sn-tag.hl { font-size: 10.5px; padding: 1px 6px; border-radius: 4px; background: var(--red-light); color: var(--red); }
+.sn-tag.rk { font-size: 10.5px; padding: 1px 6px; border-radius: 4px; background: var(--green-light); color: var(--green); }
 .sn-tag.ai { font-size: 10.5px; padding: 1px 6px; border-radius: 4px; background: var(--accent-light); color: var(--accent); }
 .sn-ai { align-self: flex-start; }
 .sn-ai:disabled { opacity: 0.6; cursor: progress; }
@@ -4448,6 +4587,148 @@ a.mo-tile-link:hover .mo-link-mark { opacity: 1; }
   border-color: var(--accent, #F0B97B);
 }
 .tp-detail-body.collapsed { display: none; }
+
+/* ===== 情绪面板页签（20261022h：情绪因子明细 / 宽基 ETF 申赎）===== */
+.tp-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 10px 0 12px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0;
+}
+.tp-tab {
+  appearance: none;
+  border: 1px solid transparent;
+  border-bottom: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  padding: 6px 12px;
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: color .15s ease, background .15s ease;
+  position: relative;
+  top: 1px;
+}
+.tp-tab:hover { color: var(--text-primary); background: var(--bg-hover); }
+.tp-tab.active {
+  color: var(--accent);
+  background: var(--bg-card);
+  border-color: var(--border);
+  font-weight: 600;
+}
+.tp-tab-tag {
+  font-size: 10.5px;
+  padding: 0 5px;
+  line-height: 15px;
+  border-radius: 4px;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+.tp-tab-tag.bull { color: var(--red); background: rgba(246,70,93,.14); }
+.tp-tab-tag.bear { color: var(--green); background: rgba(14,203,129,.14); }
+.tp-tab-tag.flat { color: var(--text-secondary); }
+.tp-tab-tag.none { color: var(--text-disabled, #484F58); }
+
+/* ===== 宽基 ETF 申赎明细（页签内容）===== */
+.etf-empty {
+  padding: 18px 14px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+  border-radius: 8px;
+  line-height: 1.7;
+}
+.etf-empty-sub { font-size: 11.5px; color: var(--text-muted); margin-top: 4px; }
+.etf-warn { color: #E3B341; }
+
+.etf-head { background: var(--bg-hover); border-radius: 8px; padding: 10px 12px; }
+.etf-head-row { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; }
+.etf-k { color: var(--text-muted); }
+.etf-v { color: var(--text-primary); font-weight: 600; margin-right: 4px; }
+.etf-total {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--text-primary);
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+.etf-total b { font-size: 16px; }
+.etf-total.flat { color: var(--text-secondary); font-size: 12.5px; }
+.etf-total.flat b { font-size: 13px; }
+.etf-total-sub { display: block; font-size: 11.5px; color: var(--text-muted); margin-top: 4px; font-weight: 400; }
+.etf-pos { color: var(--red); }
+.etf-neg { color: var(--green); }
+
+.etf-groups { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 2px; }
+.etf-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 11px;
+  border-radius: 7px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  min-width: 130px;
+}
+.etf-group-name { font-size: 11.5px; color: var(--text-secondary); }
+.etf-group-net { font-size: 13px; font-weight: 600; }
+.etf-group-sub { font-size: 10.5px; color: var(--text-muted); }
+
+.etf-block-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 14px 0 7px;
+  padding-left: 8px;
+  border-left: 3px solid var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.etf-more {
+  appearance: none; border: 1px solid var(--border); background: transparent;
+  color: var(--text-secondary); font-size: 11px; padding: 2px 8px; border-radius: 5px; cursor: pointer;
+}
+.etf-more:hover { color: var(--accent); border-color: var(--accent); }
+
+.etf-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+.etf-scroll-tall { max-height: 420px; overflow-y: auto; }
+.etf-table { width: 100%; border-collapse: collapse; font-size: 11.5px; min-width: 720px; }
+.etf-table th {
+  text-align: left; font-weight: 600; color: var(--text-secondary);
+  padding: 7px 9px; background: var(--bg-elevated, #1A212B);
+  border-bottom: 1px solid var(--border); white-space: nowrap; position: sticky; top: 0;
+}
+.etf-table td { padding: 6px 9px; border-bottom: 1px solid rgba(255,255,255,0.04); color: var(--text-primary); }
+.etf-table tbody tr:last-child td { border-bottom: none; }
+.etf-table tbody tr:hover { background: var(--bg-hover); }
+.etf-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.etf-table .mono { font-family: ui-monospace, Menlo, Consolas, monospace; color: var(--text-secondary); }
+.etf-table .name { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.etf-table .dim { color: var(--text-muted); }
+.etf-table .note { color: var(--text-muted); font-size: 11px; max-width: 240px; }
+.etf-table .row-dim { opacity: .55; }
+
+.etf-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 760px) { .etf-two-col { grid-template-columns: 1fr; } }
+.etf-col { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: var(--bg-card); }
+.etf-col-head { font-size: 11.5px; font-weight: 600; margin-bottom: 6px; }
+.etf-li { display: flex; justify-content: space-between; gap: 8px; font-size: 11.5px; padding: 3px 0; border-bottom: 1px dashed rgba(255,255,255,0.04); }
+.etf-li:last-child { border-bottom: none; }
+.etf-li-name { color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.etf-li-name em { font-style: normal; color: var(--text-muted); margin-left: 6px; font-size: 10.5px; }
+.etf-li-val { font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 600; }
+
+.etf-notes { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px; display: flex; flex-direction: column; gap: 7px; }
+.etf-note-item { font-size: 11.5px; color: var(--text-muted); line-height: 1.7; }
+.etf-note-item b { color: var(--text-secondary); }
+.etf-note-item.etf-warn { color: #E3B341; }
+.etf-note-item.etf-warn b { color: #E3B341; }
 
 /* 首页市场情绪完整面板：继承 chart-card，但宽度对齐原 home-card */
 #homeSentimentPanel {

@@ -86,12 +86,82 @@
 - `_reconcileTodayBar` 覆写当日K线前先换算；换算后若与当日 bar 相差 >20 倍，判为单位异常 → **拒绝覆写**，写 `unit_mismatch` 进 dataGaps（序列绝不被污染）。
 - 守卫：`scripts/test_volume_unit_contract.js`（28 项）覆盖单位表、三通道覆写、量级守卫、capitalFlow 同源、源码防回潮、文案自洽。
 
+### 4.z 同花顺日K「样本一直 140 天」与历史段回填（20261022e）
+
+用户报障「成交额/换手率样本一直停在 140 天」。根因两层：
+
+1. **结构闸门过严（真因）**：`all.js` 收盘前后偶发 `sortYear` 年度计数比 `dates/volumn` 多 1~2 条（当日条目已计入年度计数、尚未落入数组）。旧 `_decodeThsAll` 要求 `sum(sortYear) === dates.length`，不符即 `return null` → 历史段整段拿不到，只剩 `last.js` 的 140 根。
+2. **只有 last.js 带成交额/换手率**：`all.js` 历史段是纯 OHLCV；即便解码成功，250 日窗口里仍只有 140 天有值。
+
+修法：
+
+- `_decodeThsAll` 容忍「末尾多计 ≤2」：从最后一年计数扣掉；**欠计或差 >2 仍拒绝**；年份映射正确性由 `_mergeThsBars` 的重叠段 close 闸门兜底（不通则不采信）。
+- 新增 `_backfillThsFields`（`_mergeThsBars` 末尾调用）：用 `last.js` 反推流通盘（`volume ÷ (turnover/100)` 中位数；跨期离散 >3% 则放弃回填换手率），历史段 `turnover = volume / 流通盘 × 100`、`amount = volume × close`；打标 `amountEstimated/turnoverEstimated`，引擎在 dataGaps 如实披露「推算值，跨除权日可能数%偏差」。
+- 实测 603288：250 日换手率/成交额样本均 **250**（原 140），历史段 180 根为推算；`all.js` 与 `last.js` 重叠 140 根成交量逐根一致、隐含流通盘跨期离散仅 0.72%、`volume×close` 与真实成交额偏差 1.09%。
+- 守卫：`scripts/test_ths_backfill.js`（17 项）+ `test_ths_kline.js`（50 项，含「末尾多计 1 → 容忍 / 多计 3 → null」）。
+- 注意：`all.js` 高频请求会触发同花顺 502（限流）；已由 §4.aa 本地缓存彻底规避，失败时仍自动退回 140 根并如实标注。
+
+
+### 4.aa 同花顺日K原始响应本地缓存（20261022f，避开 all.js 502 限流）
+
+**问题**：`all.js` 频繁请求会触发同花顺 502。实测确认是**限流**而非头部/代理差异（同一时刻 axios 502、curl 200、裸 `node:http` 200）。
+根因是页面反复加载都重新拉同一份数据（`all.js` 单股 87–194 KB）。
+
+**方案（用户选定「C 方案：存原始文本」）**：把 `last.js` / `all.js` 的 **JSONP 原始字符串**落盘到
+`data/cache/ths-daily/<6位代码>.json`，读缓存后走**同一套** `_unwrapThsJsonp → _decodeThsAll → _mergeThsBars`
+解码与 close 闸门，只在「文本从哪来」这一处分叉。因此缓存结果与实时拉取**逐字节一致**，
+不会出现「解码逻辑改了、旧缓存按旧逻辑算」的口径漂移。
+
+**为什么不存解码结果**（实测单股体积，603288/601318/600519）：
+
+| 形态 | 单股体积 |
+|---|---|
+| `last.js` + `all.js` 原始文本 | **约 148 KB（最小）** |
+| 解码后精简 `{d,o,h,l,c,v}` 全量 | 约 334 KB |
+| 解码后完整字段 全量 | 约 556 KB |
+| 只留引擎要的 320 根完整字段 | 约 35 KB |
+
+容量结论：9 只自选 ≈ 1.3 MB、31 只 ≈ 4.6 MB、200 只 ≈ 30 MB。
+**每只股票固定一个文件、每日覆盖写**，不随天数累积。
+
+**三段式刷新节奏**（`thsDailyCache.resolveSlot`，交易日 + 时段）：
+
+| 时刻 | phase | 行为 |
+|---|---|---|
+| 交易日 09:30–15:04 | `intraday` | 当天首次抓取后整个盘中复用 |
+| 交易日 ≥15:05 | `closed` | 盘中缓存作废，补抓一次拿当日完整收盘K，之后复用 |
+| 非交易日（周末/长假） | `closed` | 锚定 `previousTradingDay`，全程复用同一份 |
+
+→ 每只股票每个交易日**最多 2 次请求**（正常 1 次），脱离 502 限流区间。
+
+**盘中缓存可直接复用为何安全**：20261022c 已确立「有效突破/破位/打穿只认当日收盘价」，
+`zoneValidity.finalizedBars` 会剔除当日未收盘K，盘中那份当日数据本就不参与判定；
+展示层当日价格由腾讯实时 quote 覆写，不受日K快照影响。
+
+**三条防线**：
+1. **残缺缓存不认**：`all.js` 缺失（当场拉取失败）→ `isFresh` 返回 `incomplete_all`，不写也不命中，
+   避免一整天卡在「只有 140 根」。
+2. **失败退避**：`all.js` 拉取失败后 2 分钟内不再重试（内存态 `_thsAllBackoff`，不落盘），
+   期间只用 `last.js` 的 140 根并如实标注样本不足；到期自动恢复。
+3. **并发去重**：`_thsRawInFlight` 让同一次页面加载里多个模块对同一代码只发一轮请求。
+
+**实测（2026-10-22，603288）**：
+- 并发 3 个请求 → 网络仅 2 次（last+all 各一次），三份结果指纹一致；
+- 缓存命中再请求 3 次 → **网络 0 次**，耗时 3–7 ms，320 根与首次**逐字节一致**，250/120 根为正确尾部切片；
+- 缓存文件 97.0 KB（last 10.1 KB + all 86.6 KB + 结构开销）；成交额/换手率样本 320/320（含 180 根推算标记）；
+- 删缓存 → 重新联网 2 次且结果与首次一致；缓存命中平均 3.0 ms/次（全量解码 3088 根 + 合并 + 回填）；
+- 模拟 all.js 502 → 140 根、不写残缺缓存、退避期内 all.js 尝试增量 0；模拟 3 分钟后 → 自动恢复 320 根并写缓存。
+
+**守卫**：`scripts/test_ths_daily_cache.js`（62 项：slot 边界、未命中原因枚举、读写往返、损坏降级、原子写无 `.tmp` 残留、元信息不外泄原始文本）。
+
+
 ## 五、降级 / 容错 / 诚实性设计
 
 - **回退链**：`getQuote` 腾讯→雅虎；`getHistory` CN/HK 腾讯→东财(重试)→新浪；板块排名 同花顺→东财→腾讯→合成空块；涨停池单池失败对应字段 `null`（前端不渲染）。
 - **核心数据为空**：`isAnalysisCacheValid` 返回 false（server.js:1115-1116）→ 不命中、强制重算，防空白图卡冻结。
 - **抓取失败不编造**：估值失败时返回 `ok:false, note:'⚠️ 未能获取估值数据，本次不输出估值结论'` 而非零值聚合（valuationHub.js:67-74）。
-- **⚠️ 防并发锁缺失**：全局未检索到 singleflight / dedup / mutex / in-flight 去重（仅 SQLite WAL + `busy_timeout=5000` lib/db.js:42-43 与顺序 try/catch 回退）。深度分析同 symbol 多并发未命中缓存时会各自重算（server.js:1276-1338），存在重复计算/瞬时负载风险。
+- **⚠️ 防并发锁缺失（全局）**：全局未检索到 singleflight / dedup / mutex / in-flight 去重（仅 SQLite WAL + `busy_timeout=5000` lib/db.js:42-43 与顺序 try/catch 回退）。深度分析同 symbol 多并发未命中缓存时会各自重算（server.js:1276-1338），存在重复计算/瞬时负载风险。
+  - 例外（20261022f 已局部解决）：同花顺日K通道已有 in-flight 去重 `_thsRawInFlight`（lib/stockData.js），同一代码并发请求共享同一轮取数。该去重**仅覆盖此通道**，不改变上述全局结论。
 
 ## 六、逻辑漏洞自查清单（审计用）
 
@@ -111,5 +181,8 @@
 | 东财估值 Map TTL | 6h | lib/eastmoneyValuation.js:9 |
 | cninfo 公告缓存 TTL | 10min | lib/cninfoAnnouncements.js:14 |
 | 板块排名内存 TTL | 30s | lib/stockData.js:783,1043,1150 |
-| APP_VERSION（缓存破坏戳） | `20261016a` | server.js:98 |
+| 同花顺日K缓存：收盘定稿时刻 | 15:05 | lib/thsDailyCache.js:CLOSE_HHMM |
+| 同花顺日K缓存：硬过期兜底 | 15 天 | lib/thsDailyCache.js:MAX_AGE_MS |
+| 同花顺 all.js 失败退避 | 2 分钟 | lib/stockData.js:THS_ALL_BACKOFF_MS |
+| APP_VERSION（缓存破坏戳） | `20261022f` | server.js:108 |
 | SQLite busy_timeout | 5000ms | lib/db.js:42-43 |

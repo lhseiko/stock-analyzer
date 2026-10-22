@@ -64,7 +64,21 @@
 - [ ] 热度每日额度 30 / 核验 20：配额耗尽后事件是否仍按「无热度」降级（eventEngine.js:531-532,546 返 null 不影响主流程）——降级是否保守合理？
 - [ ] 事件扫描 15:30 槽位（server.js:2278）与盘后结算同窗口：若服务未常驻，事件缓存作废与重算均不触发，短期判断停留在旧权重。
 
-## 七、可配置项
+## 七、20261021j 四道防线（事件误判自我纠正）
+
+> 背景：用户反馈首页「事件驱动」卡片里两只证券事件「算不上利好利空」，且因方向判错连锁出现「内幕抢跑」叙事（事件前 3 日跌 2.97% ≥ 2.5% → 误判利空出尽）。根因 = ① 东财快讯「标题/摘要主题错配」喂错 LLM 方向；② LLM 理由写「已有预期、强度有限」却仍打 moderate；③ 高置信度跳过 webVerify；④ 抢跑检查挂在错误方向的事件上。据此落地四道防线，互相独立、互不替代。
+
+| 防线 | 规则 | 出处 |
+|---|---|---|
+| **A1 摘要/标题错配守卫** | CJK 二元组覆盖度 < 0.2 或命中 < 2 → 判为「摘要与标题疑似错配」，弃用摘要、只按标题判方向；标题 < 6 有效字不校验。双层同源：扫描层（scanEvents:622-623）与方向判定层（analyzeNewsImpact:256-293）同一 `summaryMatchesTitle`（newsSectorImpact.js:242-254），既防 LLM 吃错主题，也防错配摘要参与自选股匹配。 | newsSectorImpact.js:242-254,256-293；eventEngine.js:622-623 |
+| **A2 例行重申封顶** | `RE_ROUTINE_REAFFIRM`（eventEngine.js:80）= `再度强调\|再次强调\|又一度强调\|继续强调\|重申\|例行(发布\|表态\|通报)` → `classifyByRule` 返回 `{kind:'routine_reaffirm', reject:false, ceiling:'minor'}`（:435）。监管常规重申不构成重大，封底 minor。 | eventEngine.js:80,431-438 |
+| **A3 理由自洽守卫** | `RE_SELF_CONTRADICT`（:573）= `常规\|例行\|已有预期\|早有预期\|意外度低\|强度有限\|影响有限\|渐进式\|象征意义\|象征性\|边际影响有限`。在 `scoreToGrade` 类型硬上限**之后**再独立过一遍（:590-594）：若 `grade > minor` 且理由含自相矛盾词 → 压到 `minor`（两层互不替代）。杜绝「理由说没影响却打 moderate」。 | eventEngine.js:573,576-596 |
+| **A4 事后市场反应核验** | 事件出现后市场用脚投票，有证据才改判：`evaluateMarketReaction`（:909-931）按 stage 取事件后 N 交易日累计涨跌幅（stage1=2 / stage2=5，阈值 `MARKET_REACT_NO_MOVE_PCT=1%`）；`buildMarketCheckPatch`（:934-962）：stage1 无反应 → 降一级；stage2 仍无反应 / 反向 → **中性化**（`signal=0` + `marketNeutralized`，被 `getEventsForSymbol` 与权重过滤，内幕抢跑叙事自动消失）；同向 ≥ 阈值 → `marketConfirmed` 终态。证据不足（后向交易日不够 / 无 prior）→ 返回 null，不核不臆造；24h 节流防抖动。 | eventEngine.js:896-904,909-962 |
+
+- **存量误判事件已中性化**：`data/events/active.json` 中 `evt_证券_down`（并购重组支持）、`evt_证券_up`（主动 ETF 批复）经用户判定「算不上利好利空」，已置 `signal:0` + `direction:neutral` + `paused:true` + `marketNeutralized:true`，不再进入事件因子与抢跑检查。保险事件 `evt_保险_down` 未改动。
+- **守卫单测**：`scripts/test_event_guardrails.js`（36 项，覆盖 A1 摘要错配 / A2 重申封顶 / A3 自洽压档 / A4 无反应降级·反向中性化·confirm·节流·证据不足）。回归 `scripts/test_event_frontrun.js`（18 项，零回归）。
+
+## 八、可配置项
 
 | 配置 | 默认值 | 位置 |
 |---|---|---|

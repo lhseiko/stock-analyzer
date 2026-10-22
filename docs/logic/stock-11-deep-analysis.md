@@ -89,5 +89,18 @@
 | PE 估值带阈值 | peStats.low/high/mean*1.5 | conclusion.js:83-86 |
 | 综合 scoreMap | 低估-1/合理0/偏高1/高估2 | conclusion.js:134-144 |
 | 专属估值模型列表 | 11 只（601318 等） | conclusion.js:155-403 |
-| 前端超时 | 65s AbortController（后端 55s 总超时） | app.js:2932-2943 |
+| 前端超时 | 20261021k 起：**脱离请求生命周期的后台任务 + 轮询**（无 AbortController 断连，切页/断连都不中断；后端 `_deepJobs` 任务 300s 安全网，内部 `deepAnalysis` 总超时放大到 280s） | server.js:1437-1480（路由）/ app.js:3420-3507（轮询） |
 | APP_VERSION 缓存破坏 | ?v=YYYYMMDDx | server.js:98 |
+
+## 八、版本史（关键变更）
+
+### 20261021k · 深度分析后台任务化（切页不断更、慢分析必落盘）
+- **根因**：原 `loadDeepAnalysis`（app.js）用 `AbortController` 65s 阻塞请求，且服务端 `_deepAnalysisInFlight` 在超时时直接 500 且不写缓存 → ①用户一切换个股页/断开就 abort，财报解读进度全丢；②慢分析（财报解读子任务单项即可达 180s）超过旧 55s 后端硬超时 → 永远不落盘、下次仍重跑。
+- **改法（服务端 `server.js`）**：
+  - 废弃 `_deepAnalysisInFlight` 在途 Promise 去重，改为 `_deepJobs`（symbol→{status,startedAt,finishedAt,result,error,forceRefresh}）任务表。
+  - 新增 `_startDeepJob`：**脱离 HTTP 响应**的 detached Promise，跑完 `_runDeepAnalysisOnce` 后写 `writeAnalysisCache` 并置 `status='done'`；300s 安全网超时兜底（仅防外部接口永久挂起，不误杀正常慢分析）。
+  - `_runDeepAnalysisOnce` 内部总超时由 55s 放大到 **280s**（远低于 300s 安全网），财报解读子任务单项 180s 不再被误杀。
+  - 路由 `/api/deep-analysis/:symbol`：命中磁盘缓存且非强制刷新→秒回 `fromCache`；否则 `_getOrStartDeepJob` 复用/启动任务→`done` 返回结果（带 `background:true`）、`error` 返 500、`running` 秒回 `{status:'running', startedAt}`（绝不阻塞）。
+- **改法（前端 `app.js`）**：`loadDeepAnalysis` 改为轮询模型——同股非强制且已有 `deepData` 直接复用渲染；否则显示「📡 后台进行中…（已 Ns）」，每 4s 轮询仅当停留在深度分析 tab（切走则停轮询但**服务端任务继续跑**，回来再查即出结果）；`_deepPollToken` 在切股/重入时作废上一轮，避免串台。
+- **验证**：`node --check` 双文件通过；全回归 60/63（仅 3 个历史旧债，零新增）；实启 3099 端口冒烟——缓存命中秒回、强制刷新返回 `fromCache:false/background:true` 完整结果（detached 任务跑完落盘后回传），证明非阻塞且任务存活。
+- **用户感知**：财报解读/深度分析切页后**后台继续跑**，回来即显示；慢分析不再卡死、必然落盘。

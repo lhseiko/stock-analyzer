@@ -37,8 +37,12 @@ function extractConst(src, name) {
 }
 
 // 旧实现 = git HEAD（收敛前）；新实现 = 工作区（收敛后）
-const OLD_SRC = execSync('git show HEAD:lib/marketEmotionModel.js', { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
-const NEW_SRC = fs.readFileSync(path.join(__dirname, '..', 'lib', 'marketEmotionModel.js'), 'utf8');
+// 归一化行尾：本机 core.autocrlf=true，工作区检出为 CRLF 而 `git show HEAD:` 恒为 LF。
+// 不归一化时 extractFn 会因多出的 \r 判定「实现不一致」——这是行尾差异造成的假失败，
+// 与实现是否等价无关（项目跨端 md5 校验同样用 `tr -d '\r'` 处理同一问题）。
+const normalizeEol = (s) => s.replace(/\r\n/g, '\n');
+const OLD_SRC = normalizeEol(execSync('git show HEAD:lib/marketEmotionModel.js', { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 }));
+const NEW_SRC = normalizeEol(fs.readFileSync(path.join(__dirname, '..', 'lib', 'marketEmotionModel.js'), 'utf8'));
 
 //  rigor：新旧两版的 round / VOL_PCTL_* 必须逐字相同（否则等价比对失去意义）
 for (const name of ['round']) {
