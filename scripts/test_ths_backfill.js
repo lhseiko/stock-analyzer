@@ -96,5 +96,19 @@ console.log('\n[5] 解码未过闸门 → 只用 last.js，不产生推算标记
   ok(!merged.some(b => b.amountEstimated || b.turnoverEstimated), '不产生推算标记');
 }
 
+console.log('\n[6] 20261023f：优先用腾讯「不复权」收盘价还原成交额');
+{
+  const raw = new Map();
+  // 历史段给不复权价 10.3（比前复权 10 高 3%）；故意漏掉 i=85，验证回退与标注
+  for (let i = 0; i < 260; i++) if (i !== 85) raw.set(dstr(i), 10.3);
+  const merged = sd._mergeThsBars(mkPlain(), mkDecoded(500, 10), 320, raw);
+  const h = merged[0]; // dstr(80)
+  eq(h.amount, 5150, '有 rawClose → amount = 500×10.3（修正前复权低估）');
+  eq(h.amountBasis, 'raw_close', 'amountBasis=raw_close');
+  const miss = merged.slice().find(b => b.date === dstr(85));
+  eq(miss.amount, 5000, '无 rawClose 的行回退 volume×前复权close');
+  eq(miss.amountBasis, 'qfq_close', 'amountBasis=qfq_close（如实标注回退）');
+}
+
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`);
 process.exit(fail > 0 ? 1 : 0);

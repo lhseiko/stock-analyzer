@@ -184,21 +184,30 @@ const withBars = (bars, over = {}) => baseBundle({ index: { code: 'sh000001', na
   ok(Math.abs(r.factors.reduce((a, f) => a + f.weight, 0) - 100) < 0.1, '炸板率场景权重合计仍 = 100%');
 
   console.log('\n[6c] 量能活跃与量价配合合并（20261015k）：加权合成 / 降级 / 历史权重迁移');
-  // ① 基线场景合成数值：恒定成交量日线（价5日涨、量能持平 → 量缩价升 -0.5；量比 1 → 平量 0）
-  //    → (0×15 + -0.5×10)/25 = -0.2
+  // ① 基线场景合成数值（20261023o 改最新日口径）：恒定成交量日线 → 今日量比 1.0（平量，量能分 0）；
+  //    今日收轻微上涨（closeTrend）→ 平量+价涨 = 量价分 0 → 合成 = (0×15 + 0×10)/25 = 0。
+  //    深证未提供 → 单市降级（value 标「深证 缺失」）。
   const flatVolBars = mkBars(260).map(b => ({ ...b, vol: 5e8 }));
   r = await computeMarketEmotion({ data: withBars(flatVolBars, { breadth: { up: 3000, down: 1800, flat: 100, limitUp: 60, limitDown: 3, activePct: 60 } }), macroFactors: [] });
   const vp0 = r.factors.find(f => f.key === 'volumePrice');
-  ok(vp0.score === -0.2, `加权合成数值正确（score=${vp0.score}，期望 -0.2）`);
-  ok(vp0.pvScore === -0.5, `量价分透出（pvScore=${vp0.pvScore}）`);
-  ok(/合成得分 =（量能活跃度 0 × 15 \+ 量价配合度 -0\.5 × 10）÷ 25 = -0\.2/.test(vp0.detail), '合成算式写入 detail（可解释）');
-  ok(/量比 1（平量）/.test(vp0.value) && /价格5日/.test(vp0.value), 'value 合并两边统计');
-  // ② 放量普涨 + 量价齐升：量能分 0.5（1年分位过高封顶）+ 量价分 1 → (0.5×15+1×10)/25 = 0.7
-  r = await computeMarketEmotion({ data: withBars(mkBars(260, { lastVolMult: 1.6 }), { breadth: { up: 3000, down: 1800, flat: 100, limitUp: 60, limitDown: 3, activePct: 60 } }), macroFactors: [] });
+  ok(Math.abs(vp0.score) < 1e-9, `平量 + 微涨 → 加权合成 = 0（score=${vp0.score}）`);
+  ok(vp0.pvScore === 0, `量价分透出（pvScore=${vp0.pvScore}）`);
+  ok(/合成得分 =（量能活跃度 0 × 15 \+ 量价配合度 0 × 10）÷ 25 = 0（口径：最新日 · 上证\+深证/.test(vp0.detail), '合成算式写入 detail（可解释，最新日·上证+深证）');
+  ok(/上证 1\.00（平量）/.test(vp0.value) && /深证 缺失/.test(vp0.value), 'value 列出上证平量 + 深证缺失（单市降级）');
+  // ② 放量普涨 + 量价齐升：今日量比 1.8（放量 → 量能分 1）+ 量价分 1 → (1×15+1×10)/25 = 1
+  const upVolBars = mkBars(260).map((b, i) => ({ ...b, vol: i === 259 ? 9e8 : 5e8 }));
+  r = await computeMarketEmotion({ data: withBars(upVolBars, { breadth: { up: 3000, down: 1800, flat: 100, limitUp: 60, limitDown: 3, activePct: 60 } }), macroFactors: [] });
   const vp1 = r.factors.find(f => f.key === 'volumePrice');
-  ok(vp1.score === 0.7, `放量齐升场景加权合成（score=${vp1.score}，期望 0.7）`);
+  ok(Math.abs(vp1.score - 1) < 1e-9, `放量普涨 → 加权合成 = 1（score=${vp1.score}）`);
   ok(vp1.pvScore === 1, `量价齐升判满分（pvScore=${vp1.pvScore}）`);
   ok(vp1.volState === '放量', `量能状态保留（volState=${vp1.volState}）`);
+  ok(/上证 1\.80（放量）/.test(vp1.value), 'value 标上证放量（量比 1.80）');
+  // ②b 沪深一致放量涨 → 双市合并（20261023o 新需求）
+  const szUp = mkBars(260).map((b, i) => ({ ...b, vol: i === 259 ? 9e8 : 5e8 }));
+  r = await computeMarketEmotion({ data: withBars(upVolBars, { indexSZ: { code: 'sz399001', name: '深证成指', bars: szUp }, breadth: { up: 3000, down: 1800, flat: 100, limitUp: 60, limitDown: 3, activePct: 60 } }), macroFactors: [] });
+  const vp2 = r.factors.find(f => f.key === 'volumePrice');
+  ok(/深证 1\.80（放量）/.test(vp2.value), '双市合并：value 同时含上证与深证放量');
+  ok(Math.abs(vp2.score - 1) < 1e-9, '沪深一致放量涨 → 满分');
   // ③ 单边/双边数据缺失 → 整体降级归零，reason 说明是哪一半
   r = await computeMarketEmotion({ data: baseBundle({ index: { code: 'sh000001', name: '上证指数', bars: [] } }), macroFactors: [] });
   const vpD = r.factors.find(f => f.key === 'volumePrice');
@@ -263,6 +272,14 @@ const withBars = (bars, over = {}) => baseBundle({ index: { code: 'sh000001', na
 
   console.log('\n[13] 来源标注透传：热度 detail 里的数据源/样本数/更新时间进入因子明细');
   ok(/东财股吧/.test(dh12.detail) && /样本 1200 只/.test(dh12.detail), `来源标注已还原（${(dh12.detail || '').slice(0, 80)}…）`);
+
+  console.log('\n[14] 权重=评分口径（20261025n）：总分 = Σ(满格方向×权重)，因子 contribution = 方向×权重');
+  r = await computeMarketEmotion({ data: baseBundle(), macroFactors: [] });
+  const dirOf = s => (s > 0 ? 1 : s < 0 ? -1 : 0);
+  const expectTotal = r.factors.reduce((a, f) => a + dirOf(f.score || 0) * (f.weight / 100), 0);
+  ok(Math.abs(r.totalScore - expectTotal) < 0.001, `总分 = Σ(方向×权重)（${r.totalScore} vs ${expectTotal.toFixed(3)}）`);
+  ok(r.factors.every(f => Math.abs((f.contribution || 0) - dirOf(f.score || 0) * f.weight) < 0.011),
+    '每因子 contribution = 方向 × 权重（净权重=评分）');
 
   console.log(`\n===== 结果：通过 ${pass} / 失败 ${fail} =====`);
   try { fs.rmSync(TMP, { recursive: true, force: true }); } catch (e) {}

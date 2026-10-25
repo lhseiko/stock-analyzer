@@ -1,0 +1,25 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>数据不足标注修复（20261023f）</title>
+<style>
+:root{--bg:#0B0E11;--card:#161B22;--bd:rgba(255,255,255,.08);--t1:#E6EDF3;--t2:#8B949E;--t3:#6E7681;--accent:#F0B97B;--red:#F6465D}
+body{background:var(--bg);color:var(--t1);font-family:"Microsoft YaHei",system-ui,sans-serif;padding:24px;max-width:1100px;margin:0 auto}
+h1{font-size:17px;margin:0 0 4px} .sub{font-size:12px;color:var(--t2);margin-bottom:18px}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.col h2{font-size:13px;margin:0 0 8px;color:var(--t2)} .col.after h2{color:var(--accent)}
+.box{border-radius:8px;padding:10px 13px;margin-bottom:10px;font-size:12px;line-height:1.65}
+.gap{background:rgba(240,185,123,.08);border:1px solid var(--accent)} .gap .t{color:var(--accent);font-weight:600;margin-bottom:4px}
+.note{background:var(--card);border:1px solid var(--bd)} .note .t{color:var(--t2);font-weight:600;margin-bottom:4px}
+.it{color:var(--t2)} .dim{color:var(--t3)}
+.tip{font-size:11.5px;color:var(--t3);line-height:1.6;margin-top:6px}
+</style></head><body>
+<h1>资金量能 · 「数据不足标注」修复（20261023f）</h1>
+<div class="sub">真实接口输出（/api/capital-flow/603288）· 红框只留真缺口，来源/口径说明移到中性框</div>
+<div class="cols">
+<div class="col before"><h2>修复前：5 条全在红色「数据不足」框</h2>
+<div class="box gap"><div class="t">⚠️ 数据不足标注（结论置信度受限）</div><div class="it">· 历史段成交额/换手率为推算值（按近 140 根反推流通盘 + 收盘价估算），跨除权日可能有数%偏差；成交量/价格类判断不受影响</div><div class="it">· 分时尚未覆盖收盘，「尾盘突然放量拉升」无法判定</div><div class="it">· 日K数据源：同花顺日K（近期含成交额/换手率，历史段仅OHLCV）（东财通道不可达，已自动降级）</div><div class="it">· 当日 bar 原为「ths」通道快照（close 34.64 / 量 15099340），已按腾讯实时行情终值覆写（close 34.46 / 量 21057200）</div><div class="it">· 量比 1.82 取自腾讯实时行情直采（fields[49]），非本地工作台重算</div></div>
+<div class="tip">用户看到满屏"数据不足"，误以为数据缺失；实际上只有第 1 条是真缺口，其余是来源/口径说明。</div></div>
+<div class="col after"><h2>修复后：红框只留真缺口，其余归入「来源与口径」</h2>
+<div class="box gap"><div class="t">⚠️ 数据不足（影响结论置信度）</div><div class="it dim">（无）</div></div>
+<div class="box note"><div class="t">ℹ️ 数据来源与口径说明（不影响结论）</div><div class="it">· 分时尚未覆盖收盘，「尾盘突然放量拉升」无法判定</div><div class="it">· 量比 1.78 取自腾讯实时行情直采（fields[49]），非本地工作台重算</div></div>
+<div class="tip">同花顺降级路径下，「历史段成交额按不复权收盘价还原（实测偏差 &lt;1%）；换手率按流通盘推算（实测一致）」也归入本说明，不再算数据不足。</div></div>
+</div>
+</body></html>

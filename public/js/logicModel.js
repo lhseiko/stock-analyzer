@@ -434,6 +434,10 @@
       if (btnAll) btnAll.addEventListener('click', function () { self.toggleAll(true); });
       if (btnNone) btnNone.addEventListener('click', function () { self.toggleAll(false); });
 
+      // 20261025c：独立页面模式（public/logic-model.html）——无 overlay 概念，直接把树构建进 #lmPageBody。
+      // 首页工作台（index.html）没有该容器，此调用安全 no-op。
+      this.buildInto(document.getElementById('lmPageBody'));
+
       // Esc 关闭：独立监听，不改动 app.js 的 closeAllPopups（隔离修改）
       document.addEventListener('keydown', function (e) {
         if (e.key === 'Escape' && self.isOpen()) self.close();
@@ -446,22 +450,27 @@
       return !!m && !m.classList.contains('hidden');
     },
 
+    /** 把「总—分」树构建进目标容器（幂等，data-built 防重复）。
+     *  20261025c：open()（首页弹窗）与独立页面（#lmPageBody）共用同一构建逻辑。 */
+    buildInto: function (body) {
+      if (!body || body.getAttribute('data-built')) return;
+      var st = this.stats();
+      body.innerHTML =
+        '<p class="lm-intro">按 <b>工作台页面布局</b> 组织：<b class="lm-hl">' + st.sections + '</b> 个页面 / 区域 · ' +
+        '<b class="lm-hl">' + st.modules + '</b> 个模块 · 共 <b class="lm-hl">' + st.nodes + '</b> 个节点。' +
+        '每个模块标注 <b>🧠 判定逻辑</b> 与 <b>📥 数据来源 / 📤 输出去向</b>（模块间的共享与引用）。' +
+        '点击任意一行可展开 / 收起；结构与数据全部落在本机，不联网、不调用大模型。</p>' +
+        this.renderHtml();
+      body.setAttribute('data-built', '1');
+    },
+
     open: function () {
       if (typeof document === 'undefined') return;
       this.init();
       var overlay = document.getElementById('logicModelModal');
       var body = document.getElementById('logicModelBody');
       if (!overlay || !body) return;
-      if (!body.getAttribute('data-built')) {
-        var st = this.stats();
-        body.innerHTML =
-          '<p class="lm-intro">按 <b>工作台页面布局</b> 组织：<b class="lm-hl">' + st.sections + '</b> 个页面 / 区域 · ' +
-          '<b class="lm-hl">' + st.modules + '</b> 个模块 · 共 <b class="lm-hl">' + st.nodes + '</b> 个节点。' +
-          '每个模块标注 <b>🧠 判定逻辑</b> 与 <b>📥 数据来源 / 📤 输出去向</b>（模块间的共享与引用）。' +
-          '点击任意一行可展开 / 收起；结构与数据全部落在本机，不联网、不调用大模型。</p>' +
-          this.renderHtml();
-        body.setAttribute('data-built', '1');
-      }
+      this.buildInto(body);
       overlay.classList.remove('hidden');
     },
 
@@ -471,10 +480,10 @@
       if (m) m.classList.add('hidden');
     },
 
-    /** 展开 / 收起全部 */
+    /** 展开 / 收起全部（20261025c：兼容首页弹窗 #logicModelBody 与独立页面 #lmPageBody） */
     toggleAll: function (expand) {
       if (typeof document === 'undefined') return;
-      var body = document.getElementById('logicModelBody');
+      var body = document.getElementById('logicModelBody') || document.getElementById('lmPageBody');
       if (!body) return;
       var nodes = body.querySelectorAll('.lm-node');
       for (var i = 0; i < nodes.length; i++) {
@@ -498,8 +507,9 @@
     document.addEventListener('click', function (e) {
       var row = e.target && e.target.closest ? e.target.closest('.lm-row-parent') : null;
       if (!row) return;
+      // 20261025c：首页弹窗模式要求 overlay 可见才响应；独立页面（无 overlay）直接放行。
       var overlay = document.getElementById('logicModelModal');
-      if (!overlay || overlay.classList.contains('hidden')) return;
+      if (overlay && overlay.classList.contains('hidden')) return;
       LogicModel.toggleNode(row);
     });
   }

@@ -107,3 +107,19 @@
 - 图表序列红涨绿跌唯一取色点：`chartTheme.js` 的 `SA_CHART.colors.up / .down`（#F6465D / #0ECB81）。
 - `chart3D.js` lightBar 渐变（0.95/0.45/0.35 alpha）与 `deepCharts.js` 评级徽章文字色一律引用该色板，禁止散落字面量。
 - `deepCharts.js` 评级徽章「低估」bg 0.08 是 WCAG 微调值（卡片表面红字 + 0.10 tint 为 4.47:1 略低于 AA），刻意低于标准 0.10，勿"修正"。
+
+## 12. 独立长页统一外壳（20261025f）
+
+四个独立页（notes / accuracy / judgments / logic-model）共用 style.css 文末「独立长页统一外壳」段，页内 `<style>` 仅保留一条 `html, body` 滚动覆盖（html 无法由共享样式按页选择，属已知例外）。
+
+- **页宽阶梯**（内容列宽 = 阶梯值 − 2×24px 页边距，全部居中）：
+  - notes `.np-page` 808px（760 阅读列，整页单列含页头）
+  - accuracy / judgments `.acc-page` `.jd-page` 1148px（1100 数据列，与首页 `.home-card` 同宽对齐）
+  - logic-model `.lm-page` 1328px（1280 宽树列）
+- **页头**：统一 `.jd-header` 结构（标题居左 21px/700、动作居右、下边框分隔、18px 顶部呼吸）；logic-model 原独立页头结构废弃，副标题用 `.lm-head-sub` 内联。
+- **页头动作次序**：次要按钮在前、主按钮（btn-primary）在后、「返回工作台」居末。
+- **sticky 工具条**：`.np-toolbar` / `.acc-toolbar` / `.jd-toolbar` 同一套（top:0、实底 `--bg-primary`、下边框）。
+- **页面级芯片**：`.np-tab` / `.acc-tab` / `.jd-tag` 同一套（radius `--radius-sm` 13px，active = `--accent-light` 淡底 + 金字 600，模式 B 徽章）。**芯片三家族分工**：页面级筛选芯片（本条）／图表控件芯片（`.range-btn` `.period-btn` `.dy-toggle-btn`，实底金 + 深字，模式 A）／一级导航 `.tab`（下划线式）——语义不同、各自内部统一，不得跨家族混用样式。
+- **大空态**：`.np-list .notes-empty` / `.record-list .jd-empty` / `.acc-body .jd-empty` / `.acc-body .data-empty` 统一虚线框居中大空盒；表格单元格内小空态（`.jd-empty` 裸用、基类 `.data-empty` `.notes-empty`）保持原样。
+- **取色纪律**：独立页所有颜色一律 `var()` 令牌；金色淡底唯一令牌 `--accent-light`（0.16），严禁再出现 `rgba(207,174,124,…)` 等杂金与裸 hex 红绿金。
+- **动作按钮**：纯文字无 emoji（notes「写心得/记一笔」已去 ✏️；tab 文案去 🧠🌐，emoji 只保留在 h1 标题）。

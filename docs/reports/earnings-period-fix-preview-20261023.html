@@ -1,0 +1,34 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>财报解读报告期修复（20261023h）</title>
+<style>
+:root{--bg:#0B0E11;--card:#161B22;--bd:rgba(255,255,255,.08);--t1:#E6EDF3;--t2:#8B949E;--t3:#6E7681;--accent:#F0B97B;--red:#F6465D;--green:#0ECB81}
+body{background:var(--bg);color:var(--t1);font-family:"Microsoft YaHei",system-ui,sans-serif;padding:24px;max-width:1150px;margin:0 auto}
+h1{font-size:17px;margin:0 0 4px} .sub{font-size:12px;color:var(--t2);margin-bottom:16px}
+.stock{display:flex;align-items:baseline;gap:14px;background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:12px 18px;margin-bottom:16px}
+.stock .nm{font-size:20px;font-weight:700} .stock .cd{color:var(--t2)} .stock .px{font-size:21px;color:var(--red);font-weight:700} .stock .ch{color:var(--red);font-weight:700}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.col h2{font-size:13px;margin:0 0 8px;color:var(--t2)} .col.after h2{color:var(--accent)}
+.box{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:14px 18px;font-size:12.5px;line-height:1.75;color:var(--t2)}
+.box p{margin:6px 0} .box b{color:var(--t1)} .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:5px;margin-bottom:8px}
+.bad{color:var(--green);background:rgba(14,203,129,.12)} .good{color:var(--accent);background:rgba(240,185,123,.12)}
+.tip{margin-top:16px;border-left:3px solid var(--accent);padding:10px 16px;font-size:12px;color:var(--t2);line-height:1.7;background:rgba(240,185,123,.06)}
+.tip b{color:var(--t1)}
+</style></head><body>
+<h1>财报解读 · 报告期修复（20261023h）</h1>
+<div class="sub">真实结果：同一只股票、同一天，修复前解读半年报，修复后解读三季报</div>
+<div class="stock"><span class="nm">洲明科技</span><span class="cd">300232</span><span class="px">¥5.44</span><span class="ch">+0.06 (+1.12%)</span></div>
+<div class="cols">
+<div class="col before"><h2>修复前：默认解读半年报</h2>
+<div class="box"><span class="tag bad">2026年半年报 · 披露 2026-08-24</span>
+<p><b>上半年累计：</b>营收 35.51 亿元（同比 −2.92%）；归母净利润 0.32 亿元（同比 −73.40%）</p>
+<p><b>Q2 单季：</b>营收 21.51 亿（环比 +53.58%）；归母 1.15 亿（环比 +238.85%，扭亏为盈）</p>
+<p>结论：表观承压但 Q2 单季显著拐点，盈利修复加速。</p>
+<p style="color:var(--t3)">← 用户截图里看到的就是这一版：三季报已经披露，但模块仍在讲半年报。</p>
+</div></div>
+<div class="col after"><h2>修复后：自动读最新三季报</h2>
+<div class="box"><span class="tag good">2026年三季报 · 披露 2026-10-22</span>
+<p>综合结论：表观稳、实质弱、边际回落——Q2单季修复未能延续，Q3由盈转亏、扣非持续亏损，利润高度依赖非经常性收益；但经营现金流与订单前瞻指标明显改善，属“盈利质量差、经营底盘尚稳”的分化格局。</p><p>1) 最新报告期：2026年三季报，2026年10月22日披露（已核实：东方财富援引公司公告，2026年三季报）。</p><p>2) 核心业绩与边际变化：</p><p>3) 业绩驱动：上半年受原材料涨价、高毛利海外收入占比回落及汇兑损失约1.29亿元拖累（未核实：媒体/研报推测）；前三季度归母净利润主要靠投资收益6848.93万元（同比+596.7%）及信用减值转回229.02万元（上年同期-1.23亿元）支撑，主业扣非仍亏损（已核实：公司三季报数据，经新浪财经/东方财富披露）。</p>
+<p style="color:var(--t3)">← 关键变化：Q3 单季由盈转亏（归母 −0.10 亿），Q2 的「修复拐点」没有延续——这正是半年报看不出来的。</p>
+</div></div>
+</div>
+<div class="tip"><b>根因（不是死逻辑，是日历窗口晚了一个月）：</b>取报告期的函数按月份猜——5-7月=一季报 / <b>8-10月=中报</b> / 11月+才=三季报。三季报法定披露期是 <b>10 月</b>，所以整个 10 月它只请求 03-31/06-30，从不请求 09-30。<br><b>修复：</b>直接请求最近两年全部季末报告期（03-31/06-30/09-30/12-31），由东财 F10 返回实际已披露的那些；同时让旧的中报缓存失效，页面无缓存时自动重新解读。</div>
+</body></html>

@@ -700,7 +700,7 @@ console.log('\n[13] 输出结构完整性 + 禁交易指令扫描');
 {
   const bars = mkBars(260, i => flatBar(10 + i * 0.01, 1000, { amount: 1e8 }));
   const r = ve.computeVolumeEngine({ symbol: '600000', name: '测试', bars, minutes: null, blacklistReasons: [] });
-  const need = ['ok', 'schema', 'symbol', 'name', 'date', 'volumeState', 'position', 'checks', 'divergence', 'rules', 'combo', 'sequence', 'score', 'liquidity', 'blacklist', 'signal', 'riskTags', 'dimensions', 'conclusion', 'disclaimer', 'dataGaps', 'positionVolumeSummary', 'contradictionSummary', 'ratioSummary'];
+  const need = ['ok', 'schema', 'symbol', 'name', 'date', 'volumeState', 'position', 'checks', 'divergence', 'rules', 'combo', 'sequence', 'score', 'liquidity', 'blacklist', 'signal', 'riskTags', 'dimensions', 'conclusion', 'disclaimer', 'dataGaps', 'positionVolumeSummary', 'contradictionSummary', 'ratioSummary', 'tenRules'];
   const missing = need.filter(k => !(k in r));
   ok(missing.length === 0, `输出字段齐全（缺失：${missing.join(',') || '无'}）`);
   ok(r.rules.length === 5, '五条生死位规则全部输出（含未命中）');
@@ -710,7 +710,8 @@ console.log('\n[13] 输出结构完整性 + 禁交易指令扫描');
   // 20261020b：口诀4 阈值具象化（均值×0.7=阈值 + 实际近3日量能同屏，detail 新增 avg60/shrinkThreshold/vols3）→ schema 升至 20261020b。
   // 20261020c：规则5 尾盘窗口按 time 时间戳剔除盘后条目（零量盘后条目曾致系统性误命中）→ schema 升至 20261020c。
   // 20261020d：11.3.1「该放量未放量」结论文案阈值具象化（均值×1.5=阈值 + 当日实际量同屏）→ schema 升至 20261020d。
-  ok(r.schema === 'volume-engine-20261020d', `schema 已升级 20261020d（实际 ${r.schema}）`);
+  // 20261023d：新增 tenRules 量价十口诀（郭睿体系）主判层；平量涨/跌方向 neutral→observe → schema 升至 20261023d。
+  ok(r.schema === 'volume-engine-20261023d', `schema 已升级 20261023d（实际 ${r.schema}）`);
   ok(r.volumeTier && typeof r.volumeTier.tier === 'string', '输出含 volumeTier（统一量能档位真值源）');
   ok(r.volumeState.level === r.volumeTier.tier, `引擎展示档位等于统一档位（${r.volumeState.level}）`);
   ok('ratio5Level' in r.volumeState, 'volumeState 保留 ratio5Level（原始 ÷5日均量档位）供追溯');

@@ -1,0 +1,21 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>准确率台账 · 待结算明细（20261023g）</title>
+<style>
+:root{--bg:#0B0E11;--card:#161B22;--bd:rgba(255,255,255,.08);--t1:#E6EDF3;--t2:#8B949E;--t3:#6E7681;--accent:#F0B97B}
+body{background:var(--bg);color:var(--t1);font-family:"Microsoft YaHei",system-ui,sans-serif;padding:26px;max-width:1000px;margin:0 auto}
+h1{font-size:17px;margin:0 0 4px}.sub{font-size:12px;color:var(--t2);margin-bottom:18px}
+.blk{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:16px 20px}
+.t{font-size:13px;font-weight:600;margin-bottom:10px;color:var(--t1)}
+.ln{font-size:12.5px;color:var(--t2);line-height:1.8;margin:6px 0}
+.ln b{color:var(--t1)}.hl{color:var(--accent)}
+.tip{margin-top:14px;border-left:3px solid var(--accent);padding:10px 14px;font-size:12px;color:var(--t2);line-height:1.7;background:rgba(240,185,123,.06)}
+</style></head><body>
+<h1>准确率台账 · 待结算明细（20261023g）</h1>
+<div class="sub">在「已记录 20 / 已结算 18」下方直接列出差在哪两天</div>
+<div class="blk">
+<div class="t">越用越准（自动学习）</div>
+<div class="ln">权重自学习：需累计 <b>20</b> 次以上预测样本后才自动调整（命中率 &gt;60% 上调、&lt;45% 下调，常驻因子权重恒定在 <b>5%~30%</b>）；当前样本不足，权重保持固定（只记录不调整）</div>
+<div class="ln">准确率台账：已记录 <b>20</b> 条预测，已结算 <b>18</b> 条，命中率 <b>33.3%</b>（其中震荡未命中 <b>10</b> / 方向真错 <b>2</b>）（口径：次日上证指数涨跌）</div>
+<div class="ln hl">待结算 2 条：10-23（目标 10-26，未到目标日） · 10-22（目标 10-23，待今日收盘）</div>
+</div>
+<div class="tip"><b>为什么只结算 18 条：</b>① 10-23 这条的目标日是 10-26（下周一），还没到；② 10-22 这条其实是「昨天预测今天」，目标日就是今天，等 15:00 收盘后自动结算。<br>所以今天收盘后，10-22 会补上，变成 19 条已结算；10-23 要等 10-26 收盘后才结算。</div>
+</body></html>

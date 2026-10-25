@@ -68,7 +68,7 @@ console.log('\n[2] 两日定稿快照 → 净申赎与逐股增减');
   writeSnap('20261021', DAY2, true, NAMES);
   const r = ef.computeFromSnapshots('20261021');
   eq(r.ok, true, '算出结果');
-  eq(r.baseDate, '20261020', '基期=20261020');
+  eq(r.baseDate, '20261019', '基期份额日=20261019（快照 20261020 的上一交易日）');
   const a = r.etfs.find(e => e.code === '510300');
   const b = r.etfs.find(e => e.code === '510500');
   eq(a.dShares, 1800000, '510300 Δ份额 = +180 万份');
@@ -98,7 +98,7 @@ console.log('\n[3] 台账幂等');
   const after = JSON.parse(fs.readFileSync(ef.LEDGER, 'utf8'));
   eq(after.cum['600519'].buyShares, c0, '同日重复计算不重复累加');
   eq(after.days, before.days, 'day 计数不变');
-  eq(after.lastDate, '20261021', 'lastDate 停在 20261021');
+  eq(after.lastDate, '20261020', 'lastDate 按份额日停在 20261020');
 }
 
 console.log('\n[4] 盘中快照不进台账');
@@ -114,7 +114,7 @@ console.log('\n[4] 盘中快照不进台账');
   eq(r.settled, false, '标记 settled=false');
   near(r.etfs.find(e => e.code === '510300').baskets, 3, 1e-9, '当日篮数=3（相对 20261021 定稿基期）');
   const led = JSON.parse(fs.readFileSync(ef.LEDGER, 'utf8'));
-  eq(led.lastDate, '20261021', '台账未被盘中读数推进');
+  eq(led.lastDate, '20261020', '台账未被盘中读数推进（仍为份额日 20261020）');
   near(led.cum['601318'].buyShares, 2 * 200, 1e-9, '累计值仍只有定稿日');
   eq(led.cum['601318'].buyDays, 1, 'buyDays 未因盘中多加一次');
 }
@@ -128,7 +128,7 @@ console.log('\n[5] 基期只认定稿快照');
   ];
   writeSnap('20261023', d23, true, NAMES);
   const r = ef.computeFromSnapshots('20261023');
-  eq(r.baseDate, '20261021', '跳过未定稿的 20261022，基期取 20261021');
+  eq(r.baseDate, '20261020', '跳过未定稿的 20261022，基期取 20261021 的份额日 20261020');
   near(r.etfs.find(e => e.code === '510300').baskets, -1, 1e-9, '篮数按 20261023 − 20261021 计算（−1 篮）');
 }
 

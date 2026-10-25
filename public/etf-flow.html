@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>宽基 ETF 申赎明细 · 股票分析工作台</title>
+  <link rel="icon" type="image/x-icon" href="favicon.ico?v=20261025p">
+  <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=20261025p">
+  <link rel="stylesheet" href="css/style.css?v=20261025p">
+  <!-- 独立长页：恢复滚动（同 notes/logic-model 独立页；其余样式统一在 style.css「独立长页统一外壳」段） -->
+  <style>
+    html, body { height: auto !important; overflow-y: auto !important; overflow-x: hidden; }
+  </style>
+</head>
+<body>
+  <div class="np-page">
+    <header class="jd-header">
+      <h1 class="jd-title">📐 宽基 ETF 申赎明细</h1>
+      <div class="jd-actions">
+        <button id="efRefresh" class="btn-primary" type="button">重新拉取</button>
+        <a href="index.html" class="btn-text">返回工作台</a>
+      </div>
+    </header>
+
+    <!-- sticky 统一工具条（DESIGN §12 独立页外壳） -->
+    <div class="np-toolbar">
+      <span class="np-count" id="efStatus">加载中…</span>
+      <span class="np-count" id="efUpdated"></span>
+    </div>
+
+    <main id="efBody" class="ef-page-body">
+      <div class="etf-empty">📡 正在读取宽基 ETF 申赎数据…<div class="etf-empty-sub">首次读取需向上交所取当日申赎清单（约 2~6 秒），之后 3 分钟内走缓存。</div></div>
+    </main>
+  </div>
+
+  <script src="js/etfFlowPage.js?v=20261025p"></script>
+</body>
+</html>

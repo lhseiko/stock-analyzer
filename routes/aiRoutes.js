@@ -41,6 +41,21 @@ router.post('/api/ai/market-overview', async (req, res) => {
   try {
     const { data, force } = req.body || {};
     const result = await analyzeMarketOverview({ data, force: !!force });
+    // 20261024m：无论本次是「新生成」还是「命中缓存」，只要 success 就 upsert 到「大盘记录」。
+    // 旧逻辑 `cached !== true` 会漏掉「缓存已存在但从未落盘」的情况（用户 16:24 报障：点了 AI 解读
+    // 仍没进大盘记录——正是命中了 16:08 旧缓存而被跳过）。upsert 幂等，同一交易日只更新不重复。
+    if (result && result.success) {
+      try {
+        const dailyReview = require('../lib/dailyMarketReview');
+        const { asOfTradingDate } = require('../lib/cnTradingCalendar');
+        const { localDate } = require('../lib/localDate');
+        const date = result.asOfTradingDate || asOfTradingDate(localDate());
+        const saved = dailyReview.saveMarketReviewNote({ date, data: data || {}, ai: result });
+        if (saved && saved.saved) result.savedToNotes = true;
+      } catch (e) {
+        console.warn('[AI] 写入大盘记录失败:', e && e.message ? e.message : e);
+      }
+    }
     res.json(result);
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

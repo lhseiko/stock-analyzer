@@ -10,8 +10,8 @@ function ok(name, cond, extra) {
 function approx(a, b, tol) { return Math.abs(a - b) <= (tol == null ? 1e-6 : tol); }
 
 // 确定性的前十大股东：10 户各持 100 万股；3 户减持共 -30 万股，0 增持
-// → magnitudeSignal = -0.03/0.03 = -1；directionSignal = (0-3)/10 = -0.3
-// → 基线父信号 = 0.55*(-0.3) + 0.45*(-1) = -0.615
+// → magnitudeSignal = -0.03/0.03 = -1（dir -1）；directionSignal = (0-3)/10 = -0.3（dir -1）
+// → 20261025j 权重=评分口径：基线父信号 = (0.55/1.2)*(-1) + (0.45/1.2)*(-1) = -0.8333
 function buildHolders() {
   const arr = [];
   for (let i = 0; i < 10; i++) arr.push({ name: '股东' + i, holdAmount: 1000000, changeAmount: 0, endDate: '2026-06-30' });
@@ -23,11 +23,11 @@ function buildHolders() {
 }
 const NO_BUYBACK = { ok: false, count: 0 };
 
-// 基线：无公告 → ④ 中性，父因子 = -0.615
+// 基线：无公告 → ④ 中性，父因子 = -0.8333（20261025j 权重=评分口径）
 const base = factorHoldings(buildHolders(), NO_BUYBACK, { announcements: [], news: [], companyName: '圣湘生物' });
 const baseSignal = base.signal;
 const baseSub4 = base.subFactors.find(s => s.name === '股东被动减持');
-ok('无事件时父因子信号 = -0.615', approx(baseSignal, -0.615, 1e-9), baseSignal);
+ok('无事件时父因子信号 = -0.8333（份额满格口径）', approx(baseSignal, -0.833333, 1e-3), baseSignal);
 ok('无事件时第④子模块为中性(0)', baseSub4 && baseSub4.signal === 0, baseSub4 && baseSub4.signal);
 ok('无事件时 caption 无雷点', base.caption.indexOf('⚠') === -1, base.caption);
 
@@ -71,9 +71,9 @@ function shengxiangHolders() {
 const sx = factorHoldings(shengxiangHolders(), NO_BUYBACK, { announcements: [], news: [], companyName: '圣湘生物' });
 const sxRatio = -3477000 / 297000000; // 与上方 shengxiangHolders 净变动一致，避免魔数漂移
 const sxMag = Math.max(-1, Math.min(1, sxRatio / 0.03));
-const sxBase = 0.55 * (-0.3) + 0.45 * sxMag;
+const sxBase = (0.55 / 1.2) * -1 + (0.45 / 1.2) * -1; // 20261025j：家数方向与净变动方向同为 -1 → 份额满格
 ok('圣湘回归锚点：无被动减持公告时第④子模块中性', sx.subFactors.find(s => s.name === '股东被动减持').signal === 0);
-ok('圣湘回归锚点：父因子 = 纯0.55/0.45基线（零副作用）', approx(sx.signal, sxBase, 1e-6), sx.signal);
+ok('圣湘回归锚点：父因子 = 份额满格基线（零副作用）', approx(sx.signal, sxBase, 1e-3), sx.signal);
 
 // ===== 20260922i：真实公告措辞（东财 np-anotice /ann 实际返回标题，修复「漏抓公告」）=====
 // 真实标题来自东财接口，含「公司名:」前缀。验证第④子模块在真实口径下能命中。

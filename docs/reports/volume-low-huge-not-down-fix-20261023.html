@@ -1,0 +1,29 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>「低位放大量但价格不跌」判定修正（20261023c）</title>
+<style>
+:root{--bg:#0B0E11;--card:#161B22;--bd:rgba(255,255,255,.08);--t1:#E6EDF3;--t2:#8B949E;--red:#F6465D;--green:#0ECB81;--accent:#F0B97B}
+body{background:var(--bg);color:var(--t1);font-family:"Microsoft YaHei",system-ui,sans-serif;padding:26px;max-width:1120px;margin:0 auto}
+h1{font-size:18px;margin:0 0 6px} .sub{font-size:12px;color:var(--t2);margin-bottom:18px}
+.stock{display:flex;align-items:baseline;gap:14px;background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:14px 18px;margin-bottom:18px}
+.stock .name{font-size:20px;font-weight:700} .stock .code{color:var(--t2)} .stock .px{font-size:22px;color:var(--red);font-weight:700} .stock .chg{color:var(--red);font-weight:700}
+table{width:100%;border-collapse:collapse;font-size:12.5px;background:var(--card);border:1px solid var(--bd);border-radius:10px;overflow:hidden}
+th{text-align:left;font-weight:600;color:var(--t2);padding:9px 12px;background:#1A212B;border-bottom:1px solid var(--bd)}
+td{padding:10px 12px;border-bottom:1px solid var(--bd);vertical-align:top;line-height:1.55} tr:last-child td{border-bottom:none}
+td.sig{font-weight:600;white-space:nowrap} td.con{color:var(--t2)}
+.row-fix{box-shadow:inset 3px 0 0 var(--accent)} .row-fix td.sig{color:var(--accent)}
+.b{display:inline-block;font-size:11px;padding:2px 8px;border-radius:5px;white-space:nowrap}
+.b.hit{color:var(--red);background:rgba(246,70,93,.14)} .b.miss{color:var(--t2);background:rgba(139,148,158,.12)} .b.gap{color:#E0B45C;background:rgba(224,180,92,.14)}
+.sum{margin-top:16px;background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:14px 18px;font-size:12.5px;color:var(--t2);line-height:1.7}
+.sum b{color:var(--t1)} .fix{margin-top:16px;border-left:3px solid var(--accent);padding:10px 16px;font-size:12.5px;color:var(--t2);line-height:1.7;background:rgba(240,185,123,.06)}
+</style></head><body>
+<h1>「低位放大量但价格不跌，要跟踪」判定修正 · 20261023c</h1>
+<div class="sub">真实接口输出（/api/capital-flow/603288，修复后代码实测）</div>
+<div class="stock"><span class="name">海天味业</span><span class="code">603288</span><span class="px">¥34.61</span><span class="chg">+1.14 (+3.41%)</span></div>
+<div class="sub" style="margin-bottom:8px">常见矛盾信号（11.3 归集）—— 高亮行即用户报障项，现已修正为「未命中」</div>
+<table><thead><tr><th style="width:220px">信号</th><th style="width:92px">状态</th><th>判定依据 / 结论</th></tr></thead><tbody><tr class=""><td class="sig">该放量未放量，资金没有跟上</td><td><span class="b miss">未命中</span></td>
+<td class="con">未命中「该放量未放量、资金未跟上」：底部平台区域未定性：地量仅 0/10 日（未形成持续磨底常态）；均线空头排列发散——既未进入地量磨底的缩量常态，也未出现倍量突破+放量持续的启动特征，继续观察，暂不施加该放量/该缩量期望</td></tr><tr class=""><td class="sig">该缩量反放巨量，分歧未结束</td><td><span class="b miss">未命中</span></td>
+<td class="con">未命中「该缩量反放巨量、分歧未结束」：底部平台区域未定性：地量仅 0/10 日（未形成持续磨底常态）；均线空头排列发散——既未进入地量磨底的缩量常态，也未出现倍量突破+放量持续的启动特征，继续观察，暂不施加该放量/该缩量期望</td></tr><tr class=""><td class="sig">高位放巨量但价格不涨，要小心</td><td><span class="b miss">未命中</span></td>
+<td class="con">未命中「高位放巨量但价格不涨」（需高位区间 + 巨量/明显放量 + 价格滞涨/冲高回落）</td></tr><tr class="row-fix"><td class="sig">低位放大量但价格不跌，要跟踪</td><td><span class="b miss">未命中</span></td>
+<td class="con">未命中「低位放大量但价格不跌」：当日收盘涨跌幅 3.41% 已属大涨（≥1.2%），是方向性上涨、不是「价格不跌」，不适用本项（放量大涨由「低位倍量阳线/启动」规则另行判定）</td></tr></tbody></table>
+<div class="sum"><b>归集总结：</b>当前未命中该放量未放量、该缩量反放巨量、高位放巨量价格不涨、低位放大量价格不跌，常见矛盾信号不显著；底部相位判定为【方向不明】（底部平台区域未定性：地量仅 0/10 日（未形成持续磨底常态）；均线空头排列发散——既未进入地量磨底的缩量常态，也未出现倍量突破+放量持续的启动特征，继续观察，暂不施加该放量/该缩量期望），该放量/该缩量期望按相位单源推导、两侧互斥，不会同时成立</div>
+<div class="fix"><b>修正说明：</b>原条件 <code>(isStagnant || chgPct &gt; 0)</code> 把任何上涨（含 +3.41% 大涨）都当「价格不跌」。现要求当日 |涨跌幅| &lt; 1.2%（小阴小阳硬门槛），「重心企稳」只作二次确认；大涨/大跌一律不命中，未命中时明说「已属大涨、方向性上涨」。</div>
+</body></html>

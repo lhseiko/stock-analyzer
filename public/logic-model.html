@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🧩 工作台逻辑模型 · 股票分析工作台</title>
+  <link rel="icon" type="image/x-icon" href="favicon.ico?v=20261025f">
+  <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=20261025f">
+  <link rel="stylesheet" href="css/style.css?v=20261025f">
+  <!-- 独立长页：恢复滚动（html,body 须同时覆盖，保留为页内唯一规则）。
+       20261025f：页头统一为 .jd-header 结构（与其余独立页一致），原 .lm-page-head/.lm-tool-btn 废弃；
+       树结构与渲染完全复用 public/js/logicModel.js 的 TREE / stats / renderHtml，与首页同源。 -->
+  <style>
+    html, body { height: auto !important; overflow-y: auto !important; overflow-x: hidden; }
+  </style>
+</head>
+<body>
+  <div class="lm-page">
+    <header class="jd-header">
+      <h1 class="jd-title">🧩 工作台逻辑模型<span class="lm-head-sub">按页面布局 · 整个工作台的逻辑框架</span></h1>
+      <div class="jd-actions">
+        <button class="btn-secondary" id="logicModelExpandAll" type="button">展开全部</button>
+        <button class="btn-secondary" id="logicModelCollapseAll" type="button">收起全部</button>
+        <a href="index.html" class="btn-text">返回工作台</a>
+      </div>
+    </header>
+
+    <!-- 树主体：logicModel.js init() 检测到 #lmPageBody 后自动构建（与首页弹窗同一份 TREE） -->
+    <main class="lm-page-body" id="lmPageBody"></main>
+
+    <footer class="lm-page-foot">结构来源：项目真实模块清单（lib/ · routes/ · server.js 路由 · 前端页面与 tab）｜由代码写死，不联网、不调用大模型</footer>
+  </div>
+
+  <script src="js/logicModel.js?v=20261025j"></script>
+</body>
+</html>

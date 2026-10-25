@@ -106,7 +106,7 @@ console.log('\n===== 3) 增持减持 / 板块涨跌停 =====');
 const holders = (n, amt) => new Array(n).fill(0).map((_, i) => ({ name: '股东' + i, holdAmount: 1e8, changeAmount: amt }));
 check('十大股东净减持', factorHoldings({ topShareholders: holders(10, -5e6) }, { ok: false, count: 0 }).signal, 'neg');
 check('十大股东净增持', factorHoldings({ topShareholders: holders(10, 5e6) }, { ok: false, count: 0 }).signal, 'pos');
-check('无股东数据但有回购', factorHoldings({ topShareholders: [] }, { ok: true, count: 2 }).signal, 'pos');
+check('无股东数据（回购已迁出至事件驱动，本因子中性）', factorHoldings({ topShareholders: [] }, { ok: true, count: 2 }).signal, 'zero');
 check('板块跌停潮', factorSectorLimit({ ok: true, limitUpRatio: 0, limitDownRatio: 0.2, limitUp: 0, limitDown: 1, total: 5, boardName: 'X' }, null, null).signal, 'neg');
 check('板块涨停潮', factorSectorLimit({ ok: true, limitUpRatio: 0.2, limitDownRatio: 0, limitUp: 1, limitDown: 0, total: 5, boardName: 'X' }, null, null).signal, 'pos');
 

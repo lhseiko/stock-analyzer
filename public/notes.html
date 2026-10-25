@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>投资心得 / 大盘记录 · 股票分析工作台</title>
+  <link rel="icon" type="image/x-icon" href="favicon.ico?v=20261025f">
+  <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=20261025f">
+  <link rel="stylesheet" href="css/style.css?v=20261025f">
+  <!-- 独立长页：恢复滚动。html,body 须同时覆盖（html 无法由共享样式按页选择），
+       故保留这一条页内规则；其余样式统一在 style.css「独立长页统一外壳」段（20261025f）。 -->
+  <style>
+    html, body { height: auto !important; overflow-y: auto !important; overflow-x: hidden; }
+  </style>
+</head>
+<body>
+  <div class="np-page">
+    <header class="jd-header">
+      <h1 class="jd-title" id="npTitle">🧠 投资心得</h1>
+      <div class="jd-actions">
+        <button id="npAddBtn" class="btn-primary" type="button">写心得</button>
+        <a href="index.html" class="btn-text">返回工作台</a>
+      </div>
+    </header>
+
+    <!-- 范围切换工具条：sticky 统一工具条 + 统一芯片（tab 动作纯文字，DESIGN.md §6） -->
+    <div class="np-toolbar">
+      <button class="np-tab" type="button" data-scope="global">投资心得</button>
+      <button class="np-tab" type="button" data-scope="market">大盘记录</button>
+      <span class="np-count" id="npCount"></span>
+    </div>
+
+    <!-- 记录列表：Notes.renderScopePage() 渲染（与首页卡片同一套 .note-card 结构） -->
+    <main class="np-list" id="scopePageList"></main>
+  </div>
+
+  <script src="js/notes.js?v=20261025f"></script>
+  <script>
+  (function () {
+    // 按 ?scope= 决定本页范围（global=投资心得 / market=大盘记录），写入 body[data-page-scope]
+    var q = new URLSearchParams(location.search).get('scope');
+    var scope = (q === 'market') ? 'market' : 'global';
+    document.body.dataset.pageScope = scope;
+
+    var meta = Notes.SCOPE_META[scope];
+    document.title = meta.title + ' · 股票分析工作台';
+    document.getElementById('npTitle').textContent = meta.title;
+
+    var addBtn = document.getElementById('npAddBtn');
+    addBtn.textContent = meta.addLabel;
+    addBtn.onclick = function () { Notes.showForm(scope); };
+
+    // 范围切换 tab：跳转同页带新 scope（服务端渲染无需 SPA 状态管理）
+    var tabs = document.querySelectorAll('.np-tab');
+    for (var i = 0; i < tabs.length; i++) {
+      tabs[i].classList.toggle('active', tabs[i].getAttribute('data-scope') === scope);
+      tabs[i].onclick = function () {
+        if (this.getAttribute('data-scope') === scope) return;
+        location.href = 'notes.html?scope=' + this.getAttribute('data-scope');
+      };
+    }
+
+    // 计数徽标：挂在 renderHome 之后（本地同步渲染与服务端 reconciliation 完成后都会走这里）
+    var countEl = document.getElementById('npCount');
+    var origRenderHome = Notes.renderHome.bind(Notes);
+    Notes.renderHome = function () {
+      origRenderHome();
+      countEl.textContent = '共 ' + Notes.getByScope(scope).length + ' 条';
+    };
+
+    Notes.init();
+  })();
+  </script>
+</body>
+</html>

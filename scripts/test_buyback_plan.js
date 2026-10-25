@@ -108,11 +108,13 @@ console.log('\n[5] 文案自洽：不允许「完成实施 + 已达承诺上限 
 console.log('\n[6] 接线守卫（卡片主语与降级处理）');
 {
   const src = fs.readFileSync(path.join(__dirname, '..', 'lib', 'sameDayJudgment.js'), 'utf8');
-  ok(/buybackHistorical/.test(src), 'sameDayJudgment 识别 historical');
-  ok(/当前无进行中的回购/.test(src), '父级 detail 以「当前无进行中的回购」为主语');
-  ok(/无进行中（最近一次/.test(src), '子卡片 value 以「无进行中」开头');
-  ok(/股份回购（历史）/.test(src), '子卡片名标「（历史）」');
-  ok(/与当前无关，按中性处理/.test(src), 'detail 明说"与当前无关，按中性处理"');
+  // 20261023i：股份回购已从「增持减持」迁入「事件驱动」——
+  //   历史方案不再在增持减持卡片展示，改由事件引擎判定（历史 → 不生成事件）。
+  ok(!/subs\.push\(\{ name: buybackHistorical/.test(src), '增持减持不再 push 回购子卡片（已迁入事件驱动）');
+  const evSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'eventEngine.js'), 'utf8');
+  ok(/function buildBuybackEvent/.test(evSrc), 'eventEngine 定义 buildBuybackEvent');
+  ok(/if \(!plan \|\| plan\.historical\) return null/.test(evSrc), '历史方案 → 不生成回购事件（null）');
+  ok(/code === '001' \|\| code === '002'/.test(evSrc) && /code === '004'/.test(evSrc), '权重按进度分类 001/002 与 004');
 
   const em = fs.readFileSync(path.join(__dirname, '..', 'lib', 'buybackEmDc.js'), 'utf8');
   ok(/HISTORICAL_DAYS = 730/.test(em), '历史阈值 730 天常量存在');

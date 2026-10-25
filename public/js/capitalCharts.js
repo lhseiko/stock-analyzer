@@ -37,7 +37,8 @@ const CapitalCharts = {
     if (!data) return;
 
     this.lastData = data;
-    this.renderVolumePrice(data.volumeIndicators);
+    // 20261024i：量价关系分析已合并进「量能分析」卡（app.renderVolumeEngine），
+    // 原独立 #capVolumePrice 卡已删除，此处不再单独渲染（renderVolumePrice 保留以兼容/单测）。
     this.renderMoneyFlow(data.moneyFlow);
     this.renderFlowSummary(data.moneyFlow?.summary, data.moneyFlow?.source);
     this.renderVolIndicators(data.volumeIndicators);
@@ -51,6 +52,7 @@ const CapitalCharts = {
 
   renderVolumePrice(vi) {
     const el = document.getElementById('capVolumePrice');
+    if (!el) return; // 20261024i：卡片已合并进「量能分析」，元素不存在时安全退出
     if (!vi || !vi.volumePrice) {
       el.innerHTML = '<p style="color:var(--text-secondary);text-align:center;padding:20px;">暂无数据</p>';
       return;

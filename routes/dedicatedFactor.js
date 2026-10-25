@@ -9,7 +9,7 @@
  */
 const express = require('express');
 const dedicatedFactor = require('../lib/dedicatedFactor');
-const sameDay = require('../lib/sameDayJudgment'); // 用于作废变更个股的短期判断缓存（与事件因子同机制）
+const moduleSync = require('../lib/moduleSync'); // 20261024h：专属因子变化 → 联动应答
 
 const router = express.Router();
 
@@ -39,8 +39,9 @@ router.post('/api/dedicated/trigger', async (req, res) => {
   try {
     const force = !!(req.body && req.body.force);
     const r = await dedicatedFactor.triggerDedicatedFactors({ force });
-    // 状态变化（新实例生成 / 旧实例归档）→ 作废变更个股的短期判断缓存，下次打开带最新权重重算
-    for (const s of (r.changedSymbols || [])) { try { sameDay.invalidateJudgmentForSymbol(s); } catch (e) {} }
+    // 状态变化（新实例生成 / 旧实例归档）→ 联动应答机制作废变更个股的短期判断缓存
+    const trigSyms = r.changedSymbols || [];
+    if (trigSyms.length) moduleSync.emitChange('dedicatedFactor', { symbols: trigSyms, reason: '专属因子手动触发' });
     res.json(Object.assign({ ok: true }, r));
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
@@ -51,7 +52,9 @@ router.post('/api/dedicated/trigger', async (req, res) => {
 router.post('/api/dedicated/cleanup', (req, res) => {
   try {
     const r = dedicatedFactor.cleanupExpired();
-    for (const s of (r.changedSymbols || [])) { try { sameDay.invalidateJudgmentForSymbol(s); } catch (e) {} }
+    // 衰减归档 → 联动应答机制作废变更个股缓存，卡片自动隐藏
+    const clSyms = r.changedSymbols || [];
+    if (clSyms.length) moduleSync.emitChange('dedicatedFactor', { symbols: clSyms, reason: '专属因子衰减清理' });
     res.json(r);
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });

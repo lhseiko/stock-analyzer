@@ -1553,3 +1553,32 @@ LRN-20261020-003「同类 6 处 ×0.7/×1.5 纯符号站点」清单中的第 �
 
 ### Suggested Action
 听到「要点好几次才生效」：① 先确认 `click` 是否真的触发（有 `draggable` 就上 `pointerup` 兜底）；② 数一数一次操作实际发了几个请求（连点是否重置了计时）；③ 看等待期用户能不能分辨"在加载"和"没反应"；④ 检查定时器有没有在偷偷重建 DOM。四条都过一遍，再谈接口性能。
+
+---
+
+## [LRN-20261025-001] correction
+
+**Logged**: 2026-10-25T14:45:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+判断卡片评分展示口径连续三轮反复（删得分 → 要回得分 → 权重=评分），每轮只按字面单向执行，未先对齐"最终卡片形态"就动手。
+
+### Details
+用户第一轮「统一采取权重」→ 助手删掉档位与得分；第二轮「无法判定模型有效性，所有权重与得分都要显示」→ 恢复得分并下发子权重；第三轮「删除复杂的评分系统，直接用权重等于评分，净权重24%就是24分」→ 最终落地：子卡片只留「权重 ±X%」、因子行只留「净权重 X%（最高 Y%）/ 权重 X%」、事件聚合信号改「方向满格加权」（贡献分≈净方向权重）。反复根因：每轮只执行字面指令，没有先用真实数据给用户看"改完后的卡片样例"确认；且"简化"一词可指删数字、也可指换算法，未澄清。
+
+### Suggested Action
+凡「简化/统一展示口径」类需求：① 动手前用真实数据画目标卡片文字样例请用户确认；② 主动说明口径变更对综合分/判断结论的连锁影响（本次事件信号改方向满格加权会抬高事件驱动贡献分）；③ 口径改动与 LAYOUT_VERSION/APP_VERSION 升版同步做。
+
+### Metadata
+- Source: user_feedback
+- Related Files: public/js/app.js, lib/eventEngine.js, lib/sameDayJudgment.js, public/css/style.css
+- Tags: 展示口径, 评分系统, 需求澄清, 自适应布局
+- Pattern-Key: ui.metric_display_alignment
+- Recurrence-Count: 1
+- First-Seen: 2026-10-25
+- Last-Seen: 2026-10-25
+
+---

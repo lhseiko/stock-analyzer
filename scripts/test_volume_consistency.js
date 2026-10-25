@@ -620,7 +620,8 @@ group('13. 预期量能规则（20261019d：该放/该缩缺口补充，3 风险
   // 20261020b：口诀4 阈值具象化（均值×0.7=阈值 + 实际近3日量能同屏）→ schema 升至 20261020b
   // 20261020c：规则5 尾盘窗口按 time 时间戳剔除盘后条目（零量盘后条目曾致系统性误命中）→ schema 升至 20261020c
   // 20261020d：11.3.1「该放量未放量」结论文案阈值具象化（均值×1.5=阈值 + 当日实际量同屏）→ schema 升至 20261020d
-  ok(e2e.schema === 'volume-engine-20261020d', `schema 已升 20261020d（实际 ${e2e.schema}）`);
+  // 20261023d：新增 tenRules 量价十口诀（郭睿体系）主判层；平量涨/跌方向 neutral→observe → schema 升至 20261023d
+  ok(e2e.schema === 'volume-engine-20261023d', `schema 已升 20261023d（实际 ${e2e.schema}）`);
   ok(e2eHvd.matched === true && e2eHvd.status === '命中', `端到端高位放量大跌命中（位置 ${e2e.position.label}）`);
   ok(e2e.riskTags.includes('高位放量大阴线派发风险'), '命中 → 风险标签「高位放量大阴线派发风险」同步输出');
   ok(!/看多信号/.test(e2e.signal.category), `高位放量大跌不得输出看多信号（实际 ${e2e.signal.category}）`);

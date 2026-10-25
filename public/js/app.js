@@ -2,6 +2,16 @@
  * Main Application Logic
  */
 
+// 20261025a：量能档位着色（放量系红 / 缩量系绿 / 平量与数据不足默认白，用户 2026-10-25 要求）。
+// 档位真值源 lib/volumeEngine.js VOLUME_TIERS：极度缩量/温和缩量/平量/温和放量/大量/天量；
+// 60日确认：放量确认/缩量确认/平量。正则覆盖全部档位词，仅对量能语义字段使用。
+function volTierCls(s) {
+  const t = String(s == null ? '' : s);
+  if (/放量|大量|天量/.test(t)) return 'cap-pos';
+  if (/缩量|地量/.test(t)) return 'cap-neg';
+  return '';
+}
+
 // 关键指标释义（点击指标标签后的「?」图标展示）
 const METRIC_HELP = {
   '市盈率(PE)': { title: '市盈率 PE', body: '市盈率 = 股价 ÷ 每股收益，表示按当前盈利多少年回本。<br>· 越低通常越便宜，但过低可能反映市场对其增长预期差；<br>· 不同行业不可直接比，成长股 PE 天然偏高。' },
@@ -129,7 +139,8 @@ const App = {
     }
     const marketAIBtn = document.getElementById('marketAIBtn');
     if (marketAIBtn) {
-      marketAIBtn.addEventListener('click', () => this.loadMarketAI(true));
+      // 20261024l：点击=确保有解读（同一交易日复用缓存，缺失才调 LLM）；Alt+点击=强制重新解读
+      marketAIBtn.addEventListener('click', (e) => this.loadMarketAI(e.altKey ? true : 'ensure'));
     }
     const indexPeTrendRefresh = document.getElementById('indexPeTrendRefresh');
     if (indexPeTrendRefresh) {
@@ -207,6 +218,8 @@ const App = {
     document.querySelectorAll('.tab').forEach(tab => {
       tab.addEventListener('click', () => this.switchTab(tab.dataset.tab));
     });
+    // 20261025l：个股记录 tab 初始化（日期默认今天、添加/删除事件绑定）
+    if (typeof StockLog !== 'undefined') StockLog.init();
 
     // Range buttons
     document.querySelectorAll('.range-btn').forEach(btn => {
@@ -559,6 +572,8 @@ const App = {
     if (typeof Notes !== 'undefined' && document.getElementById('stockNotesContainer')) {
       Notes.renderStock(symbol, name);
     }
+    // 20261025l：切股后重置「个股记录」tab（下一切换/渲染时按新 symbol 拉取）
+    if (typeof StockLog !== 'undefined') StockLog.setStock(symbol, name);
     // Update DocStore stock info
     DocStore.setStock(symbol, name);
     DeepCharts.disposeAll();
@@ -1057,199 +1072,6 @@ const App = {
 
   // ============ 首页·大盘量能情绪分析模型（20260917d，20261015k 起 9 因子确定性计算）============
 
-  // —— 宽基 ETF 申赎（20261022h）：页签 + 明细表 ——
-  // 数值格式化：份额按「份→万份/亿份」、金额按「元→万/亿」，只在展示层换算，不改动后端数值。
-  _fmtShares(v) {
-    if (v == null || !isFinite(v)) return '—';
-    const a = Math.abs(v);
-    if (a >= 1e8) return (v / 1e8).toFixed(2) + ' 亿份';
-    if (a >= 1e4) return (v / 1e4).toFixed(2) + ' 万份';
-    return Math.round(v) + ' 份';
-  },
-  _fmtMoney(v, sign) {
-    if (v == null || !isFinite(v)) return '—';
-    const a = Math.abs(v);
-    let s;
-    if (a >= 1e8) s = (a / 1e8).toFixed(2) + ' 亿';
-    else if (a >= 1e4) s = (a / 1e4).toFixed(1) + ' 万';
-    else s = Math.round(a) + ' 元';
-    if (sign) return (v > 0 ? '+' : v < 0 ? '−' : '') + s;
-    return s;
-  },
-  _fmtQty(v) {
-    if (v == null || !isFinite(v)) return '—';
-    const a = Math.abs(v);
-    if (a >= 1e8) return (a / 1e8).toFixed(2) + ' 亿股';
-    if (a >= 1e4) return (a / 1e4).toFixed(2) + ' 万股';
-    return Math.round(a) + ' 股';
-  },
-  _fmtBaskets(v) {
-    if (v == null || !isFinite(v)) return '—';
-    return Math.abs(v - Math.round(v)) < 0.05 ? String(Math.round(v)) : v.toFixed(2);
-  },
-  _netCls(v) { return v == null ? '' : v > 0 ? 'etf-pos' : v < 0 ? 'etf-neg' : ''; },
-
-  _renderEmoTabs(tab, data) {
-    const fs = Array.isArray(data && data.factors) ? data.factors : [];
-    const ef = fs.find(f => f.key === 'etfFlow') || null;
-    const sig = ef && typeof ef.score === 'number' ? ef.score : 0;
-    const cls = ef && !ef.degraded ? (sig > 0.05 ? 'bull' : sig < -0.05 ? 'bear' : 'flat') : 'none';
-    const tag = !ef ? '未接入' : ef.degraded ? '数据缺失' : `${sig >= 0 ? '+' : ''}${sig.toFixed(2)}`;
-    return `<div class="tp-tabs">`
-      + `<button class="tp-tab ${tab === 'etf' ? '' : 'active'}" data-action="tp-tab" data-tab="factors">情绪因子明细</button>`
-      + `<button class="tp-tab ${tab === 'etf' ? 'active' : ''}" data-action="tp-tab" data-tab="etf">宽基ETF申赎<span class="tp-tab-tag ${cls}">${tag}</span></button>`
-      + `</div>`;
-  },
-
-  /** 宽基 ETF 申赎明细页（数据源 /api/etf-flow，与情绪模型因子同源） */
-  _renderEtfFlowPane() {
-    const esc = (s) => this.escapeHtml(s == null ? '' : String(s));
-    const d = this._etfFlowData;
-    if (!d) {
-      return `<div class="etf-empty">📡 正在读取宽基 ETF 申赎数据…<div class="etf-empty-sub">首次读取需向上交所取当日申赎清单（约 2~6 秒），之后 3 分钟内走缓存。</div></div>`;
-    }
-    if (d.error || d.ok === false) {
-      return `<div class="etf-empty etf-warn">⚠ 宽基 ETF 申赎数据不可用：${esc(d.error || (d.gaps || []).join('；') || '未知原因')}`
-        + `<div class="etf-empty-sub">该因子在情绪模型里已按规则降级（权重归零并分摊），不影响其余因子。</div></div>`;
-    }
-
-    const sum = d.summary || {};
-    const etfs = Array.isArray(d.etfs) ? d.etfs : [];
-    const stocks = Array.isArray(d.stocks) ? d.stocks : [];
-    const groups = Array.isArray(sum.groups) ? sum.groups : [];
-    const settled = d.settled === true;
-    const effCount = etfs.filter(e => e.netAmount != null).length;
-    const nBuy = etfs.filter(e => e.netAmount != null && e.netAmount > 0).length;
-    const nSell = etfs.filter(e => e.netAmount != null && e.netAmount < 0).length;
-    const totalNet = sum.totalNet;
-
-    let html = '';
-
-    // ① 概览
-    html += `<div class="etf-head">`;
-    html += `<div class="etf-head-row">`;
-    html += `<span class="etf-k">数据日</span><span class="etf-v">${esc(d.date || '—')}</span>`;
-    html += `<span class="etf-k">对比基期</span><span class="etf-v">${esc(d.baseDate || '—')}</span>`;
-    html += `<span class="etf-k">口径</span><span class="etf-v">${settled ? '收盘定稿' : '盘中读数（收盘后定稿）'}</span>`;
-    html += `<span class="etf-k">有效 ETF</span><span class="etf-v">${effCount} / ${etfs.length} 只</span>`;
-    html += `</div>`;
-    if (totalNet != null) {
-      html += `<div class="etf-total ${this._netCls(totalNet)}">`
-        + `合计 ${totalNet >= 0 ? '净申购' : '净赎回'} <b>${this._fmtMoney(Math.abs(totalNet))}</b>`
-        + `<span class="etf-total-sub">${nBuy} 只净申购 / ${nSell} 只净赎回 · 累计台账 ${sum.ledgerDays || 0} 个交易日（至 ${esc(sum.ledgerDate || '—')}）</span>`
-        + `</div>`;
-    } else {
-      html += `<div class="etf-total flat">${esc(d.reason || '尚无基期快照，无法计算净申赎')}`
-        + `<span class="etf-total-sub">本模块每个交易日收盘后自动留存一份快照（份额 + 全篮成分），下一交易日即可算出净申赎。</span></div>`;
-    }
-    html += `</div>`;
-
-    // ② 家族汇总
-    if (groups.length) {
-      html += `<div class="etf-groups">`;
-      groups.forEach(g => {
-        html += `<div class="etf-group ${this._netCls(g.netAmount)}">`
-          + `<span class="etf-group-name">${esc(g.label)}</span>`
-          + `<span class="etf-group-net">${g.netAmount >= 0 ? '净申购' : '净赎回'} ${this._fmtMoney(Math.abs(g.netAmount))}</span>`
-          + `<span class="etf-group-sub">${g.etfCount} 只有效</span>`
-          + `</div>`;
-      });
-      html += `</div>`;
-    }
-
-    // ③ ETF 明细
-    if (etfs.length) {
-      html += `<div class="etf-block-title">各宽基 ETF 申赎（${etfs.length} 只）</div>`;
-      html += `<div class="etf-scroll"><table class="etf-table"><thead><tr>`
-        + `<th>代码</th><th>名称</th><th>家族</th><th class="num">最小申赎单位</th><th class="num">基金份额</th>`
-        + `<th class="num">份额变动</th><th class="num">篮数</th><th class="num">净申赎额</th><th>备注</th>`
-        + `</tr></thead><tbody>`;
-      etfs.slice().sort((a, b) => (b.netAmount == null ? -1e18 : b.netAmount) - (a.netAmount == null ? -1e18 : a.netAmount))
-        .forEach(e => {
-          html += `<tr class="${e.netAmount == null ? 'row-dim' : ''}">`
-            + `<td class="mono">${esc(e.code)}</td>`
-            + `<td class="name">${esc((e.name || '').replace(/交易型开放式指数证券投资基金|交易型开放式指数基金|ETF|交易型开放式/g, '').slice(0, 14) || e.name || '')}</td>`
-            + `<td>${esc(e.groupLabel || '')}</td>`
-            + `<td class="num">${e.unit != null ? (e.unit / 1e4).toFixed(0) + ' 万份' : '—'}</td>`
-            + `<td class="num">${this._fmtShares(e.shares)}</td>`
-            + `<td class="num ${this._netCls(e.dShares)}">${e.dShares == null ? '—' : this._fmtShares(e.dShares).replace(/^/, e.dShares > 0 ? '+' : '')}</td>`
-            + `<td class="num ${this._netCls(e.baskets)}">${this._fmtBaskets(e.baskets)}</td>`
-            + `<td class="num ${this._netCls(e.netAmount)}">${e.netAmount == null ? '—' : this._fmtMoney(e.netAmount, true)}</td>`
-            + `<td class="note">${esc(e.note || '')}</td>`
-            + `</tr>`;
-        });
-      html += `</tbody></table></div>`;
-    }
-
-    // ④ 逐股明细
-    if (stocks.length) {
-      const topBuy = stocks.slice().sort((a, b) => (b.dayBuy || 0) - (a.dayBuy || 0)).slice(0, 10);
-      const topSell = stocks.slice().sort((a, b) => (a.daySell || 0) - (b.daySell || 0)).slice(0, 10);
-      html += `<div class="etf-block-title">被申购 / 被赎回最多的成分股（当日）</div>`;
-      html += `<div class="etf-two-col">`;
-      html += `<div class="etf-col"><div class="etf-col-head etf-pos">▲ 被买入最多（净申购篮子里占比最高）</div>`;
-      topBuy.filter(s => (s.dayBuy || 0) > 0).forEach(s => {
-        html += `<div class="etf-li"><span class="etf-li-name">${esc(s.name || s.code)}<em>${esc(s.code)}</em></span>`
-          + `<span class="etf-li-val etf-pos">+${this._fmtQty(s.dayBuy)}</span></div>`;
-      });
-      html += `</div>`;
-      html += `<div class="etf-col"><div class="etf-col-head etf-neg">▼ 被卖出最多（净赎回篮子里占比最高）</div>`;
-      topSell.filter(s => (s.daySell || 0) < 0).forEach(s => {
-        html += `<div class="etf-li"><span class="etf-li-name">${esc(s.name || s.code)}<em>${esc(s.code)}</em></span>`
-          + `<span class="etf-li-val etf-neg">−${this._fmtQty(s.daySell)}</span></div>`;
-      });
-      html += `</div></div>`;
-
-      // 全量逐股表（默认收起，避免首页过长）
-      html += `<div class="etf-block-title">全部成分股累计（台账 ${sum.ledgerDays || 0} 个交易日）`
-        + `<button class="etf-more" data-action="etf-more">${this._etfShowAll ? '收起' : `展开全部 ${stocks.length} 只`}</button></div>`;
-      if (this._etfShowAll) {
-        html += `<div class="etf-scroll etf-scroll-tall"><table class="etf-table"><thead><tr>`
-          + `<th>代码</th><th>名称</th><th>所属宽基</th><th class="num">当日买</th><th class="num">当日卖</th>`
-          + `<th class="num">累计被申购</th><th class="num">累计被赎回</th><th class="num">买/卖天数</th>`
-          + `</tr></thead><tbody>`;
-        stocks.forEach(s => {
-          html += `<tr>`
-            + `<td class="mono">${esc(s.code)}</td>`
-            + `<td class="name">${esc(s.name || '—')}</td>`
-            + `<td class="dim">${esc(s.groupLabel || '')}</td>`
-            + `<td class="num ${this._netCls(s.dayBuy)}">${s.dayBuy ? '+' + this._fmtQty(s.dayBuy) : '—'}</td>`
-            + `<td class="num ${this._netCls(s.daySell)}">${s.daySell ? '−' + this._fmtQty(s.daySell) : '—'}</td>`
-            + `<td class="num etf-pos">${s.cumBuy ? '+' + this._fmtQty(s.cumBuy) : '—'}</td>`
-            + `<td class="num etf-neg">${s.cumSell ? '−' + this._fmtQty(s.cumSell) : '—'}</td>`
-            + `<td class="num dim">${s.buyDays || 0} / ${s.sellDays || 0}</td>`
-            + `</tr>`;
-        });
-        html += `</tbody></table></div>`;
-      }
-    }
-
-    // ⑤ 口径与缺口（诚实披露，不允许含糊成"申购了多少"）
-    html += `<div class="etf-notes">`;
-    html += `<div class="etf-note-item"><b>怎么算的：</b>交易所申赎清单（PCF）只说明「一篮子要交哪些股票」，不含当日实际申赎量；真实申赎看<b>基金总份额变动</b>：Δ份额 ÷ 最小申赎单位 = 篮数，篮数 × 每篮成分股数 = 该股理论增减股数。</div>`;
-    html += `<div class="etf-note-item etf-warn"><b>必须说清的口径：</b>份额本身是<b>净</b>概念（申购 − 赎回）。本模块只能给出<b>净申赎额</b>与「净申购日 / 净赎回日」的累计，<b>无法拆出申购总量与赎回总量两个绝对数</b>。逐股股数为理论值，实际受现金替代、取整影响会有偏差。</div>`;
-    html += `<div class="etf-note-item"><b>口径边界：</b>只统计宽基（${groups.map(g => esc(g.label)).join('、') || '—'}）的纯指数复制 ETF；行业/主题/红利/增强/策略类 ETF 已排除（它们的资金流不代表大盘增量资金）。</div>`;
-    if (!settled) html += `<div class="etf-note-item etf-warn"><b>盘中提示：</b>当前份额是盘中实时值，此处为预览；15:05 收盘定稿后才计入累计台账，避免把半天进度永久记成全天。</div>`;
-    if (d.baselineOnly) html += `<div class="etf-note-item etf-warn"><b>基线日：</b>本次是模块第一次留存快照，尚无对比基期；下一交易日起可算出净申赎与逐股增减。</div>`;
-    const gaps = Array.isArray(d.gaps) ? d.gaps.filter(Boolean) : [];
-    if (gaps.length) html += `<div class="etf-note-item etf-warn"><b>数据缺口（${gaps.length}）：</b>${gaps.map(esc).join('；')}</div>`;
-    html += `</div>`;
-
-    return html;
-  },
-
-  async _loadEtfFlow(force) {
-    if (this._etfFlowLoading) return;
-    this._etfFlowLoading = true;
-    try {
-      const r = await fetch('/api/etf-flow' + (force ? '?refresh=1' : ''), { cache: 'no-store' });
-      this._etfFlowData = await r.json();
-    } catch (e) {
-      this._etfFlowData = { ok: false, error: e && e.message ? e.message : String(e) };
-    }
-    this._etfFlowLoading = false;
-    if (this._emoData) this._renderEmotionPanel(this._emoData);
-  },
 
   _renderEmotionPanel(data) {
     const panel = document.getElementById('homeSentimentPanel');
@@ -1258,20 +1080,21 @@ const App = {
     if (!body) return;
     if (panel) panel.style.display = '';
     if (updated) updated.textContent = '更新于 ' + new Date().toLocaleTimeString('zh-CN');
-    this._emoData = data;                       // 页签切换后重渲染用
-    const tab = this._emoTab === 'etf' ? 'etf' : 'factors';
+    this._emoData = data;                       // 详情折叠状态变化时重渲染用
 
+    // 20261025p：情绪总分改「权重比合计净值」（±分制）——totalScore(−1~1) × 100 = 各因子净权重之和
     const score = (typeof data.totalScore === 'number') ? data.totalScore : null;
-    const scoreCls = score == null ? 'flat' : score >= 0.2 ? 'bull' : score <= -0.2 ? 'bear' : 'flat';
+    const points = (score != null) ? Number((score * 100).toFixed(2)) : null;
+    const scoreCls = points == null ? 'flat' : points >= 20 ? 'bull' : points <= -20 ? 'bear' : 'flat';
     const dirCls = data.tendencyKey === 'bull' ? 'pos' : data.tendencyKey === 'bear' ? 'neg' : 'neu';
     const detailOpen = this._isTpDetailOpen();
     const esc = (s) => this.escapeHtml(s == null ? '' : String(s));
 
     let html = '';
     html += `<div class="tp-status-row tp-emo ${scoreCls}">`;
-    html += `<span class="tp-status-badge">情绪总分 ${score != null ? score : '—'}</span>`;
+    html += `<span class="tp-status-badge">情绪总分 ${points != null ? (points > 0 ? '+' : '') + points.toFixed(2) + ' 分' : '—'}</span>`;
     html += `<span class="tp-status-dir">短期倾向：<b class="${dirCls}">${esc(data.tendency || '中性')}</b></span>`;
-    html += `<span class="tp-status-idx">量能状态：${esc(data.volumeState || '—')}</span>`;
+    html += `<span class="tp-status-idx">量能状态：<span class="${volTierCls(data.volumeState)}">${esc(data.volumeState || '—')}</span></span>`;
     if (data.circuit) html += `<span class="tp-status-z">⛔ 极端行情熔断</span>`;
     html += `</div>`;
     html += `<button class="tp-detail-toggle" data-action="toggle-tp-detail">${detailOpen ? '▾ 隐藏详情' : '▸ 展开详情'}</button>`;
@@ -1279,42 +1102,59 @@ const App = {
     // —— §十 最终输出：六行结论（始终可见）——
     const line = (k, v, cls) => `<div class="tp-emo-line"><span class="tp-emo-k">${k}</span><span class="tp-emo-v ${cls || ''}">${v}</span></div>`;
     html += `<div class="tp-emo-lines">`;
-    html += line('情绪总分', `${score != null ? score : '—'}<span class="tp-emo-sub">（范围 −1 ~ 1，越接近 1 越乐观）</span>`);
+    html += line('情绪总分', `${points != null ? (points > 0 ? '+' : '') + points.toFixed(2) + ' 分' : '—'}<span class="tp-emo-sub">（范围 −100 ~ +100 分，正值乐观；= 各因子净权重合计）</span>`);
     html += line('短期倾向', `<b class="${dirCls}">${esc(data.tendency || '中性')}</b>`);
     html += line('核心驱动', esc(data.coreDriver || '—'));
-    html += line('量能状态', esc(data.volumeState || '—'));
+    html += line('量能状态', esc(data.volumeState || '—'), volTierCls(data.volumeState));
     html += line('操作建议', esc(data.advice || '—'), data.circuit ? 'tp-emo-warn' : '');
     html += line('风险提示', esc(data.riskTip || '—'), 'tp-emo-risk');
     html += `</div>`;
 
-    // 页签：情绪因子明细 / 宽基 ETF 申赎（20261022h）
-    html += this._renderEmoTabs(tab, data);
+    // 20261025p：删除「情绪因子明细 / 宽基 ETF 申赎」页签——ETF 明细改独立网页 /etf-flow.html，
+    // 因子卡片内按钮直达（open-etf-page），首页卡片回归单视图，保持排版对称。
 
     html += `<div class="tp-detail-body ${detailOpen ? '' : 'collapsed'}">`;
-    if (tab === 'etf') {
-      // 宽基 ETF 申赎页签（20261022h）：独立明细视图，不挤占因子网格
-      html += this._renderEtfFlowPane();
-    } else {
 
     // 因子网格（与后端同源，数值一致）
     const fs = Array.isArray(data.factors) ? data.factors : [];
     if (fs.length) {
-      html += `<div class="tp-block-title">因子明细（8 常驻 + 2 非常驻 · 得分 × 权重计入总分）</div>`;
+      html += `<div class="tp-block-title">因子明细（8 常驻 + 2 非常驻 · 净权重=评分，方向满格计入总分）</div>`;
       html += '<div class="tp-comp-grid">';
       fs.forEach(f => {
-        const sig = (typeof f.score === 'number') ? f.score : 0;
-        // 20261016b（审计 L4）：阈值对齐后端判色口径 ±0.05
-        // （短期判断因子 lib/sameDayJudgment.js:209/1040，大盘情绪分量 lib/marketEmotionModel.js:526）
-        // 旧值 ±0.03 会导致「文字显示中性、颜色却染成偏多/偏空」的语义错位。
-        const sigCls = sig > 0.05 ? 'tp-sig-bull' : sig < -0.05 ? 'tp-sig-bear' : 'tp-sig-flat';
-        const signTxt = (sig >= 0 ? '+' : '') + sig.toFixed(2);
+        // 20261025n：权重=评分（对齐个股短期判断模块）——大字显示「净权重 ±X%」（方向满格×权重），
+        // 不再显示 -1~1 的强度得分；强度信息保留在 detail 文案里
+        const contrib = (typeof f.contribution === 'number') ? f.contribution : 0;
+        const sigCls = contrib > 0 ? 'tp-sig-bull' : contrib < 0 ? 'tp-sig-bear' : 'tp-sig-flat';
+        const signTxt = `净权重 ${contrib > 0 ? '+' : ''}${contrib.toFixed(2)}%`;
         html += `<div class="tp-comp${f.degraded ? ' tp-comp-degraded' : ''}">`;
-        html += `<div class="tp-comp-label">${esc(f.name)}<span class="tp-comp-w">占${f.weight != null ? f.weight.toFixed(1) : '—'}%</span></div>`;
+        html += `<div class="tp-comp-label">${esc(f.name)}<span class="tp-comp-w">权重${f.weight != null ? f.weight.toFixed(2) : '—'}%</span></div>`;
         html += `<div class="tp-comp-sig ${sigCls}">${signTxt}</div>`;
         html += `<div class="tp-comp-value">${esc(f.value || '')}</div>`;
-        html += `<div class="tp-comp-detail">${esc(f.detail || '')}</div>`;
+        // 20261025p：ETF 明细改独立网页 /etf-flow.html（弹窗/页签废弃），卡片按钮新标签打开
+        const detailTxt = f.key === 'etfFlow'
+          ? '份额较上一收盘增加 → 折算净申赎额；口径说明、ETF 名单与逐股明细见独立页（点下方按钮新标签打开）。'
+          : (f.detail || '');
+        html += `<div class="tp-comp-detail">${esc(detailTxt)}</div>`;
+        if (f.key === 'etfFlow') html += `<button type="button" class="tp-comp-more" data-action="open-etf-page">查看宽基ETF明细 →</button>`;
+        // 20261023j：卡片补「数据日期」——原来只有结论没有日期，用户无法判断数据新旧（2026-10-23 截图报障）。
+        //   优先用因子自带日期（ETF=份额披露日 20261022、讨论热度=热度时间），其余用模型基准日；
+        //   宏观因子数据期为月度，已在 detail 写明（如「2026年09月份」），不再重复。
+        const isMacroF = f.key === 'domesticMacro' || f.key === 'usMacro';
+        const fmtD = (s) => /^\d{8}$/.test(String(s)) ? `${String(s).slice(0, 4)}-${String(s).slice(4, 6)}-${String(s).slice(6)}` : String(s);
+        const dateTxt = (f.key === 'etfFlow' && f.etfDate) ? fmtD(f.etfDate)
+          : (f.key === 'discussionHeat' && f.heatDate) ? String(f.heatDate).slice(0, 10)
+            : fmtD(f.dataDate || data.date || data.baselineDate || '');
+        if (!isMacroF && dateTxt) html += `<div class="tp-comp-date">数据日期 ${esc(dateTxt)}</div>`;
         if (f.degraded) html += `<div class="tp-comp-detail tp-emo-warn">⚠ ${esc(f.reason || '数据不可用')} → 权重已归零并按比例分摊</div>`;
-        else if (f.lagged) html += `<div class="tp-comp-detail tp-emo-warn">⏱ 数据滞后${f.lagDays != null ? ` ${f.lagDays} 个交易日` : '（日期未知）'} → 权重按规则打 8 折</div>`;
+        else if (f.lagged) {
+          // 20261023l：区分「T+1 例行披露」（融资余额等，最新可得就是上一交易日）与「异常滞后」。
+          //   前者不再用 ⏱ 警告口吻，改为中性说明：8 折是模型规则，不是数据缺失。
+          const lagDate = f.dataDate ? fmtD(f.dataDate) : (f.lagDays != null ? `${f.lagDays} 个交易日前` : '上一交易日');
+          const cadenceTxt = f.lagNote || `T+1 例行披露（最新可得 ${lagDate}）`;
+          html += f.lagKind === 'cadence'
+            ? `<div class="tp-comp-detail tp-emo-info">ℹ️ ${esc(cadenceTxt)} → 模型规则权重 ×0.8（惯例折扣，非数据异常）</div>`
+            : `<div class="tp-comp-detail tp-emo-warn">⏱ 数据滞后${f.lagDays != null ? ` ${f.lagDays} 个交易日` : '（日期未知）'} → 权重按规则打 8 折</div>`;
+        }
         html += `</div>`;
       });
       html += '</div>';
@@ -1337,6 +1177,18 @@ const App = {
       }
       line += `（口径：${esc(acc.horizonLabel || 'T+1 / T+3 / T+5')}）`;
       html += `<div class="tp-learn-line">${line}</div>`;
+      // 20261023g：列出待结算的具体日期，避免「已记录 20 / 已结算 18」看不出差在哪两天
+      if (Array.isArray(acc.pendingList) && acc.pendingList.length) {
+        const d0 = new Date();
+        const todayStr = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, '0')}-${String(d0.getDate()).padStart(2, '0')}`;
+        const parts = acc.pendingList.map(p => {
+          const b = String(p.baseDate || '').slice(5);
+          const t = String(p.targetDate || '').slice(5);
+          const wait = p.targetDate === todayStr ? '待今日收盘' : '未到目标日';
+          return `${b}（目标 ${t}，${wait}）`;
+        });
+        html += `<div class="tp-learn-line">待结算 ${acc.pendingList.length} 条：${parts.join(' · ')}</div>`;
+      }
     }
     if (data.health && data.health.report) {
       const hr = data.health.report;
@@ -1348,14 +1200,9 @@ const App = {
     if (data.sampleNote) html += `<div class="tp-sample-note">${esc(data.sampleNote)}</div>`;
     if (Array.isArray(data.issues) && data.issues.length) html += `<div class="tp-sample-note tp-emo-warn">数据自检：${esc(data.issues.map(i => i.msg).join('；'))}</div>`;
     html += `<div class="tp-source-note">数据来源：${esc(data.source || '')}｜基准日 ${esc(data.baselineDate || data.date || '')}｜规则：大盘量能情绪分析模型（完整版）。</div>`;
-    }  // end: tab !== 'etf'
     html += `</div>`;
 
     body.innerHTML = html;
-    // 切到 ETF 页签且尚无数据时才去取（已取过则复用；refresh 由页面刷新按钮触发）
-    if (tab === 'etf' && !this._etfFlowData && !this._etfFlowLoading) {
-      setTimeout(() => App._loadEtfFlow(false), 0);
-    }
   },
 
   _renderTpPanelInto(ids, data, symbol, opts) {
@@ -1520,13 +1367,12 @@ const App = {
     return s > 0 ? 'pos' : s < 0 ? 'neg' : 'neu';
   },
 
-  // 影响程度评分徽章：红=利好 / 绿=利空 / 灰=中性，±3 为最强（因子旁显式标注）
+  // 方向徽章：红=利好 / 绿=利空 / 灰=中性（20261025g：统一口径，只显示文字方向，不再显示 ±档位数字）
   _impactBadge(f) {
     const s = (typeof f === 'number') ? f : this._impactOf(f);
     const cls = s > 0 ? 'pos' : s < 0 ? 'neg' : 'neu';
     const label = s > 0 ? '利好' : s < 0 ? '利空' : '中性';
-    const sign = s > 0 ? '+' : '';
-    return `<span class="sd-impact ${cls}" title="影响程度评分：${label} ${sign}${s}（±3 为最强；红=利好，绿=利空）">${label} ${sign}${s}</span>`;
+    return `<span class="sd-impact ${cls}" title="方向：${label}（红=利好，绿=利空）">${label}</span>`;
   },
 
   // 20260906：因子名渲染——板块跷跷板标题中的「负相关」用黄色高亮（用户要求，仅此因子；其他因子名原样）
@@ -1547,11 +1393,17 @@ const App = {
         const badge = (f.key === 'seesaw')
           ? '<span class="sd-impact rel" title="该板块与个股呈负相关关系（跷跷板效应），不做方向判断">负相关</span>'
           : this._impactBadge(sf);
+        // 20261025j：子卡片显示「权重 ±X%」= 因子内份额 × 因子有效权重（方向入符号、带方向色）
+        const eff = (typeof f.effectiveWeight === 'number') ? f.effectiveWeight : 0;
+        const hasW = typeof sf.weight === 'number' && sf.weight > 0 && sf.signal !== 0;
+        const wPart = hasW
+          ? `<span class="sd-factor-contrib ${signCls}">权重 ${sf.signal > 0 ? '+' : '-'}${(Math.abs(sf.weight) * eff * 100).toFixed(0)}%</span>`
+          : '';
         return `<div class="sd-sub-card">
           <div class="sd-sub-head">
             <span class="sd-dot ${signCls}"></span>
             <span class="sd-sub-name">${this._escapeHtml(sf.name)}</span>
-            ${badge}
+            ${badge}${wPart}
           </div>
           <div class="sd-sub-value ${signCls}">${this._escapeHtml(String(sf.value || '—'))}</div>
           <div class="sd-sub-detail">${this._escapeHtml(sf.detail || '')}</div>
@@ -1587,20 +1439,25 @@ const App = {
       return Math.abs(b.contribution || 0) - Math.abs(a.contribution || 0);
     });
     const rows = sorted.map((f, i) => {
-      // 颜色由影响程度评分统一决定（与徽章同源）；条形方向仍按贡献分符号（左右分侧）
+      // 颜色由影响程度评分统一决定（与圆点/条形同源）；条形方向仍按贡献分符号（左右分侧）
       const signCls = this._impactCls(f);
-      const contrib = (f.contribution >= 0 ? '+' : '') + ((f.contribution || 0) * 100).toFixed(2);
       const pct = Math.min(50, Math.abs(f.contribution || 0) / maxAbs * 50); // 双向条：从中线向两侧延伸
       const barStyle = f.contribution >= 0 ? `left:50%;width:${pct}%` : `left:${50 - pct}%;width:${pct}%`;
       const hidden = i >= topN ? ' is-hidden' : '';
+      // 20261025j：权重=评分铺满全模块——子卡 weight 统一为「因子内份额」，显示份额×因子有效权重；
+      // 因子行「净权重 X%（最高 Y%）」= Σ(份额×eff×方向)，即该因子评分；无加权子卡的因子仍显示「权重 X%」。
+      const effW = (typeof f.effectiveWeight === 'number') ? f.effectiveWeight : 0;
+      const subW = (f.subFactors || []).filter(sf => typeof sf.weight === 'number' && sf.weight > 0 && sf.signal !== 0);
+      const netW = subW.length ? subW.reduce((a, sf) => a + sf.weight * effW * (sf.signal > 0 ? 1 : -1), 0) : null;
+      const wHtml = (netW != null)
+        ? `<span class="sd-factor-contrib ${netW > 0 ? 'pos' : netW < 0 ? 'neg' : 'neu'}">净权重 ${(netW * 100).toFixed(0)}%</span><span class="sd-factor-w">（最高 ${Math.round((f.effectiveWeight || 0) * 100)}%）</span>`
+        : `<span class="sd-factor-w">权重 ${Math.round((f.effectiveWeight || 0) * 100)}%</span>`;
       return `<div class="sd-factor-row${hidden}">
         <button class="sd-factor-toggle" type="button" aria-expanded="false">
           <span class="sd-dot ${signCls}"></span>
           <span class="sd-factor-name">${this._factorNameHtml(f)}</span>
-          ${this._impactBadge(f)}
           <span class="sd-bar-track"><span class="sd-bar ${signCls}" style="${barStyle}"></span></span>
-          <span class="sd-factor-w">权重 ${Math.round((f.effectiveWeight || 0) * 100)}%</span>
-          <span class="sd-factor-contrib ${signCls}">${contrib}</span>
+          ${wHtml}
           <span class="sd-chevron">▾</span>
         </button>
         <div class="sd-factor-body">
@@ -1833,14 +1690,11 @@ const App = {
       const imp = this._impactOf(f);
       const arrow = imp > 0 ? '▲ 看多' : imp < 0 ? '▼ 看空' : '— 中性';
       const signCls = imp > 0 ? 'pos' : imp < 0 ? 'neg' : 'neu';
-      const contrib = (f.contribution >= 0 ? '+' : '') + (f.contribution * 100).toFixed(2);
       return `<div class="sd-factor">
         <div class="sd-factor-head">
           <span class="sd-factor-name">${this._factorNameHtml(f)}</span>
-          ${this._impactBadge(f)}
           <span class="sd-factor-signal ${signCls}">${arrow}</span>
           <span class="sd-factor-w">权重 ${(f.effectiveWeight * 100).toFixed(0)}%</span>
-          <span class="sd-factor-contrib ${signCls}">贡献 ${contrib}</span>
         </div>
         <div class="sd-factor-detail">${this._escapeHtml(f.detail)}</div>
         <div class="sd-factor-val">取值：${this._escapeHtml(String(f.value))}</div>
@@ -2356,16 +2210,72 @@ const App = {
     // 量能指标行
     const vs = ve.volumeState || {};
     const pos = ve.position || {};
+    // 20261024j：修「60日量能确认＝未确认」与生死位规则里 60 日均量有数据的矛盾。
+    // confirm=null 并非「缺少 60 日数据」，而是「当日量落在 0.7~1.5×60日均量之间」→ 60 日口径为平量。
+    // 直接展示 60 日口径实际比值，并在 tooltip 给出均量/当日量/阈值，杜绝「有数据却写未确认」的歧义。
+    const vr60 = (typeof vs.volToday === 'number' && typeof vs.avg60 === 'number' && vs.avg60 > 0)
+      ? vs.volToday / vs.avg60 : null;
+    const confirmState = vr60 == null ? '数据不足' : (vs.confirm || '平量');
+    const confirmTip = vr60 != null
+      ? `60日均量 ${num(vs.avg60, 0)}，当日量 ${num(vs.volToday, 0)}，当日量÷60日均量 = ${num(vr60)}×；放量确认需 >1.5×、缩量确认需 <0.7×，介于之间为平量（并非缺少 60 日数据）`
+      : '60 日均量数据不足（历史不足 60 根）';
+    const confirmVal = `<span class="${volTierCls(confirmState)}" title="${esc(confirmTip)}">${esc(confirmState)}${vr60 != null ? `<span class="cm-paren">（${num(vr60)}×）</span>` : ''}</span>`;
+    // [20261024d] 括号内说明文字缩小一号（用户 2026-10-24 要求）：包 .cm-paren，样式见 style.css。
+    // 关键支撑/压力的 kind 内可能自带嵌套括号（如「MA250（上翘）」），外层整体包 span 即可全部继承小字号。
     const metrics = [
-      ['量能档位', `${esc(vs.level || '--')}${vs.ratio5 != null ? `（${num(vs.ratio5)}×）` : ''}`],
-      ['60日量能确认', esc(vs.confirm || '未确认')],
-      ['价格位置', `${esc(pos.label || '--')}${pos.pricePct12m != null ? `（分位 ${num(pos.pricePct12m, 1)}%）` : ''}`],
-      ['关键支撑', pos.support && pos.support.price != null ? `${num(pos.support.price)}（${esc(pos.support.kind)}）` : '--'],
-      ['关键压力', pos.resistance && pos.resistance.price != null ? `${num(pos.resistance.price)}（${esc(pos.resistance.kind)}）` : '--'],
+      ['量能档位', `<span class="${volTierCls(vs.level)}">${esc(vs.level || '--')}${vs.ratio5 != null ? `<span class="cm-paren">（${num(vs.ratio5)}×）</span>` : ''}</span>`],
+      ['60日量能确认', confirmVal],
+      ['价格位置', `${esc(pos.label || '--')}${pos.pricePct12m != null ? `<span class="cm-paren">（分位 ${num(pos.pricePct12m, 1)}%）</span>` : ''}`],
+      ['关键支撑', pos.support && pos.support.price != null ? `${num(pos.support.price)}<span class="cm-paren">（${esc(pos.support.kind)}）</span>` : '--'],
+      ['关键压力', pos.resistance && pos.resistance.price != null ? `${num(pos.resistance.price)}<span class="cm-paren">（${esc(pos.resistance.kind)}）</span>` : '--'],
       ['今日成交额', vs.amountToday != null ? `${(vs.amountToday / 1e8).toFixed(2)} 亿` : '数据不足'],
     ];
     const metricsHtml = metrics.map(([k, v]) =>
       `<div class="cap-metric"><span class="cm-label">${esc(k)}</span><span class="cm-value">${v}</span></div>`).join('');
+
+    // 20261024j：confirm=null（60日口径平量）时补一句窗口说明，解释「量能档位（÷5日均量）」与
+    // 「60日均量口径」是两个不同窗口，避免把「量能档位=放量」与「60日确认=平量」误读为前后矛盾。
+    const confirmNote = (vs.confirm == null && vr60 != null)
+      ? `<div class="ve-note">60 日均量口径：当日量为 60 日均量的 ${num(vr60)} 倍（均量 ${num(vs.avg60, 0)}、当日量 ${num(vs.volToday, 0)}），介于 0.7~1.5 倍之间 → 判为「平量」，并非缺少 60 日数据；「量能档位 ${esc(vs.level || '')}（÷5日均量）」是另一个窗口，两者口径不同，结论可并存。</div>`
+      : '';
+
+    // 20261024i：量价关系分析合并进本卡（原独立「量价关系分析」卡删除）。
+    // 去重原则——「量比 / 量能热度」与上方「量能档位」同源，不再重复展示；
+    // 只保留量价独有指标（今日涨跌 / 20日涨跌日 / 20日量价比 / 20日净涨跌）与当日量价配合结论。
+    // 数据缺失时给出明确原因（不整卡空白），上方量能分析照常展示。
+    const vi = data && data.volumeIndicators;
+    const vp = vi && vi.volumePrice;
+    let vpHtml = '';
+    if (vp) {
+      const vpCls = ({
+        '量价齐升': 'cap-pos', '放量上涨': 'cap-pos', '温和上涨': 'cap-pos', '缩量上涨': 'cap-neg',
+        '放量下跌': 'cap-neg', '巨量下跌': 'cap-neg', '缩量下跌': 'cap-neg', '地量下跌': 'cap-neg', '显著下跌': 'cap-neg',
+        '大涨平量': 'cap-neutral', '地量上涨': 'cap-neutral', '温和回调': 'cap-neutral', '缩量回调': 'cap-neutral',
+        '地量回调': 'cap-neutral', '量价平衡': 'cap-neutral',
+      })[vp.signal] || 'cap-neutral';
+      const dp = typeof vp.dayChangePct === 'number' ? vp.dayChangePct : null;
+      const dpCls = dp == null ? '' : (dp > 0 ? 'cap-pos' : dp < 0 ? 'cap-neg' : '');
+      const nc = typeof vp.netChangePct === 'number' ? vp.netChangePct : null;
+      const ncCls = nc == null ? '' : (nc > 0 ? 'cap-pos' : nc < 0 ? 'cap-neg' : '');
+      const ratioCls = typeof vp.ratio === 'number' ? (vp.ratio > 1 ? 'cap-pos' : 'cap-neg') : '';
+      const vpDate = (vi.series && Array.isArray(vi.series.dates) && vi.series.dates.length)
+        ? vi.series.dates[vi.series.dates.length - 1] : '';
+      vpHtml = `
+      <div class="ve-section-title">量价配合（当日）</div>
+      <div class="ve-vp-line">
+        <span class="ve-vp-signal ${vpCls}">${esc(vp.signal || '--')}</span>
+        <span class="ve-vp-desc">${esc(vp.description || '')}</span>
+      </div>
+      <div class="cap-metrics-row">
+        <div class="cap-metric"><span class="cm-label">今日涨跌</span><span class="cm-value ${dpCls}">${dp == null ? '--' : (dp > 0 ? '+' : '') + dp.toFixed(2) + '%'}</span></div>
+        <div class="cap-metric"><span class="cm-label">20日涨跌日</span><span class="cm-value">${vp.upDays != null ? vp.upDays : '--'}天/${vp.downDays != null ? vp.downDays : '--'}天</span></div>
+        <div class="cap-metric"><span class="cm-label">20日量价比</span><span class="cm-value ${ratioCls}">${vp.ratio != null ? vp.ratio : '--'}</span></div>
+        <div class="cap-metric"><span class="cm-label">20日净涨跌</span><span class="cm-value ${ncCls}">${nc == null ? '--' : (nc > 0 ? '+' : '') + nc + '%'}</span></div>
+      </div>
+      <div class="cap-date-note">量价统计截止 ${esc(vpDate || '--')} · K线 · 本地计算（量比与量能档位同源，不重复展示）</div>`;
+    } else {
+      vpHtml = `<div class="ve-src-notes"><div class="ve-src-title">量价配合（当日）</div><div class="ve-gap-item">· 量价数据不足（可用日K不足 20 根或数据源暂不可用），不影响上方量能分析结论</div></div>`;
+    }
 
     // 四维度客观描述
     const dim = ve.dimensions || {};
@@ -2375,11 +2285,11 @@ const App = {
     const tierBasis = (ve.volumeTier && ve.volumeTier.basis)
       || '当日量 ÷ 前5日均量（基准不含当日），叠加 60 日均量 ×1.5/×0.7 确认';
     const dimsHtml = [
-      ['量能状态', dim.volumeState], ['价格位置', dim.position],
+      ['量能状态', dim.volumeState, volTierCls(dim.volumeState)], ['价格位置', dim.position],
       ['资金行为', dim.capitalBehavior], ['筹码转移', dim.chipTransfer],
       ['量能口径', `${tierBasis}（与「量价分析」卡同源）`],
-    ].filter(([, v]) => v).map(([k, v]) =>
-      `<div class="ve-dim"><span class="ve-dim-label">${esc(k)}</span><span class="ve-dim-value">${esc(v)}</span></div>`).join('');
+    ].filter(([, v]) => v).map(([k, v, cls]) =>
+      `<div class="ve-dim"><span class="ve-dim-label">${esc(k)}</span><span class="ve-dim-value ${cls || ''}">${esc(v)}</span></div>`).join('');
 
     // 生死位五规则：命中在前（带方向色），未命中折叠
     const rules = Array.isArray(ve.rules) ? ve.rules : [];
@@ -2439,6 +2349,30 @@ const App = {
     const rtHtml = renderSummary('量比实战口诀（7.5 归集）', ve.ratioSummary, rtTone);
     const expHtml = renderSummary('预期量能规则（该放/该缩缺口补充）', ve.expectedVolumeSummary, expTone);
 
+    // 20261023d：量价十口诀（郭睿体系）—— 主判层（十口诀 × 位置/量能/价格），既有归集降为补充
+    const tenHtml = (() => {
+      const tr = ve.tenRules;
+      if (!tr || !Array.isArray(tr.items) || !tr.items.length) return '';
+      const p = tr.primary;
+      const primaryHtml = p
+        ? `<div class="ve-ten-primary"><div class="ve-ten-head">主判 · 第 ${p.id} 条「${esc(p.name)}」<span class="ve-ten-risk">${esc(p.risk)}</span></div><div class="ve-rule-concl">${esc(p.conclusion)}</div></div>`
+        : `<div class="ve-note">当前量价形态不落在十口诀的标准形态内，按观察处理，参考下方补充归集。</div>`;
+      const rows = tr.items.map(it => {
+        const hit = p && it.id === p.id;
+        const judge = it.matched ? (hit ? '主判' : '辅助') : '—';
+        return `<tr class="${hit ? 'hit' : ''}"><td>${it.id}</td><td>${esc(it.name)}</td><td>${esc(it.pattern)}</td><td>${esc(it.essence)}</td><td>${esc(it.risk)}</td><td>${judge}</td></tr>`;
+      }).join('');
+      const fw = tr.framework || {};
+      const rem = Array.isArray(tr.reminders) ? tr.reminders : [];
+      return `<div class="ve-section-title">量价十口诀</div>
+        <div class="ve-note">${esc(tr.summary || '')}</div>
+        ${primaryHtml}
+        <table class="ve-ten-table"><thead><tr><th>#</th><th>口诀</th><th>量价形态</th><th>核心本质</th><th>风险等级</th><th>今判</th></tr></thead><tbody>${rows}</tbody></table>
+        <div class="ve-ten-fw">${esc([fw.position, fw.volume, fw.price, fw.keyLevels].filter(Boolean).join(' ｜ '))}</div>
+        <div class="ve-ten-fw">${esc(fw.matchNote || '')}</div>
+        ${rem.length ? `<div class="ve-ten-rem">${rem.map(x => '· ' + esc(x)).join('<br>')}</div>` : ''}`;
+    })();
+
     // 得分与衰减
     const sc = ve.score || {};
     const decay = [];
@@ -2447,9 +2381,17 @@ const App = {
     if (sc.marketCoef != null && sc.marketCoef !== 1) decay.push(`大盘环境 ×${num(sc.marketCoef, 2)}`);
     const decayHtml = decay.length ? `（基础 ${num(sc.base, 1)} ${decay.map(d => esc(d)).join(' ')}）` : '';
 
-    // 数据不足标注（如实展示，不折叠）
-    const gapsHtml = (ve.dataGaps && ve.dataGaps.length)
-      ? `<div class="ve-gaps"><div class="ve-gaps-title">⚠️ 数据不足标注（结论置信度受限）</div>${ve.dataGaps.map(g => `<div class="ve-gap-item">· ${esc(g)}</div>`).join('')}</div>` : '';
+    // 20261023f：把「真·数据不足（影响置信度）」与「数据来源/口径说明（不影响结论）」分开。
+    // 原实现把日K降级、当日bar覆写、量比直采、分时未收盘等来源说明全塞进红色「数据不足」框，
+    // 用户看到满屏"数据不足"误以为数据缺失（2026-10-23 截图报障）。
+    const allGaps = Array.isArray(ve.dataGaps) ? ve.dataGaps : [];
+    const TRUE_GAP_RE = /数据不足|样本仅|不足 ?250|推算值|未包含今日|未包含最近交易日|窗口仅/;
+    const trueGaps = allGaps.filter(g => TRUE_GAP_RE.test(g));
+    const sourceNotes = allGaps.filter(g => !TRUE_GAP_RE.test(g));
+    const gapsHtml = trueGaps.length
+      ? `<div class="ve-gaps"><div class="ve-gaps-title">⚠️ 数据不足（影响结论置信度）</div>${trueGaps.map(g => `<div class="ve-gap-item">· ${esc(g)}</div>`).join('')}</div>` : '';
+    const notesHtml = sourceNotes.length
+      ? `<div class="ve-src-notes"><div class="ve-src-title">数据来源与口径说明（不影响结论）</div>${sourceNotes.map(g => `<div class="ve-gap-item">· ${esc(g)}</div>`).join('')}</div>` : '';
 
     el.innerHTML = `
       <div class="cap-signal-box ${tone}">
@@ -2459,6 +2401,10 @@ const App = {
         <div class="ve-score">最终有效得分 <b class="${tone === 'cap-neutral' ? '' : tone === 'cap-positive' ? 'cap-pos' : 'cap-neg'}">${num(sc.final, 1)}</b> / 100</div>
       </div>
       <div class="cap-metrics-row">${metricsHtml}</div>
+      ${confirmNote}
+      ${vpHtml}
+      ${tenHtml}
+      <div class="ve-note" style="margin:12px 0 0;">以下为既有量能逻辑（四维度 / 生死位 / 位置量价 7.4 / 矛盾信号 11.3 / 量比口诀 7.5 / 预期量能），作为十口诀的补充交叉验证。</div>
       <div class="ve-section-title">四维度客观描述</div>
       <div class="ve-dims">${dimsHtml || '<div class="ve-dim-value">数据不足</div>'}</div>
       <div class="ve-section-title">生死位规则（五大）</div>
@@ -2472,6 +2418,7 @@ const App = {
       <div class="ve-conclusion">${esc(ve.conclusion || '')}</div>
       ${ve.marketEnvNote ? `<div class="ve-note">${esc(ve.marketEnvNote)}</div>` : ''}
       ${gapsHtml}
+      ${notesHtml}
       <div class="cap-date-note">${esc(ve.disclaimer || '')} 数据源：东方财富日K（降级同花顺/腾讯）/腾讯分时/交易所公告 · 本地计算</div>
     `;
   },
@@ -3743,6 +3690,11 @@ const App = {
       }
     }
 
+    // 20261025l：个股记录——切到该 tab 时按当前股票拉取（同股已加载则模块内部跳过）
+    if (tabName === 'stocklog' && typeof StockLog !== 'undefined' && this.currentSymbol) {
+      StockLog.setStock(this.currentSymbol, this.currentData && this.currentData.name);
+    }
+
     // 行业分析（按当前股票追踪）
     if (tabName === 'industry') {
       if (this.currentSymbol && this.industryLoadedSymbol !== this.currentSymbol) {
@@ -3973,23 +3925,10 @@ const App = {
     const tpBody = document.getElementById('homeSentimentBody');
     if (tpBody) {
       tpBody.addEventListener('click', (e) => {
-        // 页签切换（情绪因子明细 / 宽基 ETF 申赎，20261022h）
-        const tabBtn = e.target.closest('.tp-tab');
-        if (tabBtn) {
-          const t = tabBtn.dataset.tab === 'etf' ? 'etf' : 'factors';
-          if (App._emoTab !== t) {
-            App._emoTab = t;
-            // 切到 ETF 页签时强制展开详情区，否则用户点完看不到表格
-            if (t === 'etf') { try { localStorage.setItem('sa_tp_detail_open_v1', 'true'); } catch {} }
-            if (App._emoData) App._renderEmotionPanel(App._emoData);
-          }
-          return;
-        }
-        // 逐股全量表展开/收起
-        const more = e.target.closest('.etf-more');
-        if (more) {
-          App._etfShowAll = !App._etfShowAll;
-          if (App._emoData) App._renderEmotionPanel(App._emoData);
+        // 20261025p：卡片内「查看宽基ETF明细」→ 新标签打开独立网页 /etf-flow.html（页签/弹窗废弃）
+        const openEtf = e.target.closest('[data-action="open-etf-page"]');
+        if (openEtf) {
+          window.open('/etf-flow.html', '_blank', 'noopener');
           return;
         }
         const btn = e.target.closest('.tp-detail-toggle');
@@ -6999,7 +6938,16 @@ const App = {
     if (btn) btn.disabled = true;
     try {
       let result;
-      if (force) {
+      if (force === 'ensure') {
+        // 20261024l：按需确保——同一交易日（含周末沿用最近交易日）已有缓存则直接复用，不调 LLM；
+        // 仅当该交易日还没解读过才生成。force:false 由后端「按 asOf 交易日缓存」判定。
+        const resp = await fetch('/api/ai/market-overview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ data: this.lastMarketData || {}, force: false }),
+        });
+        result = await resp.json();
+      } else if (force) {
         const resp = await fetch('/api/ai/market-overview', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -7710,9 +7658,7 @@ const App = {
       if (!data || data.error) return;
       if (symbol !== this.currentSymbol) return;
       this.capitalData = data;
-      if (typeof CapitalCharts !== 'undefined') {
-        try { CapitalCharts.renderVolumePrice(data.volumeIndicators); } catch (e) { console.error('[实时刷新] 量价卡渲染失败:', e); }
-      }
+      // 20261024i：量价关系已合并进「量能分析」卡（renderVolumeEngine 内一并刷新），不再单独渲染
       try { this.renderCapitalScore(data); } catch (e) { console.error('[实时刷新] 资金评分渲染失败:', e); }
       try { this.renderVolumeEngine(data); } catch (e) { console.error('[实时刷新] 量能引擎渲染失败:', e); }
     } catch (e) { /* 静默：保留上一次数值 */ }

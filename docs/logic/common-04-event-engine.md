@@ -89,3 +89,22 @@
 | triageTimeoutMs | 180000ms | eventEngine.js:479；data/events/config.json:51 |
 | 扫描槽位 | 09:00/12:30/15:30/21:00（周末不扫） | server.js:2278 |
 | 本地模型 | qwen3-vl-plus（取自 data/ai_config.json） | eventEngine.js:474 |
+
+## 九、20261023i 股份回购迁入事件驱动（权重按进度分级）
+
+用户要求（2026-10-23 截图）：「股份回购卡片转到突发事件，回购提议的时候权重给10%，回购进行中的时候权重给到30%。」
+
+**改动**：
+- 原「股份回购」是 `factorHoldings`（增持减持）的第 3 个子卡片，并把回购计入利好家数（`buybackExtra`）。
+- 现迁入「事件驱动」因子：新增 `lib/eventEngine.buildBuybackEvent(buyback, symbol)`，按东财 `REPURPROGRESS` 生成**合成事件**：
+  - `001` 董事会预案 / `002` 股东大会通过 → 事件权重 **10%**；
+  - `004` 实施中 → 事件权重 **30%**；
+  - `006` 完成 / `005` 停止 / `003` 否决 / `historical` → **不生成事件**（返回 null）。
+  - 信号沿用 `buybackEmDc.gradeSignal`（001=0.9 / 002=0.8 / 004=0.75×(1-进度%)）。
+  - `isSynthetic=true` → 跳过内幕抢跑与事后市场反应核验；`detail` 保留四要素（数据日期/已回购数量金额/承诺金额/进度）。
+- `factorHoldings` 不再消费 buyback、不再把回购计入利好家数；子卡片只剩 十大股东净变动 / 增减持家数 / 股东被动减持（有则显示）。
+- `sameDayJudgment.buildJudgment` 把 `buyback` 传入 `buildEventOverride`；`LAYOUT_VERSION=20261023i` 强制重算旧判断。
+
+**效果（603288 实测）**：回购实施中（进度 37.7%）→ `buyback_603288` 事件权重 30%、信号 0.467、分级 major；「增持减持」卡片不再出现股份回购子卡，「事件驱动」卡片出现「股份回购（实施中）」。
+
+**回归**：`test_buyback_event_weight` 29 项（提议10% / 实施中30% / 完成·停止·否决·历史不生成 / 增持减持无回购子卡 / 事件因子含 evt_buyback_ / 源码守卫）。

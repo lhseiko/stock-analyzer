@@ -278,6 +278,9 @@ const Notes = {
   renderHome() {
     this.renderScope('global');
     this.renderScope('market');
+    // 20261025c：独立页面模式（public/notes.html）下同步刷新页面列表；
+    // 验证/设为主/保存/删除等操作的刷新路径都经过 renderHome，页面列表自动保持最新。
+    this.renderScopePage();
   },
 
   renderScope(scope) {
@@ -294,60 +297,51 @@ const Notes = {
     container.innerHTML = list.map(n => this.renderNoteCard(n)).join('');
   },
 
-  // ---------- 首页笔记查看弹窗（投资心得 / 大盘记录，入口在按钮行） ----------
-  showScopeModal(scope) {
-    const meta = {
-      global: { title: '🧠 投资心得', addLabel: '✏️ 写心得', hint: '还没有投资心得，点击右下角"写心得"记录你的整体投资经验。' },
-      market: { title: '🌐 大盘记录', addLabel: '✏️ 记一笔', hint: '还没有大盘记录，点击右下角"记一笔"记录市场整体观察。' }
-    }[scope];
-    if (!meta) return;
-    // 已打开则先关闭，避免叠加
-    const existing = document.querySelector(`.journal-modal-overlay[data-scope="${scope}"]`);
-    if (existing) existing.remove();
-    const modal = document.createElement('div');
-    modal.className = 'journal-modal-overlay';
-    modal.dataset.scope = scope;
-    modal.innerHTML = `
-      <div class="journal-modal scope-modal">
-        <div class="journal-modal-head">
-          <h3>${meta.title}</h3>
-          <button class="modal-close" onclick="Notes.closeScopeModal('${scope}')">✕</button>
-        </div>
-        <div class="scope-modal-body" id="scopeModalBody"></div>
-        <div class="scope-modal-foot">
-          <button class="btn-journal-add" onclick="Notes.showForm('${scope}')">${meta.addLabel}</button>
-        </div>
-      </div>`;
-    document.body.appendChild(modal);
-    modal.addEventListener('click', (e) => { if (e.target === modal) this.closeScopeModal(scope); });
-    this.renderScopeModalBody(scope, meta);
+  // ---------- 独立页面（public/notes.html）：投资心得 / 大盘记录（20261025c 弹窗改页面） ----------
+  // 页面由 body[data-page-scope] 声明当前范围（notes.html 初始化时按 ?scope= 写入），
+  // 列表渲染进 #scopePageList；首页/个股页无此容器时本组函数全部安全 no-op。
+  // 20261025e：撤除 20261025d 的归档 Tab（用户要求删除归档模块），恢复全量渲染；
+  // 单列流式布局与正文折叠摘要（展开全文/收起）保留。
+
+  SCOPE_META: {
+    // 20261025f：addLabel 去 emoji（动作按钮纯文字，DESIGN.md §6）；title 保留 emoji（h1 产品身份）
+    global: { title: '🧠 投资心得', addLabel: '写心得', hint: '还没有投资心得，点击右上角「写心得」记录你的整体投资经验。' },
+    market: { title: '🌐 大盘记录', addLabel: '记一笔', hint: '还没有大盘记录，点击右上角「记一笔」记录市场整体观察。' },
   },
 
-  renderScopeModalBody(scope, meta) {
-    const body = document.getElementById('scopeModalBody');
+  renderScopePage() {
+    const body = document.getElementById('scopePageList');
     if (!body) return;
+    const scope = document.body.dataset.pageScope || 'global';
+    const meta = this.SCOPE_META[scope];
+    if (!meta) return;
     const list = this.getByScope(scope);
-    if (list.length === 0) {
-      body.innerHTML = `<div class="notes-empty">${meta.hint}</div>`;
-      return;
-    }
-    body.innerHTML = list.map(n => this.renderNoteCard(n)).join('');
+    body.innerHTML = list.length === 0
+      ? `<div class="notes-empty">${meta.hint}</div>`
+      : list.map(n => this.renderNoteCard(n)).join('');
+    // 渲染后做正文折叠检测：长内容默认截成 3 行摘要，超长时在操作行前插入「展开全文」
+    body.querySelectorAll('.note-card').forEach(card => {
+      const content = card.querySelector('.note-content');
+      const actions = card.querySelector('.note-actions');
+      if (!content || !actions) return;
+      content.classList.add('is-clamped');
+      if (content.scrollHeight > content.clientHeight + 4) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn-expand';
+        btn.textContent = '展开全文';
+        btn.onclick = () => this.toggleClamp(btn, content);
+        actions.insertBefore(btn, actions.firstChild);
+      } else {
+        content.classList.remove('is-clamped');
+      }
+    });
   },
 
-  refreshScopeModal() {
-    const modal = document.querySelector('.journal-modal-overlay[data-scope]');
-    if (!modal) return;
-    const scope = modal.dataset.scope;
-    const meta = {
-      global: { title: '🧠 投资心得', addLabel: '✏️ 写心得', hint: '还没有投资心得，点击右下角"写心得"记录你的整体投资经验。' },
-      market: { title: '🌐 大盘记录', addLabel: '✏️ 记一笔', hint: '还没有大盘记录，点击右下角"记一笔"记录市场整体观察。' }
-    }[scope];
-    if (meta) this.renderScopeModalBody(scope, meta);
-  },
-
-  closeScopeModal(scope) {
-    const modal = document.querySelector(`.journal-modal-overlay[data-scope="${scope}"]`);
-    if (modal) modal.remove();
+  // 折叠/展开切换（独立页摘要交互）
+  toggleClamp(btn, content) {
+    const collapsed = content.classList.toggle('is-clamped');
+    btn.textContent = collapsed ? '展开全文' : '收起';
   },
 
   // ---------- 个股亮点/雷点 渲染（组合在一起，不分开） ----------
@@ -592,10 +586,12 @@ const Notes = {
     return `
       <div class="note-card" data-id="${note.id}">
         <div class="note-card-head">
-          ${badge}
-          ${aiTag}
-          ${scopeLabel ? `<span class="note-scope">${scopeLabel}</span>` : ''}
           <span class="note-date">${date}</span>
+          <span class="note-head-tags">
+            ${badge}
+            ${aiTag}
+            ${scopeLabel ? `<span class="note-scope">${scopeLabel}</span>` : ''}
+          </span>
         </div>
         <div class="note-title">${this.escapeHtml(note.title)}</div>
         <div class="note-content">${this.escapeHtml(note.content).replace(/\n/g, '<br>')}</div>
@@ -710,7 +706,7 @@ const Notes = {
 
     this.closeForm();
     this.renderHome();
-    this.refreshScopeModal();
+    this.renderScopePage();
     // 20260917j：保存的条目可能属于别的股票（如编辑画面上残留的旧卡片），只在该股为当前股票时重渲染。
     if (stockCode) this.renderStockIfCurrent(stockCode, stockName);
   },
@@ -726,7 +722,7 @@ const Notes = {
       const scope = note.scope;
       this.remove(id);
       this.renderHome();
-      this.refreshScopeModal();
+      this.renderScopePage();
       if (scope && scope !== 'global' && scope !== 'market') this.renderStockIfCurrent(scope, note.stockName);
     }
   },

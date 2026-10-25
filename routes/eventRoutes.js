@@ -15,6 +15,7 @@
 const express = require('express');
 const eventEngine = require('../lib/eventEngine');
 const sameDay = require('../lib/sameDayJudgment');
+const moduleSync = require('../lib/moduleSync'); // 20261024h：事件变化 → 联动应答
 const longTerm = require('../lib/longTermJudgment');
 
 const router = express.Router();
@@ -55,10 +56,9 @@ router.get('/api/events/active/:symbol', (req, res) => {
 router.post('/api/events/scan', async (req, res) => {
   try {
     const result = await eventEngine.scanEvents(true);
-    // 事件变化的个股：作废其短期判断缓存，下次打开带事件权重重新生成
-    for (const s of (result.changedSymbols || [])) {
-      try { sameDay.invalidateJudgmentForSymbol(s); } catch (e) {}
-    }
+    // 事件变化的个股：通过联动应答机制作废其短期判断缓存，下次打开带事件权重重新生成
+    const scanSyms = result.changedSymbols || [];
+    if (scanSyms.length) moduleSync.emitChange('eventEngine', { symbols: scanSyms, reason: '手动事件扫描' });
     res.json({ ok: true, ...result });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
@@ -113,10 +113,9 @@ router.post('/api/events/:id/confirm', (req, res) => {
     const id = String(req.params.id || '');
     const r = eventEngine.confirmEvent(id);
     if (!r.ok) return res.status(404).json(r);
-    // 确认后立即作废受影响个股的短期判断缓存，下次打开带事件权重重新生成
-    for (const s of (r.event.affectedSymbols || [])) {
-      try { sameDay.invalidateJudgmentForSymbol(s); } catch (e) {}
-    }
+    // 确认后立即作废受影响个股的短期判断缓存（联动应答机制），下次打开带事件权重重新生成
+    const affected = r.event.affectedSymbols || [];
+    if (affected.length) moduleSync.emitChange('eventEngine', { symbols: affected, reason: '事件确认' });
     res.json(r);
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });

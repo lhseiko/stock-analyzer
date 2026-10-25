@@ -121,14 +121,17 @@ const serverSrc = read('server.js');
 const avm = serverSrc.match(/APP_VERSION = '([^']+)'/);
 const APP_V = avm ? avm[1] : '';
 
-t('nav 内有 LogicModel.open() 入口按钮', /onclick="LogicModel\.open\(\)"/.test(idx));
+// 20261025c：弹窗改独立页面后的新契约 —— index.html 入口按钮 window.open 新标签跳转，
+// 树主体渲染进独立页 logic-model.html 的 #lmPageBody；logicModel.js 移至该页面加载。
+const lmpage = read('public/logic-model.html');
+t('nav 内有 logic-model.html 新标签页入口按钮', /window\.open\('logic-model\.html', '_blank'\)/.test(idx));
 t('入口在 global-nav-common 常驻组内（与投资心得/大盘记录/AI 设置同组）',
-  /global-nav-common[\s\S]{0,600}LogicModel\.open\(\)[\s\S]{0,200}global-nav-extra/.test(idx));
-t('入口按钮文案为「工作台逻辑模型」', /🧩 工作台逻辑模型/.test(idx));
-t('弹层容器 #logicModelModal 存在', /id="logicModelModal"/.test(idx));
-t('弹层含 body/关闭/展开/收起 四个挂点',
-  ['logicModelBody', 'logicModelClose', 'logicModelExpandAll', 'logicModelCollapseAll'].every(id => idx.includes('id="' + id + '"')));
-t('index.html 引入 logicModel.js（带版本戳）', idx.includes('js/logicModel.js?v=' + APP_V));
+  /global-nav-common[\s\S]{0,600}window\.open\('logic-model\.html'[\s\S]{0,200}global-nav-extra/.test(idx));
+t('入口按钮文案为「工作台逻辑模型」', />工作台逻辑模型</.test(idx));
+t('独立页面 logic-model.html 存在', !!lmpage);
+t('独立页面含 lmPageBody/展开/收起 三个挂点',
+  ['lmPageBody', 'logicModelExpandAll', 'logicModelCollapseAll'].every(id => lmpage.includes('id="' + id + '"')));
+t('logic-model.html 引入 logicModel.js（带版本戳）', lmpage.includes('js/logicModel.js?v=' + APP_V));
 t('style.css 为弹层单独声明 .hidden（本项目 .hidden 非全局类）', /\.lm-modal-overlay\.hidden\s*\{[^}]*display:\s*none/.test(css));
 t('style.css 含树状层级样式（.lm-node/.lm-children）', /\.lm-node/.test(css) && /\.lm-children/.test(css));
 t('style.css 含折叠态样式（.lm-collapsed）', /\.lm-collapsed/.test(css));
@@ -136,7 +139,7 @@ t('style.css 含折叠态样式（.lm-collapsed）', /\.lm-collapsed/.test(css))
 // ── §5 部署与渲染 ──
 console.log('\n===== §5 部署与渲染 =====');
 t('server.js 存在 APP_VERSION', !!APP_V);
-t('APP_VERSION 与 logicModel.js 版本戳一致', idx.includes('js/logicModel.js?v=' + APP_V), APP_V);
+t('APP_VERSION 与 logic-model.html 内 logicModel.js 版本戳一致', lmpage.includes('js/logicModel.js?v=' + APP_V), APP_V);
 t('/js/logicModel.js 在缓存破坏名单内', /FRONTEND_BUST_FILES[\s\S]{0,400}\/js\/logicModel\.js/.test(serverSrc));
 t('APP_VERSION 注释含本次变更说明', serverSrc.includes('[20261013h]'));
 

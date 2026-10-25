@@ -44,8 +44,8 @@ function oldAnalyzeVolume(history) {
   const ratio = avgVolume > 0 ? lastVolume / avgVolume : 0;
   let trend = 'normal';
   if (ratio > 2) trend = '放量';
-  else if (ratio > 1.5) trend = '温和放量';
-  else if (ratio < 0.5) trend = '缩量';
+  else if (ratio > 1.2) trend = '温和放量'; // [20261024c] 对齐量比铁律 >1.2 放量（旧 1.5）
+  else if (ratio < 0.8) trend = '缩量'; // [20261024c] 对齐 <0.8 缩量（旧 0.5）
   return { trend, ratio: oRound(ratio, 2), avgVolume: Math.round(avgVolume) };
 }
 
@@ -60,8 +60,8 @@ function oldBreakout(daily) {
   const high20 = prior.length ? Math.max(...prior.map(d => d.high)) : null;
   const low20 = prior.length ? Math.min(...prior.map(d => d.low)) : null;
   let pattern = '无显著形态';
-  if (high20 && close > high20 && volRatio !== null && volRatio >= 1.5) pattern = '放量突破前高';
-  else if (low20 && close < low20 && volRatio !== null && volRatio >= 1.5) pattern = '放量跌破前低';
+  if (high20 && close > high20 && volRatio !== null && volRatio >= 1.2) pattern = '放量突破前高'; // [20261024c] 对齐 1.2
+  else if (low20 && close < low20 && volRatio !== null && volRatio >= 1.2) pattern = '放量跌破前低'; // [20261024c] 对齐 1.2
   else if (high20 && close > high20 && volRatio !== null && volRatio < 0.8) pattern = '缩量新高';
   return { volRatio, high20, low20, pattern };
 }
@@ -186,7 +186,7 @@ function genShrink3d(n = 120) {
   bars[bars.length - 2].volume = Math.round(bars[bars.length - 3].volume * 0.8);
   return bars;
 }
-// 放量突破前高：末日收盘 > 前20日最高，且量比 ≥1.5
+// 放量突破前高：末日收盘 > 前20日最高，且量比 ≥1.2（[20261024c] 对齐量比铁律，旧 1.5）
 function genBreakoutUp(n = 120) {
   const bars = genBase(n);
   const prior = bars.slice(-21, -1);
