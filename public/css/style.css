@@ -3287,6 +3287,21 @@ body {
 .sl-del { flex: 0 0 auto; background: transparent; border: 1px solid rgba(230,237,243,0.16); color: var(--text-muted, #8B949E); border-radius: 7px; padding: 3px 10px; font-size: 11.5px; cursor: pointer; }
 .sl-del:hover { color: var(--red, #F6465D); border-color: rgba(246,70,93,0.5); }
 .sl-empty { color: var(--text-muted, #8B949E); font-size: 13px; padding: 18px 4px; text-align: center; border: 1px dashed rgba(230,237,243,0.14); border-radius: 10px; }
+/* 20261026f：行内编辑表单（修改按钮展开）——与 .sl-add 添加表单同一设计语言 */
+.sl-btns { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.sl-edit { background: transparent; border: 1px solid rgba(230,237,243,0.16); color: var(--text-muted, #8B949E); border-radius: 7px; padding: 3px 10px; font-size: 11.5px; cursor: pointer; }
+.sl-edit:hover { color: var(--accent, #F0B97B); border-color: rgba(240,185,123,0.5); }
+.sl-item.sl-editing { border-color: rgba(240,185,123,0.45); background: rgba(240,185,123,0.04); }
+.sl-edit-form { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.sl-edit-date { align-self: flex-start; background: rgba(255,255,255,0.05); border: 1px solid rgba(230,237,243,0.12); color: var(--text-primary, #E6EDF3); border-radius: 8px; padding: 6px 10px; font-size: 13px; font-family: inherit; color-scheme: dark; }
+.sl-edit-text { width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.04); border: 1px solid rgba(230,237,243,0.12); color: var(--text-primary, #E6EDF3); border-radius: 8px; padding: 10px 12px; font-size: 13.5px; line-height: 1.6; resize: vertical; font-family: inherit; color-scheme: dark; }
+.sl-edit-date:focus, .sl-edit-text:focus { outline: none; border-color: rgba(240,185,123,0.5); }
+.sl-edit-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.sl-save { padding: 6px 16px; background: var(--accent, #F0B97B); color: #0B0E11; border: 1px solid var(--accent, #F0B97B); border-radius: 8px; cursor: pointer; font-size: 12.5px; font-weight: 600; }
+.sl-save:hover { filter: brightness(1.08); }
+.sl-save:disabled { opacity: 0.55; cursor: default; }
+.sl-cancel { padding: 6px 14px; background: transparent; border: 1px solid rgba(230,237,243,0.16); color: var(--text-muted, #8B949E); border-radius: 8px; cursor: pointer; font-size: 12.5px; }
+.sl-cancel:hover { color: var(--text-primary, #E6EDF3); border-color: rgba(230,237,243,0.3); }
 .sn-toolbar { display: flex; align-items: center; justify-content: space-between; }
 .sn-title { font-size: 16px; color: var(--text-primary); font-weight: 600; }
 .sn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -3946,8 +3961,8 @@ a.mo-tile-link:hover .mo-link-mark { opacity: 1; }
 .industry-content { display: flex; flex-direction: column; gap: 16px; }
 
 .policy-badge { display: inline-block; padding: 3px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; border: 1px solid transparent; }
-.policy-support { background: var(--tint-green); color: var(--green); border-color: rgba(14,203,129,0.4); }
-.policy-restrict { background: var(--tint-red); color: var(--red); border-color: rgba(246,70,93,0.4); }
+.policy-support { background: var(--tint-red); color: var(--red); border-color: rgba(246,70,93,0.4); }
+.policy-restrict { background: var(--tint-green); color: var(--green); border-color: rgba(14,203,129,0.4); }
 .policy-neutral { background: rgba(148,163,184,0.16); color: var(--text-secondary); border-color: rgba(148,163,184,0.4); }
 
 .ind-info-body { display: flex; flex-direction: column; gap: 0; padding: 4px 0; }

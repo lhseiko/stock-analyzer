@@ -170,9 +170,12 @@ console.log('\n[8] 接线守卫');
   ok(/etfFlow\.getEtfFlow/.test(sv), 'server 调用 getEtfFlow');
   ok(/\/api\/etf-flow/.test(sv), '提供 /api/etf-flow 路由');
   const app = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'app.js'), 'utf8');
-  ok(/_renderEtfFlowPane/.test(app), '前端有 ETF 申赎页签渲染');
-  ok(/data-action="tp-tab"/.test(app), '页签按钮带 data-action="tp-tab"');
-  ok(/_loadEtfFlow/.test(app) && /\/api\/etf-flow/.test(app), '前端拉 /api/etf-flow');
+  // 20261025p：ETF 页签删除，明细迁独立页 /etf-flow.html；卡片按钮新标签直达
+  ok(/open-etf-page/.test(app) && /etf-flow\.html/.test(app), '情绪卡片按钮新标签直达独立 ETF 页');
+  const etfPage = fs.readFileSync(path.join(__dirname, '..', 'public', 'etf-flow.html'), 'utf8');
+  const etfPageJs = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'etfFlowPage.js'), 'utf8');
+  ok(/etfFlowPage\.js/.test(etfPage), '独立页存在并挂载 etfFlowPage.js');
+  ok(/\/api\/etf-flow/.test(etfPageJs), '独立页拉 /api/etf-flow');
   const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'style.css'), 'utf8');
   ok(/\.tp-tabs\b/.test(css) && /\.etf-table\b/.test(css), '页签与表格样式已落地');
   const fl = fs.readFileSync(path.join(__dirname, '..', 'lib', 'etfFlow.js'), 'utf8');

@@ -1104,10 +1104,10 @@ const App = {
     html += `<div class="tp-emo-lines">`;
     html += line('情绪总分', `${points != null ? (points > 0 ? '+' : '') + points.toFixed(2) + ' 分' : '—'}<span class="tp-emo-sub">（范围 −100 ~ +100 分，正值乐观；= 各因子净权重合计）</span>`);
     html += line('短期倾向', `<b class="${dirCls}">${esc(data.tendency || '中性')}</b>`);
-    html += line('核心驱动', esc(data.coreDriver || '—'));
-    html += line('量能状态', esc(data.volumeState || '—'), volTierCls(data.volumeState));
-    html += line('操作建议', esc(data.advice || '—'), data.circuit ? 'tp-emo-warn' : '');
-    html += line('风险提示', esc(data.riskTip || '—'), 'tp-emo-risk');
+    html += line('核心驱动', this._dirColorize(data.coreDriver || '—'));
+    html += line('量能状态', this._dirColorize(data.volumeState || '—'), volTierCls(data.volumeState));
+    html += line('操作建议', this._dirColorize(data.advice || '—'), data.circuit ? 'tp-emo-warn' : '');
+    html += line('风险提示', this._dirColorize(data.riskTip || '—'), 'tp-emo-risk');
     html += `</div>`;
 
     // 20261025p：删除「情绪因子明细 / 宽基 ETF 申赎」页签——ETF 明细改独立网页 /etf-flow.html，
@@ -1129,12 +1129,12 @@ const App = {
         html += `<div class="tp-comp${f.degraded ? ' tp-comp-degraded' : ''}">`;
         html += `<div class="tp-comp-label">${esc(f.name)}<span class="tp-comp-w">权重${f.weight != null ? f.weight.toFixed(2) : '—'}%</span></div>`;
         html += `<div class="tp-comp-sig ${sigCls}">${signTxt}</div>`;
-        html += `<div class="tp-comp-value">${esc(f.value || '')}</div>`;
+        html += `<div class="tp-comp-value">${this._dirColorize(f.value || '')}</div>`;
         // 20261025p：ETF 明细改独立网页 /etf-flow.html（弹窗/页签废弃），卡片按钮新标签打开
         const detailTxt = f.key === 'etfFlow'
           ? '份额较上一收盘增加 → 折算净申赎额；口径说明、ETF 名单与逐股明细见独立页（点下方按钮新标签打开）。'
           : (f.detail || '');
-        html += `<div class="tp-comp-detail">${esc(detailTxt)}</div>`;
+        html += `<div class="tp-comp-detail">${this._dirColorize(detailTxt)}</div>`;
         if (f.key === 'etfFlow') html += `<button type="button" class="tp-comp-more" data-action="open-etf-page">查看宽基ETF明细 →</button>`;
         // 20261023j：卡片补「数据日期」——原来只有结论没有日期，用户无法判断数据新旧（2026-10-23 截图报障）。
         //   优先用因子自带日期（ETF=份额披露日 20261022、讨论热度=热度时间），其余用模型基准日；
@@ -1244,8 +1244,8 @@ const App = {
         html += `<div class="tp-comp">`;
         html += `<div class="tp-comp-label">${c.label}<span class="tp-comp-w">占${c.weight != null ? (c.weight * 100).toFixed(0) : '—'}%</span></div>`;
         html += `<div class="tp-comp-sig ${sigCls}">${signTxt}</div>`;
-        html += `<div class="tp-comp-value">${c.value || ''}</div>`;
-        html += `<div class="tp-comp-detail">${c.detail || ''}</div>`;
+        html += `<div class="tp-comp-value">${this._dirColorize(c.value || '')}</div>`;
+        html += `<div class="tp-comp-detail">${this._dirColorize(c.detail || '')}</div>`;
         html += `</div>`;
       });
       html += '</div>';
@@ -1405,8 +1405,8 @@ const App = {
             <span class="sd-sub-name">${this._escapeHtml(sf.name)}</span>
             ${badge}${wPart}
           </div>
-          <div class="sd-sub-value ${signCls}">${this._escapeHtml(String(sf.value || '—'))}</div>
-          <div class="sd-sub-detail">${this._escapeHtml(sf.detail || '')}</div>
+          <div class="sd-sub-value ${signCls}">${this._dirColorize(String(sf.value || '—'))}</div>
+          <div class="sd-sub-detail">${this._dirColorize(sf.detail || '')}</div>
         </div>`;
       }).join('');
       // 20260914i：移除顶部「汇总取值」白字行（用户要求）——
@@ -1526,6 +1526,29 @@ const App = {
         btn.classList.toggle('is-open', open);
       });
     });
+  },
+
+  // 20261026d：红涨绿跌文本着色（用户 2026-10-26 截图要求「表示涨和跌的文字和数据分别用红色和绿色标示」）。
+  // 对情绪/判断类纯文本做转义后着色：带符号数值 +0.19%=红 / -1.19%=绿；上涨/涨停 N=红、下跌/跌停 N=绿；
+  // 其余「涨/跌」方向字（量平价涨、量平价跌、缩量下跌等）也按语义着色。已包裹的片段不重复处理。
+  // 日期/时间中的连字符（2026-10-26、14:30-15:00）与 T+1 不受影响（前缀守卫排除数字/字母/%/.// 前导）。
+  _dirColorize(text) {
+    let s = this._escapeHtml(text == null ? '' : String(text));
+    // ① 带符号涨跌数值
+    s = s.replace(/(^|[^0-9A-Za-z%./])([+\-−]\d+(?:\.\d+)?%?)/g, (m, p, num) =>
+      /^[-−]/.test(num) ? `${p}<span class="down">${num}</span>` : `${p}<span class="up">${num}</span>`);
+    // ② 涨跌家数 / 涨跌停家数短语（保留原有空格）
+    s = s.replace(/(上涨)(\s*[\d,\.]+(?:\s*家)?)/g, '<span class="up">$1$2</span>');
+    s = s.replace(/(下跌)(\s*[\d,\.]+(?:\s*家)?)/g, '<span class="down">$1$2</span>');
+    s = s.replace(/(涨停)(\s*[\d,\.]+)/g, '<span class="up">$1$2</span>');
+    s = s.replace(/(跌停)(\s*[\d,\.]+)/g, '<span class="down">$1$2</span>');
+    // ③ 其余「涨/跌」方向字——已着色片段跳过
+    s = s.split(/(<span class="(?:up|down)">[\s\S]*?<\/span>)/)
+      .map(seg => (seg.startsWith('<span class="up"') || seg.startsWith('<span class="down"'))
+        ? seg
+        : seg.replace(/涨/g, '<span class="up">涨</span>').replace(/跌/g, '<span class="down">跌</span>'))
+      .join('');
+    return s;
   },
 
   _escapeHtml(s) {
@@ -1696,8 +1719,8 @@ const App = {
           <span class="sd-factor-signal ${signCls}">${arrow}</span>
           <span class="sd-factor-w">权重 ${(f.effectiveWeight * 100).toFixed(0)}%</span>
         </div>
-        <div class="sd-factor-detail">${this._escapeHtml(f.detail)}</div>
-        <div class="sd-factor-val">取值：${this._escapeHtml(String(f.value))}</div>
+        <div class="sd-factor-detail">${this._dirColorize(f.detail)}</div>
+        <div class="sd-factor-val">取值：${this._dirColorize(String(f.value))}</div>
       </div>`;
     }).join('');
     return `<div class="sd-logic-box">
@@ -2340,8 +2363,10 @@ const App = {
     };
     // 矛盾信号（11.3）：高位类 = 空头色；其余 = 观察色
     const ctTone = (it) => (/高位/.test(it.signal || '') ? 've-bear' : 've-block');
-    // 量比口诀（7.5）：口诀3 尾盘放量 / 口诀5 量比大涨不动 = 警惕色；口诀1/2/4 = 观察色
-    const rtTone = (it) => (it.id === 3 || it.id === 5) ? 've-bear' : 've-block';
+    // 量比口诀（7.5）：口诀3 尾盘放量 / 口诀5 量比大涨不动 = 警惕，口诀1/2/4 = 观察；
+    // 二者均非方向性多/空信号（口诀3 模型明确「不得输出看多信号 / 真实性待确认」），统一用琥珀色 ve-block（警惕/观察），
+    // 严禁 ve-bear（绿=看空/利空）——否则「尾盘放量拉升」会被误读为看空。
+    const rtTone = () => 've-block';
     // 预期量能规则（20261019d）：命中项按后端 item.tone 着色（ve-bull 看多=红 / ve-bear 看空=绿 / ve-block 观察=琥珀）
     const expTone = (it) => it.tone || null;
     const pvHtml = renderSummary('位置量价补充分析（7.4 归集）', ve.positionVolumeSummary, pvTone);

@@ -60,5 +60,35 @@ ok('损坏文件返回空列表不崩溃', l.ok === true && l.items.length === 0
 ok('删除接口对损坏文件报错不崩溃', stockLog.removeLog(A, 'x').ok === false);
 fs.unlinkSync(fA);
 
+console.log('\n===== §6 修改记录（20261026e 修改按钮） =====');
+// 先给 A 股补回 3 条，避免 §5 清场后空列表
+for (const s of [A]) {
+  const f = path.join(DIR, s.replace(/^(sh|sz)/, '') + '.json');
+  if (fs.existsSync(f)) fs.unlinkSync(f);
+}
+stockLog.addLog(A, { date: '2026-10-25', text: '大股东公告减持 2%' });
+stockLog.addLog(A, { date: '2026-10-20', text: '监管问询函' });
+const editId = stockLog.listLog(A).items[0].id;
+
+// 成功改日期与内容
+r = stockLog.updateLog(A, editId, { date: '2026-10-27', text: '修改后的内容' });
+ok('修改成功', r.ok && r.item && r.item.id === editId, r);
+ok('日期已更新', r.ok && r.item.date === '2026-10-27', r.ok && r.item.date);
+ok('内容已更新', r.ok && r.item.text === '修改后的内容', r.ok && r.item.text);
+ok('updatedAt 已打溯源', r.ok && !!r.item.updatedAt, r.ok && r.item.updatedAt);
+ok('createdAt 不变（排序键守恒）', r.ok && !!r.item.createdAt, r.ok && r.item.createdAt);
+
+// 校验一致：日期格式错 / 空内容 / 超长
+ok('修改拒绝日期格式错误', stockLog.updateLog(A, editId, { date: '2026/10/27', text: 'x' }).ok === false);
+ok('修改拒绝空内容', stockLog.updateLog(A, editId, { date: '2026-10-27', text: '  ' }).ok === false);
+ok('修改拒绝超长内容', stockLog.updateLog(A, editId, { date: '2026-10-27', text: '长'.repeat(2001) }).ok === false);
+
+// 不存在的 id / 文件损坏
+ok('修改不存在的 id 报错', stockLog.updateLog(A, 'log_notexist', { date: '2026-10-27', text: 'x' }).ok === false);
+fs.writeFileSync(path.join(DIR, A.replace(/^(sh|sz)/, '') + '.json'), '{broken');
+ok('修改对损坏文件报错不崩溃', stockLog.updateLog(A, editId, { date: '2026-10-27', text: 'x' }).ok === false);
+fs.unlinkSync(path.join(DIR, A.replace(/^(sh|sz)/, '') + '.json'));
+ok('B 股不受影响', stockLog.listLog(B).items.length === 1);
+
 console.log(`\n[test_stock_log] pass=${pass} fail=${fail}`);
 process.exit(fail ? 1 : 0);
