@@ -4785,6 +4785,31 @@ a.mo-tile-link:hover .mo-link-mark { opacity: 1; }
 .etf-table .note { color: var(--text-muted); font-size: 11px; max-width: 240px; }
 .etf-table .row-dim { opacity: .55; }
 
+/* 20261027a：累计表股票名超链接 + 当月逐日明细表 */
+.etf-stock-link {
+  color: var(--accent); cursor: pointer; text-decoration: none;
+  border-bottom: 1px dashed rgba(240,185,123,0.45);
+}
+.etf-stock-link:hover { color: #ffce96; border-bottom-style: solid; }
+.etf-month-table { min-width: 420px; }
+.etf-month-total td {
+  border-top: 1px solid rgba(240,185,123,0.4); font-weight: 700; padding-top: 8px;
+  background: rgba(240,185,123,0.05);
+}
+.etf-month-close { margin: 8px 2px 2px; font-size: 11.5px; color: var(--text-muted); }
+.etf-month-close .etf-stock-clear { color: var(--accent); cursor: pointer; text-decoration: none; }
+.etf-month-close .etf-stock-clear:hover { text-decoration: underline; }
+.etf-month-tag {
+  font-style: normal; margin-left: 6px; padding: 1px 6px; border-radius: 6px;
+  font-size: 10.5px; color: var(--accent); background: rgba(240,185,123,0.12);
+  border: 1px solid rgba(240,185,123,0.35); white-space: nowrap;
+}
+.etf-month-note {
+  margin: 8px 2px 2px; font-size: 11.5px; line-height: 1.7; color: var(--text-muted);
+  border: 1px dashed rgba(230,237,243,0.14); border-radius: 8px; padding: 8px 10px;
+}
+.etf-month-note b { color: var(--text-secondary); }
+
 /* ---- 20261023b：宽基 ETF 卡片「查看明细」入口（明细已移到独立页签，卡片不再内嵌表格）---- */
 .tp-comp-more {
   appearance: none; margin-top: 7px; padding: 0; border: none; background: transparent;

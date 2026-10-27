@@ -7,6 +7,8 @@
   let DATA = null;
   let LOADING = false;
   let showAll = false;
+  let selectedStock = null;     // 20261027a：累计表点击选中的股票 {code,name}
+  let stockMonthData = null;    // 20261027a：当月逐日明细（来自 /api/etf-flow/stock-monthly）
 
   function esc(s) {
     return String(s == null ? '' : s)
@@ -153,7 +155,7 @@
       stocks.forEach(s => {
         html += '<tr>'
           + `<td class="mono">${esc(s.code)}</td>`
-          + `<td class="name">${esc(s.name || '—')}</td>`
+          + `<td class="name"><a class="etf-stock-link" data-code="${esc(s.code)}" data-name="${esc(s.name || s.code)}" title="查看该股票当月逐日申赎明细">${esc(s.name || '—')}</a></td>`
           + `<td class="dim">${esc(s.groupLabel || '')}</td>`
           + `<td class="num ${_netCls(s.dayBuy)}">${s.dayBuy ? '+' + _fmtQty(s.dayBuy) : '—'}</td>`
           + `<td class="num ${_netCls(s.daySell)}">${s.daySell ? '−' + _fmtQty(s.daySell) : '—'}</td>`
@@ -163,6 +165,39 @@
           + '</tr>';
       });
       html += '</tbody></table></div>';
+
+      // ⑤ 选中股票的当月逐日明细（点击累计表股票名触发，20261027a；20261027b 修标签口径）
+      if (selectedStock) {
+        html += `<div class="etf-block-title">${esc(selectedStock.name || selectedStock.code)}（${esc(selectedStock.code)}）当月逐日申赎明细</div>`;
+        if (stockMonthData && stockMonthData.ok && stockMonthData.rows) {
+          const t = stockMonthData.totals || { buy: 0, sell: 0, net: 0 };
+          const fmtD = (d8) => (/^\d{8}$/.test(String(d8)) ? `${String(d8).slice(0,4)}-${String(d8).slice(4,6)}-${String(d8).slice(6)}` : String(d8 || '—'));
+          html += '<div class="etf-scroll"><table class="etf-table etf-month-table"><thead><tr>'
+            + '<th>数据日</th><th class="num">申购(股)</th><th class="num">赎回(股)</th><th class="num">净申赎(股)</th>'
+            + '</tr></thead><tbody>';
+          stockMonthData.rows.forEach(r => {
+            html += `<tr>`
+              + `<td class="mono">${esc(fmtD(r.date))}${r.spanNote ? `<em class="etf-month-tag">${esc(r.spanNote)}</em>` : ''}</td>`
+              + `<td class="num etf-pos">${_fmtQty(r.buy)}</td>`
+              + `<td class="num etf-neg">${_fmtQty(r.sell)}</td>`
+              + `<td class="num ${_netCls(r.net)}">${_fmtQty(r.net)}</td>`
+              + '</tr>';
+          });
+          html += `<tr class="etf-month-total"><td>当月合计（${stockMonthData.rows.length} 个交易日）</td>`
+            + `<td class="num etf-pos">${_fmtQty(t.buy)}</td>`
+            + `<td class="num etf-neg">${_fmtQty(t.sell)}</td>`
+            + `<td class="num ${_netCls(t.net)}">${_fmtQty(t.net)}</td></tr>`;
+          html += '</tbody></table></div>';
+          html += '<div class="etf-month-note">口径：① 「数据日」= 基金份额披露日（<b>T+1</b>）——当日收盘后采集的快照拿到的是上一交易日的官方份额，故当日申赎数据次日才出现；'
+            + '② 逐股股数为<b>理论推导值</b>（ETF Δ份额 ÷ 申赎单位 = 篮数，篮数 × 每篮股数），受现金替代 / 取整影响，<b>不是交易所公布的实际申赎</b>；'
+            + '③ 只含已定稿（收盘后）快照，周末 / 节假日无数据。</div>';
+          html += '<div class="etf-month-close"><a class="etf-stock-clear">收起明细</a> · 点击上方其他股票名可切换</div>';
+        } else if (stockMonthData && stockMonthData.error) {
+          html += `<div class="etf-empty etf-warn">⚠ ${esc(stockMonthData.error)}</div>`;
+        } else {
+          html += '<div class="etf-empty">📡 正在读取当月逐日明细…</div>';
+        }
+      }
     }
 
     // ⑤ 口径与缺口（诚实披露，不允许含糊成"申购了多少"）
@@ -195,6 +230,40 @@
     const upd = document.getElementById('efUpdated');
     if (upd) upd.textContent = '更新于 ' + new Date().toLocaleTimeString('zh-CN');
     render(DATA);
+  }
+
+  // 20261027a：点击累计表股票名 → 拉取并显示该股票当月逐日申赎明细
+  async function loadStockMonth() {
+    if (!selectedStock) return;
+    const now = new Date();
+    const m = '' + now.getFullYear() + String(now.getMonth() + 1).padStart(2, '0');
+    try {
+      const r = await fetch(`/api/etf-flow/stock-monthly?code=${encodeURIComponent(selectedStock.code)}&month=${m}`, { cache: 'no-store' });
+      stockMonthData = await r.json();
+    } catch (e) {
+      stockMonthData = { ok: false, error: e && e.message ? e.message : String(e) };
+    }
+    render(DATA);
+  }
+
+  const efBody = document.getElementById('efBody');
+  if (efBody) {
+    efBody.addEventListener('click', (ev) => {
+      const link = ev.target.closest('.etf-stock-link');
+      if (link) {
+        ev.preventDefault();
+        selectedStock = { code: link.dataset.code, name: link.dataset.name };
+        stockMonthData = null;
+        loadStockMonth();
+        return;
+      }
+      if (ev.target.closest('.etf-stock-clear')) {
+        ev.preventDefault();
+        selectedStock = null;
+        stockMonthData = null;
+        render(DATA);
+      }
+    });
   }
 
   document.getElementById('efRefresh').addEventListener('click', () => load(true));

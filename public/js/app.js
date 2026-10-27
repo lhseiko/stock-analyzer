@@ -1163,9 +1163,37 @@ const App = {
     // 自学习 + 准确率台账
     const acc = data.accuracy || {};
     const ll = Array.isArray(data.learnLog) ? data.learnLog : [];
+    const ld = Array.isArray(data.learnDetail) ? data.learnDetail : [];
+    // 20261027c：learnLog 为空 ≠ 样本不足——可能是已顶 5%~30% 权重上限或处于 45%~60% 死区。
+    // 逐因子诚实三分态：adjusted（本次调整）/ cap_up·cap_down（顶上限/踩下限）/ deadzone（死区）/ insufficient（样本不足）。
+    let learnTxt;
+    if (ll.length) {
+      learnTxt = `本次调整 ${ll.length} 项：${ll.map(x => `${esc(x.name)} ${x.from}%→${x.to}%`).join('、')}`;
+    } else if (ld.length) {
+      const fmtRate = (r) => (r == null ? '—' : Math.round(r * 100) + '%');
+      const ready = ld.filter(x => x.status !== 'insufficient');
+      const ins = ld.filter(x => x.status === 'insufficient');
+      if (ready.length) {
+        const parts = [];
+        const capped = ready.filter(x => x.status === 'cap_up' || x.status === 'cap_down');
+        const dz = ready.filter(x => x.status === 'deadzone');
+        if (capped.length) parts.push(`已顶权重边界（不再同向调整）：${capped.map(x => `${esc(x.name)} 近窗命中 ${fmtRate(x.rate)}（权重 ${x.weight}%）`).join('、')}`);
+        if (dz.length) parts.push(`死区观望（45%~60% 按规则不动）：${dz.map(x => `${esc(x.name)} 近窗命中 ${fmtRate(x.rate)}（权重 ${x.weight}%）`).join('、')}`);
+        if (ins.length) {
+          const maxN = Math.max(...ins.map(x => x.n || 0));
+          parts.push(`待积累 ${ins.length} 个因子（样本最高 ${maxN}/20）`);
+        }
+        learnTxt = `自学习已在运行、权重维持不动：${parts.join('；')}`;
+      } else {
+        const maxN = Math.max(...ld.map(x => x.n || 0));
+        learnTxt = `当前样本不足（因子样本最高 ${maxN}/20），权重保持固定（只记录不调整）`;
+      }
+    } else {
+      learnTxt = '当前样本不足，权重保持固定（只记录不调整）';
+    }
     html += '<div class="tp-learn-block">';
     html += '<div class="tp-block-title">越用越准（自动学习）</div>';
-    html += `<div class="tp-learn-line">权重自学习：需累计 <b>20</b> 次以上预测样本后才自动调整（命中率 &gt;60% 上调、&lt;45% 下调，常驻因子权重恒定在 <b>5%~30%</b>）；${ll.length ? `本次调整 ${ll.length} 项：${ll.map(x => `${esc(x.name)} ${x.from}%→${x.to}%`).join('、')}` : '当前样本不足，权重保持固定（只记录不调整）'}</div>`;
+    html += `<div class="tp-learn-line">权重自学习：需累计 <b>20</b> 次以上预测样本后才自动调整（命中率 &gt;60% 上调、&lt;45% 下调，常驻因子权重恒定在 <b>5%~30%</b>）；${learnTxt}</div>`;
     if (acc.totalRecords != null) {
       let line = `准确率台账：已记录 <b>${acc.totalRecords}</b> 条预测，已结算 <b>${acc.settledCount}</b> 条`;
       if (acc.accuracy != null) {
