@@ -1582,3 +1582,524 @@ LRN-20261020-003「同类 6 处 ×0.7/×1.5 纯符号站点」清单中的第 �
 - Last-Seen: 2026-10-25
 
 ---
+
+## [LRN-20261028-001] correction
+
+**Logged**: 2026-10-28T16:40:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: backend
+
+### Summary
+volumeEngine 规则3「缩量假突破」盘中误触发：用「当日未走完的累计量」与「前高全天量/60日均量×1.5」直接比较，上午结构上必然判「未有效放大」→ 假命中。
+
+### Details
+用户实测（新洋丰 000902，2026-10-28 约 11:59，放量上涨冲击平台上沿 14.11）：页面量能口径条显示「放量」（腾讯直采量比 fields[49]，按时间归一化的每分钟口径），但规则3命中「缩量假突破」。根因两层：
+1. `_reconcileTodayBar` 盘中把当日 bar 覆写为「实时累计量」；规则3 `ampOk(bars[n-1].volume, levelVol)` 用这个部分日累计量 vs 前高**全天**量（53552 手）与 60日均量×1.5 —— 上午累计量永远过不了阈值，fail-closed → 必然命中。
+2. 「快速回落」用最新价（14.00）< 平台上沿（14.11）判定——盘中 0.8% 的正常回落被当成「突破失败」，规则文案本身写的是「收盘日成交量」，即设计为收盘后判定。
+
+同屏矛盾来源：量比条（归一化口径）与规则3（未归一化累计量）分母不同。
+
+### Suggested Action
+盘中未收盘时规则3不判定（dataGaps 标「当日未收盘，部分日累计量与全天历史量不可比，收盘后判定」），与规则5「尾盘突然放量拉升需收盘后判定」同先例。同口径排查其他 fail-closed 规则（该放量未放量 ampThr 比较）是否也有盘中假命中。
+
+### Metadata
+- Source: user_feedback
+- Related Files: lib/volumeEngine.js (rule 3 at ~L661-705, _reconcileTodayBar at ~L2787)
+- Tags: 盘中偏差, 量能口径, fail-closed, 诚实停判
+- Pattern-Key: intraday.partial_volume_vs_fullday_baseline
+- Recurrence-Count: 1
+- First-Seen: 2026-10-28
+- Last-Seen: 2026-10-28
+
+---
+
+## [LRN-20261028-002] best_practice
+
+**Logged**: 2026-10-28T17:20:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+笔记云端同步（pushToServer）失败完全静默：catch 只 console.warn，且 HTTP 500 时 fetch 不抛错未检查 resp.ok——用户写的大盘记录「股市口诀坑」保存失败后丢失，全程无任何提示，用户到发现数据消失才知道出问题。
+
+### Details
+架构 = localStorage 先存 + 异步回写 /api/notes/sync（best-effort）。回写失败只进控制台，页面零反馈；加上 localStorage 按 origin 隔离（localhost vs 127.0.0.1 是两个空间），用户换地址查看即「消失」。服务端 notes.json 最后写入 11:45，16:00 的笔记从未到达服务器。
+
+### Suggested Action
+已实施（20261028b notes.js）：① pushToServer 检查 resp.ok，非 2xx 一律算失败；② 失败时页面顶部弹琥珀色醒目警告 12 秒（「云端保存失败，本条只存在这台浏览器里」），恢复成功后弹绿色确认；③ 失败后 30s 自动重试全量幂等回写。原则：**best-effort 写入绝不允许静默失败，数据落盘类操作失败必须 UI 可见**。
+
+### Metadata
+- Source: user_feedback
+- Related Files: public/js/notes.js (pushToServer/_showSyncToast), public/css/style.css (.notes-sync-toast)
+- Tags: 静默失败, 数据丢失, sync, localStorage, origin 隔离
+- Pattern-Key: harden.silent_write_failure_ui_visible
+- Recurrence-Count: 1
+- First-Seen: 2026-10-28
+- Last-Seen: 2026-10-28
+
+### Resolution
+- **Resolved**: 2026-10-28T17:20:00+08:00
+- **Notes**: 20261028b 实施失败可见化 + 30s 自动重试 + resp.ok 检查；node 冒烟验证失败路径（不抛错/置位/排程重试）通过。
+
+---
+
+## [LRN-20261028-003] correction
+
+**Logged**: 2026-10-28T17:45:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: backend
+
+### Summary
+个股页「大盘」因子引用首页「市场情绪提醒」（中性·关注，-3.9 分）却标「利空」徽标 + 「权重 -13%」——单源引用被渲染层重新判档，违反单源同义。
+
+### Details
+computeMarketEmotionSub 忠实引用落盘 score（-3.9 分 → 归一化 -0.04，value 文字「中性·关注」正确），但 ruleCore.toImpactScore 的「方向保底」（IMPACT_DIR_EPS=0.02，原意防 -0.10 偏空被舍成中性）把 |−0.04|≥0.02 判成 impactScore=-1 → 利空徽标；子卡「权重 ±X%」符号取自 signal 方向、幅度=份额×有效权重（与 |signal| 无关）→ 微弱 -0.04 显示成 -13%。首页「中性」判档（|分|<阈值）与 EPS=0.02 不对齐 → 同一份判断两页两个说法。
+
+### Suggested Action
+computeMarketEmotionSub 内按 tendencyKey 单源同义映射：tendencyKey=neutral → signal=0（徽标中性、权重行隐藏），bull/bear → 保持原符号 signal（|score|≥0.2 恒成立，徽标必与 tendency 同向）。改动仅此一处，不动全局 toImpactScore（其他因子的方向保底是刻意设计）。
+
+### Metadata
+- Source: user_feedback
+- Related Files: lib/sameDayJudgment.js (computeMarketEmotionSub ~L532), lib/ruleCore.js (toImpactScore L365), public/js/app.js (_renderFactorBody L1417-1438)
+- Tags: 单源同义, 引用型因子, 徽标判档, impactScore
+- Pattern-Key: semantic.quote_factor_must_inherit_source_verdict
+- Recurrence-Count: 1
+- First-Seen: 2026-10-28
+- Last-Seen: 2026-10-28
+
+---
+
+## [LRN-20261029-004] correction
+
+**Logged**: 2026-10-29T17:30:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: backend
+
+### Summary
+平安估值卡误告「引擎按月算法判定最新已披露报告期为 M=6（半年度）…数据库尚无更新期数据，请复核更新」——而用户资料库里三季报 PDF 已上传、估值配置 M=9 已更新至三季报口径。告警方向完全颠倒。
+
+### Details
+两层根因：① pingAn601318 的按月算法把 10 月整月判为中报（day<=30→M=6），但 A 股三季报普遍 10 月下旬披露（平安 2026 三季报 10-28 披露）——而同项目 DCAVM/麦捷模型的同族算法早已用「10 月 day>=25→M=9」精细边界，唯平安版遗漏，属同族算法漂移；② 报告期核对告警是单向的：只比较 M 是否相等、不分方向——「配置落后算法」（真过期）与「配置领先算法」（提前披露、数据库已更新）输出同一条误导文案。教训：**凡「配置 vs 推断」类核对，告警必须区分方向**；推断算法滞后时配置才是权威（数据一致性铁律：数据库是单一权威源）。
+
+### Suggested Action
+① 按月算法 10 月边界改 day>=25→9（对齐同族）；② 告警改双向：仅配置 M<算法 M 才告「财报可能过期」，配置 M≥算法 M 静默（提前披露合法，以配置为准）。全项目排查同模式：凡「A vs B 不一致就告警」且 A/B 有先后权威关系的核对点，都要区分「谁领先谁」。
+
+### Metadata
+- Source: user_feedback
+- Related Files: lib/valuation/pingAn601318.js (detectLatestReportMonths L82, 报告期核对), lib/valuation/dcavm688660.js / maijie300319.js (同族算法参照)
+- Tags: 按月算法, 报告期自适应, 告警方向, 同族算法漂移, 配置权威
+- Pattern-Key: temporal.comparison_alert_must_be_directional
+- Recurrence-Count: 1
+- First-Seen: 2026-10-29
+- Last-Seen: 2026-10-29
+
+---
+
+## [LRN-20261029-005] correction
+
+**Logged**: 2026-10-29T18:45:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: backend
+
+### Summary
+用户报「两卡数据不一致/三季报更新出错」，排查后真因是口径差异（TTM vs 报告期累计）被旧文案「同比 -4.54%（68.44% vs 去年同期 72.98%）」隐藏——数值不同的两个口径并排出现而不标注口径，用户必然判为数据错误。
+
+### Details
+圣湘生物 688289：左卡毛利率 72.32%（TTM）、右卡同比里 68.44%（报告期累计）。两值都对，但旧格式不写「本报告期」，差异来源不可见。修复：同比文案统一为图二三段式「本报告期 X（去年同期 Y，边际 ±Z）」+ 毛利率/净利率加口径 note。
+
+### Suggested Action
+凡同一指标在同屏出现两个口径的数值，必须逐处标注口径（TTM/报告期累计），不得只靠「同比 ±X%」暗示；百分比差值单位用 pp 与增长率 % 区分。
+
+### Metadata
+- Source: user_feedback
+- Related Files: lib/metricAnalysis.js
+- Tags: 口径一致性, 展示格式, 报障判读
+- Pattern-Key: display.dual_metric_must_label_basis
+- First-Seen: 2026-10-29
+---
+## [LRN-20261029-006] process_gap / correction
+
+**Logged**: 2026-10-29T19:30:00Z
+**Priority**: high
+**Status**: resolved
+**Area**: backend
+
+### Summary
+用户报「昨日的数据为什么无法获取？」——ETF 申赎面板沪深300 组 15 只全部「基期无快照（新入名单）」。根因：10-28 18:42 采集时 27/34 只 PCF 抓取失败，**残缺快照（仅 7 只）却被 settled 定稿**，10-29 计算把它选为基期，缺失 code 全部误判为「新入名单」。
+
+### Details
+取证链：①data/etf-flow/20261028.json 仅 48KB（其余日 204KB），etfs=7 只（510050/510100/510190/510600/588000/588040/588050）；②lib/etfFlow.js computeFromSnapshots 基期选择只认 settled:true，不检查覆盖完整度；③collect 写盘时不看 okPcfs.length 是否小于 universe.length。修复（20261029j）：collect 残缺守卫（okPcfs<universe 或份额缺失→settled:false+partial:true+gaps 落盘）+ 基期选择/stockMonthlyFlow 双保险排除 partial + 数据还原（20261028.json 重建：S(10-26)官方快照+Δ(10-27)权威外部源三源交叉验证，四组校验全过）+ 台账重放补齐缺失增量。
+
+### Suggested Action
+凡「快照/批次型」落盘数据，**完整性不足时绝不能定稿（settled）**——定稿标志必须隐含「全量成功」语义；下游基期选择须同时校验 settled 与覆盖完整度（partial 排除）。残缺数据宁可不定稿留待重采自愈，也不可让残缺基期污染次日计算。恢复路径按 20261026b 惯例：权威外部源→多源交叉验证→四组校验（链路整篮/Δ整篮/官方总量逐位/前向整篮）→还原+溯源标记→台账经代码幂等重放（不手写 cum）。
+
+### Metadata
+- Source: user_feedback
+- Related Files: lib/etfFlow.js, scripts/restore_etf_20261028.js, data/etf-flow/20261028.json
+- Tags: 数据完整性, 快照定稿, 基期选择, 事故还原, 台账重放
+- Pattern-Key: data.snapshot_partial_never_settled
+- First-Seen: 2026-10-29
+---
+
+## [LRN-20261029-007] process_gap / correction
+
+**Logged**: 2026-10-29T20:20:00Z
+**Priority**: high
+**Status**: resolved
+**Area**: backend
+
+### Summary
+用户报「华安证券 600909 三季报已公布，但资料库和财报解读无法同步更新」。根因：reportSync 传 --types quarterly，download_reports.py 合法键仅 annual/semi/q1/q3，quarterly 被静默丢弃后回退 annual,semi——三季报/一季报自上线起从未被下载过（全自选股同因普查证实 6 只今日全部同错）。
+
+### Details
+静默降级链：syncReportForSymbol(--types quarterly) → python L1007 过滤丢弃 → types 空 → L1009 回退 ['annual','semi'] → 巨潮查 94 条只命中已存在的年报/半年报 → skipped=2 downloaded=0 → 记「下载未命中」。半年报同步正常（semi 恰为合法键）掩盖了 quarterly 从未生效。次生影响：财报解读（lib/ai/earnings.js）的 PDF 节选按最新报告期匹配资料库文档，缺三季报 PDF → 只能注入半年报节选；且 earnings 缓存 TTL 30 天，PDF 到位后旧解读仍会挂 30 天（000902 新洋丰实证：10-27 PDF 落地、10-21 中报缓存一直挂到 10-29）。
+
+### Suggested Action
+跨语言边界的枚举/类型参数必须在接收端显式校验：未知名要么报错要么映射别名（quarterly→q1+q3），**严禁静默回退到默认值**——回退会让错误看起来「正常工作」。下载/抓取类链路落地新数据后，必须联动失效依赖该数据的下游缓存（文档→财报解读），不能只靠 TTL 自然过期。修复时先普查同因范围（全自选股 report_sync.json 状态文件一次看清）。
+
+### Metadata
+- Source: user_feedback
+- Related Files: lib/reportSync.js, scripts/download_reports.py, lib/ai/earnings.js, lib/ai/cache.js
+- Tags: 静默降级, 跨语言参数校验, 缓存失效, 资料库同步, 财报解读
+- Pattern-Key: integration.cross_lang_enum_never_silent_fallback
+- See Also: LRN-20261029-006
+- First-Seen: 2026-10-29
+---
+
+## [LRN-20261029-008] process_gap / correction
+
+**Logged**: 2026-10-29T20:35:00Z
+**Priority**: high
+**Status**: resolved
+**Area**: backend
+
+### Summary
+用户再报「海天味业和长江证券也发布了三季报，工作台没有获取到」。修复 quarterly 静默降级后仍有两处堵点：①hasReportDoc 假阳性——docStore.year 取公告日期年份，「2026-04-28 发布的《2026年第一季度报告》」被标 year=2026，错误挡住 2026 三季报同步（603288/000783 实证）；②东财通道接口两处改版未适配（ann_type 数字类目失效、列表不再带 attachments）。
+
+### Details
+假阳性链：hasReportDoc 用 d.type==='quarterly' && d.year==='2026' → 一季报文档满足 → syncReportForSymbol 直接返回「资料库已有」→ 永不下三季报。年份错位同根：「2026-03-27 发布的《2025年度报告》」也被标 year=2026。EM 通道：np-anotice ann_type=2（数字=财务报告）恒 0 条 → 正确类目为字母 A；列表 items 不再带 attachments → 需 np-cnotice 详情接口取 pdf.dfcfw.com 直链。另：巨潮对 A+H 公司（603288）索引延迟数小时，且「无 ann_type」回退组合会使 stock_list 过滤失效（返回全市场公告，标题匹配会错下别家公司报告——已删除并加归属校验 codes.stock_code）。
+
+### Suggested Action
+语义字段要区分「公告日期」与「报告期」：登记/查询报告文档一律按标题解析报告期年份+阶段（与 pickReportDoc 同口径），不得用文件名日期前缀充当报告期。外部接口改版要靠「found=0 必须查因」暴露——本次 ann_type 失效被「回退巨潮」掩盖多年。跨公司下载必须做归属校验（公告的 codes.stock_code 含目标代码），防过滤失效时错下文件。
+
+### Metadata
+- Source: user_feedback
+- Related Files: lib/reportSync.js, scripts/download_reports.py, data/index.json
+- Tags: 语义年份, 假阳性, 东财接口改版, 归属校验, 通道回退
+- Pattern-Key: data.report_period_year_vs_announce_year
+- See Also: LRN-20261029-007
+- First-Seen: 2026-10-29
+---
+
+## [LRN-20261029-009] 东财F10三表接口：裸代码必被拒，必须带交易所前缀
+**Area**: data-source
+
+### Summary
+实施海天估值 V3.0（全量重算支柱）时实测：emweb.securities.eastmoney.com/PC_HSF10/NewFinanceAnalysis/{lrb,zcfzb,xjllb}AjaxNew 对裸代码（code=603288）返回 {status:-1,message:'股票代码不合法'}，必须用带交易所前缀的 code=SH603288。fetchFinancialData 调用方传裸代码时三表全空、逐 companyType 回退全部落空且无显式报错（静默空数组）。
+
+### Details
+『静默空数组』再次复现 LRN-20261029-007 的模式：错误看起来像『没有数据』而非『参数错误』。诊断方法：同 URL 分别用裸代码/前缀代码单日期请求，对比返回体。另两处实测口径知识：①现金流量表补充资料 D&A 字段为 FA_IR_DEPR/IA_AMORTIZE/LPE_AMORTIZE/USERIGHT_ASSET_AMORTIZE，OILGAS_BIOLOGY_DEPR 与 FA_IR_DEPR 数值高度重合（差异<1%，疑似同一补充资料行拆分列），同时累加会重复计算；②现金流量表直接科目 CAPEX（购建固定资产…支付的现金）与腾讯财经 FCF 倒算口径差异巨大（海天 2025：12.84 vs 33.88 亿），混用会系统性扭曲 DCF。
+
+### Suggested Action
+凡调用东财 F10 三表接口，code 参数必须带 SH/SZ/BJ 前缀；调用方拿空数组时先做一次『前缀重试』或显式报错，不要逐 companyType 静默扫完。D&A 累加前对 OILGAS_BIOLOGY_DEPR 与 FA_IR_DEPR 做<1%重合排除。
+
+### Metadata
+- Source: implementation_discovery
+- Related Files: lib/deep/financials.js, lib/valuation/haitian603288.js
+- Tags: 东财F10, 三表, 参数校验, 静默空数组, D&A口径, CAPEX口径
+- Pattern-Key: integration.em_f10_needs_exchange_prefix
+- See Also: LRN-20261029-007
+- First-Seen: 2026-10-29
+---
+
+
+## [LRN-20261029-010] 券商利润表无净额字段：直接取 FEE_COMMISSION_NI/INTEREST_NI 会假 0
+**Area**: data-source
+
+### Summary
+实施长江证券 V3-五法则 E2E 验证时发现：仪表盘「手续费及佣金净收入=0 亿元 / 利息净收入=0 亿元」为假 0——东财券商利润表（lrbAjaxNew，companyType=1）根本不存在 FEE_COMMISSION_NI / INTEREST_NI 字段，模型 yi() 取不到回退 nz→0。实际披露口径为收入侧拆分：FEE_COMMISSION_INCOME（手续费收入 44.23 亿）/ INTEREST_INCOME（利息收入 29.89 亿）/ INTEREST_EXPENSE（利息支出 11.73 亿），且 FEE_COMMISSION_EXPENSE 年报/三季报均为 null（手续费净额不可得）。
+
+### Details
+假 0 危害：数值上被 nz() 吞成合法 0，下游 SOTP 轻资产净利推算（npLight）和展示文案全部带错数且无告警。正确修复：①手续费改收入侧口径并诚实标注「支出侧未披露，净额不可得」；②利息净收入由收入−支出诚实勾稽（29.89−11.73=18.16）；③下游 npLight 用勾稽后的 intNI。附：BVPS 这类「元/股」量纲变量误继承默认单位「亿元」，R() 注册器需显式传 unit。
+
+### Suggested Action
+凡新增三表字段，先对真实返回 JSON 实测字段名存在性（Object.keys 过滤打印），禁止凭字段名猜测；「整齐 0 值」按用户报障判读惯例一律先按假 0 排查。量纲非「亿元」的变量（元/股、%、倍数）注册时必须显式传 unit。
+
+### Metadata
+- Source: implementation_discovery
+- Related Files: lib/valuation/changjiang000783.js
+- Tags: 假0, 券商三表, 字段名实测, 利息勾稽, 量纲标注
+- Pattern-Key: data.broker_income_statement_no_net_fields
+- See Also: LRN-20261029-009, LRN-20261029-007
+- First-Seen: 2026-10-29
+---
+
+## [LRN-20261029-011] 异步数据自适应架构：方法权重应由数据成熟度驱动而非固定百分比
+**Area**: architecture
+
+### Summary
+华安证券估值引擎升级 V3.0 异步数据自适应架构（用户下发十四规则规范）：旧架构固定影子股权重 50/40/10 的问题在于无视「该方法依赖的数据是否新鲜」。新架构为每个指标生成数据契约（期差/容忍期差/成熟度绿黄红），方法成熟度=所依赖指标成熟度最低档，权重按绿×1.0/黄×0.7/红×0.3 动态分配并归一化，PB 法红→整体待更新态。
+
+### Details
+关键实现要点：①成熟度边界 60%/100% 容忍期差（age≤0.6×tol→绿）；②TTM 拼接禁×4/3粗年化（三季报后=前三季累计+上年Q4单季，上年同期数缺→null 禁静默填充）；③BPS 股本同步检测（净资产与股本期差>0.5%→区间化，无公告则区间不展开）；④SOTP 常规业务净利维持中报结转口径的理由：三季报 TTM 已含长鑫上市后公允价值增值，若再用 TTM×PE 与长鑫持股市值加总会双重计价；⑤影子股模式特例：SOTP 权重按其数据成熟度在 40-50% 摆动（绿50/黄45/红40），两套权重并列输出；⑥三态输出（精确态/区间态/待更新态）+置信度（90/75/60）。
+
+### Suggested Action
+凡多方法加权估值模型，权重不应硬编码；先算各方法依赖数据的成熟度，权重随数据新鲜度自动转移。点估值仅在全绿时给出，存在黄/红输出区间+置信度——把不确定性显性化而非伪精确。
+
+### Metadata
+- Source: implementation_discovery
+- Related Files: lib/valuation/huaan600909.js, data/valuation/600909.json, scripts/test_valuation_huaan.js
+- Tags: 异步数据, 数据契约, 成熟度分级, 动态权重, 三态输出, 双重计价
+- Pattern-Key: architecture.async_data_adaptive_valuation
+- See Also: LRN-20261029-009, LRN-20261029-010
+- First-Seen: 2026-10-29
+---
+
+## [LRN-20261029-012] 数据治理升级版：锚点自动识别是消除硬编码年份的根本机制
+**Area**: architecture
+
+### Summary
+士兰微估值引擎升级数据治理升级版（用户下发规范）：旧模型静态配置（2025 年报作 DCF 基数、净债务 52.43 假设值）的问题在于每次财报更新需人工改年份。新机制：东财三表实时拉取 + 锚点自动识别（三季报→中报→一季报回退链）+ TTM 固定公式（上年年报+本年累计−上年同期累计）+ 级别标签制度（A季频/B半年/C年/H高频，台账 25 项三要素）。
+
+### Details
+关键实现要点：①锚点=2026-06-30 半年报（东财 F10 尚无士兰微三季报）——锚点前移机制自动适配，季报披露后重跑即自动切换；②DCF 基数 TTM 化（130.52→139.78 亿）后第一档 g₀ 自动变小，中枢 30.77→27.88；③净债务/少数股东/ΔWC/D&A/CAPEX 从假设升级为锚点实时（ΔWC/营收实际 = (Δ应收+Δ存货−Δ应付)÷本年累计营收）；④完整度评分 A40/B20/C0/H20=80（确定性引擎无搜索通道，C 级搜索补充由配置更新执行，诚实记 0 分）；⑤上年同期缺失 → 年化退化 ×12/锚点月份数强制标注（sensHints 联动）。
+
+### Suggested Action
+凡涉及财报数据的估值模型，取数层必须实现「锚点自动识别+级别标签」，估值公式分母与分子强制同报告期体系。C 级数据需要搜索补充验证时，确定性引擎记 0 分并在报告显著标注，由配置更新流程补充——不假装 AI 搜索过。
+
+### Metadata
+- Source: implementation_discovery
+- Related Files: lib/valuation/silan600460.js, data/valuation/600460.json, scripts/test_valuation_silan.js
+- Tags: 数据治理, 报告期身份证, 锚点自动识别, TTM滚动, 完整度评分, 口径锁定
+- Pattern-Key: architecture.data_governance_valuation
+- See Also: LRN-20261029-011, LRN-20261029-010
+- First-Seen: 2026-10-29
+---
+# LRN-20261029-013 | 圣湘 V3.0 三轨并行：五表锚定+TTM唯一合法桥接+评级方向反转属规范设计
+- Context: 用户下发《圣湘生物（688289）全自动动态估值分析框架·AI指令集 v1.0》全文，要求升级圣湘专属估值模型。
+- Event: 全量实施 V3.0 三轨并行层（轨道I相对估值50%/轨道II SOTP 35%/轨道III历史分位15%），五表锚定（表A年度锚硬锚/表B阶段观测软锚禁倒推/表C TTM拼接唯一合法桥接/表D市场实时/表E可比中位数非均值）。锚点自动前移至 2026-09-30 三季报(9M)（东财已有 2026 三季报，比规范给的 H1 观测点新）。TTM 归母 1.1167 亿 = 1.9894(2025年报) + 1.0405(9M累计) − 1.9132(上年同期)——Q3 单季仅 0.06 亿的暴跌首次完整进入估值分子，当前 PE(TTM) 77.8 倍超历史区间上沿（39~58）→ 分位 99.9% 封顶。
+- Lesson: ①**目标 PE 区间倒挂是真实信号不是 bug**：历史 P25(43.75) > 可比上限(32.4) 说明圣湘历史估值中枢系统性高于可比公司——按回退规则改用可比区间 [21.6,32.4] 并警报，禁止硬凑。②**评级方向反转（V2.1 低估 17.65 → V3.0 高估 10.78）属规范设计意义**：V2.1 基于一致预期 FY2026E 未反映 Q3 暴跌，V3.0 TTM 口径反映最新盈利状态；数据不变则结论不变，口径升级带来结论升级是合规的，但必须在 lastVersion 存档中写明反转原因。③**三轨背离>30% 是警报不是错误**：PE 轨 30 亿 vs SOTP 144 亿偏差 315%，原因是利润端处周期低点——以利润端为主定价并在警报中写明机制。④语法排查教训：`S3 ? \`模板串\`,` 缺 else 分支报 "Unexpected token ','"，caret 指向逗号但根因在三元不完整；旧代码与新代码重名（legacySix 六模型的 sotpB 与三轨层 sotpB）会在语法检查后以 "already declared" 二连报出现，sed 按行号区间改名最小侵入。⑤nz() 帮助函数不是全局惯例，跨模型复制代码段时要确认目标文件有该 helper。
+- Tags: 三轨并行, 五表锚定, TTM拼接, 区间倒挂, 评级反转, 风险折价, legacySix
+- Pattern-Key: architecture.three_track_valuation
+- See Also: LRN-20261029-012, LRN-20261029-011
+- First-Seen: 2026-10-29
+---
+# LRN-20261029-014 | 万润 v2.0 数据频率自适应：置信度只动区间与权重、FCFF 实时化触发 DCF 再平衡
+- Context: 用户下发《万润股份逻辑估值模型 v2.0：数据频率自适应版》全文，在 v1.0 三层加权（PB-ROE 50/PE 35/DCF 15）基础上升级。
+- Event: A层核心输入实时化（东财F10三表 SZ002643，锚点 9M→H1→Q1）；置信度衰减机制（点估计不变，半宽=15%÷平均置信度，C<0.7层权重×C/0.7）；一致性校验四条。
+- Lesson: ①**FCFF 基期从「假设 4.0 亿」改为「A层 TTM 规则值 0.88 亿」会让 DCF 从 11.99 元塌缩到 2.46 元 → 偏离 89.26% >80% 自动触发 DCF 再平衡（60/35/5）**——这不是 bug 而是规范设计：资本开支高峰期 DCF 本来就只配 5% 权重，再平衡机制正是为这种情况准备的；旧模型用假设值 4.0 亿反而掩盖了这一机制。②**区间口径切换（三情景→置信度区间）与评级规则切换（区间边界→信号比 0.75/1.30）必须同步**，只改区间不改评级会出现「价格在区间外但显示合理」的错位。③敏感性格网「由参数自动生成」要真做到：ROE 网格=可持续ROE×[0.7,0.85,1,1.15,1.3]、净利网格=预测净利×[0.75,0.9,1,1.1,1.2]、PE列=[行业×0.6,×0.8,targetPE,行业]，不留硬编码尾巴。④null 安全必须贯穿全链：fetchStatements 合法返回的 S 内部 prevSame/cf/bal 仍可能为 null（测试注入路径），`S.prevSame.np` 这种链式访问要提变量 `ps = S.prevSame || {}`，run 的 try/catch 会把 TypeError 吞成 COMPUTE_FAILED 使测试段整段静默失败（4 连 ❌ 无错误信息）——排查时先直接打印 {ok,error,detail}。⑤校验二/四触发是诚实记录不是失败：TTM ROE 偏离近三年均值 45.79%（周期低位+2023高价周期）→ 剥离汇兑后仍处低位属周期性偏离；PE 层隐含净利 1.62 亿 vs 一致预期 4.21 亿差 91pp → 目标 PE 假设偏高（行业 103 倍×0.85 vs 市场定价）。
+- Tags: 数据频率自适应, 置信度衰减, DCF再平衡, TTM实时化, 信号比评级, 总和校验
+- Pattern-Key: architecture.frequency_adaptive_valuation
+- See Also: LRN-20261029-013, LRN-20261029-011
+- First-Seen: 2026-10-29
+---
+# LRN-20261030-001 | 华安 PE 层口径修订版：长鑫收益确认开关 + 正常化 EPS 中值口径 + 字段链假 0
+- Context: 用户下发《一次性损益剔除口径·报告首页强制披露（修订版）》六条，升级华安 V3.0 PE 层。
+- Lesson: ①**券商模板字段链假 0 教训**：OTHER_EQUITY_TOOL 在券商资产负债表格式下恒为 null，实际值在 OTHER_EQUITY_INVEST（21.4653 亿永续债）；原代码 `yi(OTHER_EQUITY_TOOL) || 0` 把缺失吞成 0——与 LRN-20261029-010（券商利润表净额字段假 0）同类事故，券商三表字段名永远要实测验证、禁 `|| 0` 吞缺失。②**普通股 BPS =（归母净资产 − 其他权益工具）÷ 股本**：规范测算 5.62 与实时值 5.60 差 0.02 属扣减口径差异（是否再扣库存股等），代码取实时字段并标注差异来源，不硬凑规范数字。③**确认开关模式**：确定性引擎拿不到的数据（三季报非经常性损益明细，fxsy 端点无数据）做成配置开关 lcxInNonRecurring（null=未确认→保守中值 / true=确认在扣非外→上修 / false=确认在扣非内），把「人工确认」变成一键操作而非改代码。④**口径切换要同步扩展区间化**：PE 点估值改中值后，centerLow/High 必须同步纳入 PE 区间（原来只用点值），否则区间宽度不反映新增不确定性；副作用检查——区间下移使「方向性不明」边界标注消失，相关测试断言要同步更新。⑤规范给的数字是测算示例不是圣旨（0.702 vs 实时 0.70），代码权威原则下输出实时计算值并标注与规范的差异来源。
+- Tags: 字段链假0, 普通股BPS, 确认开关, 正常化EPS, 口径修订
+- Pattern-Key: architecture.caliber_revision_valuation
+- See Also: LRN-20261029-010, LRN-20261029-011
+- First-Seen: 2026-10-30
+---
+# LRN-20261030-001 | 华安 PE 层口径修订版：长鑫收益确认开关 + 正常化 EPS 中值口径 + 字段链假 0
+- Context: 用户下发《一次性损益剔除口径·报告首页强制披露（修订版）》六条，升级华安 V3.0 PE 层。
+- Lesson: ①**券商模板字段链假 0 教训**：OTHER_EQUITY_TOOL 在券商资产负债表格式下恒为 null，实际值在 OTHER_EQUITY_INVEST（21.4653 亿永续债）；原代码 `yi(OTHER_EQUITY_TOOL) || 0` 把缺失吞成 0——与 LRN-20261029-010（券商利润表净额字段假 0）同类事故，券商三表字段名永远要实测验证、禁 `|| 0` 吞缺失。②**普通股 BPS =（归母净资产 − 其他权益工具）÷ 股本**：规范测算 5.62 与实时值 5.60 差 0.02 属扣减口径差异（是否再扣库存股等），代码取实时字段并标注差异来源，不硬凑规范数字。③**确认开关模式**：确定性引擎拿不到的数据（三季报非经常性损益明细，fxsy 端点无数据）做成配置开关 lcxInNonRecurring（null=未确认→保守中值 / true=确认在扣非外→上修 / false=确认在扣非内），把「人工确认」变成一键操作而非改代码。④**口径切换要同步扩展区间化**：PE 点估值改中值后，centerLow/High 必须同步纳入 PE 区间（原来只用点值），否则区间宽度不反映新增不确定性；副作用检查——区间下移使「方向性不明」边界标注消失，相关测试断言要同步更新。⑤规范给的数字是测算示例不是圣旨（0.702 vs 实时 0.70），代码权威原则下输出实时计算值并标注与规范的差异来源。
+- Tags: 字段链假0, 普通股BPS, 确认开关, 正常化EPS, 口径修订
+- Pattern-Key: architecture.caliber_revision_valuation
+- See Also: LRN-20261029-010, LRN-20261029-011
+- First-Seen: 2026-10-30
+---
+
+---
+- ID: LRN-20261030-002
+- Title: 华安估值权重与输出形态八条规范落地（PB普通股口径切换+绿权重置信度+折扣30%）
+- Context: 用户下发《【本次估值权重与输出形态】》八条：权重 PB45/SOTP45/PE10、成熟度 PB绿/SOTP黄/PE绿、规则9优先于规则8声明、主情景区间+中枢、参考情景仅作参考、分项必须列示、区间态不输出单点值、数据同步说明。
+- Lesson:
+  1. PB 层目标价基准切换要动 pbTarget/pbTargetLow/pbTargetHigh 三个赋值（bpsUsed→bpsOrdinary），归母口径保留作参照并随行标注——只改一处会留口径不一致。
+  2. 区间态置信度新口径=「绿色方法权重占比」近似（greenW=各绿方法权重和，实测 PB45+PE10=55%）+定性分层（≥70%高/≥50%中等偏高/≥35%中等/其余一般）；精确态保持 90。
+  3. 规范手写的参考情景目标价（8.22 元）是按旧折扣 25% 口径手算的；限售折扣按规范第8条改 30% 后代码实测 7.97——数值由代码计算，规范文本与实测的差异要如实披露差异原因，不改代码迎合手写值。
+  4. weightsNote 重写为①~⑧八条结构，全部动态值拼接（占比/区间/分项/期差/敏感性/折扣），测试用八条结构正则+关键语义逐条断言。
+- Tags: 权重输出形态, 绿权重置信度, 限售折扣30%, 参考情景, 八条结构
+- Pattern-Key: architecture.weights_output_form_spec
+- See Also: LRN-20261030-001, LRN-20261029-011
+- First-Seen: 2026-10-30
+---
+
+---
+- ID: LRN-20261030-003
+- Title: 华安「估值结构拆解·强制披露」五条落地（结构拆解行+评级口径带+影子股溢价敏感性传导）
+- Context: 用户下发《估值结构拆解·强制披露》五条：分项目标价/评级口径说明/影子股溢价提示/置信度说明/PB口径提示。规范文本手写数值基于 20261030a 旧口径（中枢8.08/下限7.26/折扣25%）。
+- Lesson:
+  1. 规范文本中的手写数值（8.08/7.26/0.78 溢价/8.22 参考）是按旧口径手算的快照，落地必须全部改为代码动态值（7.81/7.00/现价−PB法/7.97），并在汇报中披露差异原因（折扣 25%→30%），不得照抄手写值也不得改代码迎合。
+  2. 影子股溢价敏感性要按权重确定性传导：长鑫市值−20% → 持股价值减少额 ÷ 股本 = 每股降幅，再 × SOTP 权重 → 中枢回落值（−17.75亿 → −0.35元/股 × 45% → 7.81→7.65），不能直接用每股降幅当中枢降幅。
+  3. 评级口径说明要把「区间下限」与「买入触发线（下限×0.9）」之间的地带显式命名为「持有/中性观察带」，且现价低于下限但不破买入线时明示「不判低估」——区间判定输出必须附口径解释，防用户误读。
+  4. PB 双口径披露：PB(LF) 现值随 BPS 口径变（归母 1.15 / 扣减 1.24），但合理PB是三层加权乘数、与BPS口径无关——用户手写「两者均上修」中合理PB上修半句按代码口径不成立，落地时如实按代码输出并说明。
+- Tags: 估值结构拆解, 强制披露, 评级观察带, 敏感性传导, 双口径PB
+- Pattern-Key: architecture.structure_disclosure_spec
+- See Also: LRN-20261030-002, LRN-20261030-001
+- First-Seen: 2026-10-30
+---
+
+---
+- ID: LRN-20261030-004
+- Title: 新洋丰（000902）专属估值模型 v1.0→V2.0 全量重写（全自动动态估值指令集落地）
+- Context: 用户下发《新洋丰全自动动态估值 AI 指令集 v2.0》（七节：角色/运行方式/全自动原则/A1周期判定/R1-R6数据路由/取数/估值三角/动态情景/反向验证/输出模板/硬约束），要求把原 v1.0「永久逻辑估值引擎」（正常化盈利trimmed median锚）升级。
+- Lesson:
+  1. 工程范式映射：指令集"全自动动态取数（东财F10多源股价交叉/分红/分部/磷矿进度）"在 project 沙箱不可全实时，按既有范式（对齐华安/万润/圣湘）映射为"配置锁死权威快照 + 全动态算法"；算法框架 100% 按 v2.0 实现（A1三信号/R1-R6/估值三角/三情景/反向验证/期权独立/置信度六档/硬约束），仅数据快照为人工刷新。须向用户显式说明此取舍。
+  2. R2 TTM拼接 vs R3前向年化降级：LATEST=H1 走 R2（归母=BASE_Y全年+LATEST.H1−上年同期H1=16.2193亿），R3仅上年同期缺失时降级并打[ANNUALIZED]标记——降级路径代码保留但当前不触发。
+  3. 估值三角 EV/EBIT 交叉：EV=市值+净有息负债（R4自洽，无需找上年末值）；当 EV/EBIT 隐含倍数与主模型 PE 合理价偏离>30% 时，置信度由高降为「中」（PE为主、EV为下沿约束），解决指令集 4.2"标注分歧"与六"低=偏离>30%"的张力——calibration 决策：保留"低"给 ANNUALIZED/反向失败/EV降级方向性，EV分歧>30%仅降为"中"，需向用户说明。
+  4. 反向验证语义坑：第5项「股本稀释」未稀释属正常态（result='不适用'即通过），误设为'否'会被 reverseAllPass 当成失败 → 置信度错判为"低"。修复：未稀释→'不适用'。
+  5. 期权增量（磷矿/磷酸铁）独立列示，绝不并入基准目标价（硬约束3）；磷酸铁单吨毛利为负/未披露只判"中性"不得判"低迷"（结构性增量非周期信号，A1 信号3）。
+  6. 数值由代码计算：PE_base=0.5×peer中位(9.61)+0.5×hist中位(13)+调整(ROE>12→+0.5、CFO/E>1→+0.3)=12.1 → 合理价 15.64；中枢 15.64/区间[12.95,18.08]/置信度中。
+- Tags: 新洋丰, V2.0, 全自动动态估值, R1-R6路由, 估值三角, 置信度六档, 期权独立
+- Pattern-Key: architecture.full_auto_valuation_v2
+- See Also: LRN-20261030-003, LRN-20261030-002
+- First-Seen: 2026-10-30
+---
+
+- ID: LRN-20261030-005
+- Title: 封顶/覆盖类数值变更必须全文统一用最终有效值（消除「标签X/结果Y」割裂幻觉）
+- Context: 长江证券补丁I 把动态PB锚由原始 1.83 封顶至理论PB锚 1.60。补丁J 审计发现多处文案仍把 1.83 当作「当前锚」展示——市场快照、敏感性看板、结论矩阵、红灯提示、ROE质变摘要均出现「标签写1.83、但计算中枢=10.74（按1.60算）」的割裂，以及红灯提示「动态锚1.83突破上轨→以动态锚为准」这种引用旧原始值当当前值的反例。
+- Lesson:
+  1. 任何「中间原始值 → 最终有效值」的覆盖/封顶/降级，落地的第一铁律是：所有面向用户的文本位置（市场快照 / 敏感性看板 / 结论矩阵 / 红灯·绿灯 / 摘要）必须统一引用【最终有效值】，原始值只允许出现在「原X→封顶至Y」的诚实括号解释里，绝不能作为独立当前锚出现。
+  2. 写「计算等式强校验」类说明时，若 公式值 ≠ 最终输出值（如 基准×0.75=8.06 但被铁底锁到6.14），必须如实两段式描述（先列公式值，再标注为何锁定），严禁强行画等号制造假自洽。
+  3. 情景设定要防倒挂：当主模型中枢 > 对照锚（如 10.74 > 8.92）时，「乐观复苏」自动失效转为「均值回归底线（仅备注）」，绝不允许输出「乐观价 < 基准价」的反常识数据——落地时给情景对象加 inverted 标志，前端/文案统一按 inverted 重标。
+  4. 熔断/状态类提示引用的数值，必须与当次计算的最新数值逐字一致；历史残留提示（如「PB锚1.83倍」「以动态锚为准」）必须清除——用全局 grep 1.83 / 以动态锚为准 兜底排查。
+- Tags: 封顶一致性, 割裂幻觉, 文本数值对齐, 动态PB锚, 补丁J
+- Pattern-Key: architecture.capped_value_text_consistency
+- See Also: LRN-20261030-004, LRN-20261030-003
+- First-Seen: 2026-10-30
+---
+
+- ID: LRN-20261030-006
+- Title: 测试脚本两个暗坑——ok(name,cond) 参数顺序颠倒会恒绿；model.run() 不注入三表在沙箱必崩
+- Context: 补丁J 新写离线测试 scripts/test_changjiang_patchJ.js 初版把断言写成 ok(condition, name)，但 ok 定义为 ok(name, cond)。结果 condition（布尔）被当 name 打印、cond（字符串name）恒 truthy → 全部断言假绿、26/26 通过是假象；修好顺序后立刻暴露 J4.3 真实失败。另一坑：项目内 test_changjiang_patchF/patchFG/matrix_render 三个旧测试直接 m.run('000783',{price}) 不传三表，run 内部联网取数，沙箱无网 → 返回残缺 → undefined 访问直接崩溃，且它们编码的是补丁I前旧值（center9.38/复苏8.87）。
+- Lesson:
+  1. 自写断言函数务必固定签名（推荐 ok(cond, name) 或 ok(name, cond) 二选一且全局统一），并在首个失败用例前用「已知会失败的条件」做一次反向自检，防止签名颠倒导致假绿。
+  2. 估值模型确定性测试必须像 test_valuation_changjiang.js 那样用 baseData() 注入 statements/balanceQuarterly 离线跑 run()，绝不能裸调 run(symbol,{price}) 依赖实时联网——run_all_tests.js 的 needsNetwork 正则只扫文件源码不扫依赖，联网型测试会混进 quick 套件并崩。
+  3. 预补丁/过期且联网依赖的测试，直接退役（删除）+ 用聚焦离线测试替代，比逐条回填旧值更稳；删除前确认其覆盖已被权威测试吸收。
+- Tags: 测试假绿, 参数顺序, 离线注入三表, 沙箱联网崩溃, 退役过期测试
+- Pattern-Key: testing.assert_signature_and_offline_run
+- See Also: LRN-20261030-005
+- First-Seen: 2026-10-30
+---
+
+---
+
+- ID: LRN-20261030-007
+- Title: 估值模型"前瞻情景 vs 折价后中枢"坐标轴不一致——用动态 secAxis 字段显式锚定，note 必须动态注入当前中枢而非写死用户给的示例数字
+- Context: 圣湘生物模型用户报障：图1(V3.0三轨合成·含历史极端PE悲观折价)中枢 10.78 与图2(前瞻三情景/Forward PE·2026E)基准 17.65 用户看会混淆。用户口令给了"若按V3.0保守折价口径，基准情景对应中枢应平移至 10.78 元"的示例文本。落地时图1中枢因后续防高估指令(指令2)降到 9.71 —— 若把 10.78 硬编码进 note 就变成假值。
+- Lesson:
+  1. 当同一标的存在"滞后/折价口径"与"前瞻/未折价口径"两套中枢时，新增一个返回字段(如 secAxis)承载：折价前区间 preDiscRange、折价前中枢、折价后中枢 postDiscCenter、mandated 高亮 note、锚定 anchorLine。前端在图2顶部渲染该 note+anchorLine。
+  2. note 里的"平移至 X 元"必须 `${center3}` 动态注入最终计算结果，绝不可写死用户示例里的 10.78；用户给的示例数字只是当下快照，模型逻辑一变(如指令2降低中枢)示例即失效，写死即造假。
+  3. 锚定基准取"图1折价前每股区间"(synthLow/High÷N)，让用户看清前瞻情景相对折价前区间的位置，而非相对已折价的中心。
+- Tags: 坐标轴对齐, 前瞻vs折价, 动态注入, secAxis, 诚实一致性
+- Pattern-Key: valuation.axis_alignment_dynamic_note
+- See Also: LRN-20261030-005, LRN-20261030-006
+- First-Seen: 2026-10-30
+---
+
+- ID: LRN-20261030-008
+- Title: 并购标的集采/政策风险防高估——config-gated PE 封顶 + 商誉减值单独扣减，动态与静态双链同步施加
+- Context: 圣湘海济(生长激素)赛道有集采(粉针/水针)预期，原给其 1.85亿净利配 35.6x 生物制品PE 偏高。用户指令：核心并购标的有集采预期时，适用PE不得超过可比公司中位数×0.7，并单独计提5-10%商誉减值扣减项。
+- Lesson:
+  1. 这类风险约束做成 config 开关：haijiCollectExpected + haijiPeerPeMedian(可比中位数) + haijiCollectPeCapCoef(0.7) + haijiGoodwillImpairRate(5-10%取7%)。cap = peerMedian×coef，appliedPE = min(原PE, cap)。
+  2. SOTP 海济 B 在【两处】都要改：动态 sotpCalc 的 B 行 + 静态三轨轨道II·B；否则两链算出不同海济估值。两处统一 `np × appliedPE × mult × coef × (1-goodwillImpair)`。
+  3. 触发时必须在 alerts 推一条"集采预期触发SOTP防高估"明确提示，并在轨道II行/SOTP明细B行/coreRows行业倍数三处显式标注"集采封顶·原Xx"与"(1−N%商誉减值)"——防高估是实质性降估值，必须让用户看得见降在哪。
+  4. 全局商誉折价(discounts.goodwill 10-15%，触发条件判定)与这里的海济专属商誉减值(5-10%单独)是两个不同口径，命名/注释要区分，避免重复扣减或被误并。
+- Tags: 集采防高估, PE封顶, 商誉减值, config-gated, SOTP双链
+- Pattern-Key: valuation.collect_risk_cap_and_goodwill_impair
+- See Also: LRN-20261030-005
+- First-Seen: 2026-10-30
+
+---
+
+- ID: LRN-20261030-009
+- Title: 估值模型测试若 model.run() 为 async，测试必须 await，否则拿到 Promise 全断言恒绿/全假
+- Context: scripts/test_sanxi_selling_expense.js 旧版 `const r = m.run('688289',{price:30})` 直接同步用 r.ok —— 但 run 已改 async 返回 Promise，r 是 Promise 对象，r.ok 为 undefined → 全部 check 因 cond 为 falsy 而 FAIL，且所有"含某文本"断言因 r.xxx 为 undefined 全失败(假红)，掩盖了模型真实行为。
+- Lesson:
+  1. 凡调用已升级为 async 的模型 run()，测试主体必须包进 `(async()=>{ const r=await m.run(...); ... })().catch(...)` 或顶层 await；切勿把 Promise 当结果对象用。
+  2. 模型返回 `{ok:false,error:'SANXI_COMPUTE_FAILED',detail:e.message}` 时，detail 才是真错；测试/排障先打印 r.detail 或直接在 node -e 里 catch 打印 stack，定位 TDZ("Cannot access X before initialization")/undefined 等运行时错。
+  3. 同项目惯例：确定性测试用 baseData() 注入三表离线跑（见 LRN-20261030-006）；若模型 run 允许不传 statements(内部 try/catch 回退)，可在不联网下跑通、仅降级 TTM，断言聚焦结构字段不依赖具体数值。
+- Tags: async测试, await, Promise陷阱, 假绿假红, SANXI_COMPUTE_FAILED
+- Pattern-Key: testing.await_async_model_run
+- See Also: LRN-20261030-006
+- First-Seen: 2026-10-30
+## [LRN-20261030-001] best_practice
+
+**Logged**: 2026-10-30T21:50:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: config
+
+### Summary
+同名财务指标「页面 0.37 vs 引擎 -2.39」看似矛盾，实为中报 vs 三季报口径差异；判错前必须先还原报告期链条并做双源数值闭环。
+
+### Details
+用户报障：新洋丰页「每股经营现金流 0.37（2026中报）」与估值卡「2026Q3 经营现金流 -2.39 亿」疑似矛盾。核查路径：东财 F10 xjllbAjaxNew 逐期取 NETCASH_OPERATE → 9M=-2.3852 亿（与引擎一致✅）、H1=4.6683 亿 ÷12.55 亿股=0.372 元（与卡片 0.37 闭环✅）、单季 Q3=-7.0535 亿（硫磺囤货付现+销售延后，调研纪要归因）。顺带发现配置 h1.cfo 2026=9.8/2025=8.5 是 v1.0 校准估计值 → 精确化为 4.6683/10.0404（F10 权威值）。R2 TTM 拼接（FY+9M−上年9M）不经过 H1 → 引擎输出不变。
+
+### Suggested Action
+1. 判读「数字矛盾」类报障时，先列「报告期×口径×每股/累计」三要素表，再做 F10 权威源数值闭环，禁止直接判错或改数。
+2. 配置锁死模型中的**整值/估计值字段（如 9.8、8.5、10.8）是历史遗留信号**，升级报告期时应顺带用 F10 精确值替换并在 source 留痕。
+3. pypdf 提取值与 F10 独立源一致时可信度升级（此前 000902 PDF 曾有股本行误读，本次 CFO 提取值经 F10 验证为正确）。
+
+### Metadata
+- Source: user_feedback
+- Related Files: data/valuation/000902.json; lib/valuation/xinyangfeng000902.js
+- Tags: 数据一致性, 报障判读, pypdf, 东财F10
+- Pattern-Key: harden.report_period_disambiguation
+- See Also: 000902 PDF 股本行误读事故（20261030h）
+---
+## [LRN-20261030-002] correction
+
+**Logged**: 2026-10-30T21:55:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: backend
+
+### Summary
+getRecentReportDates 月份硬编码（10月→只请求到中报）导致 xjllb 系财务卡在三季报披露后整月不同步；数据抓取的「报告期可得性推断」必须对齐法定披露日历，不得按旧披露节奏猜。
+
+### Details
+用户报障：新洋丰页面「每股经营现金流 0.37（2026中报）」vs 东财 F10 官方页「-0.1901（2026三季报）」。根因：lib/stockData.js getRecentReportDates 用 `month>=11 才请求 Q3`（旧假设：Q3 11月才可得），实际上市公司 10 月下旬已披露 → OCF 分支整个 10 月不请求 2026-09-30。同页 ZYZB 主要指标卡正常（服务端返回报告期），形成同页口径分裂。修复：请求窗口对齐披露日历（Q1@4月/H1@8月/Q3@10月/FY@次年1-3月），未披露期接口自动缺失 → sorted[0] 回落，提前请求无害。实测 getQuote('000902') → -0.1901 元/2026年三季报，与东财一致。
+
+### Suggested Action
+1. 凡「按当前日期推断最新可得报告期」的代码，一律对齐披露日历（Q1 04-30 / H1 08-31 / Q3 10-31 / FY 次年 04-30）并提前一档请求，靠「缺失自动回落」兜底，不做逐公司披露状态判断。
+2. 同一页面出现「部分卡片更新、部分滞后」时，优先排查各卡独立的日期推断函数（口径分裂信号），而非怀疑缓存。
+3. See Also LRN-20261030-001：同一天两起现金流报障，先口径还原再判错。
+
+### Metadata
+- Source: user_feedback
+- Related Files: lib/stockData.js (getRecentReportDates)
+- Tags: 披露日历, 数据最新性, xjllb, 口径分裂
+- Pattern-Key: harden.disclosure_calendar_alignment
+- See Also: LRN-20261030-001
+---
+## [LRN-20261030-003] 三季报滞后：全工作台审计法（用户指令"全工作台检查哪些地方用了旧数据"）
+
+### Error
+- 深析/主指标/现金流卡逐个修完后，工作台仍存在两处估值模型配置（麦捷/电气风电）三季报数据滞后未被用户或 AI 察觉，靠用户"全工作台检查"指令才暴露。
+- 圣湘测试 6.2 断言滞留在旧配置版本 20261029r，配置合法升级 20261030h 后测试误报红。
+
+### Root Cause
+- 各估值模块的配置文件（data/valuation/*.json）各自维护 reportPeriod/version/freshness，披露新财报后没有集中清单逐一核对；测试断言里硬编码版本号会随合法升级而失配。
+- 顶层 reportLabel 与 reportPeriod 是两个字段（dcavm688660.js 直接读 cfg.reportLabel），只升其一会出现同模型内标签口径分裂。
+
+### Suggested Action
+1. 季报披露季（4/8/10 月下旬）做一次"全工作台审计"：以披露日历为基准，遍历全部 data/valuation/*.json 的 reportPeriod/disclosureDate，列出滞后清单再逐个升级，而不是等报障。
+2. 升级配置时 grep 同文件内所有「半年报/中报/Q2」字样，确保 reportLabel/reportPeriod/快照 source 标注三类口径一次升齐（source 标注若真取自 H1 数据则保留）。
+3. 测试断言避免硬编码配置版本号；确需版本守卫时，用「version >= 期望值」或单独一行注释「升级配置时同步改此处」。
+4. 硬估值盈利锚设计（如 DCAVM 用多年中位数）的模型，新季报只需升级标注与快照，不强行进计算——升级前先确认模型设计边界。
+
+### Metadata
+- Source: user_feedback
+- Related Files: data/valuation/300319.json, data/valuation/688660.json, lib/valuation/maijie300319.js, lib/valuation/dcavm688660.js, scripts/test_valuation_sanxi.js
+- Tags: 三季报, 全工作台审计, 口径分裂, 测试断言滞后, 版本守卫
+- Pattern-Key: harden.workspace_wide_report_audit
+- See Also: LRN-20261030-002
+---

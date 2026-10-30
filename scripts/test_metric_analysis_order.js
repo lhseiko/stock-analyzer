@@ -63,10 +63,12 @@ const fundamental = {
 const out = buildMetricAnalysis(quote, comparison, companyType, signals, fundamental);
 
 // ---------- 1. 项数与顺序 ----------
+// ★ 20261029a：METRIC_ORDER 14→16（dedProfitGrowth 后插 opProfit/nbv）；opProfit/nbv 为
+//   条件指标（入参缺数据时整行不渲染），本测试未传入 → 输出仍为 14 项。
 ok(Array.isArray(out.metrics), 'out.metrics 应为数组');
-eq(METRIC_ORDER.length, 14, 'METRIC_ORDER 长度应为 14');
-eq(out.metrics.length, 14, '右卡输出项数应为 14');
-eq(out.metrics.map(m => m.key), METRIC_ORDER, '右卡 key 顺序必须严格等于 METRIC_ORDER');
+eq(METRIC_ORDER.length, 16, 'METRIC_ORDER 长度应为 16（20261029a：+opProfit +nbv）');
+eq(out.metrics.length, 14, '未传 opProfit/insuranceNBV 时右卡输出项数应为 14（条件指标不渲染）');
+eq(out.metrics.map(m => m.key), METRIC_ORDER.filter(k => k !== 'opProfit' && k !== 'nbv'), '右卡 key 顺序必须严格等于 METRIC_ORDER（去掉未提供的条件指标）');
 eq(out.order, METRIC_ORDER, 'out.order 应回显 METRIC_ORDER');
 
 // ---------- 2. 扣非 / PEG 必然出现 ----------

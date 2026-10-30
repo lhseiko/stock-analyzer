@@ -72,17 +72,50 @@ const Notes = {
     try { localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.notes)); } catch (e) { /* ignore */ }
   },
 
-  // 回写服务端（best-effort，不阻塞界面；失败时本地仍保留）
+  // 回写服务端（失败必须醒目可见——20261028b 教训：「股市口诀坑」保存失败静默丢笔记，
+  // 用户毫无感知。此前 catch 只 console.warn，且 HTTP 500 时 fetch 不抛错、失败完全无声）。
   async pushToServer() {
     try {
-      await fetch('/api/notes/sync', {
+      const resp = await fetch('/api/notes/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ notes: this.notes }),
       });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`); // 500 等服务端错误也必须算失败
+      // 成功：若此前出现过失败警告，明确告知已恢复同步（重建信任）
+      if (this._syncFailed) {
+        this._syncFailed = false;
+        this._showSyncToast('✓ 笔记已重新同步到云端（此前失败的数据已补传）', false);
+      }
     } catch (e) {
+      this._syncFailed = true;
+      this._showSyncToast(
+        '⚠️ 云端保存失败（' + (e && e.message ? e.message : '服务器无响应') + '）：本条笔记只存在这台浏览器里，' +
+        '清缓存 / 换浏览器会丢失。请勿清理浏览器数据；服务恢复后刷新页面会自动重传。',
+        true
+      );
       console.warn('[Notes] 服务端写入失败（本地已保存）：', e && e.message);
+      // 30 秒后自动重试一次（全量幂等回写），尽量把本地独有条目尽早补传，不等下次刷新
+      if (!this._syncRetryTimer) {
+        this._syncRetryTimer = setTimeout(() => { this._syncRetryTimer = null; this.pushToServer(); }, 30000);
+      }
     }
+  },
+
+  // 同步状态提示条（20261028b）：失败=琥珀色醒目警告置顶 12 秒，恢复=绿色 3 秒
+  _showSyncToast(msg, isWarn) {
+    if (typeof document === 'undefined') return;
+    let el = document.getElementById('notesSyncToast');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'notesSyncToast';
+      document.body.appendChild(el);
+    }
+    el.className = 'notes-sync-toast ' + (isWarn ? 'warn' : 'ok');
+    el.textContent = msg;
+    el.style.display = 'block';
+    if (this._syncToastTimer) clearTimeout(this._syncToastTimer);
+    this._syncToastTimer = setTimeout(() => { if (el) el.style.display = 'none'; }, isWarn ? 12000 : 3000);
   },
 
   // 生成唯一 id：时间戳 + 自增序号 + 随机串，确保同步循环内也不会碰撞

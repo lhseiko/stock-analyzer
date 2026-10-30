@@ -10,9 +10,10 @@
  * 本文件守住：
  *   [A] etfFlow 卡与其它因子卡完全同构：无 tp-comp-wide、无卡内页签、10 张卡等宽入网格
  *   [B] 卡片 detail 只说一句短摘要（不含长口径「口径：Δ份额…」）
- *   [C] 卡片带「查看宽基ETF明细 →」入口（data-action="goto-etf-tab"），点击切到独立页签
- *   [D] 独立「宽基ETF申赎」页签仍是完整明细：概览 / 家族 / ETF 表 / 逐股 / 口径说明
- *   [E] 源码守卫：点击处理器写 _emoTab='etf'；CSS 有 .tp-comp-more、无 .tp-comp-wide / .etf-inline-*
+ *   [C] 卡片带「查看宽基ETF明细 →」入口（data-action="open-etf-page"），点击**新标签**打开独立页
+ *       （20261025p 改版：首页不再有 ETF 内嵌页签，明细迁至 /etf-flow.html）
+ *   [D] 独立页 /etf-flow.html（etfFlowPage.js）仍是完整明细：概览 / 家族 / ETF 表 / 逐股 / 口径说明
+ *   [E] 源码守卫：window.open('/etf-flow.html')；CSS 有 .tp-comp-more、无 .tp-comp-wide / .etf-inline-*
  */
 const fs = require('fs');
 const path = require('path');
@@ -73,15 +74,6 @@ const FACTORS = [
 const DATA = { totalScore:0.5, tendency:'偏多', tendencyKey:'bull', volumeState:'放量', coreDriver:'x', advice:'y',
   riskTip:'z', source:'src', baselineDate:'20261023', factors:FACTORS };
 
-const FIXTURE = {
-  ok:true, date:'20261023', baseDate:'20261022', settled:false, baselineOnly:false,
-  summary:{ totalNet:31036125430, ledgerDays:0, ledgerDate:null,
-    groups:[{key:'csi300', label:'沪深300', netAmount:14179346490, etfCount:1}] },
-  etfs:[{ code:'510300', name:'华泰柏瑞沪深300ETF', group:'csi300', groupLabel:'沪深300',
-    unit:900000, shares:32729887700, dShares:2530800000, baskets:2812, netAmount:10399816440, note:'' }],
-  stocks:[{ code:'601398', name:'工商银行', groupLabel:'沪深300 / 上证50', dayBuy:36486500, daySell:-6800, cumBuy:0, cumSell:0 }],
-};
-
 // ============================================================================
 // [A]/[B]/[C] 因子网格里的 etfFlow 卡
 // ============================================================================
@@ -97,41 +89,36 @@ ok(!html.includes('tp-comp-wide'), '卡片不再带 tp-comp-wide（不再整行�
 ok(!html.includes('data-action="etf-inline-tab"'), '不再有卡内页签 etf-inline-tab');
 ok(count(html, '<div class="tp-comp"') + count(html, '<div class="tp-comp tp-comp-degraded"') === 10,
   `10 个因子全部是普通网格卡（实际 ${count(html, '<div class="tp-comp"') + count(html, '<div class="tp-comp tp-comp-degraded"')}）`);
-ok(html.includes('data-action="goto-etf-tab"'), 'etfFlow 卡带「查看宽基ETF明细」入口');
-ok(count(html, 'data-action="goto-etf-tab"') === 1, '明细入口只有 1 个（仅 etfFlow 卡）');
+ok(html.includes('data-action="open-etf-page"'), 'etfFlow 卡带「查看宽基ETF明细」入口');
+ok(count(html, 'data-action="open-etf-page"') === 1, '明细入口只有 1 个（仅 etfFlow 卡）');
 ok(html.includes('净申购 310.36 亿 · 14 只净申购 / 2 只净赎回'), '卡片保留核心数值 f.value');
 
 console.log('\n[B] 卡片 detail 只留短摘要（长口径移出）');
 ok(!html.includes('口径：Δ份额'), '卡片不再出现长口径「口径：Δ份额…」');
 ok(!html.includes('无法拆出申购总量与赎回总量'), '卡片不再出现长口径尾巴');
-ok(html.includes('见「宽基ETF申赎」页签'), '卡片短摘要指向独立页签');
+ok(html.includes('见独立页'), '卡片短摘要指向独立页（点下方按钮新标签打开）');
 ok(html.includes('折算净申赎额'), '短摘要含「折算净申赎额」');
 
-console.log('\n[C] 顶部仍有独立「宽基ETF申赎」页签');
-ok(html.includes('data-tab="etf"'), '页签栏含 data-tab="etf"');
-ok(html.includes('宽基ETF申赎'), '页签文案存在');
+console.log('\n[C] 首页不再有 ETF 内嵌页签（20261025p：明细迁独立页）');
+ok(!html.includes('data-tab="etf"'), '首页面板不再有 data-tab="etf" 页签');
 
 // ============================================================================
-// [D] 独立页签仍是完整明细
+// [D] 独立页 /etf-flow.html（etfFlowPage.js）仍是完整明细
 // ============================================================================
-console.log('\n[D] 独立「宽基ETF申赎」页签：概览 / ETF 表 / 逐股 / 口径说明');
-App._emoTab = 'etf'; App._etfFlowData = FIXTURE; App._etfFlowLoading = false;
-App._renderEmotionPanel(DATA);
-const etfHtml = elMap.homeSentimentBody.innerHTML;
-ok(!etfHtml.includes('<div class="tp-comp-grid">'), 'ETF 页签不渲染因子网格（互不干扰）');
-ok(etfHtml.includes('各宽基 ETF 申赎'), '含 ETF 明细表标题');
-ok(etfHtml.includes('被申购') && etfHtml.includes('被赎回'), '含逐股被申购/被赎回 Top10');
-ok(etfHtml.includes('怎么算的'), '含口径解释「怎么算的」');
-ok(etfHtml.includes('510300'), 'ETF 行数据已渲染');
-ok(etfHtml.includes('601398'), '逐股行数据已渲染');
-ok(!/undefined|NaN/.test(etfHtml), '独立页签渲染无 undefined / NaN');
+console.log('\n[D] 独立页 /etf-flow.html：概览 / ETF 表 / 逐股 / 口径说明');
+const pageSrc = fs.readFileSync(path.join(__dirname,'..','public','js','etfFlowPage.js'),'utf8');
+ok(pageSrc.includes('各宽基 ETF 申赎'), '含 ETF 明细表标题');
+ok(pageSrc.includes('被申购') && pageSrc.includes('被赎回'), '含逐股被申购/被赎回');
+ok(pageSrc.includes('怎么算的'), '含口径解释「怎么算的」');
+ok(pageSrc.includes('/api/etf-flow'), '独立页自行拉取 /api/etf-flow 数据');
 
 // ============================================================================
 // [E] 源码守卫
 // ============================================================================
 console.log('\n[E] 源码守卫');
-ok(src.includes('data-action="goto-etf-tab"'), 'app.js：卡片明细入口 data-action="goto-etf-tab"');
-ok(src.includes("App._emoTab = 'etf';"), 'app.js：点击入口切到 etf 页签');
+ok(src.includes('data-action="open-etf-page"'), 'app.js：卡片明细入口 data-action="open-etf-page"');
+ok(src.includes("window.open('/etf-flow.html'"), 'app.js：点击入口新标签打开 /etf-flow.html');
+ok(src.includes('openEtf'), 'app.js：open-etf-page 点击处理器存在');
 ok(!src.includes('_renderEtfFactorCard'), 'app.js：已删除卡内页签渲染器（无死逻辑）');
 ok(!src.includes('_etfInlineTab'), 'app.js：已删除 _etfInlineTab 状态');
 ok(css.includes('.tp-comp-more'), 'CSS：新增 .tp-comp-more 明细入口样式');

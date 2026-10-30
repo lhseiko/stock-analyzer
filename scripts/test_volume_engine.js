@@ -1308,5 +1308,57 @@ console.log('\n[19] 该放量未放量：「60 日均量 ×1.5」同屏展示均
   }
 }
 
+// ============ [20] 盘中停判守门 + 量能具象化（20261028a） ============
+console.log('\n[20] 盘中停判：规则3 缩量假突破 / 11.3.1 该放量未放量 盘中不判，收盘后定论；量能三数据同屏');
+{
+  // 规则3 命中形态的同款数据（复刻 [规则3 命中] 用例）
+  const bars = mkBars(260, i => {
+    const attack = i >= 257;
+    const p = attack ? 12.5 : 12;
+    return attack
+      ? { open: p, high: 12.7, low: p * 0.998, close: i === 259 ? 12.2 : 12.55, volume: 900, amount: p * 900 * 100, turnover: 1.5 }
+      : flatBar(p, 1000);
+  });
+  // 收盘口径（不传开关）：命中 + 结论文案含三数据具象化（当日量/前高量能/60日均量×1.5=阈值）
+  const rc = ve.computeVolumeEngine({ symbol: '600000', name: '测试', bars, minutes: null, blacklistReasons: [] });
+  ok(rc.rules[2].matched === true, '收盘口径 → 规则3 照常命中（守门不影响收盘判定）');
+  ok(/当日成交量 900 手/.test(rc.rules[2].conclusion) && /前高对应量能 \d+ 手（\d{4}-\d{2}-\d{2}）/.test(rc.rules[2].conclusion) && /×1\.5 = \d+ 手/.test(rc.rules[2].conclusion),
+    `命中结论文案同屏给出 当日量/前高量能(带日期)/60日均量×1.5=阈值（实际：${rc.rules[2].conclusion}）`);
+  // 盘中口径（intradayPending: true）：停判不命中 + 诚实标注 + 盘中参考数值
+  const ri = ve.computeVolumeEngine({ symbol: '600000', name: '测试', bars, minutes: null, blacklistReasons: [], intradayPending: true });
+  ok(ri.rules[2].matched === false, '盘中（intradayPending）→ 规则3 停判不命中');
+  ok(!ri.riskTags.includes('缩量假突破') && !ri.riskTags.includes('K线骗线'), '盘中停判 → 不打缩量假突破/K线骗线标签');
+  ok(/收盘后定论/.test(ri.rules[2].conclusion), '盘中结论文案标明「收盘后定论」');
+  ok(ri.rules[2].dataGaps.some(g => /当日未收盘，本规则收盘后判定/.test(g)), 'dataGaps 标注盘中不可比原因');
+  ok(ri.rules[2].dataGaps.some(g => /盘中参考（不构成判定）/.test(g) && /前高对应量能 \d+ 手/.test(g) && /×1\.5 = \d+ 手/.test(g)),
+    '盘中参考给出 前高对应量能/60日均量×1.5=阈值 具体数值');
+}
+{
+  // 11.3.1 该放量未放量：盘中停判（ctx.intradayPending 透传）
+  const mkPc = (over = {}) => {
+    const n = over.n || 60;
+    const lows = over.lows || Array.from({ length: n }, () => 9.5);
+    return {
+      n, level: '平量', ratio5: 1, ratio5Prev: 1, ratio10: 1, ratio20: 1,
+      avg5: 1000, avg10: 1000, avg20: 1000, avg60: 1000,
+      confirm: null, chgPct: 0, closePrev: 10, closeToday: 10, highToday: 10.02,
+      volToday: 1000, vols: Array.from({ length: n }, () => 1000),
+      highs: Array.from({ length: n }, () => 10), closes: Array.from({ length: n }, () => 10),
+      ma20: Array.from({ length: n }, () => 10), ma60: Array.from({ length: n }, () => 10),
+      lows, lowToday: 9.95,
+      drawdownFromHigh: -5, pricePct12m: 0.5,
+      ...over,
+    };
+  };
+  const baseCtx = { position: { label: '上涨中途' }, levels: {}, sequence: {}, rules: [], platform: null, breakThrough: false, currentSideways: false };
+  const pc = mkPc({ chgPct: 1.5, avg60: 1000, volToday: 800, level: '平量', ratio5: 0.8 });
+  const hit = ve._contradictionRules(pc, baseCtx).shouldAmpNot;
+  ok(hit.matched === true && hit.status === '命中', '收盘口径 → 该放量未放量照常命中');
+  const pend = ve._contradictionRules(pc, { ...baseCtx, intradayPending: true }).shouldAmpNot;
+  ok(pend.matched === false && pend.status === '盘中停判', '盘中（ctx.intradayPending）→ 该放量未放量停判，status=盘中停判');
+  ok(/当日未收盘，收盘后判定/.test(pend.conclusion) && /上涨确认/.test(pend.conclusion), `盘中结论文案标明收盘后判定并保留场景（实际：${pend.conclusion}）`);
+  ok(!pend.riskHint, '盘中停判 → 不输出 riskHint（不得给看空提示）');
+}
+
 console.log(`\n===== 结果：通过 ${pass} / 失败 ${fail} =====`);
 process.exit(fail ? 1 : 0);

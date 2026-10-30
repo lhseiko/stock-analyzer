@@ -561,6 +561,25 @@ def _fetch_bulletin_detail(opener, ann_id, announce_time):
 # ----------------------------------------------------------------------------
 # 东方财富查询
 # ----------------------------------------------------------------------------
+def _fetch_em_detail(opener, art_code):
+    """[20261029m] 东财公告详情接口取 PDF 直链——np-anotice 列表项已不再携带 attachments（接口改版）。"""
+    url = ("https://np-cnotice-stock.eastmoney.com/api/content/ann"
+           "?art_code=%s&client_source=web&page_index=1" % urllib.parse.quote(str(art_code)))
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "*/*"})
+    try:
+        with opener.open(req, timeout=15) as resp:
+            j = json.loads(resp.read().decode("utf-8"))
+    except Exception:
+        return None
+    data = (j or {}).get("data") or {}
+    for at in (data.get("attach_list") or []):
+        u = (at.get("attach_url") or "").strip()
+        if u:
+            return u
+    u = (data.get("attach_url") or "").strip()
+    return u or None
+
+
 def query_eastmoney(opener, code, name, years, types, err_log=None):
     """
     查询某只股票符合条件的公告（东方财富公告中心 np-anotice 接口）。
@@ -601,8 +620,10 @@ def query_eastmoney(opener, code, name, years, types, err_log=None):
     total_returned = 0
     used_params = None
 
-    for attempt in ({"ann_type": "2", "client_source": "web", "stock_list": code_norm},
-                    {"client_source": "web", "stock_list": code_norm}):
+    # [20261029m] ann_type 数字类目（"2"=财务报告）已失效（恒 0 条）→ 改用字母类目 "A"=全部公告。
+    # 原「无 ann_type」回退组合会使 stock_list 过滤失效（返回全市场公告）且无附件，已删除——
+    # 否则标题匹配到别家公司同名报告会错下文件。
+    for attempt in ({"ann_type": "A", "client_source": "web", "stock_list": code_norm},):
         params = dict(attempt)
         params.update({"sr": "-1", "page_size": "30", "page_index": "0"})
         j = _fetch(params)
@@ -645,9 +666,13 @@ def query_eastmoney(opener, code, name, years, types, err_log=None):
             rtype = match_report_type(title, types)
             if not rtype:
                 continue
+            # [20261029m] 归属校验：确认公告确实属于目标股票（防过滤失效时错下别家公司报告）
+            codes_list = a.get("codes") or []
+            if codes_list:
+                sc = {str(c.get("stock_code") or "").zfill(6) for c in codes_list}
+                if code_norm not in sc:
+                    continue
             atts = a.get("attachments") or []
-            if not atts:
-                continue
             # 优先取 PDF 附件
             pdf = None
             for at in atts:
@@ -656,18 +681,26 @@ def query_eastmoney(opener, code, name, years, types, err_log=None):
                 if fu.endswith(".pdf") or fn.endswith(".pdf") or "pdf" in fu:
                     pdf = at
                     break
-            if pdf is None:
+            if pdf is None and atts:
                 pdf = atts[0]
-            aid = a.get("art_code") or (pdf.get("file_url") or "")
-            if not aid or aid in seen_ids:
+            file_url = ((pdf.get("file_url") if pdf else "") or "")
+            aid = a.get("art_code") or file_url
+            if not aid:
+                continue
+            if not file_url:
+                # [20261029m] 列表不带 attachments（接口改版）→ 详情接口补取 PDF 直链
+                file_url = _fetch_em_detail(opener, aid) or ""
+                if not file_url:
+                    continue
+            if aid in seen_ids:
                 continue
             seen_ids.add(aid)
             results.append({
                 "secCode": code_norm,
                 "announcementId": aid,
                 "announcementTitle": title,
-                "fileUrl": pdf.get("file_url") or "",
-                "fileName": pdf.get("file_name") or (title + ".pdf"),
+                "fileUrl": file_url,
+                "fileName": ((pdf.get("file_name") if pdf else "") or (title + ".pdf")),
                 "referer": REFERER_EM,
                 "date": em_date(a.get("notice_date")),
                 "reportType": rtype,
@@ -930,14 +963,14 @@ def run(codes, years, types, out_dir, workers, as_json, probe=False, channel="cn
     }
 
     # 通道尝试顺序：巨潮(同花顺/巨潮披露)在本机始终可靠，作为兜底；
-    # - 用户选"巨潮": 仅巨潮；
-    # - 用户选"东方财富"/"全部通道": 先试东财，东财命中 0（本机常因网络限制返回全站公告而不过滤）
-    #   时自动回退巨潮，确保一定能下到报告。
+    # - 用户选"巨潮": 先巨潮，命中 0 时自动补试东财备链（20261029m：A+H 公司巨潮索引
+    #   延迟数小时实证——603288 当晚已披露、巨潮沪深京索引 3 小时后仍无条目）；
+    # - 用户选"东方财富"/"全部通道": 先试东财，命中 0 时自动回退巨潮，确保一定能下到报告。
     for norm_code, name, valid in norm_entries:
         if not valid:
             continue
         if channel == "cninfo":
-            order = ["cninfo"]
+            order = ["cninfo", "eastmoney"]
         else:  # eastmoney / all
             order = ["eastmoney", "cninfo"]
 
@@ -961,10 +994,10 @@ def run(codes, years, types, out_dir, workers, as_json, probe=False, channel="cn
             if ch_summary.get("lastError"):
                 summary["lastError"] = ch_summary["lastError"]
 
-            if ch == "eastmoney" and ch_summary["found"] == 0:
-                # 东财受限（返回全站公告但不按股票过滤），回退巨潮
+            if ch_summary["found"] == 0 and ch != order[-1]:
+                # 当前通道未命中 → 自动切换备链（东财受限回巨潮 / 巨潮索引延迟补东财）
                 summary["fallback"] = True
-                log("  [回退] 东方财富接口未返回 %s 的年报/半年报（本机网络受限），自动改用巨潮资讯网" % norm_code)
+                log("  [回退] %s 通道未命中 %s，自动改用 %s 通道" % (ch, norm_code, order[order.index(ch) + 1]))
                 continue
             break
 
@@ -1004,7 +1037,22 @@ def main():
                         help="数据源通道: cninfo(巨潮,默认) / eastmoney(东方财富) / all(全部)")
     args = parser.parse_args()
 
-    types = [t.strip() for t in args.types.split(",") if t.strip() in REPORT_TYPE_KEYWORDS]
+    # [20261029l] 类型解析加固：①新增 quarterly 别名（展开为 q1+q3）——此前 reportSync 传来的
+    # quarterly 被本行静默丢弃、types 清空后回退 annual,semi（静默降级），导致三季报/一季报
+    # 从未被下载（2026-10-29 华安证券 600909 用户报障，全自选股同因）；②未知类型显式告警，不再静默。
+    types = []
+    for t in (x.strip() for x in args.types.split(",")):
+        if not t:
+            continue
+        if t in REPORT_TYPE_KEYWORDS:
+            if t not in types:
+                types.append(t)
+        elif t == "quarterly":
+            for q in ("q1", "q3"):
+                if q not in types:
+                    types.append(q)
+        else:
+            print("[warn] 未知报告类型 %r 已忽略（合法: annual,semi,q1,q3,quarterly）" % t, file=sys.stderr)
     if not types:
         types = ["annual", "semi"]
 

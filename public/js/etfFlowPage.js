@@ -9,6 +9,8 @@
   let showAll = false;
   let selectedStock = null;     // 20261027a：累计表点击选中的股票 {code,name}
   let stockMonthData = null;    // 20261027a：当月逐日明细（来自 /api/etf-flow/stock-monthly）
+  let trendData = null;         // 20261028a：持仓比例 vs 现金比例趋势（/api/etf-flow/cash-trend）
+  let trendChart = null;        // 20261028a：趋势图实例（重渲染前 dispose，防泄漏）
 
   function esc(s) {
     return String(s == null ? '' : s)
@@ -90,7 +92,16 @@
     }
     html += '</div>';
 
-    // ② 家族汇总
+    // ② 持仓比例 vs 现金比例趋势（20261028a：云端任务本地重做）
+    html += '<div class="etf-block-title">全部宽基 ETF 持仓比例 vs 现金比例（日度趋势）</div>';
+    html += '<div id="etfTrendChart" class="etf-trend-chart">📡 正在读取趋势数据…</div>';
+    html += '<div class="etf-month-note">口径：① 现金比例 = 申赎清单「预估现金部分」÷ 每篮净值，持仓比例 = 1 − 现金比例（清单现金含现金替代与现金差额，故略高于真实闲置现金，两者相加恒为 100%）；'
+      + '② 按各 ETF 总市值（净值 × 份额）加权汇总；'
+      + '③ 快照磁盘仅保留最近 10 个交易日，本趋势经历史文件持久累积、不受清理影响；'
+      + '④ 标「盘中参考值」的日期为未定稿读数，收盘定稿后自动修正；周末 / 法定节假日无数据；'
+      + '⑤ 数据日 = 份额披露日（T+1）：点标签 D 的持仓 / 现金结构为 D-1 收盘口径（清单每日开市前公布、数值按前一交易日收盘计算），10-29 的点反映的是 10-28 收盘。</div>';
+
+    // ③ 家族汇总
     if (groups.length) {
       html += '<div class="etf-groups">';
       groups.forEach(g => {
@@ -103,7 +114,7 @@
       html += '</div>';
     }
 
-    // ③ ETF 明细
+    // ④ ETF 明细
     if (etfs.length) {
       html += `<div class="etf-block-title">各宽基 ETF 申赎（${etfs.length} 只）· 数据日 ${esc(dataDate || '未知')}</div>`;
       html += '<div class="etf-scroll"><table class="etf-table"><thead><tr>'
@@ -127,7 +138,7 @@
       html += '</tbody></table></div>';
     }
 
-    // ④ 逐股明细
+    // ⑤ 逐股明细
     if (stocks.length) {
       const topBuy = stocks.slice().sort((a, b) => (b.dayBuy || 0) - (a.dayBuy || 0)).slice(0, 10);
       const topSell = stocks.slice().sort((a, b) => (a.daySell || 0) - (b.daySell || 0)).slice(0, 10);
@@ -166,7 +177,7 @@
       });
       html += '</tbody></table></div>';
 
-      // ⑤ 选中股票的当月逐日明细（点击累计表股票名触发，20261027a；20261027b 修标签口径）
+      // ⑥ 选中股票的当月逐日明细（点击累计表股票名触发，20261027a；20261027b 修标签口径）
       if (selectedStock) {
         html += `<div class="etf-block-title">${esc(selectedStock.name || selectedStock.code)}（${esc(selectedStock.code)}）当月逐日申赎明细</div>`;
         if (stockMonthData && stockMonthData.ok && stockMonthData.rows) {
@@ -200,7 +211,7 @@
       }
     }
 
-    // ⑤ 口径与缺口（诚实披露，不允许含糊成"申购了多少"）
+    // ⑦ 口径与缺口（诚实披露，不允许含糊成"申购了多少"）
     html += '<div class="etf-notes">';
     html += '<div class="etf-note-item"><b>怎么算的：</b>交易所申赎清单（PCF）只说明「一篮子要交哪些股票」，不含实际申赎量；真实申赎看<b>基金总份额变动</b>：Δ份额 ÷ 最小申赎单位 = 篮数，篮数 × 每篮成分股数 = 该股理论增减股数。</div>';
     html += '<div class="etf-note-item etf-warn"><b>必须说清的口径：</b>份额本身是<b>净</b>概念（申购 − 赎回）。本模块只能给出<b>净申赎额</b>与「净申购日 / 净赎回日」的累计，<b>无法拆出申购总量与赎回总量两个绝对数</b>。逐股股数为理论值，实际受现金替代、取整影响会有偏差。</div>';
@@ -212,6 +223,68 @@
     html += '</div>';
 
     body.innerHTML = html;
+    renderTrendChart();
+  }
+
+  // 20261028a：「持仓比例 vs 现金比例」折线趋势图（持仓红=风偏进攻 / 现金绿=防守，红涨绿跌同源语义）
+  function renderTrendChart() {
+    const el = document.getElementById('etfTrendChart');
+    if (!el) return;
+    if (trendChart) { try { trendChart.dispose(); } catch (e) {} trendChart = null; }
+    const pts = trendData && trendData.ok && Array.isArray(trendData.points) ? trendData.points : [];
+    if (!pts.length) {
+      el.innerHTML = `<div class="etf-empty etf-warn">⚠ 趋势数据不可用：${esc((trendData && (trendData.note || trendData.error)) || '无快照')}</div>`;
+      return;
+    }
+    if (typeof echarts === 'undefined') {
+      el.innerHTML = '<div class="etf-empty etf-warn">⚠ 图表库未就绪（vendor/echarts.min.js 加载失败，渲染失败原因需透出不得吞掉）</div>';
+      return;
+    }
+    const dates = pts.map(p => String(p.date).slice(4, 6) + '-' + String(p.date).slice(6));
+    const stock = pts.map(p => p.stockRatioPct);
+    const cash = pts.map(p => p.cashRatioPct);
+    const unsettled = new Set(trendData.unsettledDates || []);
+    // y 轴贴近数据区间（两线恒和 100%，固定 0~100 会把趋势压平看不出变化）
+    const all = stock.concat(cash).filter(v => isFinite(v));
+    const lo = Math.floor(Math.min(...all) - 0.5);
+    const hi = Math.ceil(Math.max(...all) + 0.5);
+    trendChart = echarts.init(el, 'softDark');
+    trendChart.setOption({
+      animation: false,
+      grid: { left: 56, right: 24, top: 34, bottom: 32 },
+      legend: { top: 0, textStyle: { color: '#E6EDF3', fontSize: 12 } },
+      tooltip: {
+        trigger: 'axis',
+        formatter: (params) => {
+          const p = pts[params[0].dataIndex];
+          if (!p) return '';
+          let s = `${p.date.slice(0, 4)}-${p.date.slice(4, 6)}-${p.date.slice(6)}`;
+          if (unsettled.has(p.date)) s += '（盘中参考值，收盘定稿后修正）';
+          params.forEach(x => { s += `<br/>${x.marker}${esc(x.seriesName)}：<b>${x.value}%</b>`; });
+          s += `<br/><span style="color:#8B949E">有效 ETF ${p.etfCount} 只</span>`;
+          return s;
+        },
+      },
+      xAxis: {
+        type: 'category', data: dates, boundaryGap: false,
+        axisLabel: { color: '#8B949E' }, axisLine: { lineStyle: { color: '#30363D' } },
+      },
+      yAxis: {
+        type: 'value', min: lo, max: hi,
+        axisLabel: { color: '#8B949E', formatter: '{value}%' },
+        splitLine: { lineStyle: { color: '#21262D' } },
+      },
+      series: [
+        { name: '持仓比例', type: 'line', data: stock, symbolSize: 7,
+          lineStyle: { width: 2, color: '#F6465D' }, itemStyle: { color: '#F6465D' } },
+        { name: '现金比例', type: 'line', data: cash, symbolSize: 7,
+          lineStyle: { width: 2, color: '#0ECB81' }, itemStyle: { color: '#0ECB81' } },
+      ],
+    });
+    if (!renderTrendChart._resizeBound) {
+      renderTrendChart._resizeBound = true;
+      window.addEventListener('resize', () => { if (trendChart) trendChart.resize(); });
+    }
   }
 
   async function load(force) {
@@ -219,8 +292,14 @@
     LOADING = true;
     const status = document.getElementById('efStatus');
     try {
-      const r = await fetch('/api/etf-flow' + (force ? '?refresh=1' : ''), { cache: 'no-store' });
+      // 20261028a：趋势数据并行拉取（读磁盘快照+历史文件，代价极小）；失败不阻塞主数据
+      const [r, tr] = await Promise.all([
+        fetch('/api/etf-flow' + (force ? '?refresh=1' : ''), { cache: 'no-store' }),
+        fetch('/api/etf-flow/cash-trend', { cache: 'no-store' }).catch(() => null),
+      ]);
       DATA = await r.json();
+      try { trendData = (tr && tr.ok) ? await tr.json() : { ok: false, note: '趋势接口不可用' }; }
+      catch (e) { trendData = { ok: false, note: e && e.message ? e.message : String(e) }; }
     } catch (e) {
       DATA = { ok: false, error: e && e.message ? e.message : String(e) };
     }

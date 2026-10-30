@@ -35,24 +35,29 @@ console.log('\n[1] _findEmotionSubSignal 从判断记录里取出烘焙的情绪
 }
 
 // ============================================================================
-console.log('\n[2] _emotionSubStale：情绪总分变化即判过期（核心复现用户场景）');
+console.log('\n[2] _emotionSubStale：引用信号变化即判过期（核心复现用户场景；20261028c 起比对口径=_emotionQuoteSig）');
 {
   const orig = mem.readLatestJudgment;
   const rec = recWith(-0.317);
 
-  mem.readLatestJudgment = () => ({ score: 0.009 });
-  ok(sdj._emotionSubStale(rec) === true, '烘焙 -0.317 vs 当前 0.009 → 过期=true（需重算）');
+  mem.readLatestJudgment = () => ({ score: 0.009, tendency: '中性', tendencyKey: 'neutral' });
+  ok(sdj._emotionSubStale(rec) === true, '烘焙 -0.317 vs 当前中性(0.009→信号0) → 过期=true（需重算）');
 
-  mem.readLatestJudgment = () => ({ score: -0.317 });
-  ok(sdj._emotionSubStale(rec) === false, '烘焙 -0.317 vs 当前 -0.317 → 未变=false（可复用）');
+  mem.readLatestJudgment = () => ({ score: -0.317, tendency: '看跌', tendencyKey: 'bear' });
+  ok(sdj._emotionSubStale(rec) === false, '烘焙 -0.317 vs 当前看跌(-0.317) → 未变=false（可复用）');
 
-  mem.readLatestJudgment = () => ({ score: -0.31700001 });
+  mem.readLatestJudgment = () => ({ score: -0.31700001, tendency: '看跌', tendencyKey: 'bear' });
   ok(sdj._emotionSubStale(rec) === false, '浮点抖动（<0.0005）→ 未变=false（不误重算）');
+
+  // 20261028c 关键回归：中性场景烘焙 0 vs 当前中性 → 不误判过期（否则每次请求都强制重算）
+  const recNeutral = recWith(0);
+  mem.readLatestJudgment = () => ({ score: -0.04, tendency: '中性', tendencyKey: 'neutral' });
+  ok(sdj._emotionSubStale(recNeutral) === false, '烘焙 0（中性）vs 当前中性(-0.04→信号0) → 未变=false（不误重算）');
 
   mem.readLatestJudgment = () => null;
   ok(sdj._emotionSubStale(rec) === false, '当前情绪不可得 → false（交回原逻辑按中性处理）');
 
-  mem.readLatestJudgment = () => ({ score: 1.4 });
+  mem.readLatestJudgment = () => ({ score: 1.4, tendency: '看涨', tendencyKey: 'bull' });
   ok(sdj._emotionSubStale(recWith(1)) === false, '当前分 clamp 到 1，与烘焙 1 一致 → false');
 
   ok(sdj._emotionSubStale(recWith(null)) === false, '记录无情绪子因子 → false（不额外判）');
@@ -72,7 +77,7 @@ console.log('\n[3] 真实数据端到端：600460 缓存判断(11:35) vs 最新�
     const last = emo[emo.length - 1];
     if (rec && last && typeof last.score === 'number') {
       const baked = sdj._findEmotionSubSignal(rec);
-      const curSig = Math.max(-1, Math.min(1, last.score));
+      const curSig = sdj._emotionQuoteSig(last); // 20261028c：与引用子因子同源的信号推导
       if (baked !== null) {
         const shouldStale = Math.abs(baked - curSig) > 0.0005;
         // 不依赖具体数值，只校验「门控判定 == 烘焙/当前是否真的不同」这一因果关系
@@ -98,6 +103,34 @@ console.log('\n[4] 源码守卫：复用条件必须包含情绪门控');
   ok(src.includes('!_emotionSubStale(cur)'), 'ensureAllTrackedJudgments 复用条件含 !_emotionSubStale(cur)');
   ok(src.includes('function _emotionSubStale'), '定义 _emotionSubStale');
   ok(src.includes('readLatestJudgment()'), '读最新情绪记录（单源）');
+}
+
+// ============================================================================
+console.log('\n[5] 引用子因子单源同义（20261028c）：徽标语义必须继承首页 tendency，不得自行判档');
+{
+  // _emotionQuoteSig 映射
+  ok(sdj._emotionQuoteSig({ score: -0.04, tendency: '中性', tendencyKey: 'neutral' }) === 0, '首页中性(-0.04) → 引用信号 0（不再被判利空）');
+  ok(sdj._emotionQuoteSig({ score: -0.5, tendency: '看跌', tendencyKey: 'bear' }) === -0.5, '首页看跌(-0.5) → -0.5');
+  ok(sdj._emotionQuoteSig({ score: 0.3, tendency: '看涨', tendencyKey: 'bull' }) === 0.3, '首页看涨(+0.3) → +0.3');
+  ok(sdj._emotionQuoteSig({ score: -0.04 }) === 0, '旧记录无 tendencyKey → 按中性兜底 → 0');
+  ok(sdj._emotionQuoteSig(null) === 0, '无记录 → 0');
+  // computeMarketEmotionSub 端到端：中性首页不得输出利空信号
+  const orig = mem.readLatestJudgment;
+  mem.readLatestJudgment = () => ({
+    date: '2026-10-28', score: -0.039, tendency: '中性', tendencyKey: 'neutral',
+    coreDriver: '融资余额（杠杆资金）', volumeState: '平量（量比 0.97）', advice: '维持中性、不追高不杀跌，建议仓位 4 成',
+  });
+  const sub = sdj.computeMarketEmotionSub();
+  ok(sub.signal === 0, '首页中性 → 引用子因子 signal=0（徽标中性、权重行隐藏）');
+  ok(/中性/.test(sub.value), `value 仍显示首页倾向「中性」（实际：${sub.value}）`);
+  ok(/-0\.04/.test(sub.detail) && /继承首页判档/.test(sub.detail), 'detail 保留原始分数 + 注明徽标继承首页判档');
+  mem.readLatestJudgment = () => ({ date: '2026-10-28', score: -0.5, tendency: '看跌', tendencyKey: 'bear' });
+  const subBear = sdj.computeMarketEmotionSub();
+  ok(subBear.signal === -0.5 && subBear.signal < 0, '首页看跌 → 引用子因子信号为负（利空徽标与 tendency 同向）');
+  mem.readLatestJudgment = () => ({ date: '2026-10-28', score: 0.4, tendency: '看涨', tendencyKey: 'bull' });
+  const subBull = sdj.computeMarketEmotionSub();
+  ok(subBull.signal === 0.4 && subBull.signal > 0, '首页看涨 → 引用子因子信号为正（利好徽标与 tendency 同向）');
+  mem.readLatestJudgment = orig;
 }
 
 // ============================================================================

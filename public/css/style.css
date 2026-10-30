@@ -1114,8 +1114,8 @@ body {
 }
 
 .pa-zone-title { font-size: 12px; font-weight: 600; margin: 12px 0 6px; }
-.pa-zone-title.resistance { color: var(--red); }
-.pa-zone-title.support { color: var(--green); }
+.pa-zone-title.resistance { color: var(--green); }
+.pa-zone-title.support { color: var(--red); }
 .pa-zone-row {
   display: flex; align-items: center; gap: 8px;
   padding: 6px 10px; margin-bottom: 4px;
@@ -1146,8 +1146,8 @@ body {
   transition: transform .15s ease;
 }
 .pa-zone-row.open .pz-caret { transform: rotate(180deg); }
-.pa-zone-row.resistance { background: var(--red-light); }
-.pa-zone-row.support { background: var(--green-light); }
+.pa-zone-row.resistance { background: var(--green-light); }
+.pa-zone-row.support { background: var(--red-light); }
 .pa-zone-row .pz-range { font-weight: 600; color: var(--text-primary); flex: none; }
 .pa-zone-row .pz-src {
   flex: 1 1 auto; min-width: 0; text-align: right;
@@ -1200,7 +1200,7 @@ body {
 }
 
 /* 共振带展开详情（20261022g）：点开才显示——来源明细 / 确认信号 / 失效位 / 侵蚀。
-   左边框继承方向语义：阻力红、支撑绿，与紧凑行保持一致。 */
+   左边框继承方向语义：阻力绿、支撑红（红涨绿跌：支撑看涨=红、阻力看跌=绿），与紧凑行保持一致。 */
 .pa-zone-detail {
   margin: -2px 0 8px; padding: 8px 10px 9px;
   background: var(--bg-elevated);
@@ -1210,8 +1210,8 @@ body {
   font-variant-numeric: tabular-nums;
 }
 .pa-zone-detail.hidden { display: none; }
-.pa-zone-detail.resistance { border-left-color: rgba(246, 70, 93, 0.45); }
-.pa-zone-detail.support { border-left-color: rgba(14, 203, 129, 0.45); }
+.pa-zone-detail.resistance { border-left-color: rgba(14, 203, 129, 0.45); }
+.pa-zone-detail.support { border-left-color: rgba(246, 70, 93, 0.45); }
 .pzd-grid { display: flex; flex-wrap: wrap; gap: 3px 14px; }
 .pzd-grid b { color: var(--text-primary); font-weight: 600; }
 .pzd-sec { margin-top: 6px; }
@@ -1287,8 +1287,8 @@ body {
 .pa-mz-empty { font-size: 12px; color: var(--text-muted); padding: 10px 2px; }
 .pa-mz-group { margin-top: 8px; }
 .pa-mz-group-title { font-size: 12px; font-weight: 700; margin-bottom: 5px; }
-.pa-mz-group.resistance .pa-mz-group-title { color: var(--red); }
-.pa-mz-group.support .pa-mz-group-title { color: var(--green); }
+.pa-mz-group.resistance .pa-mz-group-title { color: var(--green); }
+.pa-mz-group.support .pa-mz-group-title { color: var(--red); }
 .pa-mz-count { margin-left: 5px; font-size: 11px; color: var(--text-muted); font-weight: 500; }
 .pa-mz-row {
   display: flex; align-items: center; gap: 8px;
@@ -1325,7 +1325,7 @@ body {
   border: 1px solid rgba(139, 148, 255, 0.5);
 }
 /* 单箱体精简一行（20261020j）：一行读完「起始日 / 持续天数 / 失效线 / 是否触发失效」。
-   上沿=阻力侧用红、下沿=支撑侧用绿（红涨绿跌），与下方区间行同色语义。 */
+   上沿=阻力侧用绿、下沿=支撑侧用红（红涨绿跌：支撑看涨=红、阻力看跌=绿），与下方区间行同色语义。 */
 .pa-box-row {
   display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px;
   padding: 7px 10px; margin: 10px 0 4px;
@@ -1537,6 +1537,8 @@ body {
 .ma-dim-na { border-left-color: var(--border-light); opacity: 0.7; }
 .ma-reason { font-size: 11.5px; color: var(--text-secondary); line-height: 1.5; padding-top: 6px; border-top: 1px dashed var(--border-light); }
 .ma-reason::before { content: '判定依据：'; color: var(--accent); font-weight: 600; }
+/* 20261029a：指标级口径说明（营运利润 vs 扣非净利润、NBV 释义等），黄字=重点信息，语义着色统一规范 */
+.ma-metric-note { font-size: 11px; color: #F0B97B; line-height: 1.55; margin-top: 6px; padding: 6px 8px; background: rgba(240, 185, 123, 0.07); border-left: 2px solid rgba(240, 185, 123, 0.45); border-radius: 0 4px 4px 0; }
 
 /* Sentiment gauge */
 .sentiment-gauge {
@@ -1987,6 +1989,8 @@ body {
 .vd-value { color: var(--text-primary); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; font-weight: 600; }
 .vd-note { font-size: 12px; padding: 8px 12px; border-radius: 6px; }
 .vd-warn { color: #e0b45c; background: rgba(224,180,92,0.10); border: 1px solid rgba(224,180,92,0.3); }
+.vd-axis-hl { color: #ffcf8a; background: rgba(224,180,92,0.16); border: 1px solid rgba(224,180,92,0.5); border-left: 4px solid #e0b45c; font-weight: 600; }
+.vd-axis-anchor { color: var(--text-secondary); background: rgba(120,170,255,0.08); border: 1px solid rgba(120,170,255,0.25); border-left: 4px solid rgba(120,170,255,0.6); }
 .vd-foot { font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
 
 /* 20260908g：专属估值模型三段式明细 */
@@ -4810,6 +4814,13 @@ a.mo-tile-link:hover .mo-link-mark { opacity: 1; }
 }
 .etf-month-note b { color: var(--text-secondary); }
 
+/* ---- 20261028a：宽基 ETF「持仓比例 vs 现金比例」趋势折线图（独立页，echarts softDark）---- */
+.etf-trend-chart {
+  width: 100%; height: 320px; margin: 4px 0 2px;
+  background: var(--bg-card, #161B22); border: 1px solid var(--border, #21262D); border-radius: 10px;
+}
+
+
 /* ---- 20261023b：宽基 ETF 卡片「查看明细」入口（明细已移到独立页签，卡片不再内嵌表格）---- */
 .tp-comp-more {
   appearance: none; margin-top: 7px; padding: 0; border: none; background: transparent;
@@ -5718,3 +5729,13 @@ body { display: flex; flex-direction: column; }
     scroll-behavior: auto !important;
   }
 }
+
+/* ===== 笔记云端同步状态提示（20261028b）：保存失败必须醒目可见，禁止静默丢失 ===== */
+.notes-sync-toast {
+  position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
+  z-index: 99999; max-width: 680px; padding: 10px 16px; border-radius: 10px;
+  font-size: 13px; line-height: 1.7; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  display: none;
+}
+.notes-sync-toast.warn { background: #2a1f10; border: 1px solid #F0B97B; color: #F0B97B; }
+.notes-sync-toast.ok   { background: #10231c; border: 1px solid #0ECB81; color: #0ECB81; }
