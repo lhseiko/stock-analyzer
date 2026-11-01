@@ -12,6 +12,38 @@ function volTierCls(s) {
   return '';
 }
 
+// 20261101：全局后台预加载状态指示。打开个股页即并发预读所有分页（见 renderDashboard 的自动加载块），
+// 但进度条原本藏在未激活的 tab 面板里，用户看不到预读在进行，误以为"切换页面后才开始读取"。
+// 此指示器把"正在预读哪些分页"常驻显示在顶部导航，让预读过程可见。
+const bgPreload = {
+  _set: new Set(),
+  el: null,
+  _ensure() {
+    if (this.el && document.body.contains(this.el)) return this.el;
+    const nav = document.querySelector('.global-nav');
+    const el = document.createElement('span');
+    el.id = 'bgPreloadPill';
+    el.style.cssText = 'display:none;margin-left:12px;padding:3px 10px;border-radius:12px;font-size:12px;background:rgba(240,185,123,0.92);color:#1a1a1a;white-space:nowrap;vertical-align:middle;';
+    if (nav) nav.appendChild(el); else document.body.appendChild(el);
+    this.el = el;
+    return el;
+  },
+  start(label) {
+    this._set.add(label);
+    this._render();
+  },
+  finish(label) {
+    this._set.delete(label);
+    this._render();
+  },
+  _render() {
+    const el = this._ensure();
+    if (this._set.size === 0) { el.style.display = 'none'; return; }
+    el.style.display = 'inline-block';
+    el.textContent = '⏳ 后台预加载：' + Array.from(this._set).join('、');
+  }
+};
+
 // 关键指标释义（点击指标标签后的「?」图标展示）
 const METRIC_HELP = {
   '市盈率(PE)': { title: '市盈率 PE', body: '市盈率 = 股价 ÷ 每股收益，表示按当前盈利多少年回本。<br>· 越低通常越便宜，但过低可能反映市场对其增长预期差；<br>· 不同行业不可直接比，成长股 PE 天然偏高。' },
@@ -2675,6 +2707,7 @@ const App = {
     const symbol = this.currentSymbol;
     if (!symbol) return;
     if (this.paLoadedSymbol === symbol) return;
+    bgPreload.start('价格行为推演');
     const token = this._reqToken;
     try {
       const resp = await fetch(`/api/price-action/${encodeURIComponent(symbol)}`);
@@ -2690,8 +2723,10 @@ const App = {
       this.paData = data;
       this.paLoadedSymbol = symbol;
       this.renderPriceAction(data);
+      bgPreload.finish('价格行为推演');
     } catch (e) {
       if (token !== this._reqToken) return;
+      bgPreload.finish('价格行为推演');
       this._renderPaError('价格行为推演加载失败：' + e.message);
     }
   },
@@ -3852,6 +3887,7 @@ const App = {
     }
     if (forceRefresh) { this.deepData = null; this.deepLoadedSymbol = null; }
 
+    bgPreload.start('深度分析/财报解读');
     if (loadingEl) { loadingEl.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-secondary);">⏳ 正在加载深度分析…</div>'; loadingEl.classList.remove('hidden'); }
     if (contentEl) contentEl.style.opacity = '0.3';
     if (cacheBar) cacheBar.classList.add('hidden');
@@ -3878,6 +3914,7 @@ const App = {
       self.deepDataLoaded = true;
       self.deepLoadedSymbol = symbol;
       if (!data.sections) {
+        bgPreload.finish('深度分析/财报解读');
         if (contentEl) contentEl.innerHTML = `<div style="text-align:center;padding:60px;color:var(--text-secondary);"><h3>⚠️ 深度分析数据不完整</h3><p>本次未能获取到完整的分析数据，请点击「刷新」重试。</p></div>`;
         if (loadingEl) loadingEl.classList.add('hidden');
         if (contentEl) contentEl.style.opacity = '1';
@@ -3888,6 +3925,7 @@ const App = {
       self.updateDeepCacheBar(data);
       setTimeout(() => { try { DeepCharts.renderAll(data.sections, symbol, self.currentData?.name); } catch (e) { console.error('DeepCharts render error:', e); } try { self.syncDeepGroupsVisibility(); } catch (e) {} }, 100);
       self.toast(forceRefresh ? '已重新分析完成' : (data.fromCache ? '已加载缓存数据' : '深度分析数据加载完成'));
+      bgPreload.finish('深度分析/财报解读');
       if (loadingEl) loadingEl.classList.add('hidden');
       if (contentEl) contentEl.style.opacity = '1';
     };
@@ -3906,6 +3944,7 @@ const App = {
         data = await resp.json();
       } catch (e) {
         if (self._deepPollToken !== pollToken || self.currentSymbol !== symbol) return;
+        bgPreload.finish('深度分析/财报解读');
         self.toast('深度分析请求失败: ' + (e && e.message), 'error');
         if (loadingEl) loadingEl.classList.add('hidden');
         if (contentEl) contentEl.style.opacity = '1';
@@ -3913,16 +3952,18 @@ const App = {
       }
       if (self._deepPollToken !== pollToken || self.currentSymbol !== symbol) return;
       if (data.error) {
+        bgPreload.finish('深度分析/财报解读');
         if (contentEl) contentEl.innerHTML = `<div style="text-align:center;padding:60px;color:var(--text-secondary);"><h3>⚠️ ${data.error}</h3><p>深度分析目前仅支持A股市场，且需要该股票有完整的财务报表数据。</p></div>`;
         if (loadingEl) loadingEl.classList.add('hidden');
         if (contentEl) contentEl.style.opacity = '1';
         return;
       }
       if (data.status === 'running') {
-        showRunning();
-        // 仅当停留在深度分析 tab 时继续轮询；切走则停（服务端任务继续跑，回来再查即出结果）
         const deepActive = document.querySelector('.tab[data-tab="deep"]') && document.querySelector('.tab[data-tab="deep"]').classList.contains('active');
-        if (deepActive) setTimeout(tryOnce, 4000);
+        if (deepActive) showRunning();   // 仅在深度分析 tab 可见时刷新可见 loading 文案
+        // 20261101：后台预加载——无论是否停留在本 tab 都继续轮询，直到服务端落盘结果写入 deepData，
+        // 切回时直接秒显（不再重新转圈）。服务端任务脱离请求生命周期，轮询间隔 4s 足够轻量。
+        setTimeout(tryOnce, 4000);
         return;
       }
       renderDone(data); // done（含 fromCache / background）
@@ -4119,6 +4160,7 @@ const App = {
     const contentEl = document.getElementById('capitalContent');
     if (loadingEl) loadingEl.classList.remove('hidden');
     if (contentEl) contentEl.style.opacity = '0.3';
+    bgPreload.start('资金量能');
 
     // 前端硬超时：避免后端长时间无响应时 capitalContent 一直停在 opacity:0.3 + loading
     const controller = new AbortController();
@@ -4173,8 +4215,10 @@ const App = {
       }, 100);
 
       this.toast('资金量能数据加载完成');
+      bgPreload.finish('资金量能');
     } catch (e) {
       clearTimeout(fetchTimer);
+      bgPreload.finish('资金量能');
       if (loadingEl) loadingEl.classList.add('hidden');
       if (contentEl) {
         contentEl.style.opacity = '1';
@@ -4194,6 +4238,7 @@ const App = {
     const contentEl = document.getElementById('industryContent');
     if (loadingEl) loadingEl.classList.remove('hidden');
     if (contentEl) contentEl.style.opacity = '0.3';
+    bgPreload.start('行业分析');
 
     try {
       const name = this.currentData?.name || '';
@@ -4233,7 +4278,9 @@ const App = {
       }, 100);
 
       this.toast('行业分析数据加载完成');
+      bgPreload.finish('行业分析');
     } catch (e) {
+      bgPreload.finish('行业分析');
       if (loadingEl) loadingEl.classList.add('hidden');
       if (contentEl) contentEl.style.opacity = '1';
       this.toast('行业分析加载失败: ' + e.message, 'error');
@@ -4547,13 +4594,16 @@ const App = {
   async loadShareholders() {
     const container = document.getElementById('shareholdersContainer');
     if (container) container.innerHTML = `<div class="deep-loading"><div class="loading-spinner"></div><p>正在获取股东与机构持仓数据，请稍候...</p></div>`;
+    bgPreload.start('股东分析');
     try {
       const resp = await fetch(`/api/shareholders/${encodeURIComponent(this.currentSymbol)}?name=${encodeURIComponent(this.currentData?.name || '')}`);
       const data = await resp.json();
       this.shareholderData = data;
       this.shareholderLoadedSymbol = this.currentSymbol;
       this.renderShareholders(data);
+      bgPreload.finish('股东分析');
     } catch (e) {
+      bgPreload.finish('股东分析');
       if (container) container.innerHTML = `<div style="text-align:center;padding:60px;color:var(--text-secondary);"><h3>⚠️ 股东数据加载失败</h3><p>${e.message}</p></div>`;
       console.error('Shareholders error:', e);
     }

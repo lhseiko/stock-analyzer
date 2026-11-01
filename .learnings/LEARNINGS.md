@@ -2103,3 +2103,52 @@ getRecentReportDates 月份硬编码（10月→只请求到中报）导致 xjllb
 - Pattern-Key: harden.workspace_wide_report_audit
 - See Also: LRN-20261030-002
 ---
+## [LRN-20261101-001] 异动归因卡「盘中冻结快照」导致展示数字与页头不符
+
+### Error
+- 个股「异动归因」卡（个股近期热点）展示的 涨跌幅 -4.40% / 振幅 2.98%，与该股页头实际收盘 -5.97%（现价 6.62，昨收 7.04）不符。用户 2026-11-01 长江证券 000783 截图报障。
+- 根因：lib/hotTopics.js analyzePriceChange 缓存按「交易日」复用，但命中缓存时直接 `return {...cache}`，把盘中快照的 changePct/amplitude/price/high/low/prevClose 整个冻结复用；收盘后实际涨跌幅变了，卡片数字却仍是盘中值。
+- 系统性：所有「异动归因」卡（涨跌幅 ≥3% 或 振幅 >3% 触发）只要是在盘中生成缓存，都会在当日后续/收盘后被回放旧数字。模式二（网络热议话题）不展示百分比，不受影响。
+
+### Root Cause
+- 缓存职责边界错配：缓存应只复用「AI 归因叙事文本 + 证据」，而「展示用行情数值」必须每次以当前 getQuote 为准。代码把两者混在一起复用。
+- 仅靠 `cache.date === today`（交易日）判定，无法区分「盘中快照」与「收盘值」。
+
+### Suggested Action
+1. 缓存命中时，只复用 analysis/sources 等叙事字段；changePct/amplitude/high/low/price/prevClose/date 一律用 live quote 重写（已落地 lib/hotTopics.js）。
+2. 增加「漂移守卫」：若 live changePct 与缓存 changePct 差值 >1.0pp（典型盘中→收盘漂移），直接作废重算，保证叙事与数字同时正确。
+3. LLM 失败降级的 stale 返回也一并刷新展示数值。
+4. 通用红线：任何「按交易日缓存、但前端展示实时行情数字」的卡片，命中缓存时必须用当前行情重写展示字段，不得复用冻结快照。
+5. 验收：注入 live quote + 植入盘中快照缓存，断言返回数字==live quote（scripts/test_hot_topics_stale_fix.js，6 项全绿）。
+
+### Metadata
+- Source: user_feedback
+- Related Files: lib/hotTopics.js (analyzePriceChange), public/js/app.js (1913/1915 渲染 changePct/amplitude)
+- Tags: 缓存一致性, 盘中快照, 异动归因, 涨跌幅, 振幅, 数据一致性红线
+- Pattern-Key: harden.cache_must_not_freeze_display_numbers
+- See Also: LRN-20261030-002
+---
+## [LRN-20261101-002] "切换页面后才开始读取" 是预加载不可见的观感 bug
+
+### Error
+- 用户多次重申"打开工作台后所有页面应提前读取数据和缓存"，但仍感觉"再切换页面后才开始读取"（深度分析/财报解读卡切到 tab 才出现"后台进行中（已 2s）"转圈）。用户 2026-11-01 截图报障。
+- 根因不是"没预加载"：renderDashboard 已有「全局自动加载」块（打开个股页即并发触发 loadDeepAnalysis/loadCapitalFlow/loadIndustryAnalysis/loadShareholders/loadPriceAction，延迟 100~400ms）。真正的两个缺陷：
+  1. 加载进度条/转圈写在**未激活的 tab 面板内部**（#deepLoading 在隐藏的 #tab-deep 里），预加载在后台进行时用户根本看不到，切到该 tab 时面板变可见才"突然"出现转圈 → 误感为"切换后才开始"。
+  2. loadDeepAnalysis 的轮询逻辑 `if (deepActive) setTimeout(tryOnce,4000)`——tab 未激活就**停止轮询**，导致结果未被写入 deepData/deepLoadedSymbol；切回时 `deepLoadedSymbol !== currentSymbol` 再次触发 loadDeepAnalysis，重新展示转圈。服务端 _deepJobs 虽常驻且落盘，但前端没把后台结果接住。
+
+### Root Cause
+- 预加载的"可见性"与"结果回收"都绑定在「当前激活 tab」上，而非"任务本身是否完成"。后台任务在隐藏态既看不见、也不被回收。
+
+### Suggested Action
+1. 任何后台预加载必须有一个**常驻、与 tab 无关的全局指示器**（如顶部导航 pill），列出"正在预读哪些分页"，让用户看见预加载在进行。
+2. 后台轮询**不得因 tab 隐藏而停止**：隐藏态只跳过"刷新可见 loading 文案"，但轮询照常直到结果落盘并写入 deepData，切回即秒显（不重新转圈）。token 守卫保证切股/重入时旧轮询自动作废。
+3. 所有被自动加载触发的函数都要在 start/finish 处向全局指示器报状态，覆盖"所有页面"。
+4. 验收：app.js 抽取 bgPreload 真实源码 + 最小 DOM stub，断言 start 显示并列出分页、并发、部分完成仍可见、全部完成隐藏（scripts/test_bg_preload_indicator.js，7 项全绿）。
+
+### Metadata
+- Source: user_feedback
+- Related Files: public/js/app.js (renderDashboard 自动加载块、loadDeepAnalysis 轮询、bgPreload 指示器), server.js (_deepJobs)
+- Tags: 预加载可见性, 后台轮询, 切换页面才加载, 缓存破坏版本戳
+- Pattern-Key: harden.background_preload_must_be_visible_and_self_collecting
+- See Also: LRN-20261101-001
+---
