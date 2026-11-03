@@ -36,7 +36,11 @@ ok(!/'显著上涨'/.test(strip(cc)), 'capitalCharts 活动代码无「显著上
 // ---- 2) 新名「大涨平量」四处齐全 ----
 ok(/\?\s*'大涨平量'\s*:\s*'温和上涨'/.test(cap), 'capitalFlow 分支：bigUp 取「大涨平量」（否则温和上涨）');
 ok(/['"]大涨平量['"]\s*:\s*0\s*,/.test(cap), 'capitalFlow VP_MAP：「大涨平量」= 0（中性）');
-ok(/['"]大涨平量['"]\s*:\s*0\s*,/.test(sdj), 'sameDayJudgment vpSigMap：「大涨平量」= 0（中性）');
+// 20261101c：量价配合方向已收敛为 capitalFlow.vpPositionSignal 单一真值源（VP_POS_BASE）。
+// sameDayJudgment 不再内嵌 vpSigMap，改直接引用 vpPositionSignal，避免两处平行映射漂移。
+ok(/const\s*\{\s*analyzeCapitalFlow,\s*vpPositionSignal\s*\}\s*=\s*require\('\.\/capitalFlow'\)/.test(sdj), 'sameDayJudgment 已导入 vpPositionSignal 单一真值源');
+ok(/vpPositionSignal\(vp\.signal/.test(sdj), 'sameDayJudgment 量价配合子信号改引 vpPositionSignal（与 capitalFlow 同源，位置感知）');
+ok(/['"]大涨平量['"]\s*:\s*0\s*,/.test(cap), 'capitalFlow VP_POS_BASE：「大涨平量」= 0（中性，单一真值源）');
 ok(/['"]大涨平量['"]\s*:\s*'cap-neutral'/.test(cc), 'capitalCharts 配色：「大涨平量」= cap-neutral');
 ok(!/\[\s*'放量上涨',\s*'量价齐升',\s*'大涨平量'/.test(cc), 'capitalCharts 多空计分未把「大涨平量」计入多头');
 

@@ -196,8 +196,8 @@ console.log('\n[9] 源码守卫');
 const src = fs.readFileSync(path.join(__dirname, '..', 'lib', 'volumeEngine.js'), 'utf8');
 ok(src.includes('function _tenRules(pc, ctx)'), '_tenRules 已定义');
 ok(src.includes('const tenRules = _tenRules(pc,'), 'computeVolumeEngine 已调用 _tenRules');
-ok(src.includes('tenRules,\n  };') || /tenRules,\s*\n\s*};/.test(src), '输出对象含 tenRules 字段');
-ok(src.includes("schema: 'volume-engine-20261023d'"), '引擎 schema 升至 20261023d');
+ok(/tenRules,\s*\n\s*\/\/ 20261101d[\s\S]*?posJudgment,\s*\n\s*\};/.test(src), '输出对象含 tenRules 字段（且随 20261101d 主判矩阵 posJudgment 一起输出）');
+ok(src.includes("schema: 'volume-engine-20261101d'"), '引擎 schema 升至 20261101d（20261101d：新增 posJudgment 主判矩阵，本层降为补充辅助）');
 ok(src.includes('_tenRules,'), '_tenRules 已导出（可单测）');
 ok(!src.includes('量价十口诀（郭睿体系，20261023d 新增）') === false, '十口诀注释存在');
 

@@ -55,10 +55,10 @@ const METRIC_HELP = {
   'ROE': { title: '净资产收益率 ROE', body: 'ROE = 净利润 ÷ 净资产，衡量用股东投入赚钱的能力。<br>· 长期 ROE&gt;15% 是优质公司的标志；<br>· 但过高的 ROE 也可能来自高杠杆（债务），需结合资债比看。' },
   '毛利率': { title: '毛利率', body: '毛利率 =（营业收入 − 营业成本）÷ 营业收入。<br>· 反映产品竞争力与定价权，越高越能抵御成本上涨；<br>· 茅台式高毛利代表强品牌护城河。' },
   '净利率': { title: '净利率', body: '净利率 = 净利润 ÷ 营业收入，扣除税费、利息、费用后的真实盈利能力。<br>· 比毛利率更综合，受费用率、减值等影响。' },
-  '营收增长': { title: '营收增长', body: '同期营业收入同比增速（YoY）。<br>· 反映业务扩张速度，&gt;15% 通常视为高成长；<br>· 负增长一般偏利空（金融/周期类需结合行业阶段看）。' },
-  '利润增长': { title: '利润增长', body: '同期净利润同比增速（YoY）。<br>· 比营收增长更关键，需警惕"增收不增利"。' },
-  '扣非净利润增长': { title: '扣非净利润增长', body: '扣非归母净利润同比增长（YoY）——剔除政府补助、资产处置、公允价值变动等<b>非经常性损益</b>后的归母净利润增速。<br>· 比「利润增长」更能反映<b>主营业务的真实盈利趋势</b>；<br>· 若扣非增速显著低于归母增速，说明利润中含较多一次性收益，需警惕；<br>· 来源：东方财富 F10 主要指标 KCFJCXSYJLRTZ（与左卡、深度分析同源）。' },
-  '营运利润': { title: '营运利润（利润表「营业利润」）', body: '<b>本行取自利润表「营业利润」科目</b>（通用会计口径，全个股统一）= 营业收入 − 营业成本 − 税金及附加 − 期间费用 + 投资收益等，位于利润表中段，<b>尚未扣所得税与少数股东损益</b>。<br><b>与「扣非净利润」的区别：</b><br>· 营业利润看<b>经营盘面的整体盈利规模</b>（含投资收益/公允价值变动/减值等波动项，金融企业的利息与投资收入都计入其中）；<br>· 扣非净利润看<b>落到归母股东手里的经常性盈利</b>（剔除非经常项、已扣税）；<br>· 营业利润适合看盈利规模与结构，扣非增速适合看主业趋势。<br><i>注：中国平安等公司财报另披露一个非通用口径的「营运利润」（剔除短期投资波动等），本工具不采用该口径。</i>' },
+  '营收增长': { title: '营收增长', body: '营业收入同比增速（YoY）。<br><b>20261102a 起为「单季优先」口径：</b>优先展示最新单季营收同比（东财主要指标 DJD_TOI_YOY），单季缺失时回退报告期累计同比并在悬浮标注。<br>· 单季更能反映<b>当期</b>业务扩张速度，累计值易被上半年高基数/低基数平滑；<br>· &gt;15% 通常视为高成长；负增长一般偏利空（金融/周期类需结合行业阶段看）。' },
+  '利润增长': { title: '利润增长', body: '归母净利润同比增速（YoY）。<br><b>20261102a 起为「单季优先」口径：</b>优先展示最新单季归母净利同比（DJD_DPNP_YOY），单季缺失时回退报告期累计同比并在悬浮标注。<br>· 比营收增长更关键，需警惕"增收不增利"；<br>· 单季口径对偶发大额损益更敏感，请结合扣非增速一起看。' },
+  '扣非净利润增长': { title: '扣非净利润增长', body: '扣非归母净利润同比增长（YoY）——剔除政府补助、资产处置、公允价值变动等<b>非经常性损益</b>后的归母净利润增速。<br><b>20261102a 起为「单季优先」口径：</b>优先展示最新单季扣非同比（DJD_DEDUCTDPNP_YOY），单季缺失时回退报告期累计同比并在悬浮标注。<br>· 比「利润增长」更能反映<b>主营业务的真实盈利趋势</b>；<br>· 若扣非增速显著低于归母增速，说明利润中含较多一次性收益，需警惕；<br>· 来源：东方财富 F10 主要指标（单季 DJD_DEDUCTDPNP_YOY 优先，累计 KCFJCXSYJLRTZ 回退；与左卡、深度分析同源）。' },
+  '营运利润': { title: '营运利润（利润表「营业利润」）', body: '<b>本行取自利润表「营业利润」科目</b>（通用会计口径，全个股统一）= 营业收入 − 营业成本 − 税金及附加 − 期间费用 + 投资收益等，位于利润表中段，<b>尚未扣所得税与少数股东损益</b>。<br><b>20261102a 起为「单季优先」口径：</b>优先展示最新单季值（本期累计 − 上期累计差分，Q1 报告期单季=累计），单季不可得（缺上期累计）时如实回退累计并在悬浮标注。<br><b>与「扣非净利润」的区别：</b><br>· 营业利润看<b>经营盘面的整体盈利规模</b>（含投资收益/公允价值变动/减值等波动项，金融企业的利息与投资收入都计入其中）；<br>· 扣非净利润看<b>落到归母股东手里的经常性盈利</b>（剔除非经常项、已扣税）；<br>· 营业利润适合看盈利规模与结构，扣非增速适合看主业趋势。<br><i>注：中国平安等公司财报另披露一个非通用口径的「营运利润」（剔除短期投资波动等），本工具不采用该口径。</i>' },
   'NBV(新业务价值)': { title: 'NBV 新业务价值（保险股专属）', body: '<b>NBV = 新签保单在未来可贡献利润的折现值</b>，是寿险公司「新业务造血能力」的核心指标，<b>保险股专属</b>（非保险股无此概念）。<br>· 衡量的是「未来利润的现值」而非当期现金流，与净利润/扣非净利润口径完全不同；<br>· 同比为<b>去年同期同累计阶段</b>口径（如 2026H1 vs 2025H1），跨阶段不可比；<br>· 历史数据受精算假设调整影响（长期投资回报率假设 5%→4.5%→4%），跨年口径需注意；<br>· 数据来源：妙想金融数据 + 公司年报（备查库）。' },
   '资产负债率': { title: '资产负债率 · 信号算法详解', body: '<b>一、取数来源（两个口径，已自动识别）</b><br>· <b>A 股</b>：取东方财富 F10 资产负债表「资产负债率 ZCFZL」，单位是 <b>%</b>（如 89.88 表示 89.88%）。本工具已加 <code>debtMetricPct</code> 标记；<br>· <b>港股 / 美股</b>：取「带息债 ÷ 所有者权益」<b>比值</b>（无单位小数，如 0.27）。<br><br><b>二、信号判定步骤（evaluateSignals）</b><br>第 1 步：读取数值 d = 资产负债率（A股用% / 港股美股用比值）；<br>第 2 步：判断是否金融业（银行/保险/证券等）→ 直接判 <b>中性</b>（高负债是经营常态，不红不绿）；<br>第 3 步：非金融业，按口径分档：<br>&nbsp;&nbsp;▸ A股（%）：<b>＞70%</b> → 利空(绿)；<b>＜40%</b> → 利好(红)；40%~70% 合理区间不提示；<br>&nbsp;&nbsp;▸ 港股/美股（比值）：<b>＞2</b> → 利空(绿)；<b>＜0.5</b> → 利好(红)；中间不提示。<br><br><b>三、健康评分里的算法（fundamentalAnalysis）</b><br>同口径分档累加（满分 25 再按权重缩放）：A股 资产负债率 ＜40% 加12、40%~70% 加9、70%~90% 加5、＞90% 不加分；金融业 80%~96% 视为正常加10。<br><br><b>四、颜色与边界</b><br>红=利好、绿=利空，仅适用于<b>非金融</b>公司；金融业一律中性。例：中国平安 89.88%→中性；贵州茅台（A股，约 20%出头）→利好(红)。' },
   '流动比率': { title: '流动比率', body: '流动比率 = 流动资产 ÷ 流动负债，衡量短期偿债能力。<br>· &gt;2 较安全，&lt;1 可能短期资金紧张；<br>· 不同行业合理区间差异大（如零售天然较低）。' },
@@ -1180,6 +1180,7 @@ const App = {
             : fmtD(f.dataDate || data.date || data.baselineDate || '');
         if (!isMacroF && dateTxt) html += `<div class="tp-comp-date">数据日期 ${esc(dateTxt)}</div>`;
         if (f.degraded) html += `<div class="tp-comp-detail tp-emo-warn">⚠ ${esc(f.reason || '数据不可用')} → 权重已归零并按比例分摊</div>`;
+        else if (f.fallback) html += `<div class="tp-comp-detail tp-emo-warn">⊕ ${esc(f.reason || '节假日兜底：显示最近一次成功数据')}</div>`;
         else if (f.lagged) {
           // 20261023l：区分「T+1 例行披露」（融资余额等，最新可得就是上一交易日）与「异常滞后」。
           //   前者不再用 ⏱ 警告口吻，改为中性说明：8 折是模型规则，不是数据缺失。
@@ -2074,6 +2075,28 @@ const App = {
         dateEl.title = '行情接口未返回可解析的交易日，此处显示的是本机系统日期，非真实交易日';
       }
     }
+
+    // 20261101n（用户两张截图指令）：换手率/成交额从页首固定指标条移入个股标题卡信息行，
+    // 与行情日期/财务报告期同行展示；applyLiveQuote 为打开页面渲染与 60s 实时刷新的共用单点，
+    // 两值随行情同步更新。US/HK 口径同源（quote.turnover/quote.amount，缺失时整段隐藏）。
+    const turnEl = document.getElementById('stockTurnover');
+    const amtEl = document.getElementById('stockAmount');
+    if (turnEl) {
+      if (quote.turnover) {
+        turnEl.textContent = Storage.formatNumber(quote.turnover) + '%';
+        turnEl.style.display = '';
+      } else {
+        turnEl.style.display = 'none';
+      }
+    }
+    if (amtEl) {
+      if (quote.amount) {
+        amtEl.textContent = Storage.formatNumber(quote.amount);
+        amtEl.style.display = '';
+      } else {
+        amtEl.style.display = 'none';
+      }
+    }
   },
 
   renderStockHeader(data) {
@@ -2119,6 +2142,9 @@ const App = {
     const fm = (data.fundamental && !data.fundamental.error && data.fundamental.metrics) || {};
     const sigMap = {};
     (data.signals?.signals || []).forEach(s => { sigMap[s.key] = s; });
+    // ★ 20261103d：五维多数决统一判定（用户指令）——右卡「指标分析」judgment 已按多数决覆盖，
+    //   顶栏 tiles 与左卡徽标/右卡三处消费同一 judgment（单一数据源，杜绝「五维利空 vs 总体利好」打架）。
+    (data.metricAnalysis?.metrics || []).forEach(mm => { if (mm && mm.key && mm.judgment) sigMap[mm.key] = mm.judgment; });
     const sigColor = (key) => {
       const s = sigMap[key];
       if (!s) return '';
@@ -2147,8 +2173,8 @@ const App = {
       if (quote.low) metrics.push({ label: '最低', value: Storage.formatNumber(quote.low), source: priceSrc, sub: quoteSub, valueColor: quoteColor(quote.low), title: `当日最低价 · 来源：${priceSrc} · ${quoteSub}` });
       if (quote.open) metrics.push({ label: '开盘', value: Storage.formatNumber(quote.open), source: priceSrc, sub: quoteSub, valueColor: quoteColor(quote.open), title: `当日开盘价 · 来源：${priceSrc} · ${quoteSub}` });
       if (quote.prevClose) metrics.push({ label: '昨收', value: Storage.formatNumber(quote.prevClose), source: priceSrc, sub: quoteSub, title: `昨日收盘价 · 来源：${priceSrc} · ${quoteSub}` });
-      if (quote.turnover) metrics.push({ label: '换手率', value: Storage.formatNumber(quote.turnover) + '%', source: priceSrc, sub: quoteSub, title: `换手率 · 来源：${priceSrc} · ${quoteSub}` });
-      if (quote.amount) metrics.push({ label: '成交额', value: Storage.formatNumber(quote.amount), source: priceSrc, sub: quoteSub, title: `成交额 · 来源：${priceSrc} · ${quoteSub}` });
+      // 20261101n（用户两张截图指令）：「换手率」「成交额」tile 从本指标条删除，
+      // 数据移至个股标题卡信息行（#stockTurnover/#stockAmount，applyLiveQuote 同点刷新）。
       if (quote.totalValue) metrics.push({ label: '总市值', value: Storage.formatNumber(quote.totalValue) + (this.currentData?.market === 'US' ? '亿美元' : '亿'), source: priceSrc, sub: quoteSub, title: `总市值 · 来源：${priceSrc} · ${quoteSub}` });
 
       // Valuation / fundamental metrics (with type, source and report period)
@@ -2284,14 +2310,6 @@ const App = {
     const esc = (s) => this._veEsc(s);
     const num = (v, d = 2) => (typeof v === 'number' && isFinite(v) ? v.toFixed(d) : '--');
 
-    // 信号配色：红涨绿跌（看多=红、看空=绿、中性=灰）。引擎字段名为 category
-    const signalLabel = (ve.signal && ve.signal.category) || '中性';
-    const tone = {
-      '看多信号': 'cap-positive', '看多观察': 'cap-positive',
-      '中性': 'cap-neutral',
-      '看空观察': 'cap-negative', '看空预警': 'cap-negative',
-    }[signalLabel] || 'cap-neutral';
-
     // 量能指标行
     const vs = ve.volumeState || {};
     const pos = ve.position || {};
@@ -2301,80 +2319,89 @@ const App = {
     const vr60 = (typeof vs.volToday === 'number' && typeof vs.avg60 === 'number' && vs.avg60 > 0)
       ? vs.volToday / vs.avg60 : null;
     const confirmState = vr60 == null ? '数据不足' : (vs.confirm || '平量');
+    // 20261101i：60 日口径数值句（原独立说明行内容）并入 tile 副行 confirmSub。
+    // 20261101r（用户截图指令：卡片过密重排版）：副行改一行短句——完整口径句仅保留在
+    // tooltip（confirmTip），与相邻数值 tile 等高，消除超长小字撑破行高的参差感。
+    const confirmSub = vr60 == null
+      ? '60 日均量数据不足'
+      : '当日量 ÷ 60日均量 · 阈值 0.7~1.5×';
     const confirmTip = vr60 != null
       ? `60日均量 ${num(vs.avg60, 0)}，当日量 ${num(vs.volToday, 0)}，当日量÷60日均量 = ${num(vr60)}×；放量确认需 >1.5×、缩量确认需 <0.7×，介于之间为平量（并非缺少 60 日数据）`
       : '60 日均量数据不足（历史不足 60 根）';
-    const confirmVal = `<span class="${volTierCls(confirmState)}" title="${esc(confirmTip)}">${esc(confirmState)}${vr60 != null ? `<span class="cm-paren">（${num(vr60)}×）</span>` : ''}</span>`;
+    const confirmVal = `<span class="${volTierCls(confirmState)}" title="${esc(confirmTip)}">${esc(confirmState)}${vr60 != null ? `<span class="cm-paren">（${num(vr60)}×）</span>` : ''}</span><span class="cm-sub" title="${esc(confirmTip)}">${esc(confirmSub)}</span>`;
     // [20261024d] 括号内说明文字缩小一号（用户 2026-10-24 要求）：包 .cm-paren，样式见 style.css。
     // 关键支撑/压力的 kind 内可能自带嵌套括号（如「MA250（上翘）」），外层整体包 span 即可全部继承小字号。
+    // 20261101i：原 confirmNote 独立说明行删除（用户指令：60 日口径数值句并入本 tile，
+    // 「并非缺少 60 日数据 / 两窗口可并存」等剩余文字不再单独展示）。
+    // 20261101j：四维度「资金行为 / 筹码转移」单一数组字面量（下方指标行与量价配合卡共用，
+    // 守卫测试 test_pos_volume_matrix 依赖该字面量）。原「价格位置」tile 由本 tile 替换——
+    // 位置信息与下方量价判定·第一步「位置定位」重复，不再单独占格。
+    const dim = ve.dimensions || {};
+    // 20261103f（用户截图指令）：资金行为/筹码转移按语义方向着色（tone 由引擎输出，bull=红/bear=绿）
+    const toneCls = (t) => t === 'bull' ? ' ve-tone-bull' : t === 'bear' ? ' ve-tone-bear' : '';
+    const dimTexts = [
+      ['资金行为', dim.capitalBehavior], ['筹码转移', dim.chipTransfer],
+    ];
+    // 20261102c（用户指令：卡片布局间隔已认可，把「量能档位」「60日量能确认」与「资金行为」位置互换）：
+    // 「资金行为」定性长文本上移至指标行首位（span4），量能档位/60日量能确认下移至量价统计行，
+    // 与 20 日三张数值卡并列——指标行=定性四维（资金行为/筹码转移/支撑/压力），量价行=量能数值五联。
     const metrics = [
-      ['量能档位', `<span class="${volTierCls(vs.level)}">${esc(vs.level || '--')}${vs.ratio5 != null ? `<span class="cm-paren">（${num(vs.ratio5)}×）</span>` : ''}</span>`],
-      ['60日量能确认', confirmVal],
-      ['价格位置', `${esc(pos.label || '--')}${pos.pricePct12m != null ? `<span class="cm-paren">（分位 ${num(pos.pricePct12m, 1)}%）</span>` : ''}`],
+      ['筹码转移', `<span class="cm-value-text${toneCls(dim.chipTransferTone)}">${esc(dimTexts[1][1] || '数据不足')}</span>`],
       ['关键支撑', pos.support && pos.support.price != null ? `${num(pos.support.price)}<span class="cm-paren">（${esc(pos.support.kind)}）</span>` : '--'],
       ['关键压力', pos.resistance && pos.resistance.price != null ? `${num(pos.resistance.price)}<span class="cm-paren">（${esc(pos.resistance.kind)}）</span>` : '--'],
-      ['今日成交额', vs.amountToday != null ? `${(vs.amountToday / 1e8).toFixed(2)} 亿` : '数据不足'],
     ];
-    const metricsHtml = metrics.map(([k, v]) =>
+    const metricsHtml = `<div class="cap-metric ve-span4"><span class="cm-label">资金行为</span><span class="cm-value-text${toneCls(dim.capitalBehaviorTone)}">${esc(dimTexts[0][1] || '数据不足')}</span></div>` + metrics.map(([k, v]) =>
       `<div class="cap-metric"><span class="cm-label">${esc(k)}</span><span class="cm-value">${v}</span></div>`).join('');
 
-    // 20261024j：confirm=null（60日口径平量）时补一句窗口说明，解释「量能档位（÷5日均量）」与
-    // 「60日均量口径」是两个不同窗口，避免把「量能档位=放量」与「60日确认=平量」误读为前后矛盾。
-    const confirmNote = (vs.confirm == null && vr60 != null)
-      ? `<div class="ve-note">60 日均量口径：当日量为 60 日均量的 ${num(vr60)} 倍（均量 ${num(vs.avg60, 0)}、当日量 ${num(vs.volToday, 0)}），介于 0.7~1.5 倍之间 → 判为「平量」，并非缺少 60 日数据；「量能档位 ${esc(vs.level || '')}（÷5日均量）」是另一个窗口，两者口径不同，结论可并存。</div>`
-      : '';
+    // 20261101i：confirmNote 独立说明行已删除——60 日口径数值句并入「60日量能确认」tile 副行（confirmSub），
+    // 「并非缺少 60 日数据 / 两窗口可并存」说明保留在 tooltip（悬停可见），不再单独占一行。
 
     // 20261024i：量价关系分析合并进本卡（原独立「量价关系分析」卡删除）。
-    // 去重原则——「量比 / 量能热度」与上方「量能档位」同源，不再重复展示；
-    // 只保留量价独有指标（今日涨跌 / 20日涨跌日 / 20日量价比 / 20日净涨跌）与当日量价配合结论。
+    // 去重原则——「量比 / 量能热度」与上方「量能档位」同源，不再重复展示。
     // 数据缺失时给出明确原因（不整卡空白），上方量能分析照常展示。
+    // 20261101j（用户截图指令）：① 量价中间文字说明行（信号徽标 + 长描述）整行删除——
+    // 描述与四维度「资金行为」卡同源重复；② 「今日涨跌」卡与页头涨跌幅重复 → 该卡位改放
+    // 四维度「资金行为」（原独立小节删除，内容上移至此）；卡片行保持 4 张，布局对称不变。
+    // 20261101k（用户截图指令）：量价配合区块标题删除（守卫禁此字面量，注释同理规避）——卡片行紧跟上方指标行，
+    // 语义已由各卡 cm-label 自明，无需区块标题；降级说明同理去掉标题（说明文字自含语义）。
     const vi = data && data.volumeIndicators;
     const vp = vi && vi.volumePrice;
+    // 20261102c：两枚量能 tile 独立成变量——量价数据不足（vp 缺失）时仍保留量能档位/60日量能确认，
+    // 仅 20 日三卡随量价数据缺失降级（数据诚实：量能引擎数据与 vp 无关，不静默消失）。
+    const volTierTile = `<div class="cap-metric"><span class="cm-label">量能档位</span><span class="cm-value"><span class="${volTierCls(vs.level)}">${esc(vs.level || '--')}${vs.ratio5 != null ? `<span class="cm-paren">（${num(vs.ratio5)}×）</span>` : ''}</span></span></div>`;
+    const confirmTile = `<div class="cap-metric"><span class="cm-label">60日量能确认</span><span class="cm-value">${confirmVal}</span></div>`;
     let vpHtml = '';
     if (vp) {
-      const vpCls = ({
-        '量价齐升': 'cap-pos', '放量上涨': 'cap-pos', '温和上涨': 'cap-pos', '缩量上涨': 'cap-neg',
-        '放量下跌': 'cap-neg', '巨量下跌': 'cap-neg', '缩量下跌': 'cap-neg', '地量下跌': 'cap-neg', '显著下跌': 'cap-neg',
-        '大涨平量': 'cap-neutral', '地量上涨': 'cap-neutral', '温和回调': 'cap-neutral', '缩量回调': 'cap-neutral',
-        '地量回调': 'cap-neutral', '量价平衡': 'cap-neutral',
-      })[vp.signal] || 'cap-neutral';
-      const dp = typeof vp.dayChangePct === 'number' ? vp.dayChangePct : null;
-      const dpCls = dp == null ? '' : (dp > 0 ? 'cap-pos' : dp < 0 ? 'cap-neg' : '');
       const nc = typeof vp.netChangePct === 'number' ? vp.netChangePct : null;
       const ncCls = nc == null ? '' : (nc > 0 ? 'cap-pos' : nc < 0 ? 'cap-neg' : '');
       const ratioCls = typeof vp.ratio === 'number' ? (vp.ratio > 1 ? 'cap-pos' : 'cap-neg') : '';
       const vpDate = (vi.series && Array.isArray(vi.series.dates) && vi.series.dates.length)
         ? vi.series.dates[vi.series.dates.length - 1] : '';
+      // 20261102c：量价统计行改五联等宽（ve-cols-5，与原指标行同构）——「量能档位」「60日量能确认」
+      // 自上方指标行下移至此（用户指令与「资金行为」位置互换），与 20 日三张数值卡并列；
+      // 「资金行为」长文本卡上移至指标行首位（见上方 metricsHtml）。20261101r：10 列基准栅格沿用。
       vpHtml = `
-      <div class="ve-section-title">量价配合（当日）</div>
-      <div class="ve-vp-line">
-        <span class="ve-vp-signal ${vpCls}">${esc(vp.signal || '--')}</span>
-        <span class="ve-vp-desc">${esc(vp.description || '')}</span>
-      </div>
-      <div class="cap-metrics-row">
-        <div class="cap-metric"><span class="cm-label">今日涨跌</span><span class="cm-value ${dpCls}">${dp == null ? '--' : (dp > 0 ? '+' : '') + dp.toFixed(2) + '%'}</span></div>
+      <div class="ve-tile-row ve-cols-5">
+        ${volTierTile}
+        ${confirmTile}
         <div class="cap-metric"><span class="cm-label">20日涨跌日</span><span class="cm-value">${vp.upDays != null ? vp.upDays : '--'}天/${vp.downDays != null ? vp.downDays : '--'}天</span></div>
         <div class="cap-metric"><span class="cm-label">20日量价比</span><span class="cm-value ${ratioCls}">${vp.ratio != null ? vp.ratio : '--'}</span></div>
         <div class="cap-metric"><span class="cm-label">20日净涨跌</span><span class="cm-value ${ncCls}">${nc == null ? '--' : (nc > 0 ? '+' : '') + nc + '%'}</span></div>
       </div>
       <div class="cap-date-note">量价统计截止 ${esc(vpDate || '--')} · K线 · 本地计算（量比与量能档位同源，不重复展示）</div>`;
     } else {
-      vpHtml = `<div class="ve-src-notes"><div class="ve-src-title">量价配合（当日）</div><div class="ve-gap-item">· 量价数据不足（可用日K不足 20 根或数据源暂不可用），不影响上方量能分析结论</div></div>`;
+      vpHtml = `
+      <div class="ve-tile-row ve-cols-5">
+        ${volTierTile}
+        ${confirmTile}
+      </div>
+      <div class="ve-src-notes"><div class="ve-gap-item">· 量价数据不足（可用日K不足 20 根或数据源暂不可用），不影响上方量能分析结论</div></div>`;
     }
 
-    // 四维度客观描述
-    const dim = ve.dimensions || {};
-    // 20261017i：量能口径标注。此前「量价分析」卡与「量能分析」卡各算一套
-    // （÷前20日均量 vs ÷5日均量+60日确认），同屏结论互斥。现两卡均引自引擎
-    // 统一档位（unifiedTier / volumeTier），此处明示口径来源便于用户核对。
-    const tierBasis = (ve.volumeTier && ve.volumeTier.basis)
-      || '当日量 ÷ 前5日均量（基准不含当日），叠加 60 日均量 ×1.5/×0.7 确认';
-    const dimsHtml = [
-      ['量能状态', dim.volumeState, volTierCls(dim.volumeState)], ['价格位置', dim.position],
-      ['资金行为', dim.capitalBehavior], ['筹码转移', dim.chipTransfer],
-      ['量能口径', `${tierBasis}（与「量价分析」卡同源）`],
-    ].filter(([, v]) => v).map(([k, v, cls]) =>
-      `<div class="ve-dim"><span class="ve-dim-label">${esc(k)}</span><span class="ve-dim-value ${cls || ''}">${esc(v)}</span></div>`).join('');
+    // 四维度客观描述 —— 20261101h 仅保留「资金行为」「筹码转移」两行；
+    // 20261101j：独立小节整体删除，两行内容并入上方卡片（指标行「筹码转移」tile +
+    // 量价配合行「资金行为」卡，共用 dimTexts 单一数组）。后端 dimensions 四键保留不动
+    // （铁律第一条：仅展示层过滤，API 输出格式零变化）。
 
     // 生死位五规则：命中在前（带方向色），未命中折叠
     const rules = Array.isArray(ve.rules) ? ve.rules : [];
@@ -2438,37 +2465,180 @@ const App = {
     const rtHtml = renderSummary('量比实战口诀（7.5 归集）', ve.ratioSummary, rtTone);
     const expHtml = renderSummary('预期量能规则（该放/该缩缺口补充）', ve.expectedVolumeSummary, expTone);
 
-    // 20261023d：量价十口诀（郭睿体系）—— 主判层（十口诀 × 位置/量能/价格），既有归集降为补充
-    const tenHtml = (() => {
-      const tr = ve.tenRules;
-      if (!tr || !Array.isArray(tr.items) || !tr.items.length) return '';
-      const p = tr.primary;
-      const primaryHtml = p
-        ? `<div class="ve-ten-primary"><div class="ve-ten-head">主判 · 第 ${p.id} 条「${esc(p.name)}」<span class="ve-ten-risk">${esc(p.risk)}</span></div><div class="ve-rule-concl">${esc(p.conclusion)}</div></div>`
-        : `<div class="ve-note">当前量价形态不落在十口诀的标准形态内，按观察处理，参考下方补充归集。</div>`;
-      const rows = tr.items.map(it => {
-        const hit = p && it.id === p.id;
-        const judge = it.matched ? (hit ? '主判' : '辅助') : '—';
-        return `<tr class="${hit ? 'hit' : ''}"><td>${it.id}</td><td>${esc(it.name)}</td><td>${esc(it.pattern)}</td><td>${esc(it.essence)}</td><td>${esc(it.risk)}</td><td>${judge}</td></tr>`;
-      }).join('');
-      const fw = tr.framework || {};
-      const rem = Array.isArray(tr.reminders) ? tr.reminders : [];
-      return `<div class="ve-section-title">量价十口诀</div>
-        <div class="ve-note">${esc(tr.summary || '')}</div>
-        ${primaryHtml}
-        <table class="ve-ten-table"><thead><tr><th>#</th><th>口诀</th><th>量价形态</th><th>核心本质</th><th>风险等级</th><th>今判</th></tr></thead><tbody>${rows}</tbody></table>
-        <div class="ve-ten-fw">${esc([fw.position, fw.volume, fw.price, fw.keyLevels].filter(Boolean).join(' ｜ '))}</div>
-        <div class="ve-ten-fw">${esc(fw.matchNote || '')}</div>
-        ${rem.length ? `<div class="ve-ten-rem">${rem.map(x => '· ' + esc(x)).join('<br>')}</div>` : ''}`;
+    // 20261101d：位置感知量价判定主判（图片 24 格矩阵）—— 先定位置 → 量能×涨跌幅 → 判定
+    const posHtml = (() => {
+      const pj = ve.posJudgment;
+      if (!pj) return '';
+      const badgeCls = (d) => d === 'bull' ? 've-bull' : d === 'bear' ? 've-bear' : d === 'caution' ? 've-block' : '';
+      const mainCls = (d) => d === 'bull' ? 'bull' : d === 'bear' ? 'bear' : d === 'caution' ? 'caution' : 'observe';
+      const pos = pj.position || {};
+      const vol = pj.volume || {};
+      const pri = pj.price || {};
+      // 20261101h（20261102g 起该步顺延为第三步，历史变量名 step2Note 保留）：
+      // 第三步「量能 × 涨跌幅」精简（用户确认的去重方案）——正常时只显示「放量 + 下跌」，
+      // 括号里的 5 日量比/当日涨跌幅与指标行 tile、量价配合卡重复；仅数据不足降级时保留说明
+      const step2Note = (!vol.tier || !pri.dir)
+        ? `<span class="ve-posj-combo-note">${esc(vol.levelText || '')}（${esc(vol.ratio5Text || '')}）｜当日涨跌幅 ${esc(pri.text || '数据不足')}</span>`
+        : '';
+      // 20261102g（用户指令：思维导图位置判定后增加「趋势运行 / 区间震荡」判定步骤，
+      // 原第二步顺延为第三步，另增异常判定——量价背离 / 极端量能）：
+      // 主判卡结构 = 第一步位置 → 第二步运行状态 → 第三步量能×涨跌幅 → 异常判定 → 主判横幅（每日唯一生效判定）
+      const mode = pj.mode || null;
+      const stepHtml = `
+        <div class="ve-posj-step"><span class="ve-posj-step-label">第一步 · 位置定位</span><span class="ve-posj-pos">${esc(pos.display || '数据不足')}</span><span class="ve-posj-pos-note">${esc(pos.note || '')}</span></div>
+        <div class="ve-posj-step"><span class="ve-posj-step-label">第二步 · 运行状态</span><span class="ve-posj-combo">${mode ? esc(mode.key + (mode.trend ? ' · ' + mode.trend : '')) : '数据不足'}</span><span class="ve-posj-pos-note">${mode ? esc(mode.note || '') : ''}</span></div>
+        <div class="ve-posj-step"><span class="ve-posj-step-label">第三步 · 量能 × 涨跌幅</span><span class="ve-posj-combo">${vol.tier ? esc(vol.tier) : '量能档位数据不足'} + ${pri.dir ? esc(pri.dir) : '方向不明'}</span>${step2Note}</div>`;
+      // 异常判定（量价背离 / 极端量能）：状态与依据如实展示；命中时优先生效为当日唯一判定（见主判横幅）。
+      // 徽标统一中性/琥珀（方向色仅保留在主判横幅，避免误读——同 20261101f 非命中行中性灰原则）
+      const anomaly = pj.anomaly || null;
+      const anomalyRow = (name, it) => {
+        const badge = it.triggered ? '<span class="ve-rule-badge ve-block">命中</span>'
+          : (it.pending ? '<span class="ve-rule-badge ve-block">盘中停判</span>' : '<span class="ve-rule-badge ve-miss">未触发</span>');
+        return `<div class="ve-posj-anomaly-item">${badge}<span class="ve-posj-anomaly-name">${esc(name)}：${esc(it.key || '未触发')}</span><span class="ve-posj-pos-note">${esc(it.note || '')}</span></div>`;
+      };
+      const anomalyHtml = anomaly
+        ? `<div class="ve-posj-step ve-posj-anomaly"><span class="ve-posj-step-label">异常判定 · 背离 / 极端量能</span><div class="ve-posj-anomaly-list">${anomalyRow('量价背离', anomaly.divergence)}${anomalyRow('极端量能', anomaly.extreme)}</div></div>`
+        : '';
+      // 20261102f：主判横幅归一（用户指令：思维导图判定逻辑融入量价判定，每日收盘后只应有一条判定生效）——
+      // extJudgment（极端量能/背离/箱体/滞涨滞跌/震荡）优先，未触发时主矩阵命中格即当日唯一生效判定；
+      // 横幅下方附「生效路径」说明判定来自哪个分支、为何优先。静态全量清单不再展示（全文见 volume-map.html）。
+      const ej = pj.extJudgment;
+      // 20261102g：分支标签映射到新四步结构（异常判定 / 第二步·区间震荡 / 第二步·趋势运行）
+      const branchLabel = ej
+        ? ((ej.branch === '极端量能' || ej.branch === '量价背离') ? `异常判定 · ${ej.branch}`
+          : (ej.branch === '区间横盘震荡' ? '第二步 · 区间震荡（箱体）' : `第二步 · ${ej.branch}`))
+        : '';
+      const banner = ej
+        ? { direction: ej.direction, dirText: ej.dirText, conclusion: `${ej.conclusion}（${branchLabel} · ${ej.key}）` }
+        : (pj.cell || null);
+      const mainHtml = banner
+        ? `<div class="ve-posj-main ${mainCls(banner.direction)}"><span class="ve-posj-dir">主判 · ${esc(banner.dirText)}</span>${esc(banner.conclusion)}</div>`
+        : `<div class="ve-note">${esc(pj.summary || '')}</div>`;
+      const pathHtml = ej
+        ? `<div class="ve-posj-path">生效路径：${esc(branchLabel)} · ${esc(ej.key)} —— ${esc(ej.reason)}</div>`
+        : (pj.cell
+            ? `<div class="ve-posj-path">生效路径：第二步趋势运行 → 第三步 24 格主矩阵归格 · ${esc(pj.cell.key)}——异常判定（量价背离 / 极端量能）与区间震荡箱体分支今日均未触发</div>`
+            : '');
+      // 20261101f：非命中行一律中性灰徽标（用户 2026-11-01 报障：当前量能非放量上涨，
+      // 参考表里「放量上涨·偏多」却红标显眼，易误读为当前判多）——方向色仅命中行保留
+      const rows = (pj.cells || []).map(c => `
+        <tr class="${c.hit ? 'hit' : ''}"><td>${esc(c.key)}</td><td><span class="ve-rule-badge ${c.hit ? badgeCls(c.direction) : ''}">${esc(c.dirText)}</span></td><td>${esc(c.conclusion)}</td></tr>`).join('');
+      // 20261102i（用户指令：思维导图各种量能情况下的股价震荡分析补回判定卡）：
+      // 参考表补回当前位置的 5 种趋势震荡形态 + 8 种箱体形态（同源 POS_VM_EXT / volume-map.html 思维导图），
+      // 未触发时仅参考（灰「参考」徽标）；extJudgment 命中其中一种（第二步震荡/滞涨滞跌或箱体分支）时该行高亮「命中」，
+      // 且仍以主判横幅为当日唯一生效判定——判定优先级链零变化（20261102f）
+      const extRef = pj.extRef || null;
+      // 20261103m（用户问：列表里各判定什么意思、为什么没有偏空）：扩展行徽标由统一「参考」改为显示
+      // 方向文字（偏多/看空/警惕/观察，灰底无方向色——非命中行不着方向色是 20261101f 铁律），命中行仍琥珀「命中」；
+      // 「为什么看不到看空」的根因：① 参考行此前只显示「参考」二字，方向信息被隐藏；② 部分位置（如低位区间）
+      // 的下跌形态语义就是「观察」档（底部下跌≈尾声，不指向继续看空），看空档集中在高位区间/下跌途中
+      const EXT_DIR_TEXT = { bull: '偏多', bear: '看空', caution: '警惕', observe: '观察' };
+      const extRow = (it, branch) => {
+        const hit = !!(ej && ej.branch === branch && ej.key === it.k);
+        return `<tr class="ve-posj-extrow${hit ? ' hit' : ''}"><td>${esc(it.k)}</td><td><span class="ve-rule-badge${hit ? ' ve-block' : ''}">${hit ? '命中' : esc(EXT_DIR_TEXT[it.direction] || '观察')}</span></td><td>${esc(it.d)}</td></tr>`;
+      };
+      // 20261102j（用户指令：融合后量价形态与趋势运行/区间震荡的判定重复，以思维导图的展示方案为主）：
+      // 表格按思维导图原生结构重组——「趋势运行」组合并为一张 11 形态列表（6 主格与震荡/滞涨/滞跌按导图同序交错，
+      // 不再「量价形态 6 行 + 震荡形态灰行」两段分列），其后「区间横盘震荡（箱体）」组 8 形态；
+      // 量价背离/极端量能对应导图另两分支，仍在上方异常判定块。extRef 缺失（位置不适用）时退回仅 6 主格。
+      // 20261103m（用户指令：量价判定第三步补大涨 / 大跌形态判定与解释）：TREND_FORM_ORDER 扩为 17 形态——
+      // 6 强形态（放量/缩量/平量 × 大涨/大跌）按量能段同序插入（大涨跟同量能上涨、大跌跟同量能下跌之后），
+      // 与 volume-map.html 思维导图「趋势运行」组叶子同源同序；行渲染查找链：主矩阵 6 格 → 强形态 → 震荡/滞涨/滞跌
+      const TREND_FORM_ORDER = ['放量上涨', '放量大涨', '放量震荡', '放量下跌', '放量大跌', '缩量上涨', '缩量大涨', '缩量震荡', '缩量下跌', '缩量大跌', '平量上涨', '平量大涨', '平量震荡', '平量下跌', '平量大跌', '放量滞涨', '放量滞跌'];
+      // 20261103b：hasTrendGroup 前置——横盘位置（震荡整理）extRef.trendExtra 为空数组，趋势运行组整组跳过
+      const hasTrendGroup = !!(extRef && extRef.trendExtra && extRef.trendExtra.length);
+      const trendRows = (extRef && hasTrendGroup)
+        ? TREND_FORM_ORDER.map(k => {
+            const c = (pj.cells || []).find(x => x.key === k);
+            if (c) return `<tr class="${c.hit ? 'hit' : ''}"><td>${esc(c.key)}</td><td><span class="ve-rule-badge ${c.hit ? badgeCls(c.direction) : ''}">${esc(c.dirText)}</span></td><td>${esc(c.conclusion)}</td></tr>`;
+            const st = (extRef.strong || []).find(x => x.k === k);
+            if (st) return extRow(st, '趋势运行');
+            const it = extRef.trendExtra.find(x => x.k === k);
+            return it ? extRow(it, '趋势运行') : '';
+          }).join('')
+        : '';
+      // 20261103m（用户指令：判定列表按当日生效分支显示——趋势运行判定只显示趋势运行组并隐藏箱体组，
+      // 箱体判定反之；横盘位置（震荡整理）无趋势运行组，恒显示箱体组）：boxActive=生效判定来自箱体分支
+      const boxActive = !!(ej && ej.branch === '区间横盘震荡');
+      const showTrendGroup = hasTrendGroup && !boxActive;
+      const showBoxGroup = !hasTrendGroup || boxActive;
+      const extRows = extRef
+        ? (showTrendGroup
+          ? `<tr class="ve-posj-extgroup"><td colspan="3">趋势运行（6 种量价形态 + 大涨 / 大跌强形态 + 震荡 / 滞涨 / 滞跌，思维导图同序交错）</td></tr>`
+            + trendRows
+          : '')
+          + (showBoxGroup
+          ? `<tr class="ve-posj-extgroup"><td colspan="3">${esc(extRef.boxTitle)}</td></tr>`
+          + extRef.box.map(it => extRow(it, '区间横盘震荡')).join('')
+          : '')
+        : '';
+      const tableRows = extRef ? extRows : rows;
+      // 20261103b（用户指令：横盘股版面与其他个股统一 + 说明去重）：
+      // 位置=震荡整理时后端现带箱体参考（extRef.trendExtra 为空数组）——只渲染「区间横盘震荡（箱体）」组，
+      // 不渲染趋势运行组；表尾注按是否含趋势运行组分两种口径；原「空表诚实说明」仅保留给位置数据不足的
+      // 极端降级（文字精简为一处，不再与主判位说明重复——横盘说明唯一来源为主判位的 summary）。
+      const tableNote = hasTrendGroup
+        ? '注：上表仅展示当日生效判定所属分支的形态组（趋势运行判定→只显示趋势运行组；横盘箱体判定→只显示箱体组，20261103m）——「趋势运行」含 6 种量价形态、大涨 / 大跌强形态【|涨跌幅| ≥ 5%】与震荡 / 滞涨 / 滞跌。徽标语义：偏多=倾向上涨、看空=倾向下跌、警惕=防风险、观察=中性待确认；琥珀「命中」=当日生效判定，其余灰字行仅为该形态在当前位置的一般演化对照（不着方向色）。'
+        : '注：上表为思维导图「区间横盘震荡（箱体）」14 形态（8 基础形态 + 6 个大涨 / 大跌箱体强形态【|涨跌幅| ≥ 5%】，当前位置为横盘震荡，24 格主矩阵不适用）。徽标语义：偏多=倾向上涨、看空=倾向下跌、警惕=防风险、观察=中性待确认；琥珀「命中」=当日生效判定，其余灰字行仅为该形态在当前位置的一般演化对照（不着方向色）。';
+      const tableHtml = tableRows
+        ? `<table class="ve-posj-table"><thead><tr><th>量价形态</th><th>判定</th><th>定性结论</th></tr></thead><tbody>${tableRows}</tbody></table>
+          <div class="ve-ten-fw">${tableNote}</div>`
+        : `<div class="ve-ten-fw">当前位置「${esc(pos.display || '数据不足')}」位置数据不足，量价判定矩阵与参考表暂不可用（见上方说明）。</div>`;
+      const basisHtml = pos.basis ? `<div class="ve-ten-fw">位置依据：${esc(pos.basis)}${pos.divergence ? `；${esc(pos.divergence)}` : ''}</div>` : '';
+      return `<div class="ve-section-title">量价判定（先定位置 × 运行状态 × 量能 × 涨跌幅）</div>
+        <div class="ve-posj">
+          ${stepHtml}
+          ${anomalyHtml}
+          ${mainHtml}
+          ${pathHtml}
+          ${tableHtml}
+          ${basisHtml}
+        </div>`;
     })();
 
-    // 得分与衰减
-    const sc = ve.score || {};
-    const decay = [];
-    if (sc.liquidityCoef != null && sc.liquidityCoef !== 1) decay.push(`流动性 ×${num(sc.liquidityCoef, 2)}`);
-    if (sc.blacklistCoef != null && sc.blacklistCoef !== 1) decay.push(`黑名单 ×${num(sc.blacklistCoef, 2)}`);
-    if (sc.marketCoef != null && sc.marketCoef !== 1) decay.push(`大盘环境 ×${num(sc.marketCoef, 2)}`);
-    const decayHtml = decay.length ? `（基础 ${num(sc.base, 1)} ${decay.map(d => esc(d)).join(' ')}）` : '';
+    // 20261101e：量价十口诀卡整卡移除（用户 2026-11-01 截图指令「图片里面的内容无需再展示」）。
+    // 引擎层 tenRules 字段保留不动（铁律第一条：仅前端展示层移除，后端输出格式零变化）。
+
+    // 20261101k：原顶部「量能信号」横幅（信号档 + 得分）整块删除，由「资金量能综合判断」
+    // 上移替换——CapitalCharts.buildConclusionParts(data) 与旧卡同一数据源（data.volumeIndicators
+    // / moneyFlow / marginTrading / conclusion），静默刷新 refreshCapitalFlowSilent 内随本函数
+    // 一并同步更新；原 #capConclusion 独立卡已删除，避免同内容双份展示。
+    // 20261101p（用户截图指令，uicraft 重排版）：原 8 行通栏纵向列表改为两级结构——
+    // ① 多空结论提炼为语义着色的结论横幅（偏多红晕 / 偏空绿晕 / 中性灰底）+ 多空比分徽标；
+    // ② 指标条目改网格（量价关系长文本通栏）。数据内容口径与重排版前完全一致。
+    // 20261102b（用户截图指令「展示卡片杂乱无章、毫无设计美感和对称性」）：原固定 3 列网格
+    // 在条目数非 3 的倍数时右侧留大块空白（如融资融券独占 1/3 行），且列缝与下方 5 列/10 列
+    // 基准网格断裂 → 改「等分满行」：通栏项（量价关系）各自占整行，其余条目（短期/中期资金、
+    // OBV/VR/MFI、融资融券，数量 2~6 动态）包进同一 flex 行等分等高，无论几项都满行对称；
+    // 阅读顺序理顺为 标题 → 结论横幅 → 通栏摘要 → 等分明细行。
+    const conclusion = (typeof CapitalCharts !== 'undefined' && typeof CapitalCharts.buildConclusionParts === 'function')
+      ? CapitalCharts.buildConclusionParts(data) : null;
+    let conclusionHtml = '';
+    if (conclusion && Array.isArray(conclusion.rows) && conclusion.rows.length) {
+      const v = conclusion.verdict || {};
+      const verdictHtml = v.label ? `
+      <div class="ve-verdict ve-verdict-${esc(v.tone || 'neutral')}">
+        <span class="ve-verdict-label">🎯 ${esc(v.label)}</span>
+        <span class="ve-verdict-score"><span class="ve-score-chip ve-chip-bull">多头 ${v.bull} 分</span><span class="ve-score-chip ve-chip-bear">空头 ${v.bear} 分</span></span>
+      </div>` : '';
+      const ccHtml = (r) => `
+        <div class="ve-cc">
+          <span class="ve-cc-label">${esc(r.icon || '')} ${esc(r.label || '')}</span>
+          <span class="ve-cc-text ${r.tone === 'bull' ? 've-tone-bull' : r.tone === 'bear' ? 've-tone-bear' : ''}">${r.text || ''}</span>
+        </div>`;
+      const wideHtml = conclusion.rows.filter(r => r.wide).map(r => `
+        <div class="ve-cc-wide">
+          <span class="ve-cc-label">${esc(r.icon || '')} ${esc(r.label || '')}</span>
+          <span class="ve-cc-text ${r.tone === 'bull' ? 've-tone-bull' : r.tone === 'bear' ? 've-tone-bear' : ''}">${r.text || ''}</span>
+        </div>`).join('');
+      const flowItems = conclusion.rows.filter(r => !r.wide);
+      const flowHtml = flowItems.length ? `<div class="ve-flow-row">${flowItems.map(ccHtml).join('')}</div>` : '';
+      conclusionHtml = `
+      <div class="ve-section-title">资金量能综合判断</div>
+      ${verdictHtml}
+      ${wideHtml}
+      ${flowHtml}`;
+    }
 
     // 20261023f：把「真·数据不足（影响置信度）」与「数据来源/口径说明（不影响结论）」分开。
     // 原实现把日K降级、当日bar覆写、量比直采、分时未收盘等来源说明全塞进红色「数据不足」框，
@@ -2482,20 +2652,14 @@ const App = {
     const notesHtml = sourceNotes.length
       ? `<div class="ve-src-notes"><div class="ve-src-title">数据来源与口径说明（不影响结论）</div>${sourceNotes.map(g => `<div class="ve-gap-item">· ${esc(g)}</div>`).join('')}</div>` : '';
 
+    // 20261101n：20261101m 的置顶卡换手率注入块已回滚（m 版理解错用户截图指向，真实目标
+    // 是页首固定指标条与个股标题卡，与本函数无关）。
+
     el.innerHTML = `
-      <div class="cap-signal-box ${tone}">
-        <div class="cap-signal-label">量能信号（${esc(ve.date || '')}）</div>
-        <div class="cap-signal-value">${esc(signalLabel)}</div>
-        <div class="cap-signal-desc">${esc(ve.signal && ve.signal.note || '')}${decayHtml ? ' ' + decayHtml : ''}</div>
-        <div class="ve-score">最终有效得分 <b class="${tone === 'cap-neutral' ? '' : tone === 'cap-positive' ? 'cap-pos' : 'cap-neg'}">${num(sc.final, 1)}</b> / 100</div>
-      </div>
-      <div class="cap-metrics-row">${metricsHtml}</div>
-      ${confirmNote}
+      ${conclusionHtml}
+      <div class="ve-tile-row ve-cols-10">${metricsHtml}</div>
       ${vpHtml}
-      ${tenHtml}
-      <div class="ve-note" style="margin:12px 0 0;">以下为既有量能逻辑（四维度 / 生死位 / 位置量价 7.4 / 矛盾信号 11.3 / 量比口诀 7.5 / 预期量能），作为十口诀的补充交叉验证。</div>
-      <div class="ve-section-title">四维度客观描述</div>
-      <div class="ve-dims">${dimsHtml || '<div class="ve-dim-value">数据不足</div>'}</div>
+      ${posHtml}
       <div class="ve-section-title">生死位规则（五大）</div>
       <div class="ve-rules">${ruleRows}</div>
       ${pvHtml}
@@ -2820,28 +2984,43 @@ const App = {
       : `${fmt(z.low)} ~ ${fmt(z.high)}`);
     // 20261021e：后端已把手动区间并入短期清单并跑过两条有效性检验，这里按 manualId 取回结论，
     // 让用户在「手动添加」页签里就能看到「通过 / 未通过 + 原因」，而不是纳闷"为什么模型清单里没有"。
+    // 20261103h：手动区间被放量有效突破后会反转成对侧区间（原条目移出清单）——从 manualZonesMeta.reversed
+    // 取回反转事件，页签标注「已反转」，避免用户纳闷"为什么清单里找不到我加的那条"。
     const checked = {};
+    const revMap = {};
     const st = shortTerm || {};
     [].concat(st.resistances || [], st.supports || []).forEach(z => {
       if (z && z.isManual && z.manualId) checked[z.manualId] = z;
     });
+    ((st.manualZonesMeta || {}).reversed || []).forEach(r => {
+      if (r && r.manualId) revMap[r.manualId] = r;
+    });
+    const sideTxt = (s) => (s === 'resistance' ? '上方阻力' : '下方支撑');
     const group = (arr, side, title) => {
       if (!arr.length) return '';
       return `<div class="pa-mz-group ${side}">
         <div class="pa-mz-group-title">${title}<span class="pa-mz-count">${arr.length}</span></div>
         ${arr.map(z => {
           const info = checked[z.id];
+          const rev = revMap[z.id];
           const invalid = info && info.valid === false;
           const reasons = invalid && Array.isArray(info.invalidReasons) ? info.invalidReasons.join('；') : '';
-          const badge = !info
-            ? '<span class="pa-mz-badge unknown">未检验</span>'
+          const badge = rev
+            ? `<span class="pa-mz-badge reversed" title="已放量有效突破反转">已反转</span>`
+            : !info
+              ? '<span class="pa-mz-badge unknown">未检验</span>'
+              : invalid
+                ? `<span class="pa-mz-badge invalid" title="${this.escapeHtml(reasons)}">检验未通过</span>`
+                : '<span class="pa-mz-badge ok">通过检验</span>';
+          const revTip = rev
+            ? `你标注的这条${sideTxt(side)}已于 ${rev.date || '近期'} 被<b>放量有效突破</b>（量比 ${rev.vr} > 1.2，以当日收盘价为准），按「放量突破 → 角色反转」规则转换为${sideTxt(rev.to)}，出现在模型清单里（带「反转」标）。它继续接受有效性检验（无放量轻松穿越 → 无效移除）。`
+            : '';
+          const tip = rev
+            ? revTip
             : invalid
-              ? `<span class="pa-mz-badge invalid" title="${this.escapeHtml(reasons)}">检验未通过</span>`
-              : '<span class="pa-mz-badge ok">通过检验</span>';
-          const tip = invalid
-            ? `${reasons}\n（未通过有效性检验，因此不在下方/上方的模型清单里显示；你仍可删除它）`
-            : '已通过本模块的两条有效性检验：无放量轻松突破 / 三天来回穿越';
-          return `<div class="pa-mz-row ${side}${invalid ? ' invalid' : ''}" title="${this.escapeHtml(tip)}">
+              ? `${reasons}\n（未通过有效性检验，因此不在下方/上方的模型清单里显示；你仍可删除它）`
+              : '已通过本模块的有效性检验：无放量轻松突破 → 无效（放量有效突破则反转为对侧区间）';
+          return `<div class="pa-mz-row ${side}${invalid ? ' invalid' : ''}${rev ? ' reversed' : ''}" title="${this.escapeHtml(tip)}">
             <span class="pa-mz-range">${rowTxt(z)}</span>
             <span class="pa-mz-note-text">${this.escapeHtml(z.note || '')}</span>
             ${badge}
@@ -2854,7 +3033,7 @@ const App = {
       ? group(mz.resistances, 'resistance', '手动阻力') + group(mz.supports, 'support', '手动支撑')
       : '<div class="pa-mz-empty">还没有手动区间。上面填一个价位（只填一个就代表单点），点「添加」即可。</div>';
     return `
-      <div class="pa-mz-tip">手动区间与模型区间<b>走同一条有效性检验</b>（无放量轻松突破 / 三天来回穿越 → 无效的不会进入上方清单，本页会标出原因）；
+      <div class="pa-mz-tip">手动区间与模型区间<b>走同一条生命周期</b>（20261103h）：无放量轻松突破 → 无效，不进上方清单、本页标原因；<b>放量有效突破 → 反转为对侧区间</b>（本页标「已反转」，模型清单出现带「反转」标的对侧条目）。
         但<b>不参与</b>侵蚀收缩，也不影响方向判断、概率与准确率统计。</div>
       <div class="pa-mz-form">
         <select id="paMzSide" class="pa-mz-input pa-mz-side">
@@ -3101,7 +3280,10 @@ const App = {
     // ── 特殊条目（反转 / 手动 / 箱体 / 仅过标准1的模型区间）的说明
     const notes = [];
     if (z.isReversed) {
-      notes.push(`由${z.reversedFrom === 'support' ? '下方支撑' : '上方阻力'}经「放量有效突破」反转而来（累计反转 ${z.flipCount || 1} 次）`);
+      // 20261103h：手动来源反转的首条说明区分「你手动添加的」与模型区间
+      notes.push(z.originManual
+        ? `由你手动添加的${z.reversedFrom === 'support' ? '下方支撑' : '上方阻力'}经「放量有效突破」反转而来（累计反转 ${z.flipCount || 1} 次）`
+        : `由${z.reversedFrom === 'support' ? '下方支撑' : '上方阻力'}经「放量有效突破」反转而来（累计反转 ${z.flipCount || 1} 次）`);
       notes.push('放量突破后角色互换：支撑被放量下破 → 变阻力；阻力被放量上破 → 变支撑；允许多次反转');
       notes.push('突破/破位/打穿一律以当日收盘价为准，不认分时价');
       const hist = Array.isArray(z.reversalHistory) ? z.reversalHistory : [];
@@ -3464,8 +3646,12 @@ const App = {
       const tgt = (parseInt(ld.slice(0, 4), 10) - 1) + ld.slice(4);
       return zyzb.find(x => String(x.REPORT_DATE || '').slice(0, 10) === tgt) || null;
     })();
-    const priorRevenueYoy = priorYoy && !isNaN(parseFloat(priorYoy.TOTALOPERATEREVETZ)) ? parseFloat(priorYoy.TOTALOPERATEREVETZ) : null;
-    const priorProfitYoy = priorYoy && !isNaN(parseFloat(priorYoy.PARENTNETPROFITTZ)) ? parseFloat(priorYoy.PARENTNETPROFITTZ) : null;
+    // 20261102a（用户指令：指标优先最新单季口径）：单季同比优先——DJD_* 为东财主要指标行内自带「单季同比」字段，
+    // 缺失时回退报告期累计同比（*_TZ），与 lib/fundamentalScore/analysis/metricAnalysis 同口径。
+    const parsePct = (v) => { const n = parseFloat(v); return (v == null || isNaN(n)) ? null : n; };
+    const yoyRaw = (row, sqKey, cumKey) => (row == null) ? null : (row[sqKey] != null ? row[sqKey] : row[cumKey]);
+    const priorRevenueYoy = priorYoy && !isNaN(parseFloat(yoyRaw(priorYoy, 'DJD_TOI_YOY', 'TOTALOPERATEREVETZ'))) ? parsePct(yoyRaw(priorYoy, 'DJD_TOI_YOY', 'TOTALOPERATEREVETZ')) : null;
+    const priorProfitYoy = priorYoy && !isNaN(parseFloat(yoyRaw(priorYoy, 'DJD_DPNP_YOY', 'PARENTNETPROFITTZ'))) ? parsePct(yoyRaw(priorYoy, 'DJD_DPNP_YOY', 'PARENTNETPROFITTZ')) : null;
     // ROE 去年同期：优先与当前值同口径的 TTM（取数层 roeTtmPrev）；无则回退同期披露加权 ROE(ROEJQ)，文字明确标注口径
     const priorRoeTtm = (typeof qf.roeTtmPrev === 'number') ? qf.roeTtmPrev : null;
     const priorRoeJQ = priorYoy && !isNaN(parseFloat(priorYoy.ROEJQ)) ? parseFloat(priorYoy.ROEJQ) : null;
@@ -3480,8 +3666,8 @@ const App = {
     //   显示「去年同期 123.3%」，同一只股票同一指标两处打架。
     //   现统一改用 priorYoy（同上「去年同月日报告期」精确匹配），与 lib/metricAnalysis.js `samePeriodPair`、
     //   lib/analysis.js `samePeriodYoY`、lib/fundamentalScore.js `yoyPair` 三处保持同一口径。
-    const parsePct = (v) => { const n = parseFloat(v); return (v == null || isNaN(n)) ? null : n; };
-    const priorDedYoy = priorYoy ? parsePct(priorYoy.KCFJCXSYJLRTZ) : null;
+    //   20261102a：扣非去年同期同样「单季优先」（DJD_DEDUCTDPNP_YOY），缺失回退累计 KCFJCXSYJLRTZ。
+    const priorDedYoy = priorYoy ? parsePct(yoyRaw(priorYoy, 'DJD_DEDUCTDPNP_YOY', 'KCFJCXSYJLRTZ')) : null;
     // 数据期标注：报表指标引用具体财报期；估值类为 TTM；股息率为历史分红（均非财报期）
     const stmtPeriod = finLabel ? '财报 ' + finLabel : '';
     const valPeriod = 'TTM';
@@ -3509,9 +3695,9 @@ const App = {
           ? `净利率(TTM) = 近12个月净利额 ÷ 近12个月营收（滚动12个月） · 来源：${qf.reportSource || '东方财富财报'}`
           : `净利率 · 来源：${qf.reportSource || '东方财富财报'}${finLabel ? ' · 财报 ' + finLabel : ''}`,
         { indKey: null, pctKey: 'netMargin' }, qf.netMarginTtm != null ? valPeriod : stmtPeriod],
-      ['营收增长', m.revenueGrowth ? m.revenueGrowth.toFixed(2) + '%' : '--', `营收同比增长 · 来源：${qf.reportSource || '东方财富财报'}${finLabel ? ' · 财报 ' + finLabel : ''}`, { indKey: null, pctKey: 'revenueGrowth', prior: priorRevenueYoy != null ? `去年同期 ${priorRevenueYoy.toFixed(2)}%` : null }, stmtPeriod],
-      ['利润增长', m.profitGrowth ? m.profitGrowth.toFixed(2) + '%' : '--', `归母净利润同比增长 · 来源：${qf.reportSource || '东方财富财报'}${finLabel ? ' · 财报 ' + finLabel : ''}`, { indKey: null, pctKey: 'profitGrowth', prior: priorProfitYoy != null ? `去年同期 ${priorProfitYoy.toFixed(2)}%` : null }, stmtPeriod],
-      ['扣非净利润增长', m.deductedProfitGrowth ? m.deductedProfitGrowth.toFixed(2) + '%' : '--', `扣非归母净利润同比增长 · 来源：东方财富财报${finLabel ? ' · 财报 ' + finLabel : ''}`, { indKey: null, pctKey: null, prior: priorDedYoy != null ? `去年同期 ${priorDedYoy.toFixed(2)}%` : null }, stmtPeriod],
+      ['营收增长', m.revenueGrowth ? m.revenueGrowth.toFixed(2) + '%' : '--', `营收同比增长（单季优先，缺单季回退累计口径） · 来源：${qf.reportSource || '东方财富财报'}${finLabel ? ' · 财报 ' + finLabel : ''}`, { indKey: null, pctKey: 'revenueGrowth', prior: priorRevenueYoy != null ? `去年同期单季 ${priorRevenueYoy.toFixed(2)}%` : null }, finLabel ? '财报 ' + finLabel + ' · 单季优先' : ''],
+      ['利润增长', m.profitGrowth ? m.profitGrowth.toFixed(2) + '%' : '--', `归母净利润同比增长（单季优先，缺单季回退累计口径） · 来源：${qf.reportSource || '东方财富财报'}${finLabel ? ' · 财报 ' + finLabel : ''}`, { indKey: null, pctKey: 'profitGrowth', prior: priorProfitYoy != null ? `去年同期单季 ${priorProfitYoy.toFixed(2)}%` : null }, finLabel ? '财报 ' + finLabel + ' · 单季优先' : ''],
+      ['扣非净利润增长', m.deductedProfitGrowth ? m.deductedProfitGrowth.toFixed(2) + '%' : '--', `扣非归母净利润同比增长（单季优先，缺单季回退累计口径） · 来源：东方财富财报${finLabel ? ' · 财报 ' + finLabel : ''}`, { indKey: null, pctKey: null, prior: priorDedYoy != null ? `去年同期单季 ${priorDedYoy.toFixed(2)}%` : null }, finLabel ? '财报 ' + finLabel + ' · 单季优先' : ''],
       ['资产负债率', m.debtToEquity ? m.debtToEquity.toFixed(2) + (m.debtMetricPct ? '%' : '') : '--', `资产负债率 · 来源：${qf.reportSource || '东方财富财报'}${finLabel ? ' · 财报 ' + finLabel : ''}`, { indKey: null, pctKey: 'debtToEquity' }, stmtPeriod],
       ['流动比率', m.currentRatio ? m.currentRatio.toFixed(2) : '--', `流动比率 · 来源：${qf.reportSource || '东方财富财报'}${finLabel ? ' · 财报 ' + finLabel : ''}`, { indKey: null, pctKey: 'currentRatio' }, stmtPeriod],
       ['股息率(TTM)', m.dividendYield ? m.dividendYield.toFixed(2) + '%' : '--', '股息率(TTM) = 近12个月已实施除息的每股分红合计 ÷ 当前股价（滚动12个月口径；无近12个月分红记录时回退最近完整年度） · 来源：东方财富分红数据', { indKey: null, pctKey: null }, divPeriod],
@@ -3523,10 +3709,13 @@ const App = {
       const _dedIdx = rows.findIndex(r => r[0] === '扣非净利润增长');
       const _ins = [];
       const opP = data.opProfit;
+      // 20261102a（用户指令：指标优先最新单季口径）：营运利润优先展示最新单季（sqCur = 本期累计 − 上期累计，Q1 单季=累计），
+      // 单季不可得（缺上期累计等）时如实回退累计并标注，绝不编造。
+      const _opSqOk = !!(opP && opP.sqCur && typeof opP.sqCur.opProfitYi === 'number');
       if (opP && opP.cur && typeof opP.cur.opProfitYi === 'number') {
-        _ins.push(['营运利润', opP.cur.opProfitYi.toFixed(2) + '亿',
-          `营业利润 = 营业收入 − 营业成本 − 税金及附加 − 期间费用 + 投资收益等（利润表中段科目，未扣所得税/少数股东损益，与扣非净利润口径不同） · 来源：东方财富 F10 利润表 OPERATE_PROFIT`,
-          { indKey: null, pctKey: null, prior: (opP.prev && typeof opP.prev.opProfitYi === 'number') ? `去年同期同报告期 ${opP.prev.opProfitYi.toFixed(2)}亿` : null }, '财报 ' + opP.cur.date]);
+        _ins.push(['营运利润', _opSqOk ? opP.sqCur.opProfitYi.toFixed(2) + '亿' : opP.cur.opProfitYi.toFixed(2) + '亿',
+          `营业利润 = 营业收入 − 营业成本 − 税金及附加 − 期间费用 + 投资收益等（利润表中段科目，未扣所得税/少数股东损益，与扣非净利润口径不同）${_opSqOk ? ' · 当前为<b>最新单季</b>（本期累计 − 上期累计差分）' : ' · 单季值不可得（缺上期累计），已如实回退<b>累计口径</b>'} · 来源：东方财富 F10 利润表 OPERATE_PROFIT`,
+          { indKey: null, pctKey: null, prior: _opSqOk ? ((opP.sqPrev && typeof opP.sqPrev.opProfitYi === 'number') ? `去年同期单季 ${opP.sqPrev.opProfitYi.toFixed(2)}亿` : null) : ((opP.prev && typeof opP.prev.opProfitYi === 'number') ? `去年同期同报告期 ${opP.prev.opProfitYi.toFixed(2)}亿` : null) }, '财报 ' + opP.cur.date + (_opSqOk ? ' · 单季' : ' · 累计')]);
       }
       const nbvS = data.insuranceNBV;
       if (nbvS && typeof nbvS.valueYi === 'number') {
@@ -3544,6 +3733,9 @@ const App = {
     // 指标行按信号着色：利好(红)/利空(绿)
     const sigMap = {};
     (data.signals?.signals || []).forEach(s => { sigMap[s.key] = s; });
+    // ★ 20261103d：五维多数决统一判定——左卡徽标消费与右卡/顶栏同一 judgment（单一数据源）；
+    //   多数决与信号判定冲突时 reason 已带「已按多数决为准」标注，悬停判定依据可见。
+    (data.metricAnalysis?.metrics || []).forEach(mm => { if (mm && mm.key && mm.judgment) sigMap[mm.key] = mm.judgment; });
     const keyOf = (label) => ({ '市盈率(PE)': 'pe', '市盈率(PE·TTM)': 'pe', '市净率(PB)': 'pb', '市销率(PS)': 'ps', '市销率(PS·TTM)': 'ps', 'PEG': 'peg', 'ROE': 'roe', '毛利率': 'grossMargin', '净利率': 'netMargin', '营收增长': 'growth', '利润增长': 'profitGrowth', '扣非净利润增长': 'dedProfitGrowth', '营运利润': 'opProfit', 'NBV(新业务价值)': 'nbv', '资产负债率': 'debt', '流动比率': 'currentRatio', '股息率': 'div', '股息率(TTM)': 'div', '每股经营现金流': 'ocf' }[label]);
     const metricsEl = document.getElementById('fundMetrics');
     const periodNoteHtml = `<div class="metrics-period-note">${periodNote}</div>`;

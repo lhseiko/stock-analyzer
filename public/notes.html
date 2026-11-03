@@ -6,11 +6,13 @@
   <title>投资心得 / 大盘记录 · 股票分析工作台</title>
   <link rel="icon" type="image/x-icon" href="favicon.ico?v=20261025f">
   <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=20261025f">
-  <link rel="stylesheet" href="css/style.css?v=20261028b">
+  <link rel="stylesheet" href="css/style.css?v=20261103m">
   <!-- 独立长页：恢复滚动。html,body 须同时覆盖（html 无法由共享样式按页选择），
        故保留这一条页内规则；其余样式统一在 style.css「独立长页统一外壳」段（20261025f）。 -->
   <style>
     html, body { height: auto !important; overflow-y: auto !important; overflow-x: hidden; }
+    /* 20261102f：「量能涨跌关系分析」入口复用 .np-tab 芯片外观（<a> 需去下划线） */
+    a.np-tab { text-decoration: none; }
   </style>
 </head>
 <body>
@@ -23,10 +25,12 @@
       </div>
     </header>
 
-    <!-- 范围切换工具条：sticky 统一工具条 + 统一芯片（tab 动作纯文字，DESIGN.md §6） -->
+    <!-- 范围切换工具条：sticky 统一工具条 + 统一芯片（tab 动作纯文字，DESIGN.md §6）
+         20261102f：「大盘记录」tab 替换为「量能涨跌关系分析」入口（用户指令）——新窗口打开
+         思维导图页 volume-map.html；大盘记录笔记仍可从工作台顶部导航进入（index.html 顶部按钮） -->
     <div class="np-toolbar">
       <button class="np-tab" type="button" data-scope="global">投资心得</button>
-      <button class="np-tab" type="button" data-scope="market">大盘记录</button>
+      <a class="np-tab np-tab-link" href="volume-map.html?v=20261102k" target="_blank" rel="noopener" title="在新标签页打开量能涨跌关系分析思维导图">量能涨跌关系分析</a>
       <span class="np-count" id="npCount"></span>
     </div>
 
@@ -34,7 +38,7 @@
     <main class="np-list" id="scopePageList"></main>
   </div>
 
-  <script src="js/notes.js?v=20261028b"></script>
+  <script src="js/notes.js?v=20261103m"></script>
   <script>
   (function () {
     // 按 ?scope= 决定本页范围（global=投资心得 / market=大盘记录），写入 body[data-page-scope]
@@ -51,7 +55,8 @@
     addBtn.onclick = function () { Notes.showForm(scope); };
 
     // 范围切换 tab：跳转同页带新 scope（服务端渲染无需 SPA 状态管理）
-    var tabs = document.querySelectorAll('.np-tab');
+    // 20261102f：仅绑定 data-scope 的 tab（「量能涨跌关系分析」入口是 <a> 链接，不走 scope 跳转）
+    var tabs = document.querySelectorAll('.np-tab[data-scope]');
     for (var i = 0; i < tabs.length; i++) {
       tabs[i].classList.toggle('active', tabs[i].getAttribute('data-scope') === scope);
       tabs[i].onclick = function () {

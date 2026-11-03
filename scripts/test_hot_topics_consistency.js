@@ -22,6 +22,11 @@
 const fs = require('fs');
 const path = require('path');
 
+// 分诊 2026-11-03（任务 #35）：cacheVer 期望值从 lib/hotTopics.js 源码动态提取（原硬编码 '20260923h'
+// 在 20261013g 升版时漏同步致守卫常驻失败）——未来 CACHE_VER 升版守卫自动跟随，不再需要手工 sed
+const HOT_TOPICS_CACHE_VER = (fs.readFileSync(path.join(__dirname, '..', 'lib', 'hotTopics.js'), 'utf8')
+  .match(/const CACHE_VER = '([^']+)'/) || [])[1] || 'UNKNOWN';
+
 let pass = 0, fail = 0;
 function check(name, ok, extra) {
   if (ok) pass++; else fail++;
@@ -90,7 +95,7 @@ function freshHotTopics(aiMock) {
     ['同花顺股吧讨论帖', '多平台讨论热度（东财/同花顺/雪球）', '个股新闻'].every(s => (a.sources || []).includes(s)),
     JSON.stringify(a.sources));
   check('LLM 否认有内容时综述被确定性摘要覆盖', /【讨论热度】/.test(a.content || '') && !/^未抓取到/.test(a.content || ''));
-  check('缓存写入带 cacheVer', a.cacheVer === '20260923h', String(a.cacheVer));
+  check('缓存写入带 cacheVer', a.cacheVer === HOT_TOPICS_CACHE_VER, String(a.cacheVer));
 
   // ---------- 场景 B：LLM 失败 → 回退话题须来自股吧讨论帖 ----------
   try { fs.rmSync(CACHE_DIR, { recursive: true, force: true }); } catch (e) {}

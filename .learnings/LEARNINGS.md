@@ -5,6 +5,69 @@
 
 ---
 
+## [LRN-20261101-002] correction
+
+**Logged**: 2026-11-01T17:20:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: backend
+
+### Summary
+四维度·量能状态写「60 日均量口径未确认」（暗示缺数据），同卡 60 日均量注释却给出实际比值 1.34 倍——`confirm=null`（60 日口径中间地带 0.7~1.5×，判「平量」）被兜底文案误写成「未确认」。
+
+### Details
+用户报障（士兰微 600460 截图）：「图二，60 日均量口径未确认，图一却有 60 日量能。」真相：confirm 三态语义中 null = 当日量落在 0.7~1.5×60日均量之间（60 日口径判平量），**不是缺数据**。这是 20261024j 前端指标卡同类问题的引擎侧残留——当时只修了前端展示，四维度文本、7.4 规则 detail 三处、capitalFlow 资金行为文案共 5 处仍用 `confirm || '未确认'` 兜底。教训：**修「有数据却写未确认」类问题必须全台 grep 同款兜底写法一次清零**，否则同一真相在不同卡里呈现两种说法。
+
+### Suggested Action
+引擎层加 `_confirmDesc(pc)` 单一真值源：>×1.5 确认放量 / <×0.7 确认缩量 / 中间地带如实给出比值并判「平量」（注明未达确认阈值、并非缺数据）/ 真缺数据才写「数据不足」。四处调用点 + volumeTier.confirmDesc 下发 + capitalFlow 同源引用。守卫断言加入 test_volume_confirm_label.js（含「volumeEngine 内不再存在 pc.confirm || '未确认' 写法」源码守卫）。
+
+### Metadata
+- Source: user_feedback
+- Related Files: lib/volumeEngine.js、lib/capitalFlow.js、scripts/test_volume_confirm_label.js
+- Tags: 诚实合规, 口径一致, confirm, 60日均量, 兜底文案
+- See Also: LRN-20261101-001（同日用户连续报障的展示一致性问题）
+- Pattern-Key: harden.fallback_wording_not_data_missing
+- Recurrence-Count: 2（20261024j 前端 + 20261101g 引擎侧）
+- First-Seen: 2026-10-24
+- Last-Seen: 2026-11-01
+
+### Resolution
+- **Resolved**: 2026-11-01T17:25:00+08:00
+- **Notes**: APP_VERSION=20261101g；test_volume_confirm_label 27 项全绿（新增 [3] 段 12 项）。
+
+---
+
+## [LRN-20261101-001] correction
+
+**Logged**: 2026-11-01T17:10:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+量价判定主判卡的「当前位置 6 格对照表」里，非命中行（如放量上涨·偏多）也用方向色徽标（红/绿/琥珀）着色——士兰微当日实际是「平量+下跌=观察」，但表里「放量上涨·偏多」红标很显眼，用户误读为当前判多。
+
+### Details
+用户报障原话：「当前量能判定不是放量上涨，为什么红色标注偏多判定，容易引起误读。」根因：对照参考表把每格的**假设方向色**与**当前命中态**用同样强度渲染，方向色脱离了「这是参考行不是今日判定」的语境。与项目既有语义着色规范（方向色=当前结论的语义）冲突。
+
+### Suggested Action
+参考表/对照表中**非命中行一律中性灰徽标**，方向色仅当前命中行保留；表下附「仅高亮行是当前命中判定，其余行不代表今日量价状态」对照说明。已实现（20261101f，`c.hit ? badgeCls(c.direction) : ''`）。
+
+### Metadata
+- Source: user_feedback
+- Related Files: public/js/app.js（renderVolumeEngine posHtml）、scripts/test_pos_volume_matrix.js
+- Tags: 语义着色, 防误读, 参考表, 红涨绿跌
+- Pattern-Key: ui.reference_table_neutral_nonhit
+- Recurrence-Count: 1
+- First-Seen: 2026-11-01
+- Last-Seen: 2026-11-01
+
+### Resolution
+- **Resolved**: 2026-11-01T17:12:00+08:00
+- **Notes**: APP_VERSION=20261101f；守卫测试新增 2 项断言（非命中行中性灰 + 对照说明文案）。
+
+---
+
 ## [LRN-20260923-001] knowledge_gap / correction
 
 **Logged**: 2026-09-23T10:50:00Z
@@ -2150,5 +2213,195 @@ getRecentReportDates 月份硬编码（10月→只请求到中报）导致 xjllb
 - Related Files: public/js/app.js (renderDashboard 自动加载块、loadDeepAnalysis 轮询、bgPreload 指示器), server.js (_deepJobs)
 - Tags: 预加载可见性, 后台轮询, 切换页面才加载, 缓存破坏版本戳
 - Pattern-Key: harden.background_preload_must_be_visible_and_self_collecting
+- See Also: LRN-20261101-001
+---
+
+## [LRN-20261103-001] correction
+
+**Logged**: 2026-11-03T15:20:00+08:00
+**Priority**: medium
+**Status**: pending
+**Area**: frontend
+
+### Summary
+位置驱动的展示分支（横盘股无主判/无参考表）会被用户感知为"这只股票版面坏了/和其他股不一样"——第三次同类报障。
+
+### Details
+量价判定卡版面由「第一步位置」驱动：POS_VM_MATRIX/POS_VM_EXT 只覆盖低位区间/高位区间/上涨途中/下跌途中四类，位置=震荡整理（横盘）时 cell=null、extRef=null、表体为空，前端显示诚实说明（20261102k）。海天味业（12个月分位44%、带宽≤15%横盘）触发该分支，圣湘生物（低位区）触发完整分支，用户再次报"版面不一样"。前例：20261102k 空表报障、20261101f 参考行误读。共同根因：**横盘位置在判定卡上缺少可视化内容（既无主判也无参考表），只剩两段文字说明**，且后端 summary（volumeEngine 2099）与前端空表注（app.js 2555）两段文字近似重复，加重"故障感"。
+
+### Suggested Action
+若用户要求统一版面：为「震荡整理」位置补思维导图原生的「区间横盘震荡（箱体）8 形态」参考表（灰色参考徽标、不参与判定），并把后端 summary 与前端空表注合并为一段；主判横幅是否补「横盘·观察」需用户拍板。方案必须类型级（所有横盘股同口径）。
+
+### Metadata
+- Source: user_feedback
+- Related Files: lib/volumeEngine.js (POS_VM_MATRIX 1779/POS_VM_EXT 1845/summary 2099), public/js/app.js (posHtml 2548-2555)
+- Tags: 量价判定, 位置驱动分支, 横盘, 版面一致性, 诚实降级
+- Pattern-Key: ux.position_driven_branch_perceived_as_inconsistency
+- See Also: LRN-20261101-001
+---
+
+## [LRN-20261103-002] correction
+
+**Logged**: 2026-11-03T15:35:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: backend
+
+### Summary
+用户明确纠正：思维导图形态表（含横盘箱体表）**不是参考，是主要判定逻辑**——任何展示的判定表都必须有命中行并作为当日主判生效，全灰「参考」表被用户视为判定缺失。
+
+### Details
+20261103b 我按「统一版面+去重」方案给横盘位置补了箱体 8 形态参考表（全灰参考徽标、不构成判定，并明说了"不构成当日判定"），用户随即报"为什么一条都没命中，这些判定不是作为参考，是要作为模型的主要判定逻辑的"。根因：我把"诚实降级（无位置不硬套矩阵）"过度延伸到了"横盘也无判定"——但思维导图的箱体分支本身就是一个独立判定分支，不依赖四类位置；20261102f 的 extJudgment 优先级链（极端量能>背离>箱体>趋势运行）本来就只对四类位置开放，横盘被整体排除在外。正确做法：横盘位置（震荡整理）接入同一条优先级链，箱体分支用中性方向档位表（POS_VM_SIDEWAYS_TONE）生效为主判。
+
+### Suggested Action
+volumeEngine：extJudgment 块开放给 pos=震荡整理（极端量能/背离用 POS_VM_SIDEWAYS_EXT 中性文案，箱体用 POS_VM_SIDEWAYS_TONE 中性档位），anomaly 同步开放；前端表尾注改为「命中行高亮+主判横幅为当日唯一判定」。以后凡新增"参考表"，必须同时回答"它的命中分支在哪里生效"，纯参考表默认视为判定缺失。
+
+### Metadata
+- Source: user_feedback
+- Related Files: lib/volumeEngine.js, public/js/app.js, scripts/test_pos_volume_matrix.js
+- Tags: 量价判定, 箱体分支, 主判, 参考表, 横盘, 判定优先级链
+- Pattern-Key: ux.reference_table_must_have_judgment_hit
+- See Also: LRN-20261103-001, LRN-20261101-001
+---
+
+## [LRN-20261103-003] correction
+
+**Logged**: 2026-11-03T15:58:00+08:00
+**Priority**: critical
+**Status**: resolved (20261103d)
+**Area**: backend
+
+### Summary
+用户两条规则：①「指标分析」的总体判定必须由五维多数决决定（如 5 项中 3 项利空 → 总体利空），不得与维度方向打架；②环比无法直接从财报获得时，用各季报数据本地差分计算，并标明「本机计算」。
+
+### Details
+海天味业右卡「指标分析」营收增长：五维中同比(-2.33pp)/历史百分位(11%)/边际(放缓) 三维全绿利空，但徽标与「判定依据」显示红色利好——因为 judgment 直接引用 evaluateSignals，而 evaluateSignals 存在百分数口径 bug（把 DJD_TOI_YOY=0.12% 的「<1 即小数」猜测换算成 12.4%，20261103b 引入放大错误、20261102a 引入启发式）。实证勾稽：海天 Q1 +8.57% / Q2 +2.93% / Q3 +0.12% ≈ 累计 +4.27% 与 TOTALOPERATEREVETZ 完全吻合，证明东财 DJD_*/​*_TZ 字段全部是百分数。
+
+### Suggested Action
+① evaluateSignals 移除 A股字段的 ×100 猜测换算（仅美股 Yahoo 小数字段保留）；② metricAnalysis 增加五维多数决作为总体判定权威（与 evaluateSignals 冲突时显式标注），左右卡与顶栏统一消费该判定（单一数据源铁律）；③ 成长类指标环比用累计披露值差分出单季再算环比，标注「本机计算」+季节性提示。
+
+### Resolution (20261103d 已全部落地)
+① analysis.js：移除 `_revNorm` 与 `Math.abs(rgRaw/pgRaw) < 1` 启发式，A 股字段（DJD_*/ *_TZ/profitYoy/revenueYoy）直接用百分数，仅美股兜底 revenueGrowth/earningsGrowth（Yahoo 小数）×100；② metricAnalysis.js：新增 `dimsVote`（可用维度≥2 时多数方向为准：利空票>利好票→利空，反之利好，持平→中性；<2 回退原判定），输出阶段统一覆盖 judgment，冲突时 reason 前缀「五维多数决（x利好/y利空/z中性）判为X，与信号判定（Y）不一致——已按多数决为准。原判定依据：…」，`voteConflicts` 计数随返回导出；③ `sqSeries`（按年分链差分：单季=本期累计−上期累计，Q1=累计，Q4=FY−9M）+ `sqQoqDim`（环比=(本季−上季)/|上季|，跨年相邻季附季节性提示），成长三指标接入 TOTALOPERATEREVE/PARENTNETPROFIT/KCFJCXSYJLR；④ app.js 左卡 sigMap 与顶栏 renderKeyMetrics 均追加 `data.metricAnalysis.metrics` judgment 覆盖（三处消费同一判定）。守卫 scripts/test_metric_analysis_vote.js 35 断言全绿；真机验证海天：营收增长 0.12%（不再放大成 12.4%）、yoy bear、环比 -9.98% 本机计算、judgment bear 与左卡一致，voteConflicts=6（pb/ps/grossMargin 等被多数决覆盖且带显式标注）。
+
+### Metadata
+- Source: user_feedback
+- Related Files: lib/analysis.js, lib/metricAnalysis.js, public/js/app.js
+- Tags: 五维多数决, 环比, 本机计算, 百分数口径, 单季优先, 判定一致性
+- Pattern-Key: harden.percent_unit_contract_and_dims_majority_verdict
+- See Also: LRN-20261103-002, LRN-20261103-001
+---
+## [LRN-20261103-001] correction
+
+**Logged**: 2026-11-03T18:20:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: backend
+
+### Summary
+手动阻力/支撑区间此前只走标准1（无放量轻松突破→无效），未接入「放量有效突破→角色反转」生命周期，导致被突破的手动阻力一直以原方向挂在清单里。
+
+### Details
+用户报障：「手动设定的阻力和支撑区间，也要遵守模块本身的有效性检验，而且阻力已经被突破，为什么还保持显示」。真机复现：平安手动阻力 53.22~53.32（MA60）于 2026-11-03 放量突破（量比 1.47>1.2）。zoneValidity 标准1 只判「无放量穿越」→ 放量突破反而判「有效」；zoneReversal 此前明确跳过 isManual → 不反转。两个机制对放量突破的手动区间都「不管」，条目就永久悬挂。深层教训：**给某类条目接入"检验"时必须接入完整的生命周期（判无效 + 状态流转），只接一半会出现两类机制都不管的真空态**。20261021e 只接了标准1，当时注释还写着"手动区间不参与反转"是合理设计，但用户的心智模型是"手动区间=同一套规则"，半接入必然引发报障。
+
+### Suggested Action
+修复（20261103h）：手动区间接入完整生命周期——priceActionHub 顺序调整（手动先于反转并入）；zoneReversal 不再跳过 isManual（反转记录带 origin:'manual'+manualId，删除时 purgeByManualId 联动清除）；前端「已反转」徽标。守卫 scripts/test_manual_zone_reversal.js 36 断言。
+
+### Metadata
+- Source: user_feedback
+- Related Files: lib/zoneReversal.js, lib/priceActionHub.js, lib/manualZones.js, server.js, public/js/app.js
+- Tags: zone-reversal, manual-zones, lifecycle, partial-integration
+- See Also: LRN-20261101-001
+- Pattern-Key: harden.full_lifecycle_integration
+- Recurrence-Count: 1
+- First-Seen: 2026-11-03
+- Last-Seen: 2026-11-03
+
+### Resolution
+- **Resolved**: 2026-11-03T18:20:00+08:00
+- **Notes**: 20261103h 落地，36 断言全绿；真机验证平安手动阻力已反转为支撑（manualZonesMeta.reversed 事件齐全）。
+
+---
+
+## [LRN-20261103-003] correction
+
+**Logged**: 2026-11-03T19:40:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: backend
+
+### Summary
+新增与既有表同构的知识表时，键名凭显示文案重打而非从既有表复制——撞上「键名与显示名不同源」的既有约定，导致仅一个位置静默 miss。
+
+### Details
+20261103k 新增 POS_VM_STRONG（大涨/大跌强形态 24 格）时，「上涨途中」位置的键写成了显示名「上涨途中」；但 POS_VM_MATRIX/POS_VM_EXT/POS_VM_EXT_TONE 的既有键是「上涨**中途**」（_detectPosition 的 label 同），display 字段才是「上涨**途中**」。其余三个位置键名恰与显示名一致，故障表现为「仅上涨途中位置 extRef=null、extJudgment=null、summary 报位置数据不足」，其余位置全部正常——极具迷惑性，且 fail 静默（无异常抛出）。排查靠逐键码点比对（node 打印 Object.keys 的 codePointAt 序列）+ grep 定位 497 行 label='上涨中途'。
+
+### Suggested Action
+凡新增与既有对象同构的表（同键空间），键名必须以既有表为准逐字复制（最好写测试遍历断言两表键集合相等），禁止凭显示文案重新输入；若既有约定本身「键≠显示」，优先考虑在新表里同时容忍两者（或在守卫中固化键名清单）。守卫侧可加「键集合一致性」断言：POS_VM_STRONG/POS_VM_EXT/POS_VM_EXT_TONE 的 keys 必须与 POS_VM_MATRIX 完全一致。
+
+### Resolution
+- **Resolved**: 2026-11-03T19:40:00+08:00
+- **Notes**: POS_VM_STRONG 键已改「上涨中途」，49 断言守卫全绿 + 真机四位置验证通过；守卫后续可补键集合一致性断言。
+
+### Metadata
+- Source: self_correction
+- Related Files: lib/volumeEngine.js (POS_VM_MATRIX 1804/POS_VM_STRONG 1967/_detectPosition 497), scripts/test_pos_vm_strong.js
+- Tags: 键名一致性, 显示名, 同构表, 静默失败, 码点排查
+- Pattern-Key: data.structural_key_must_copy_existing_table
+- See Also: LRN-20261103-002
+---
+
+## [LRN-20261103-004] correction
+
+**Logged**: 2026-11-03T19:45:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+「在对应位置添加 X」类指令只覆盖了最近的语义组（趋势运行），漏了同类兄弟组（箱体）——用户以截图指认箱体组缺失，二次返工。
+
+### Details
+20261103k 用户要求「量能涨跌关系分析的完整推演图也在对应的位置添加大涨/大跌」，我把「对应位置」理解为「趋势运行」组（与第三步量能×涨跌幅归格直接对应），只在该组加叶子。用户随即截图箱体组报「图片里面没有大涨和大跌的添加」。根因：思维导图每个位置下有 4 个兄弟组（趋势运行/区间横盘震荡/量价背离/极端量能），「对应的位置」是复数概念，未逐组排查与确认；且 LRN-20261103-002 已确立「展示的形态必须能命中」——箱体组加了叶子就必须同步箱体分支判定（本次一并落地：横盘箱体 |chg|≥5% 优先归箱体强形态）。
+
+### Suggested Action
+凡「在对应位置添加」类指令：① 先枚举目标对象下的全部同类组（本例=趋势运行/箱体/背离/极端量能）；② 逐组决定「加/不加」并给出理由（语义适用性），拿不准的列清单向用户确认；③ 加了展示就必须同步判定分支（参考 LRN-20261103-002），二者不可拆分交付。
+
+### Resolution
+- **Resolved**: 2026-11-03T19:45:00+08:00
+- **Notes**: 20261103l 落地：4 位置箱体组 + 震荡整理中性箱体均加 6 强形态叶子（8→14 条），箱体分支判定同步接入（箱体强形态优先于箱体普通格），56 断言守卫全绿 + 回归 95/99（4 项既有遗留）。
+
+### Metadata
+- Source: user_feedback
+- Related Files: lib/volumeEngine.js (POS_VM_BOX_STRONG/POS_VM_EXT box/POS_VM_SIDEWAYS_BOX), public/volume-map.html, public/js/app.js, scripts/test_pos_vm_strong.js
+- Tags: 思维导图, 箱体组, 覆盖面, 指令理解, 强形态
+- Pattern-Key: ux.additive_instruction_enumerate_all_sibling_groups
+- See Also: LRN-20261103-002, LRN-20261103-003
+---
+
+## [LRN-20261103-005] correction
+
+**Logged**: 2026-11-03T19:58:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+参考行徽标统一写「参考」二字，把该形态的方向含义（偏多/看空/警惕/观察）整个隐藏了——用户直接问「为什么没有偏空」，信息透明度缺陷。
+
+### Details
+20261101f 着色铁律「非命中行不着方向色」落地时，扩展行（强形态/箱体/滞涨滞跌）徽标做成了统一「参考」——色是去掉了，但连方向文字也一并去掉。主矩阵行始终显示 dirText（偏多/看空/警惕/观察），扩展行却只显示「参考」，两类行口径不一致；用户看到士兰微（低位区间，6 主格恰无看空档 + 参考行无方向字）全表无「看空」，产生「模型是不是不会判空」的疑问。
+
+### Suggested Action
+非命中行的正确口径是「灰底 + 方向文字」：去掉方向色（保留 20261101f 铁律）但保留方向语义。知识条目应在数据源附 direction 字段（模型层统一映射，前端免逻辑）。向用户解释位置语义差异：低位区间的下跌形态多为「观察」（底部下跌≈尾声），看空档集中在高位区间/下跌途中——这是位置驱动的合理分化，不是缺失。
+
+### Resolution
+- **Resolved**: 2026-11-03T19:58:00+08:00
+- **Notes**: 20261103m 落地：extRef 各条目附 direction，参考行显示方向文字灰底徽标 + 表尾注徽标图例。
+
+### Metadata
+- Source: user_feedback
+- Related Files: lib/volumeEngine.js (extRef direction 附加), public/js/app.js (extRow), scripts/test_pos_volume_matrix.js
+- Tags: 徽标语义, 信息透明度, 参考行, 方向色铁律, 位置语义
+- Pattern-Key: ux.neutral_badge_must_keep_semantic_text
 - See Also: LRN-20261101-001
 ---

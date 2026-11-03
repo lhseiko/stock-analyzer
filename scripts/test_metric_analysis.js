@@ -60,7 +60,7 @@ ma.metrics.forEach(m => {
   });
   if (m.key === 'roe') {
     assert('ROE 判定与 evaluateSignals 一致(bull)', m.judgment && m.judgment.signal === 'bull', m.judgment && m.judgment.signal);
-    assert('ROE 同比维度可用且有文本', m.dims.yoy.available && /同比/.test(m.dims.yoy.text), m.dims.yoy.text);
+    assert('ROE 同比维度可用且有文本（20261029i 三段式：去年同期）', m.dims.yoy.available && /去年同期/.test(m.dims.yoy.text), m.dims.yoy.text);
     assert('ROE 环比维度标注「累计口径」', /累计口径/.test(m.dims.qoq.text), m.dims.qoq.text);
     assert('ROE 行业均值维度可用', m.dims.industry.available, m.dims.industry.text);
     assert('ROE 历史百分位维度可用', m.dims.pct.available, m.dims.pct.text);

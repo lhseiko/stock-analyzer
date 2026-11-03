@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>股票投资分析工作台</title>
-  <link rel="icon" type="image/x-icon" href="favicon.ico?v=20261025f">
-  <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=20261025f">
-  <link rel="stylesheet" href="css/style.css?v=20261101a">
+  <link rel="icon" type="image/x-icon" href="favicon.ico?v=20261103m">
+  <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=20261103m">
+  <link rel="stylesheet" href="css/style.css?v=20261103m">
   <script>
     // 启动时确保 URL 带 ?v= 参数（用于破坏静态资源缓存）。
     // 重要：版本号以 server.js 的 APP_VERSION 为准，由服务端重定向统一下发，
@@ -42,7 +42,7 @@
   <!-- 顶栏：大盘行情状态栏（上证/深证/创业板/科创50/日经指数/恒生/纳斯达克/道琼斯），支持折叠 -->
   <header id="marketTopbar" class="market-topbar">
     <div class="topbar-inner">
-      <div class="topbar-brand"><img class="brand-logo" src="icon.png?v=20261025f" alt="logo">股票分析台</div>
+      <div class="topbar-brand"><img class="brand-logo" src="icon.png?v=20261103m" alt="logo">股票分析台</div>
       <div id="marketTopbarIndices" class="topbar-indices">
         <span class="tb-loading">大盘行情加载中…</span>
       </div>
@@ -300,6 +300,9 @@
             <div class="stock-date-bar">
               <span id="stockDate" class="stock-date"></span>
               <span id="stockFinDate" class="stock-fin-date"></span>
+              <!-- 20261101n：换手率/成交额自页首固定指标条移入标题卡（applyLiveQuote 单点刷新） -->
+              <span id="stockTurnover" class="stock-turnover"></span>
+              <span id="stockAmount" class="stock-amount"></span>
             </div>
           </div>
         </div>
@@ -908,7 +911,8 @@
             </div>
             <div id="capitalContent" class="capital-content">
               <!-- 量能分析引擎（20261024i：原独立「量价关系分析」卡已合并进本卡，重复指标去重；
-                   保留量价配合结论 + 量价独有指标；量比/量能热度与「量能档位」重复，不再单独展示） -->
+                   20261101k：顶部改为「资金量能综合判断」，量价配合行仅保留指标卡；
+                   量比/量能热度与「量能档位」重复，不再单独展示） -->
               <div class="chart-card large">
                 <h3>🔬 量能分析（量价 × 价格位置 × 量能行为）</h3>
                 <div id="capVolumeEngine" class="capital-summary"></div>
@@ -918,6 +922,13 @@
               <div class="chart-card large">
                 <h3>💰 主力资金流向（近60日）</h3>
                 <div id="capMoneyFlowChart" class="chart"></div>
+              </div>
+
+              <!-- 每日量比趋势（20261103m，用户指令：主力资金流向卡正下方，记录每日量比变化；
+                   量比=当日量÷前5日均量（不含当日），与量能三态/标准1 同口径，阈值线 1.2 放量 / 0.8 缩量 -->
+              <div class="chart-card large">
+                <h3>📉 每日量比趋势（近60日）</h3>
+                <div id="capVolRatioChart" class="chart"></div>
               </div>
 
               <div class="chart-grid">
@@ -958,15 +969,11 @@
                 <div id="capMarginChart" class="chart"></div>
               </div>
 
-              <div class="chart-grid">
-                <div class="chart-card">
-                  <h3>📋 融资融券明细</h3>
-                  <div id="capMarginSummary" class="capital-summary"></div>
-                </div>
-                <div class="chart-card">
-                  <h3>💡 资金量能综合判断</h3>
-                  <div id="capConclusion" class="capital-conclusion"></div>
-                </div>
+              <!-- 20261101k：「资金量能综合判断」卡上移进「量能分析」卡顶部（替换原量能信号横幅），
+                   原页底独立卡删除避免双份展示；融资融券明细改为通栏（chart-card large）保持布局对称 -->
+              <div class="chart-card large">
+                <h3>📋 融资融券明细</h3>
+                <div id="capMarginSummary" class="capital-summary"></div>
               </div>
             </div>
           </div>
@@ -1077,27 +1084,27 @@
     <button class="err-close" id="errorBannerClose" title="关闭">✕</button>
   </div>
 
-  <script src="js/storage.js?v=20261025f"></script>
-    <script src="js/chartTheme.js?v=20261025f"></script>
-    <script src="js/chart3D.js?v=20261025f"></script>
-    <script src="js/charts.js?v=20261025f"></script>
-  <script src="js/deepCharts.js?v=20261025f"></script>
-  <script src="js/industryCharts.js?v=20261025f"></script>
-  <script src="js/capitalCharts.js?v=20261025f"></script>
-  <script src="js/notes.js?v=20261028b"></script>
-  <script src="js/shareholderCharts.js?v=20261101a"></script>
-  <script src="js/docStore.js?v=20261025f"></script>
-  <script src="js/export.js?v=20261025f"></script>
-  <script src="js/homeNews.js?v=20261025f"></script>
-  <script src="js/homeHotTopics.js?v=20261025f"></script>
-  <script src="js/homeMacro.js?v=20261025f"></script>
-  <script src="js/homeRank.js?v=20261025f"></script>
-  <script src="js/dataStatus.js?v=20261025f"></script>
+  <script src="js/storage.js?v=20261103m"></script>
+    <script src="js/chartTheme.js?v=20261103m"></script>
+    <script src="js/chart3D.js?v=20261103m"></script>
+    <script src="js/charts.js?v=20261103m"></script>
+  <script src="js/deepCharts.js?v=20261103m"></script>
+  <script src="js/industryCharts.js?v=20261103m"></script>
+  <script src="js/capitalCharts.js?v=20261103m"></script>
+  <script src="js/notes.js?v=20261103m"></script>
+  <script src="js/shareholderCharts.js?v=20261103m"></script>
+  <script src="js/docStore.js?v=20261103m"></script>
+  <script src="js/export.js?v=20261103m"></script>
+  <script src="js/homeNews.js?v=20261103m"></script>
+  <script src="js/homeHotTopics.js?v=20261103m"></script>
+  <script src="js/homeMacro.js?v=20261103m"></script>
+  <script src="js/homeRank.js?v=20261103m"></script>
+  <script src="js/dataStatus.js?v=20261103m"></script>
   <!-- logicModel.js 已移至独立页面 logic-model.html 引用（20261025c 弹窗改页面），首页不再加载 -->
 
-  <script src="js/stockLog.js?v=20261027d"></script>
-  <script src="js/app.js?v=20261101a"></script>
-  <script src="js/backtestUI.js?v=20261101a"></script>
+  <script src="js/stockLog.js?v=20261103m"></script>
+  <script src="js/app.js?v=20261103m"></script>
+  <script src="js/backtestUI.js?v=20261103m"></script>
 
   <!-- AI 设置弹窗（20260902e：双模型 · 联网 / 本地分离） -->
   <div class="ai-modal-overlay hidden" id="aiSettingsModal">

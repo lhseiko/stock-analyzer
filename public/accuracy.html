@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>分析准确率检查 · 大盘技术分析 / 个股技术面 / 短期行情判断 / 市场情绪提醒</title>
-  <link rel="icon" type="image/x-icon" href="favicon.ico?v=20261025f">
-  <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=20261025f">
-  <link rel="stylesheet" href="css/style.css?v=20261101a">
+  <link rel="icon" type="image/x-icon" href="favicon.ico?v=20261103m">
+  <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=20261103m">
+  <link rel="stylesheet" href="css/style.css?v=20261103m">
   <!-- 本页是独立长页，覆盖主工作台全局的 html,body{overflow:hidden} 以恢复滚动。
        20261025f：页宽/工具条/tab 芯片/KPI/提示样式统一在 style.css「独立长页统一外壳」段（令牌取色）。 -->
   <style>
@@ -35,6 +35,7 @@
         <button class="acc-tab" data-tab="tech">个股技术面</button>
         <button class="acc-tab" data-tab="sameDay">短期行情判断</button>
         <button class="acc-tab" data-tab="sentiment">市场情绪提醒</button>
+        <button class="acc-tab" data-tab="consistency">数据巡检</button>
       </div>
       <div id="techSymbolBar" style="display:none; margin-bottom:10px;">
         <input type="text" id="symbolInput" class="jd-filter" placeholder="输入股票代码（如 601318）查该股技术面准确率" autocomplete="off" style="max-width:320px;">
@@ -101,6 +102,22 @@
       </section>
     </section>
 
+    <!-- 数据巡检（20261103e）：跨板块同数据一致性核对 -->
+    <section id="consistencyPanel" style="display:none;">
+      <div class="acc-hint">
+        巡检口径：核对<b>同一数据在多个板块的展示值是否一致</b>（即使数据源不同）。
+        ⚠️ <b>累计数据与固定期数据分属不同口径，绝不互比</b>——如「前三季度累计」与「第三季度单季」数值不同属正常口径差异，
+        注记为「口径差异」而非不一致；仅「同口径数值不一致」才记为<b>不一致（需修复）</b>。
+        兜底 0（取不到的比率字段，左卡显示 --）按缺失跳过。每交易日收盘后自动巡检全部自选股并落盘，可点「结算并刷新」立即重跑。
+      </div>
+      <div class="acc-kpis" id="caKpis"></div>
+      <div class="acc-hint" id="caCalib"></div>
+      <section class="home-card">
+        <div class="home-card-head"><h2>逐股巡检明细</h2><span id="caCount" class="mo-updated"></span></div>
+        <div id="caBody" class="acc-body"></div>
+      </section>
+    </section>
+
     <!-- 市场情绪提醒 -->
     <section id="sentimentPanel" style="display:none;">
       <div class="acc-hint">
@@ -117,6 +134,6 @@
     </section>
   </div>
 
-  <script src="js/accuracy.js?v=20261101a"></script>
+  <script src="js/accuracy.js?v=20261103m"></script>
 </body>
 </html>

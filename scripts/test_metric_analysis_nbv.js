@@ -86,8 +86,10 @@ const opM = outFull.metrics.find(m => m.key === 'opProfit');
 eq(opM.label, '营运利润', 'opProfit 标签应为「营运利润」');
 eq(opM.valueText, '234.56亿', '营运利润数值应为 234.56亿');
 // 20261029i 格式统一（图二三段式）：本报告期 X 亿（去年同期 Y 亿，边际 ±Z 亿）；同比%移入边际维度
-ok(opM.dims.yoy.available && /本报告期 234\.56亿/.test(opM.dims.yoy.text) && /去年同期 200\.00亿/.test(opM.dims.yoy.text) && /边际 \+34\.56亿/.test(opM.dims.yoy.text),
-  `营运利润同比维度应为图二三段式（实际：${opM.dims.yoy.text}）`);
+// 20261102a（主线B 单季优先口径）：单季值=本期累计−上期累计，上期累计缺失时如实回退累计并标注口径；
+// 测试 mock 未给上期累计 → 触发回退，文本含「累计（单季值不可得，缺上期累计，如实回退）」属正确行为，断言放宽允许该标注。
+ok(opM.dims.yoy.available && /本报告期/.test(opM.dims.yoy.text) && /234\.56亿/.test(opM.dims.yoy.text) && /去年同期 200\.00亿/.test(opM.dims.yoy.text) && /边际 \+34\.56亿/.test(opM.dims.yoy.text),
+  `营运利润同比维度（单季优先口径，缺上期累计时如实回退累计）应为：本报告期 X 亿（去年同期 Y 亿，边际 ±Z 亿）（实际：${opM.dims.yoy.text}）`);
 ok(/17\.28/.test(opM.dims.marginal.text), `营运利润边际维度应含同比 +17.28%（实际：${opM.dims.marginal.text}）`);
 eq(opM.judgment.signal, 'bull', '同比 +17.28% → 判定 bull');
 ok(/扣非/.test(opM.note) && /所得税/.test(opM.note) && /非经常/.test(opM.note),

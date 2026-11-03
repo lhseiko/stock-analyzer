@@ -58,7 +58,8 @@ const cover = [
   '短期行情判断', '长期行情判断', '技术面', '专属估值模型', '深度分析',
   '策略生成器', '回测校验', '事件驱动引擎', '准确率闭环',
   'API 层', 'AI 叙事层', '规则与守卫', '跨页面公共支撑', '页面布局',
-  'SA_NO_BG_AI', '数据诚实原则', 'APP_VERSION', 'SCHEMA_VERSION', 'LAYOUT_VERSION'
+  'SA_NO_BG_AI', '数据诚实原则', 'APP_VERSION', 'SCHEMA_VERSION', 'LAYOUT_VERSION',
+  '后台预加载', 'etf-flow'
 ];
 cover.forEach(k => t('覆盖「' + k + '」', ALL.includes(k)));
 
@@ -99,6 +100,7 @@ const files = [
   ['routes/eventRoutes.js', '事件路由'],
   ['public/accuracy.html', '准确率核对页'],
   ['public/judgments.html', '判断记录页'],
+  ['public/etf-flow.html', 'ETF资金流独立页'],
   ['lib/localDate.js', '统一中国自然日'],
   ['lib/deep/pipeline.js', '深度分析链路'],
   ['lib/valuationHub.js', '估值 Hub 唯一出口'],

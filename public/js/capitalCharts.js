@@ -41,13 +41,81 @@ const CapitalCharts = {
     // 原独立 #capVolumePrice 卡已删除，此处不再单独渲染（renderVolumePrice 保留以兼容/单测）。
     this.renderMoneyFlow(data.moneyFlow);
     this.renderFlowSummary(data.moneyFlow?.summary, data.moneyFlow?.source);
+    // 20261103m：每日量比趋势（用户指令：主力资金流向卡正下方，记录每日量比变化）
+    this.renderVolRatio(data.volumeIndicators);
     this.renderVolIndicators(data.volumeIndicators);
     this.renderOBV(data.volumeIndicators);
     this.renderVR(data.volumeIndicators);
     this.renderVolume(data.volumeIndicators);
     this.renderMargin(data.marginTrading);
     this.renderMarginSummary(data.marginTrading);
-    this.renderConclusion(data);
+    // 20261101k：「资金量能综合判断」卡上移进「量能分析」卡（app.renderVolumeEngine 调
+    // buildConclusionParts），原 #capConclusion 独立卡删除，此处不再渲染。
+  },
+
+  // ── 20261103m：每日量比趋势（用户指令：主力资金流向卡正下方，记录每日量比变化）──
+  // 量比口径（与 volumeEngine 量能三态 / zoneValidity 标准1 全站同源）：
+  //   量比 = 当日成交量 ÷ 前 5 日均量（**不含当日**）；量能缺失 → null（不臆造）。
+  //   市场标准阈值（20261019f 对齐东财/同花顺）：>1.2 放量、<0.8 缩量 → 图上画阈值虚线。
+  //   历史序列直接由日K成交量本机推导（K线自带历史，无需另存），即「每日量比的变化记录」。
+  computeVolRatioSeries(volumes) {
+    const vols = Array.isArray(volumes) ? volumes : [];
+    return vols.map((v, i) => {
+      if (i < 5 || v == null || !(v > 0)) return null;
+      let sum = 0, ok = true;
+      for (let k = i - 5; k < i; k++) {
+        const p = vols[k];
+        if (p == null || !(p > 0)) { ok = false; break; }
+        sum += p;
+      }
+      if (!ok || !(sum > 0)) return null;
+      return Math.round((v / (sum / 5)) * 100) / 100;
+    });
+  },
+
+  renderVolRatio(vi) {
+    const el = document.getElementById('capVolRatioChart');
+    if (!el || !vi) return;
+    const s = vi.series;
+    if (!s || !Array.isArray(s.dates) || !Array.isArray(s.volumes) || s.dates.length === 0) return;
+    const chart = this._safeInit('capVolRatioChart');
+    if (!chart) return;
+    this.instances.volRatio = chart;
+    const ratios = this.computeVolRatioSeries(s.volumes);
+    const dates = s.dates;
+    // 末值摘要（tooltip 之外的固定说明行不占位——阈值线即读法）
+    chart.setOption({
+      title: { text: `量比 = 当日量 ÷ 前5日均量（不含当日）· 最新 ${ratios[ratios.length - 1] == null ? '—' : ratios[ratios.length - 1]}`, left: 'center', top: 2, textStyle: { fontSize: 11, color: '#8b939c', fontWeight: 'normal' } },
+      tooltip: {
+        trigger: 'axis',
+        formatter: (ps) => {
+          const p = Array.isArray(ps) ? ps[0] : ps;
+          if (!p || p.value == null) return `${p && p.axisValue || ''}<br/>量比：数据不足`;
+          const v = Number(p.value);
+          const tier = v > 1.2 ? '放量' : v < 0.8 ? '缩量' : '平量';
+          return `${p.axisValue}<br/>量比：<b>${v.toFixed(2)}</b>（${tier}）`;
+        },
+      },
+      grid: { left: '8%', right: '5%', bottom: '10%', top: '22%' },
+      xAxis: { type: 'category', data: dates, axisLabel: { rotate: 45, fontSize: 10 } },
+      yAxis: { type: 'value', scale: true, name: '量比', axisLabel: { formatter: v => Number(v).toFixed(1) } },
+      series: [
+        {
+          name: '量比', type: 'line', data: ratios, smooth: true, symbol: 'circle', symbolSize: 4,
+          lineStyle: { width: 2, color: '#cdab74' }, itemStyle: { color: '#cdab74' },
+          connectNulls: false,
+          markLine: {
+            silent: true, symbol: 'none',
+            lineStyle: { type: 'dashed', width: 1 },
+            label: { fontSize: 10, formatter: (p) => p.name },
+            data: [
+              { name: '放量 1.2', yAxis: 1.2, lineStyle: { color: 'rgba(246,70,93,0.55)' }, label: { color: 'rgba(246,70,93,0.85)' } },
+              { name: '缩量 0.8', yAxis: 0.8, lineStyle: { color: 'rgba(14,203,129,0.55)' }, label: { color: 'rgba(14,203,129,0.85)' } },
+            ],
+          },
+        },
+      ],
+    });
   },
 
   renderVolumePrice(vi) {
@@ -419,19 +487,32 @@ const CapitalCharts = {
     `).join('');
   },
 
-  renderConclusion(data) {
-    const el = document.getElementById('capConclusion');
-    if (!el) return;
-
-    const parts = [];
+  // 20261101k：「资金量能综合判断」内容构建器（原 renderConclusion 改造）。
+  // 渲染位置上移至「量能分析」卡顶部（app.renderVolumeEngine），本方法只负责从
+  // data.volumeIndicators / moneyFlow / marginTrading / conclusion 生成行数组，
+  // 优先复用后端统一结论，与判断引擎因子保持一致。
+  // 20261101p（用户截图指令，uicraft 重排版）：返回值改为结构化 { rows, verdict }——
+  // rows 为指标条目（icon/label/text/wide），verdict 为多空结论（label/tone/bull/bear），
+  // 排版（结论横幅 + 指标网格）由 app.renderVolumeEngine 完成；各条目文字口径与 p 版前完全一致。
+  buildConclusionParts(data) {
+    const rows = [];
     const vi = data.volumeIndicators;
     const mf = data.moneyFlow;
     const margin = data.marginTrading;
 
-    // 量价关系
+    // 20261103f（用户截图指令：利好/利空内容按红/绿语义着色）：每行带 tone（bull=红/bear=绿/neutral=灰），
+    // 方向判定与 buildConclusionParts 底部多空打分同口径（单一语义源）。
+    const VP_TONE = {
+      '放量上涨': 'bull', '量价齐升': 'bull', '温和上涨': 'bull', '缩量回调': 'bull',
+      '缩量上涨': 'bear', '温和回调': 'bear', '地量上涨': 'bear', '地量回调': 'bear', '缩量下跌': 'bear', '地量下跌': 'bear',
+      '巨量下跌': 'bear', '放量下跌': 'bear', '显著下跌': 'bear',
+    };
+    const moneyTone = (v) => v > 0 ? 'bull' : v < 0 ? 'bear' : 'neutral';
+
+    // 量价关系（长文本 → 网格通栏）
     if (vi?.volumePrice) {
       const vp = vi.volumePrice;
-      parts.push(`📊 <b>量价关系：</b>${vp.signal} — ${vp.description}`);
+      rows.push({ icon: '📊', label: '量价关系', text: `${vp.signal} — ${vp.description}`, wide: true, tone: VP_TONE[vp.signal] || 'neutral' });
     }
 
     // 资金流向
@@ -442,24 +523,23 @@ const CapitalCharts = {
       const s20 = mf.summary.summary['20d'];
       if (s5) {
         const dir = s5.direction;
-        parts.push(`💰 <b>短期资金${estNote}：</b>近5日主力${dir}${Math.abs(s5.mainNet)}亿`);
+        rows.push({ icon: '💰', label: `短期资金${estNote}`, text: `近5日主力${dir}${Math.abs(s5.mainNet)}亿`, tone: moneyTone(s5.mainNet) });
       }
       if (s20) {
         const dir = s20.direction;
-        parts.push(`📈 <b>中期资金${estNote}：</b>近20日主力${dir}${Math.abs(s20.mainNet)}亿`);
+        rows.push({ icon: '📈', label: `中期资金${estNote}`, text: `近20日主力${dir}${Math.abs(s20.mainNet)}亿`, tone: moneyTone(s20.mainNet) });
       }
     }
 
     // 量能指标
     if (vi?.indicators) {
       const ind = vi.indicators;
-      if (ind.obvTrend !== '中性') parts.push(`📐 <b>OBV趋势：</b>${ind.obvTrend}`);
-      if (ind.vrSignal !== '中性') parts.push(`🔍 <b>VR信号：</b>${ind.vrSignal}（VR=${ind.vr}）`);
-      if (ind.mfiSignal !== '中性') parts.push(`💸 <b>MFI信号：</b>${ind.mfiSignal}（MFI=${ind.mfi}）`);
-      if (ind.turnoverLevel !== '正常') {
-        const tvRef = ind.turnoverAvg > 0 ? `，月均${ind.turnoverAvg}%` : '';
-        parts.push(`🔄 <b>换手率：</b>${ind.turnover}%（${ind.turnoverLevel}${tvRef}）`);
-      }
+      const obvTone = ind.obvTrend === '上升趋势' ? 'bull' : ind.obvTrend === '下降趋势' ? 'bear' : 'neutral';
+      if (ind.obvTrend !== '中性') rows.push({ icon: '📐', label: 'OBV趋势', text: ind.obvTrend, tone: obvTone });
+      if (ind.vrSignal !== '中性') rows.push({ icon: '🔍', label: 'VR信号', text: `${ind.vrSignal}（VR=${ind.vr}）`, tone: ind.vrSignal.includes('多') ? 'bull' : ind.vrSignal.includes('空') ? 'bear' : 'neutral' });
+      if (ind.mfiSignal !== '中性') rows.push({ icon: '💸', label: 'MFI信号', text: `${ind.mfiSignal}（MFI=${ind.mfi}）`, tone: /流入|多/.test(ind.mfiSignal) ? 'bull' : /流出|空/.test(ind.mfiSignal) ? 'bear' : 'neutral' });
+      // 20261101o（用户截图指令）：「换手率」条目不输出——换手率已移至个股标题卡信息行
+      // （20261101n），本区块不再重复展示。
     }
 
     // 融资融券
@@ -467,10 +547,10 @@ const CapitalCharts = {
       const l = margin.latest;
       const netBuyStr = l.rzNetBuy !== undefined ? `，净买入${(l.rzNetBuy / 1e8).toFixed(2)}亿` : '';
       const ratioStr = l.rzRatio ? `（占流通市值${l.rzRatio.toFixed(2)}%）` : '';
-      parts.push(`🏦 <b>融资融券：</b>融资余额${(l.rzBalance / 1e8).toFixed(1)}亿${netBuyStr}${ratioStr}，${margin.trend}`);
+      rows.push({ icon: '🏦', label: '融资融券', text: `融资余额${(l.rzBalance / 1e8).toFixed(1)}亿${netBuyStr}${ratioStr}，${margin.trend}`, tone: moneyTone(l.rzChange) });
     }
 
-    // 综合判断（优先复用后端统一结论，与判断引擎因子保持一致）
+    // 综合判断（优先复用后端统一结论，与判断引擎因子保持一致）→ verdict
     let overall, bs = 0, br = 0;
     if (data.conclusion && typeof data.conclusion.bullScore === 'number') {
       overall = data.conclusion.label;
@@ -500,9 +580,9 @@ const CapitalCharts = {
       else overall = '资金面中性，方向不明';
     }
 
-    parts.push(`\n🎯 <b>综合判断：</b>${overall}（多头${bs}分 vs 空头${br}分）`);
-
-    el.innerHTML = parts.map(p => `<div class="cap-conclusion-item">${p}</div>`).join('');
+    // 语义色调：偏多→bull（红晕）、偏空→bear（绿晕）、中性→neutral（灰底）
+    const tone = /偏空|注意风险/.test(overall) ? 'bear' : /偏多|支撑上涨/.test(overall) ? 'bull' : 'neutral';
+    return { rows, verdict: { label: overall, tone, bull: bs, bear: br } };
   },
 
   formatVol(v) {

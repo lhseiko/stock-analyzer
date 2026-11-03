@@ -82,17 +82,34 @@ syncCase('2020 年真过期（无 status）→ 仍计入 overdueCount（真实�
   assert.ok(a.overdueCount >= 1, '久远未结算记录（base+HORIZON 仍远早于 today）应仍判过期');
 });
 
-syncCase('2026-09-23 旧记录：stale targetDate=base+1 但真实目标日=10-08 → 不计过期', () => {
-  // 复现用户截图场景：4 条 09-23~09-29 旧记录无 status、存储 targetDate 为 base+1（已过期日），
-  // 但真实验证目标日 = 基准日 + 5 交易日（10-08 附近，长假尚未到）→ 合法 pending，误报应消除。
-  const recs = [
-    { symbol: 'TFAOLD1', baseDate: '2026-09-23', targetDate: '2026-09-24', shortDir: '涨', settled: false }, // stale base+1
-    { symbol: 'TFAOLD2', baseDate: '2026-09-24', targetDate: '2026-09-25', shortDir: '跌', settled: false },
-    { symbol: 'TFAOLD3', baseDate: '2026-09-28', targetDate: '2026-09-29', shortDir: '涨', settled: false },
-    { symbol: 'TFAOLD4', baseDate: '2026-09-29', targetDate: '2026-09-30', shortDir: '震荡', settled: false },
-  ];
+// 分诊 2026-11-03（任务 #35）：原用例写死 2026-09-23/10-08（当时目标日未到），随时间推移记录真实过期、
+// overdueCount=4 是正确行为——用例属「时间固化」缺陷。改为动态构造最近工作日基准，目标日恒在未来。
+function recentWeekdays(n) {
+  const out = [];
+  const d = new Date();
+  while (out.length < n) {
+    d.setDate(d.getDate() - 1);
+    const wd = d.getDay();
+    if (wd !== 0 && wd !== 6) {
+      out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+    }
+  }
+  return out.reverse(); // 升序
+}
+function plusDays(iso, n) {
+  const d = new Date(iso + 'T00:00:00');
+  d.setDate(d.getDate() + n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+syncCase('最近工作日旧记录：stale targetDate=base+1 但真实目标日=base+5 交易日（未来）→ 不计过期', () => {
+  // 复现用户截图场景（20261002c）：旧记录无 status、存储 targetDate 为 base+1（已过期日），
+  // 但真实验证目标日 = 基准日 + 5 交易日（尚未到）→ 合法 pending，误报应消除。
+  const bases = recentWeekdays(4);
+  const dirs = ['涨', '跌', '涨', '震荡'];
+  const recs = bases.map((b, i) => ({ symbol: 'TFAOLD' + (i + 1), baseDate: b, targetDate: plusDays(b, 1), shortDir: dirs[i], settled: false }));
   const a = tf.computeAccuracy('X', recs);
-  assert.strictEqual(a.overdueCount, 0, '真实目标日(10-08 附近) 尚未到 → 0 过期，实际=' + a.overdueCount);
+  assert.strictEqual(a.overdueCount, 0, '真实目标日(base+5 交易日，未来) 尚未到 → 0 过期，实际=' + a.overdueCount);
   assert.strictEqual(a.pendingCount, 4, '4 条均应为合法待验证（pending），实际=' + a.pendingCount);
 });
 

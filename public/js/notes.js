@@ -348,6 +348,8 @@ const Notes = {
     const scope = document.body.dataset.pageScope || 'global';
     const meta = this.SCOPE_META[scope];
     if (!meta) return;
+    // 20261103i：大盘记录页注入「数据库检索」面板（幂等）；有活动检索条件时结果优先于笔记流
+    this.renderMarketDbPanel();
     const list = this.getByScope(scope);
     body.innerHTML = list.length === 0
       ? `<div class="notes-empty">${meta.hint}</div>`
@@ -369,12 +371,156 @@ const Notes = {
         content.classList.remove('is-clamped');
       }
     });
+    // 20261103i：笔记流渲染完后，若检索条件仍生效则重跑检索（增删笔记后结果自动刷新）
+    if (this._mldbQuery) this.runMarketSearch(true);
   },
 
   // 折叠/展开切换（独立页摘要交互）
   toggleClamp(btn, content) {
     const collapsed = content.classList.toggle('is-clamped');
     btn.textContent = collapsed ? '展开全文' : '收起';
+  },
+
+  // ---------- 大盘记录数据库检索（20261103i，用户指令：按日期/行业/涨跌/关键词搜索） ----------
+  // 后端：GET /api/market-log（lib/marketLogDb.js —— notes.json scope=market 的结构化 SQLite 派生库，
+  // notes.json 为权威源，请求时按 mtime 检测自动重建）。仅注入大盘记录页（data-page-scope=market），
+  // 投资心得页与个股亮点/雷点零变化。
+
+  renderMarketDbPanel() {
+    if ((document.body.dataset.pageScope || '') !== 'market') return;
+    if (document.getElementById('mldbPanel')) return;
+    const list = document.getElementById('scopePageList');
+    if (!list || !list.parentNode) return;
+    const panel = document.createElement('div');
+    panel.id = 'mldbPanel';
+    panel.className = 'mldb-panel';
+    panel.innerHTML = `
+      <div class="mldb-head"><span class="mldb-title">🗂 大盘记录数据库</span><span class="mldb-stats" id="mldbStats">读取中…</span></div>
+      <div class="mldb-form">
+        <input id="mldbQ" class="mldb-input mldb-q" type="text" placeholder="关键词（标题/内容/标签）">
+        <input id="mldbSector" class="mldb-input mldb-sector" type="text" list="mldbSectorList" placeholder="行业（如 银行、机器人）">
+        <datalist id="mldbSectorList"></datalist>
+        <select id="mldbDir" class="mldb-input mldb-dir">
+          <option value="">涨跌 · 全部</option>
+          <option value="up">上涨</option>
+          <option value="down">下跌</option>
+        </select>
+        <input id="mldbFrom" class="mldb-input mldb-date" type="date" title="交易日起">
+        <span class="mldb-sep">~</span>
+        <input id="mldbTo" class="mldb-input mldb-date" type="date" title="交易日止">
+        <button type="button" id="mldbSearch" class="mldb-btn">检索</button>
+        <button type="button" id="mldbReset" class="mldb-btn mldb-btn-ghost">重置</button>
+      </div>
+      <div class="mldb-tip">按 交易日 / 行业 / 涨跌方向 / 关键词 任意组合检索；数据库由「大盘记录」自动派生（笔记仍是权威源，写入即入库）。</div>
+      <div class="mldb-err" id="mldbErr"></div>
+    `;
+    list.parentNode.insertBefore(panel, list);
+    const val = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+    panel.querySelector('#mldbSearch').addEventListener('click', () => this.runMarketSearch());
+    panel.querySelector('#mldbReset').addEventListener('click', () => {
+      this._mldbQuery = null;
+      ['mldbQ', 'mldbSector', 'mldbFrom', 'mldbTo'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+      const dir = document.getElementById('mldbDir'); if (dir) dir.value = '';
+      this._mldbQuery = null;
+      this.renderScopePage();   // 恢复笔记流
+    });
+    const enterSearch = (id) => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); this.runMarketSearch(); } });
+    };
+    ['mldbQ', 'mldbSector', 'mldbFrom', 'mldbTo'].forEach(enterSearch);
+    this.refreshMarketDbStats();
+  },
+
+  async refreshMarketDbStats() {
+    try {
+      const r = await fetch('/api/market-log?limit=1');
+      const data = await r.json();
+      if (!data.success) throw new Error(data.error || '读取失败');
+      const st = data.stats || {};
+      const el = document.getElementById('mldbStats');
+      if (el) el.textContent = `共 ${st.total || 0} 条 · ${st.fromDate || '—'} ~ ${st.toDate || '—'}`;
+      const dl = document.getElementById('mldbSectorList');
+      if (dl) {
+        const facets = ((data.facets || {}).sectors) || [];
+        dl.innerHTML = facets.map(f => `<option value="${this.escapeHtml(f.name)}">`).join('');
+      }
+    } catch (e) {
+      const el = document.getElementById('mldbStats');
+      if (el) el.textContent = '数据库读取失败：' + (e && e.message ? e.message : e);
+    }
+  },
+
+  async runMarketSearch(silent) {
+    const val = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+    const query = { q: val('mldbQ'), sector: val('mldbSector'), direction: val('mldbDir'), from: val('mldbFrom'), to: val('mldbTo') };
+    const hasCond = !!(query.q || query.sector || query.direction || query.from || query.to);
+    if (!hasCond) { this._mldbQuery = null; if (!silent) this.renderScopePage(); return; }
+    this._mldbQuery = query;
+    const qs = new URLSearchParams();
+    Object.entries(query).forEach(([k, v]) => { if (v) qs.set(k, v); });
+    const body = document.getElementById('scopePageList');
+    if (!body) return;
+    if (!silent) {
+      body.innerHTML = '<div class="notes-empty">检索中…</div>';
+      const errEl = document.getElementById('mldbErr'); if (errEl) errEl.textContent = '';
+    }
+    try {
+      const r = await fetch('/api/market-log?' + qs.toString());
+      const data = await r.json();
+      if (!data.success) throw new Error(data.error || '检索失败');
+      // 请求期间条件已被改/重置 → 丢弃本次结果
+      if (this._mldbQuery !== query) return;
+      body.innerHTML = this._renderMarketSearchResults(data, query);
+      body.querySelectorAll('[data-mldb-toggle]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const full = btn.closest('.mldb-row').querySelector('.mldb-full');
+          const open = full.classList.toggle('hidden') === false;
+          btn.textContent = open ? '收起' : '展开全文';
+        });
+      });
+    } catch (e) {
+      if (this._mldbQuery !== query) return;
+      const errEl = document.getElementById('mldbErr');
+      if (errEl) errEl.textContent = '检索失败：' + (e && e.message ? e.message : e);
+      if (!silent) body.innerHTML = `<div class="notes-empty">检索失败，请重试。</div>`;
+    }
+  },
+
+  _renderMarketSearchResults(data, query) {
+    const esc = (t) => this.escapeHtml(t);
+    const condTxt = [
+      query.q ? `关键词「${esc(query.q)}」` : '',
+      query.sector ? `行业「${esc(query.sector)}」` : '',
+      query.direction === 'up' ? '上涨' : query.direction === 'down' ? '下跌' : '',
+      query.from || query.to ? `交易日 ${query.from || '…'} ~ ${query.to || '…'}` : '',
+    ].filter(Boolean).join(' × ');
+    const st = data.stats || {};
+    const head = `<div class="mldb-result-head">检索到 <b>${data.total}</b> 条${condTxt ? `（${condTxt}）` : ''} · 库共 ${st.total || 0} 条</div>`;
+    if (!data.records.length) return head + '<div class="notes-empty">没有符合条件的记录。可放宽条件或点「重置」返回全部。</div>';
+    const chips = (arr, cls) => (arr || []).map(s => `<span class="mldb-chip ${cls}">${esc(s)}</span>`).join('');
+    const rows = data.records.map(r => {
+      const pctTxt = r.marketPct != null ? (r.marketPct >= 0 ? '+' : '') + Number(r.marketPct).toFixed(2) + '%' : '—';
+      const dirCls = r.direction === 'up' ? 'up' : r.direction === 'down' ? 'down' : 'flat';
+      const dirTxt = r.direction === 'up' ? '上涨' : r.direction === 'down' ? '下跌' : r.direction === 'flat' ? '平盘' : '方向未知';
+      const summary = (String(r.content || '').split('\n').find(l => l.trim()) || '').trim();
+      const srcTxt = r.source === 'ai' ? '🤖 AI复盘' : '✍️ 手动';
+      const idxTxt = (r.indices || []).slice(0, 6).map(i => `${esc(i.name)} <b class="${i.changePct >= 0 ? 'mi-up' : 'mi-down'}">${i.changePct >= 0 ? '+' : ''}${Number(i.changePct).toFixed(2)}%</b>`).join(' · ');
+      return `<div class="mldb-row ${dirCls}">
+        <div class="mldb-row-head">
+          <span class="mldb-date">${esc(r.tradeDate || '—')}</span>
+          <span class="mldb-dir ${dirCls}">${dirTxt} ${pctTxt}</span>
+          <span class="mldb-src">${srcTxt}</span>
+        </div>
+        ${idxTxt ? `<div class="mldb-idx">指数收盘：${idxTxt}</div>` : ''}
+        ${(r.sectorsUp || []).length || (r.sectorsDown || []).length
+          ? `<div class="mldb-chips">${(r.sectorsUp || []).length ? '<span class="mldb-chip-label">领涨</span>' + chips(r.sectorsUp, 'up') : ''}${(r.sectorsDown || []).length ? '<span class="mldb-chip-label">领跌</span>' + chips(r.sectorsDown, 'down') : ''}</div>` : ''}
+        <div class="mldb-summary">${esc(summary)}</div>
+        <div class="mldb-full hidden">${esc(r.content || '').replace(/\n/g, '<br>')}</div>
+        <div class="mldb-row-actions"><button type="button" class="mldb-toggle" data-mldb-toggle>展开全文</button></div>
+      </div>`;
+    }).join('');
+    return head + rows;
   },
 
   // ---------- 个股亮点/雷点 渲染（组合在一起，不分开） ----------

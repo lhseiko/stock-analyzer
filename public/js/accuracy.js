@@ -305,7 +305,64 @@
     card.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  const PANELS = { market: 'marketPanel', tech: 'techPanel', sameDay: 'sameDayPanel', sentiment: 'sentimentPanel' };
+  const PANELS = { market: 'marketPanel', tech: 'techPanel', sameDay: 'sameDayPanel', sentiment: 'sentimentPanel', consistency: 'consistencyPanel' };
+
+  // ===== 数据巡检（20261103e）：跨板块同数据一致性核对 =====
+  async function loadConsistency(force) {
+    const kpis = document.getElementById('caKpis');
+    const calib = document.getElementById('caCalib');
+    const body = document.getElementById('caBody');
+    const cnt = document.getElementById('caCount');
+    try {
+      const res = await fetch('/api/consistency-audit' + (force ? '?force=1' : ''));
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        kpis.innerHTML = '';
+        calib.innerHTML = '';
+        cnt.textContent = '';
+        body.innerHTML = `<div class="data-empty">今日尚无巡检报告${err.dates && err.dates.length ? '。历史报告日期：' + esc(err.dates.join('、')) : ''}。可点「结算并刷新」立即执行一次巡检。</div>`;
+        return;
+      }
+      const r = await res.json();
+      const t = r.totals || { ok: 0, caliber: 0, mismatch: 0, missing: 0 };
+      kpis.innerHTML = [
+        kpi('巡检股票', String(r.symbolCount || 0), `报告日期 ${esc(r.date || '—')}`, ''),
+        kpi('核对项', String(t.ok + t.caliber + t.mismatch + t.missing), '同一数据多板块互比', ''),
+        kpi('一致', String(t.ok), '同口径数值一致', t.ok > 0 ? 'good' : ''),
+        kpi('口径差异', String(t.caliber), '累计/单季/TTM 已注记', t.caliber > 0 ? 'na' : ''),
+        kpi('不一致', String(t.mismatch), t.mismatch > 0 ? '需修复' : '无', t.mismatch > 0 ? 'bad' : 'good'),
+        kpi('缺数据跳过', String(t.missing), '如实标注不误报', t.missing > 0 ? 'na' : ''),
+      ].join('');
+      calib.innerHTML = r.health === 'warn'
+        ? '<b>⚠️ 存在同口径数值不一致项，请结合下方明细排查数据链</b>'
+        : '<b>✓ 全部核对项通过</b>：同数据跨板块展示一致；累计/单季等口径差异已如实注记。';
+      const statusBadge = (st) => st === 'ok' ? '<span class="jd-ok">✓ 一致</span>'
+        : st === 'mismatch' ? '<span class="jd-bad">✗ 不一致</span>'
+        : st === 'caliber' ? '<span class="jd-pending">◐ 口径差异</span>'
+        : '<span class="jd-pending">– 缺数据</span>';
+      cnt.textContent = `${(r.results || []).length} 只 · ${r.ranAt ? esc(String(r.ranAt).replace('T', ' ').slice(0, 16)) : ''}`;
+      body.innerHTML = (r.results || []).map(sym => {
+        if (sym.error) {
+          return `<div class="jd-record"><div class="jd-rec-head"><b>${esc(sym.symbol)} ${esc(sym.name || '')}</b></div>
+            <div class="jd-rec-body"><div class="jd-rec-row"><span class="jd-bad">巡检执行失败</span> ${esc(sym.error)}</div></div></div>`;
+        }
+        const rows = (sym.checks || []).map(c => `<tr>
+            <td>${esc(c.metric)}</td>
+            <td>${statusBadge(c.status)}</td>
+            <td class="ca-note">${esc(c.note || '')}</td>
+          </tr>`).join('');
+        const bad = (sym.summary && sym.summary.mismatch) || 0;
+        return `<div class="jd-record">
+          <div class="jd-rec-head"><b>${esc(sym.symbol)} ${esc(sym.name || '')}</b>
+            <span>${bad > 0 ? '<span class="jd-bad">需修复</span>' : '<span class="jd-ok">通过</span>'}
+            · 一致 ${sym.summary.ok} / 口径差异 ${sym.summary.caliber} / 不一致 ${sym.summary.mismatch} / 缺数据 ${sym.summary.missing}</span></div>
+          <div class="jd-rec-body"><table class="ca-table"><thead><tr><th>核对项</th><th>结果</th><th>说明</th></tr></thead><tbody>${rows}</tbody></table></div>
+        </div>`;
+      }).join('');
+    } catch (e) {
+      body.innerHTML = `<div class="data-empty">巡检报告加载失败：${esc(e.message)}</div>`;
+    }
+  }
 
   function switchTab(tab) {
     if (!PANELS[tab]) tab = 'market';
@@ -346,6 +403,10 @@
         tx.textContent = '正在拉取上证 K 线结算情绪预警…';
         await fetch('/api/sentiment-accuracy/settle', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
         await loadSentiment();
+      } else if (state.tab === 'consistency') {
+        // 20261103e：巡检页无结算语义，结算按钮 = 立即重跑一次巡检（?force=1）
+        tx.textContent = '正在重跑跨板块数据一致性巡检（逐只拉取自选股载荷）…';
+        await loadConsistency(true);
       }
     } catch (e) { console.error(e); }
     // 20261016：结算完成确定性反馈——KPI 数字闪烁一次（复用 numFlash 动画），明确告知数据已刷新
@@ -364,6 +425,7 @@
       if (state.tab === 'market') await loadMarket();
       else if (state.tab === 'tech') await loadTech();
       else if (state.tab === 'sameDay') await loadSameDay();
+      else if (state.tab === 'consistency') await loadConsistency();
       else await loadSentiment();
     });
     document.getElementById('symbolQueryBtn').addEventListener('click', () => {
@@ -391,7 +453,7 @@
   window.addEventListener('DOMContentLoaded', async () => {
     bind();
     const params = new URLSearchParams(location.search);
-    const ALLOWED = ['market', 'tech', 'sameDay', 'sentiment'];
+    const ALLOWED = ['market', 'tech', 'sameDay', 'sentiment', 'consistency'];
     const tab = ALLOWED.includes(params.get('tab')) ? params.get('tab') : 'market';
     const sym = params.get('symbol');
     switchTab(tab);
@@ -399,7 +461,7 @@
       if (tab === 'sameDay') document.getElementById('sdSymbolInput').value = sym;
       else document.getElementById('symbolInput').value = sym;
     }
-    await Promise.all([loadMarket(), loadTech(), loadSameDay(), loadSentiment()]);
+    await Promise.all([loadMarket(), loadTech(), loadSameDay(), loadSentiment(), loadConsistency()]);
     if (sym && tab === 'tech') await loadTechSymbol(sym);
     if (sym && tab === 'sameDay') await loadSameDaySymbol(sym);
   });

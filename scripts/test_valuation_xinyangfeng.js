@@ -17,7 +17,10 @@ console.log('===== 新洋丰 000902 V2.1 测试（price=' + P + '）=====');
 
 // ===== 〇 v2.1 补丁1：数据新鲜度门控 =====
 ok('0.1 ok 标志 + 模型标识', r.ok === true && r.xinyangfeng === true && r.dedicated === true);
-ok('0.2 门控通过且超前期望（2026Q3 已强制使用，领先披露日历期望 2026H1）', r.freshnessGate && r.freshnessGate.gatePass === true && r.freshnessGate.ahead === true && r.freshnessGate.cfgLatest === '2026Q3', JSON.stringify(r.freshnessGate));
+// 分诊 2026-11-03（任务 #35）：原断言强制 ahead=true（10 月底 Q3 领先披露日历期望 2026H1 的「超前」状态），
+// 11 月起披露日历应适用期次已推进到 2026Q3，cfg=expected 一致通过（ahead=false）属正确演化——改为断言
+// 门控通过 + 配置期次 + 无滞后，ahead 不再强制（0.4 纯函数用例仍单独覆盖「超前/滞后」两态）。
+ok('0.2 门控通过且配置期次=2026Q3、无滞后（11 月起与披露日历一致，ahead 不再强制）', r.freshnessGate && r.freshnessGate.gatePass === true && r.freshnessGate.cfgLatest === '2026Q3' && r.freshnessGate.stalePeriod === false, JSON.stringify(r.freshnessGate));
 ok('0.3 输出第一段强制声明 LATEST 与披露日（补丁1.3）', /本次运行已强制使用\[2026Q3\]作为LATEST，披露日为\[2026-10-27\]/.test(r.openingStatement || ''), r.openingStatement);
 ok('0.4 freshnessGate 纯函数：Q3@10月下旬=超前期望通过；H1@11月中旬=滞后违规', (() => {
   const g1 = H.freshnessGate({ baseY: 2025, latestType: 'Q3' }, '2026-10-30');

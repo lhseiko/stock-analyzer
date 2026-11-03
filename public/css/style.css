@@ -482,6 +482,10 @@ body {
 .stock-date-bar { display: flex; gap: 18px; margin-top: 8px; flex-wrap: wrap; align-items: center; }
 .stock-fin-date { font-size: 13px; color: var(--text-light); white-space: nowrap; }
 .stock-fin-date::before { content: '财务 '; color: var(--text-secondary); }
+/* 20261101n：换手率/成交额自页首固定指标条移入个股标题卡信息行（标签前置伪元素，与行情日期/财务同构） */
+.stock-turnover, .stock-amount { font-size: 13px; color: var(--text-light); white-space: nowrap; }
+.stock-turnover::before { content: '换手率 '; color: var(--text-secondary); }
+.stock-amount::before { content: '成交额 '; color: var(--text-secondary); }
 
 .stock-actions { display: flex; gap: 8px; align-items: center; }
 
@@ -1315,6 +1319,10 @@ body {
 .pa-mz-badge.ok { color: var(--green); border-color: rgba(14, 203, 129, 0.45); background: var(--green-light); }
 .pa-mz-badge.invalid { color: var(--red); border-color: rgba(246, 70, 93, 0.45); background: var(--red-light); cursor: help; }
 .pa-mz-badge.unknown { color: var(--text-muted); }
+/* 20261103h：「已反转」徽标——手动区间被放量有效突破后转为对侧区间，属正常状态流转（非错误），
+   用强调琥珀色与 通过(绿)/未通过(红)/未检验(灰) 区分 */
+.pa-mz-badge.reversed { color: #F0B97B; border-color: rgba(240, 185, 123, 0.5); background: rgba(240, 185, 123, 0.12); cursor: help; }
+.pa-mz-row.reversed .pa-mz-range { opacity: .75; }
 .pa-mz-row.invalid { opacity: .82; }
 .pa-mz-row.invalid .pa-mz-range { text-decoration: line-through; text-decoration-color: rgba(246, 70, 93, 0.6); }
 /* 混在模型清单里的手动条目：蓝紫虚线左边框 + 「手动」小标 */
@@ -2682,6 +2690,11 @@ body {
 .cm-value { display: block; font-size: 15px; font-weight: 600; }
 /* [20261024d] 指标卡括号内说明文字：比主值（15px）小一号，弱化为辅助信息（用户 2026-10-24 要求） */
 .cm-value .cm-paren { font-size: 12px; font-weight: 500; }
+/* 20261101i：60 日口径数值句并入「60日量能确认」tile 副行（原独立说明行删除） */
+.cm-value .cm-sub { display: block; font-size: 10px; font-weight: 400; color: var(--text-light); margin-top: 3px; line-height: 1.5; }
+/* 20261101j：长文本卡（「资金行为」卡 / 指标行「筹码转移」tile）——整句短文案用小字号常规字重，
+   与相邻数值卡（15px/600）保持盒高对齐（flex 拉伸），文字左对齐更利多行阅读 */
+.cm-value-text { display: block; font-size: 12px; font-weight: 400; line-height: 1.55; color: var(--text-primary); text-align: left; }
 .cap-pos { color: var(--red); }
 .cap-neg { color: var(--green); }
 .cap-neutral { color: var(--text-secondary); }
@@ -2699,25 +2712,83 @@ body {
 .ci-label { flex: 1; color: var(--text-secondary); }
 .ci-value { font-weight: 600; min-width: 80px; text-align: right; }
 .ci-signal { font-size: 11px; padding: 2px 8px; border-radius: 4px; background: var(--bg-secondary); }
-.cap-conclusion-item {
-  padding: 8px 12px; font-size: 13px; line-height: 1.6;
-  border-bottom: 1px solid var(--border-light);
+/* 20261101r（用户截图指令：卡片过密重排版，uicraft 排版纪律 + brand-guidelines 层级/间距节奏）：
+   ① 三套栅格（结论 auto-fit 网格 / flex 均分指标行 / 量价 4 卡行）统一为共享网格语言
+   （.ve-tile-row 10 列基准 + 通栏 .ve-cc-wide / 等分满行 .ve-flow-row），列缝 10px；
+   ② 瓦片统一 surface（bg-primary + 细边框 + 10/12 内边距），高度自然对齐；
+   ③ 结论横幅改左侧语义色竖条强调 + 多空比分徽标化（chip）；
+   ④ 色板仍遵循工作台红涨绿跌 + 金强调（DESIGN.md）——brand-guidelines 的 Anthropic 色板
+   与交易主题冲突，仅取其排版纪律（用户明确要求「与工作台一致」优先级最高）。 */
+.ve-verdict {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 14px 12px 15px; border-radius: 8px;
+  border: 1px solid var(--border); border-left: 4px solid var(--accent);
+  background: var(--bg-primary); margin-bottom: 6px;
 }
-.capital-conclusion { padding: 8px; }
+.ve-verdict-bull { border-color: rgba(246, 70, 93, 0.35); border-left-color: var(--red); background: rgba(246, 70, 93, 0.06); }
+.ve-verdict-bear { border-color: rgba(14, 203, 129, 0.35); border-left-color: var(--green); background: rgba(14, 203, 129, 0.06); }
+.ve-verdict-neutral { border-left-color: var(--border-strong); background: var(--bg-primary); }
+.ve-verdict-label { font-size: 14px; font-weight: 600; }
+.ve-verdict-score { display: inline-flex; gap: 6px; }
+.ve-score-chip { font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
+.ve-score-chip.ve-chip-bull { background: rgba(246, 70, 93, 0.14); color: var(--red); }
+.ve-score-chip.ve-chip-bear { background: rgba(14, 203, 129, 0.14); color: var(--green); }
+/* 20261101r：指标瓦片行——统一网格容器（替代原 flex 均分 cap-metrics-row，
+   cap-metrics-row 类保留给 capitalCharts 资金概要卡，量能引擎卡内不再使用） */
+.ve-tile-row { display: grid; gap: 10px; margin-top: 10px; }
+.ve-cols-5 { grid-template-columns: repeat(5, 1fr); }
+.ve-cols-10 { grid-template-columns: repeat(10, 1fr); }
+.ve-span4 { grid-column: span 4; }
+/* 20261102c：ve-cols-10 行内 cap-metric 默认占 2 列（4+2+2+2=10 列满行，修复此前默认 1 列
+   导致宽屏下 4+1+1+1=7 列、右侧 3 列空白的隐患）；ve-span4 长文本卡覆盖为 4 列。 */
+.ve-cols-10 .cap-metric { grid-column: span 2; }
+.ve-tile-row .cap-metric {
+  padding: 10px 12px; min-width: 0;
+  background: var(--bg-primary); border: 1px solid var(--border-light); border-radius: 8px;
+}
+/* 20261102b（用户截图指令「展示卡片杂乱无章、毫无设计美感和对称性」）：
+   原 .ve-conclusion-grid 固定 3 列在条目数非 3 的倍数时右侧留大块空白（融资融券独占 1/3 行），
+   且列缝与 5 列/10 列基准网格断裂 → 改 .ve-flow-row 等分满行：条目（2~6 个动态）flex 等分
+   等高（stretch），满行对称；通栏长文本（量价关系）用 .ve-cc-wide 独占整行。
+   与 .ve-tile-row 同 gap（10px）、同瓦片 surface，整卡行节奏统一。 */
+.ve-flow-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.ve-flow-row .ve-cc { flex: 1 1 180px; }
+.ve-cc {
+  padding: 10px 12px; border-radius: 8px; min-width: 0;
+  background: var(--bg-primary); border: 1px solid var(--border-light); text-align: left;
+}
+.ve-cc-wide {
+  display: flex; align-items: baseline; gap: 10px; margin-top: 10px;
+  padding: 10px 12px; border-radius: 8px;
+  background: var(--bg-primary); border: 1px solid var(--border-light);
+}
+.ve-cc-wide .ve-cc-label { margin-bottom: 0; flex: none; }
+.ve-cc-label { display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; }
+.ve-cc-text { display: block; font-size: 13px; line-height: 1.55; }
+/* 20261103f（用户截图指令）：量能分析卡利好/利空语义着色——利好=红、利空=绿（全站红涨绿跌语义），中性不着色 */
+.ve-tone-bull { color: var(--red); }
+.ve-tone-bear { color: var(--green); }
+/* 20261101r：窄屏降级——≤900px 两列（长文本卡通栏、列缝逐列对齐失效处保持整洁），≤560px 单列 */
+@media (max-width: 900px) {
+  .ve-cols-5 { grid-template-columns: repeat(2, 1fr); }
+  .ve-cols-10 { grid-template-columns: 1fr 1fr; }
+  .ve-cols-10 .ve-span4 { grid-column: span 2; }
+  .ve-cols-10 .cap-metric { grid-column: auto; } /* 20261102c：两列窄网格下重置为流式，两枚一行 */
+  .ve-flow-row .ve-cc { flex-basis: calc(50% - 5px); }
+}
+@media (max-width: 560px) {
+  .ve-cols-5, .ve-cols-10 { grid-template-columns: 1fr; }
+  .ve-cols-10 .ve-span4 { grid-column: auto; }
+  .ve-cols-10 .cap-metric { grid-column: auto; } /* 20261102c：单列下重置，防隐式第二列 */
+  .ve-flow-row .ve-cc { flex-basis: 100%; }
+}
 .cap-date-note { font-size: 11px; color: var(--text-light); margin-top: 10px; }
 
-/* ---- 量能分析引擎卡（20261017c：spec 十三步链路，红涨绿跌 softDark）---- */
-.ve-score { margin-top: 8px; font-size: 13px; color: var(--text-secondary); }
-.ve-score b { font-size: 16px; }
-.ve-section-title { font-size: 13px; font-weight: 600; color: var(--text-primary); margin: 14px 0 8px; }
-/* 20261024i：量价关系分析合并进量能卡后的紧凑「量价配合」行 */
-.ve-vp-line { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; margin: 2px 0 8px; }
-.ve-vp-signal { font-weight: 600; font-size: 14px; }
-.ve-vp-desc { flex: 1 1 auto; min-width: 220px; color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
-.ve-dims { display: flex; flex-direction: column; gap: 6px; }
-.ve-dim { display: flex; gap: 10px; font-size: 13px; line-height: 1.6; padding: 6px 10px; background: var(--bg-primary); border-radius: 8px; }
-.ve-dim-label { flex: 0 0 72px; color: var(--text-secondary); }
-.ve-dim-value { flex: 1; color: var(--text-primary); }
+/* ---- 量能分析引擎卡（20261017c：spec 十三步链路，红涨绿跌 softDark）----
+   20261101k：.ve-score 两行随「量能信号」横幅删除（见上方死样式清理注释） */
+.ve-section-title { font-size: 13px; font-weight: 600; color: var(--text-primary); margin: 16px 0 10px; padding-left: 9px; border-left: 3px solid var(--accent); line-height: 1.4; }
+/* 20261101j：.ve-vp-line/.ve-vp-signal/.ve-vp-desc 与 .ve-dims/.ve-dim* 随展示层改版删除
+   （量价说明行删除、「资金行为/筹码转移」并入卡片，全库零引用，守卫见 test_pos_volume_matrix） */
 .ve-rules { display: flex; flex-direction: column; gap: 8px; }
 .ve-rule { padding: 8px 12px; border-radius: 8px; background: var(--bg-primary); border: 1px solid var(--border-light); }
 .ve-rule-hit { border-color: var(--border-strong); background: var(--bg-secondary); }
@@ -2753,6 +2824,40 @@ body {
 .ve-ten-table tr.hit td:nth-child(2) { color: var(--accent); font-weight: 600; }
 .ve-ten-fw { font-size: 11.5px; color: var(--text-muted); margin: 5px 0; line-height: 1.6; }
 .ve-ten-rem { font-size: 11px; color: var(--text-muted); margin-top: 6px; line-height: 1.7; }
+
+/* ---- 20261101d：位置感知量价判定主判（先定位置 → 量能×涨跌幅 → 判定，红涨绿跌 softDark）---- */
+.ve-posj { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin: 8px 0 10px; background: var(--bg-card); }
+.ve-posj-step { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; padding: 3px 0; }
+.ve-posj-step-label { flex: 0 0 132px; font-size: 11px; color: var(--text-muted); }
+.ve-posj-pos { font-size: 14px; font-weight: 700; color: var(--accent); }
+.ve-posj-pos-note { font-size: 12px; color: var(--text-secondary); }
+.ve-posj-combo { font-size: 14px; font-weight: 700; color: var(--text-primary); }
+.ve-posj-combo-note { font-size: 12px; color: var(--text-secondary); }
+.ve-posj-main { margin: 8px 0; padding: 10px 12px; border-radius: 8px; font-size: 13px; line-height: 1.7; background: var(--bg-primary); border-left: 3px solid var(--text-muted); color: var(--text-primary); }
+.ve-posj-main.bull { border-left-color: var(--red); }
+.ve-posj-main.bear { border-left-color: var(--green); }
+.ve-posj-main.caution, .ve-posj-main.observe { border-left-color: var(--accent); }
+.ve-posj-main .ve-posj-dir { font-weight: 700; margin-right: 6px; }
+.ve-posj-main.bull .ve-posj-dir { color: var(--red); }
+.ve-posj-main.bear .ve-posj-dir { color: var(--green); }
+.ve-posj-main.caution .ve-posj-dir, .ve-posj-main.observe .ve-posj-dir { color: var(--accent); }
+.ve-posj-table { width: 100%; border-collapse: collapse; font-size: 11.5px; margin: 6px 0; }
+.ve-posj-table th { text-align: left; color: var(--text-secondary); padding: 5px 8px; border-bottom: 1px solid var(--border); font-weight: 600; white-space: nowrap; }
+.ve-posj-table td { padding: 5px 8px; border-bottom: 1px solid rgba(255,255,255,.04); color: var(--text-secondary); vertical-align: top; }
+.ve-posj-table tr.hit td { color: var(--text-primary); background: rgba(240,185,123,.07); }
+.ve-posj-table tr.hit td:nth-child(1) { color: var(--accent); font-weight: 600; }
+/* 20261102i：参考表灰色追加的震荡/箱体形态行（未触发仅参考，弱化不抢主矩阵视觉；命中高亮复用 hit 规则） */
+.ve-posj-table tr.ve-posj-extgroup td { border-bottom: none; padding: 8px 8px 2px; color: var(--text-muted); font-weight: 600; font-size: 11px; letter-spacing: .3px; }
+.ve-posj-table tr.ve-posj-extrow td { color: var(--text-muted); }
+.ve-posj-table tr.ve-posj-extrow td:first-child { white-space: nowrap; }
+.ve-posj-table tr.ve-posj-extrow .ve-rule-badge { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
+/* 20261102f：主判生效路径说明（扩展判定归一，替代 20261102e 的静态扩展清单） */
+.ve-posj-path { font-size: 11px; color: var(--text-muted); line-height: 1.6; margin: -4px 0 6px; }
+/* 20261102g：异常判定块（量价背离 / 极端量能状态展示，位于三步之后、主判横幅之前） */
+.ve-posj-anomaly { align-items: flex-start; }
+.ve-posj-anomaly-list { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.ve-posj-anomaly-item { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.ve-posj-anomaly-name { font-size: 12.5px; font-weight: 600; color: var(--text-primary); }
 
 /* ---- 公司类型分类面板（20260902i 重设计：中性卡面 + 类型色左强调线 + 数据栅格）---- */
 .company-type-panel { margin-bottom: 16px; }
@@ -5699,6 +5804,49 @@ body { display: flex; flex-direction: column; }
 .note-content.is-clamped { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .note-actions .btn-expand { font-size: 11.5px; padding: 3px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary); cursor: pointer; }
 
+/* ===== 20261103i：大盘记录数据库检索面板（notes.html?scope=market 专属；红涨绿跌语义） ===== */
+.mldb-panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; margin: 16px 0 0; }
+.mldb-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.mldb-title { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.mldb-stats { font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.mldb-form { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mldb-input { padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary); font-size: 12.5px; }
+.mldb-input:focus { outline: none; border-color: var(--accent); }
+.mldb-q { width: 220px; }
+.mldb-sector { width: 180px; }
+.mldb-dir { width: 110px; }
+.mldb-date { width: 140px; color-scheme: dark; }
+.mldb-sep { color: var(--text-light); font-size: 12px; }
+.mldb-btn { padding: 6px 16px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent-light); color: var(--accent); font-size: 12.5px; cursor: pointer; font-weight: 600; }
+.mldb-btn:hover { filter: brightness(1.1); }
+.mldb-btn-ghost { background: var(--bg-card); border-color: var(--border); color: var(--text-secondary); font-weight: 400; }
+.mldb-tip { margin-top: 8px; font-size: 11.5px; color: var(--text-light); line-height: 1.6; }
+.mldb-err { color: var(--red); font-size: 12px; margin-top: 6px; min-height: 0; }
+.mldb-result-head { font-size: 12.5px; color: var(--text-secondary); padding: 2px 2px 0; }
+.mldb-result-head b { color: var(--accent); }
+.mldb-row { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; }
+.mldb-row-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.mldb-date { font-size: 13px; font-weight: 600; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.mldb-dir { font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 10px; }
+/* 红涨绿跌：up=红 / down=绿 / flat·未知=中性灰（全站语义，勿反） */
+.mldb-dir.up { color: var(--red); background: var(--red-light); }
+.mldb-dir.down { color: var(--green); background: var(--green-light); }
+.mldb-dir.flat { color: var(--text-secondary); background: var(--bg-primary); }
+.mldb-src { font-size: 11px; color: var(--text-light); }
+.mldb-idx { font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; font-variant-numeric: tabular-nums; }
+.mldb-idx .mi-up { color: var(--red); font-style: normal; }
+.mldb-idx .mi-down { color: var(--green); font-style: normal; }
+.mldb-chips { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+.mldb-chip-label { font-size: 11px; color: var(--text-light); }
+.mldb-chip { font-size: 11px; padding: 1px 8px; border-radius: 9px; border: 1px solid var(--border); color: var(--text-secondary); }
+.mldb-chip.up { color: var(--red); border-color: rgba(246, 70, 93, 0.4); }
+.mldb-chip.down { color: var(--green); border-color: rgba(14, 203, 129, 0.4); }
+.mldb-summary { font-size: 12.5px; color: var(--text-primary); line-height: 1.7; }
+.mldb-full { font-size: 12.5px; color: var(--text-primary); line-height: 1.8; margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border); }
+.mldb-row-actions { margin-top: 6px; }
+.mldb-toggle { font-size: 11.5px; padding: 3px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-secondary); cursor: pointer; }
+.mldb-toggle:hover { border-color: var(--accent); color: var(--accent); }
+
 /* accuracy 页：口径提示 + KPI 行（令牌取色；good=红 涨语义 / bad=绿 跌语义，与全站红涨绿跌一致） */
 .acc-tabs { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
 .acc-kpis { display: flex; flex-wrap: wrap; gap: 12px; margin: 12px 0; }
@@ -5711,6 +5859,13 @@ body { display: flex; flex-direction: column; }
 .acc-kpi.bad .k-value { color: var(--green); }
 .acc-kpi.na .k-value { color: var(--text-light); font-size: 16px; }
 .acc-hint { font-size: 12px; color: var(--text-secondary); margin: 10px 0; line-height: 1.7; }
+
+/* 20261103e：数据巡检（跨板块一致性核对）逐股明细表（令牌取色） */
+.ca-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px; }
+.ca-table th, .ca-table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.ca-table th { color: var(--text-secondary); font-weight: 600; white-space: nowrap; }
+.ca-table td.ca-note { color: var(--text-secondary); line-height: 1.6; word-break: break-all; }
+.ca-table tbody tr:last-child td { border-bottom: none; }
 .acc-hint code { background: rgba(255,255,255,0.06); padding: 1px 5px; border-radius: 3px; }
 
 /* 统一大空盒：notes 列表 / judgments 记录列表与准确率区 / accuracy 记录区（虚线框居中；基类小空态保留原样） */

@@ -23,7 +23,13 @@ ok(idx.includes('id="capVolumeEngine"'), '保留 #capVolumeEngine 容器');
 ok(idx.includes('量价 × 价格位置 × 量能行为'), '量能卡标题改为「量价 × 价格位置 × 量能行为」');
 
 console.log('\n[2] 量价内容并入 renderVolumeEngine，且去重');
-ok(app.includes('量价配合（当日）'), 'renderVolumeEngine 内含「量价配合（当日）」区块');
+// 20261101k：「量价配合（当日）」区块标题删除（用户截图指令），仅保留指标卡行；
+// 顶部「量能信号」横幅由「资金量能综合判断」上移替换（buildConclusionParts 同一数据源）。
+ok(!app.includes('量价配合（当日）'), '「量价配合（当日）」区块标题已删除（仅保留指标卡行）');
+ok(!app.includes('cap-signal-box'), 'app.js「量能信号」横幅已删除');
+ok(app.includes('资金量能综合判断') && app.includes('buildConclusionParts'), '「资金量能综合判断」上移替换量能信号横幅（buildConclusionParts 同源数据）');
+ok(!idx.includes('id="capConclusion"') && !idx.includes('资金量能综合判断</h3>'), '原页底「资金量能综合判断」独立卡已删除');
+ok(cc.includes('buildConclusionParts(data)') && !cc.includes('this.renderConclusion('), 'capitalCharts 导出 buildConclusionParts，renderAll 不再渲染旧卡');
 ok(app.includes('20日涨跌日') && app.includes('20日量价比') && app.includes('20日净涨跌'), '保留量价独有指标（20日涨跌日/量价比/净涨跌）');
 ok(app.includes('量比与量能档位同源，不重复展示'), '明确声明量比/量能档位不重复展示');
 ok(!app.includes('量比(÷5日均量)'), '不再重复渲染「量比(÷5日均量)」标签（去重）');

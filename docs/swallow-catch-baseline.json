@@ -1,5 +1,6 @@
 {
-  "total": 114,
-  "routeTotal": 9,
-  "generated": "2026-10-07T14:25:04.978Z"
+  "total": 125,
+  "routeTotal": 6,
+  "generated": "2026-11-03T12:10:06.976Z",
+  "triageNote": "2026-11-03 分诊收编（用户指令）：10-07 基线后 g/h/i/k 等版本的有意兜底空 catch 逐一核对确认，无静默吞错新增"
 }
