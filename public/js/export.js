@@ -45,7 +45,7 @@ const Exporter = {
         ['毛利率', fmtPct(m.grossMargin)],
         ['净利率', fmtPct(m.netMargin)],
         ['营收增长', fmtPct(m.revenueGrowth)],
-        ['利润增长', fmtPct(m.profitGrowth)],
+        ['归母净利润', fmtPct(m.profitGrowth)],
         ['资产负债率', fmt(m.debtToEquity)],
         ['流动比率', fmt(m.currentRatio)],
         ['股息率', fmtPct(m.dividendYield)],

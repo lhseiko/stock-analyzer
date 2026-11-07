@@ -81,9 +81,9 @@ group('1. _volTriState 边界与 _comboEngine 同源（20261019f 起对齐市场
 });
 
 // ============================================================
-group('2. _volumeTier 与 amplified/shrunk 同式（20261019f：市场标准量比单独定档）', () => {
-  // 按 _precompute 的真实公式手搭 pc（20261019f 起定档只看 ÷5 日均量：>1.2 放量 /
-  // <0.8 缩量 / <0.5 极度缩量；60 日确认 confirm 不参与定档，仅作分歧披露）
+group('2. _volumeTier 与 amplified/shrunk 同式（20261106j：分母统一 ÷20 日均量，与 135 格推演图同源）', () => {
+  // 手搭 pc：tier 由 ratio20（÷20 日均量）决定，阈值 放量>1.3 / 平量 0.8~1.3 / 缩量<0.8；
+  // ratio5Level 仅保留 ÷5 六态原始指标，level 不再参与定档（20261106j）。
   const pc = (ratio5, ratio20, confirm) => {
     let level = '平量';
     if (ratio5 > 1.2) level = ratio5 > 4 ? '天量' : (ratio5 > 2.5 ? '大量' : '温和放量');
@@ -92,43 +92,47 @@ group('2. _volumeTier 与 amplified/shrunk 同式（20261019f：市场标准量�
   };
 
   const t1 = VE._volumeTier(pc(0.66, 0.7, '缩量'));
-  ok(t1.shrunk === true && t1.amplified === false, 'ratio5 0.66（<0.8）→ shrunk=true（市场标准，与 60 日确认无关）');
-  ok(tierDir(t1.tier) === 'shrink', `tier 取 5 日量比档位，方向为缩量（实际 ${t1.tier}）`);
+  ok(t1.shrunk === true && t1.amplified === false, '÷20 日均量 0.7（<0.8）→ shrunk=true（与 60 日确认无关，tier 由 ÷20 决定）');
+  ok(t1.tier === '缩量', `÷20 日均量 0.7（<0.8）→ tier=缩量（实际 ${t1.tier}）`);
 
   const t2 = VE._volumeTier(pc(1.6, 1.5, '放量'));
-  ok(t2.amplified === true && t2.shrunk === false, 'ratio5 1.6（>1.2）→ amplified=true');
-  ok(tierDir(t2.tier) === 'amp', `tier 方向为放量（实际 ${t2.tier}）`);
+  ok(t2.amplified === true && t2.shrunk === false, '÷20 日均量 1.5（>1.3）→ amplified=true');
+  ok(t2.tier === '放量', `÷20 日均量 1.5（>1.3）→ tier=放量（实际 ${t2.tier}）`);
 
   const t3 = VE._volumeTier(pc(1.0, 0.95, null));
-  ok(t3.amplified === false && t3.shrunk === false, 'ratio5 1.0（0.8~1.2）→ 平量');
+  ok(t3.amplified === false && t3.shrunk === false, '÷20 日均量 0.95（0.8~1.3）→ 平量');
 
-  // 关键回归（20261019f，用户新洋丰实测反馈）：60日确认与 ÷5日均量档位冲突时，
-  // tier 必须保持 5 日量比档位（市场标准），不得被 60 日口径翻转；分歧由
-  // divergenceNote 如实披露——旧逻辑把量比 0.88 翻成「温和缩量」，与市场标准矛盾。
-  const t4 = VE._volumeTier({ level: '平量', judgedLevel: '平量', ratio5: 0.88, ratio20: 1.0, confirm: '缩量' });
-  ok(t4.tier === '平量', '跨基准冲突：tier 保持 ÷5日均量档位 平量（市场标准，不被 60 日确认翻转）');
-  ok(t4.shrunk === false && tierDir(t4.tier) === 'flat', '跨基准冲突：量比 0.88 平量 → shrunk=false（旧逻辑曾翻成缩量）');
-  ok(t4.ratio5Level === '平量', 'ratio5Level 同为平量（定档改后与 tier 一致）');
-  ok(/60 日均量口径确认为「缩量」/.test(t4.divergenceNote || '') && /市场标准量比/.test(t4.divergenceNote || ''), '跨基准分歧说明披露 60 日口径，并声明「档位以 ÷5 日均量（市场标准量比）为准」');
-  ok(t4.consistent === false, '跨基准分歧 → consistent=false');
+  // 关键回归（20261019f，用户新洋丰实测反馈）：档位恒由 ÷20 日均量三态决定，不得被其他口径翻转
+  // ——旧逻辑曾把 ÷20 量比 1.0 翻成「缩量」，与 135 格矛盾。20261106n 起 60 日 confirm 整体退役，
+  // 「60 日口径翻转档位」的历史风险源已从输入侧消除。
+  const t4 = VE._volumeTier({ level: '平量', judgedLevel: '平量', ratio5: 0.88, ratio20: 1.0 });
+  ok(t4.tier === '平量', '关键回归：tier 恒保持 ÷20日均量档位 平量（与 135 格推演图同源）');
+  ok(t4.shrunk === false && t4.tier === '平量', '关键回归：÷20 日均量 1.0 平量 → shrunk=false（旧逻辑曾翻成缩量）');
+  ok(t4.ratio5Level === '平量', 'ratio5Level 同为平量（÷5 六态原始指标，与 ÷20 tier 分轨保留）');
+  ok(t4.consistent === true && t4.divergenceNote === null, '÷5 与 ÷20 同为平量 → 一致无分歧（60 日跨基准分歧已退役）');
+  // 20261106n 退役负断言：残留 confirm 输入被忽略，不再触发「60 日均量口径确认…」分歧披露
+  const t4b = VE._volumeTier({ level: '平量', judgedLevel: '平量', ratio5: 0.88, ratio20: 1.0, confirm: '缩量' });
+  ok(!/60 日均量口径确认/.test(t4b.divergenceNote || ''), '60 日口径跨基准分歧说明已随 confirm 退役（不再披露）');
+  ok(t4b.tier === '平量' && t4b.consistent === true, '残留 confirm 输入不影响档位与一致性判定');
 });
 
 // ============================================================
 group('3. 跨口径分歧如实标注（不静默取一侧）', () => {
-  const okCase = VE._volumeTier({ level: '平量', judgedLevel: '平量', ratio5: 1.0, ratio20: 0.95, confirm: null });
+  const okCase = VE._volumeTier({ level: '平量', judgedLevel: '平量', ratio5: 1.0, ratio20: 0.95 });
   ok(okCase.consistent === true && okCase.divergenceNote === null, '两口径一致 → consistent=true，无分歧说明');
 
-  const crossWin = VE._volumeTier({ level: '温和缩量', judgedLevel: '温和缩量', ratio5: 0.66, ratio20: 1.4, confirm: '缩量' });
+  const crossWin = VE._volumeTier({ level: '温和缩量', judgedLevel: '温和缩量', ratio5: 0.66, ratio20: 1.4 });
   ok(crossWin.consistent === false, '跨窗口分歧（÷5日缩量 vs ÷20日放量）→ consistent=false');
   ok(/近20日水平明显回落/.test(crossWin.divergenceNote || ''), '跨窗口分歧说明标注了变化方向（回落）');
 
+  // 20261106n：60 日跨基准分歧（「5 日档位 vs 60日确认」）已随 confirm 退役——
+  // 分歧披露收敛为单一跨窗口维度，退役负断言防止旧说明回归。
   const crossBasis = VE._volumeTier({ level: '平量', judgedLevel: '平量', ratio5: 0.88, ratio20: 1.0, confirm: '缩量' });
-  ok(crossBasis.consistent === false, '跨基准分歧（5 日档位 vs 60日确认）→ consistent=false');
-  ok(/档位以 ÷5 日均量（市场标准量比）为准/.test(crossBasis.divergenceNote || ''), '跨基准分歧说明标注「档位以 ÷5 日均量（市场标准量比）为准」（不翻转）');
+  ok(crossBasis.divergenceNote === null && crossBasis.consistent === true, '60 日跨基准分歧说明已退役（残留 confirm 输入被忽略，不再产出）');
 
-  // 两类分歧同时发生：跨窗口（ratio5 0.88 平量 vs ratio20 1.4 放量）+ 跨基准（60 日确认缩量 vs 5 日平量）
-  const bothGap = VE._volumeTier({ level: '平量', judgedLevel: '平量', ratio5: 0.88, ratio20: 1.4, confirm: '缩量' });
-  ok(/；/.test(bothGap.divergenceNote || ''), '两类分歧同时发生时都列出（不互相覆盖）');
+  // 跨窗口分歧内容完整性：÷5 与 ÷20 两侧数值同时列出（不静默取一侧）
+  const bothSides = VE._volumeTier({ level: '平量', judgedLevel: '平量', ratio5: 0.88, ratio20: 1.4 });
+  ok(/近5日量能/.test(bothSides.divergenceNote || '') && /近20日主基准/.test(bothSides.divergenceNote || '') && bothSides.consistent === false, '跨窗口分歧说明同时给出 ÷5 与 ÷20 两侧数值与档位（不静默取一侧）');
 });
 
 // ============================================================
@@ -210,11 +214,12 @@ group('6. 端到端同源性：A / B / C 三方量能方向一致', () => {
 
     const a = dirOf(vp.signal);
     const b = dirOf(vp.heatLevel);
-    const c = tierDir(ve.volumeState.level);
+    // C = 引擎量能档位（÷20 三态，与 135 格推演图同源；unifiedTier 即源于此）
+    const c = /放量/.test(ve.volumeTier.tier) ? 'amp' : /缩量/.test(ve.volumeTier.tier) ? 'shrink' : /平量/.test(ve.volumeTier.tier) ? 'flat' : null;
     ok(a === b, `${name}：A 量价信号 与 B 量能热度 同向（${vp.signal} / ${vp.heatLevel}）`);
-    ok(b === c, `${name}：B 量能热度 与 C 引擎档位 同向（${vp.heatLevel} / ${ve.volumeState.level}）`);
-    ok(a === c, `${name}：A 与 C 同向（${vp.signal} / ${ve.volumeState.level}）`);
-    ok(!!vp.unified && vp.unified.tier === ve.volumeState.level, `${name}：unified.tier 等于引擎展示档位`);
+    ok(b === c, `${name}：B 量能热度 与 C 引擎量能档位 同向（${vp.heatLevel} / ${ve.volumeTier.tier}）`);
+    ok(a === c, `${name}：A 与 C 同向（${vp.signal} / ${ve.volumeTier.tier}）`);
+    ok(!!vp.unified && vp.unified.tier === ve.volumeTier.tier, `${name}：unified.tier 等于引擎量能档位（÷20 三态，与 135 格推演图同源）`);
   }
 });
 
@@ -512,8 +517,8 @@ group('13. 预期量能规则（20261019d：该放/该缩缺口补充，3 风险
     const n = over.n || 60;
     return {
       n, level: '平量', ratio5: 1, ratio5Prev: 1, ratio10: 1, ratio20: 1,
-      avg5: 1000, avg10: 1000, avg20: 1000, avg60: 1000,
-      confirm: null, chgPct: 0, closePrev: 10, closeToday: 10, highToday: 10.02,
+      avg5: 1000, avg10: 1000, avg20: 1000,
+      chgPct: 0, closePrev: 10, closeToday: 10, highToday: 10.02,
       volToday: 1000, vols: Array.from({ length: n }, () => 1000), lows: Array.from({ length: n }, () => 9.5), lowToday: 9.95,
       highs: Array.from({ length: n }, () => 10.1), highToday: 10.02,
       drawdownFromHigh: -5, pricePct12m: 0.5,
@@ -540,16 +545,16 @@ group('13. 预期量能规则（20261019d：该放/该缩缺口补充，3 风险
   const d5 = call('高位区间', { level: '天量', ratio5: 5, chgPct: null });
   ok(d5.highVolumeDrop.status === '数据不足' && /无法判定/.test(d5.highVolumeDrop.conclusion), '涨跌幅缺失 → 数据不足，不臆造');
 
-  // ---- ②下跌途中放量阳线诱多（风险）：下跌途中 + 巨量 + 收阳 ----
-  const u1 = call('下跌途中', { level: '大量', ratio5: 2.6, confirm: '放量', chgPct: 2 });
-  ok(u1.downtrendVolUpTrap.matched === true && u1.downtrendVolUpTrap.tone === 've-bear', '下跌途中+大量+阳线(+2%) → 放量阳线诱多命中');
-  ok(/诱多|对倒出货/.test(u1.downtrendVolUpTrap.conclusion), '结论为诱多陷阱口径');
-  const u2 = call('下跌途中', { level: '大量', ratio5: 2.6, chgPct: -2 });
-  ok(u2.downtrendVolUpTrap.matched === false && /该缩量反放巨量/.test(u2.downtrendVolUpTrap.conclusion), '下跌途中+放量+阴跌 → 本规则未命中（交由该缩量反放巨量，不重复）');
-  const u3 = call('下跌途中', { level: '大量', ratio5: 2.6, chgPct: 2 }, { rules: [{ id: 1, matched: true }] });
+  // ---- ②旧「下跌途中放量阳线诱多」规则已退役（20261106a）：仅验证永不命中，判定由 135 格承担 ----
+  const u1 = call('中位区间', { level: '大量', ratio5: 2.6, confirm: '放量', chgPct: 2 });
+  ok(u1.downtrendVolUpTrap.matched === false, '20261106a 旧规则退役：旧「下跌途中+放量阳线诱多」不再命中（判定由 135 格承担）');
+  ok(!/诱多|对倒出货/.test(u1.downtrendVolUpTrap.conclusion), '不再产出旧体系诱多陷阱结论');
+  const u2 = call('中位区间', { level: '大量', ratio5: 2.6, chgPct: -2 });
+  ok(u2.downtrendVolUpTrap.matched === false, '旧方向规则退役：放量阴跌场景同样不命中');
+  const u3 = call('中位区间', { level: '大量', ratio5: 2.6, chgPct: 2 }, { rules: [{ id: 1, matched: true }] });
   ok(u3.downtrendVolUpTrap.matched === false, '规则1 低位吸筹完整命中 → 不误判为诱多（spec 7.4 例外）');
   const u4 = call('高位区间', { level: '大量', ratio5: 2.6, chgPct: 2 });
-  ok(u4.downtrendVolUpTrap.matched === false, '高位放量阳线 → 未命中（位置不满足）');
+  ok(u4.downtrendVolUpTrap.matched === false, '高位区间放量阳线 → 旧规则仍不命中');
 
   // ---- ③高位缩量横盘（风险）：高位 + 缩量 + 横盘 ----
   const s1 = call('高位区间', { level: '温和缩量', ratio5: 0.5, confirm: '缩量', chgPct: 0.3 });
@@ -561,14 +566,14 @@ group('13. 预期量能规则（20261019d：该放/该缩缺口补充，3 风险
   ok(s3.highShrinkSideways.matched === false, '低位缩量横盘 → 未命中（位置不满足）');
 
   // ---- ④突破后回踩缩量不破（正向确认）----
-  const p1 = call('上涨中途', { level: '温和缩量', ratio5: 0.5, confirm: '缩量', chgPct: -0.5, closeToday: 10.2 }, { breakThrough: true });
+  const p1 = call('中位区间', { level: '温和缩量', ratio5: 0.5, confirm: '缩量', chgPct: -0.5, closeToday: 10.2 }, { breakThrough: true });
   ok(p1.breakoutPullbackShrink.matched === true && p1.breakoutPullbackShrink.tone === 've-bull', '有效突破后缩量回踩不破 → 命中（正向确认）');
   ok(/突破确认|健康回踩/.test(p1.breakoutPullbackShrink.conclusion), '结论为突破确认口径');
-  const p2 = call('上涨中途', { level: '温和缩量', ratio5: 0.5, confirm: '缩量', chgPct: 1.5, closeToday: 10.2 }, { breakThrough: true });
+  const p2 = call('中位区间', { level: '温和缩量', ratio5: 0.5, confirm: '缩量', chgPct: 1.5, closeToday: 10.2 }, { breakThrough: true });
   ok(p2.breakoutPullbackShrink.matched === false, '突破后仍上涨（非回踩）→ 未命中');
-  const p3 = call('上涨中途', { level: '温和缩量', ratio5: 0.5, confirm: '缩量', chgPct: -0.5, closeToday: 9.9 }, { breakThrough: true });
+  const p3 = call('中位区间', { level: '温和缩量', ratio5: 0.5, confirm: '缩量', chgPct: -0.5, closeToday: 9.9 }, { breakThrough: true });
   ok(p3.breakoutPullbackShrink.matched === false, '突破后回踩跌破原压力位 → 未命中（确认度一般）');
-  const p4 = call('上涨中途', { level: '温和缩量', ratio5: 0.5, confirm: '缩量', chgPct: -0.5, closeToday: 10.2 }, { breakThrough: false });
+  const p4 = call('中位区间', { level: '温和缩量', ratio5: 0.5, confirm: '缩量', chgPct: -0.5, closeToday: 10.2 }, { breakThrough: false });
   ok(p4.breakoutPullbackShrink.matched === false && p4.breakoutPullbackShrink.status === '未触发', '无有效突破前提 → 未触发');
 
   // ---- ⑤低位倍量阳线启动（正向确认）----
@@ -580,14 +585,14 @@ group('13. 预期量能规则（20261019d：该放/该缩缺口补充，3 风险
   const b3 = call('低位区间', { level: '天量', ratio5: 5, chgPct: -2 });
   ok(b3.bottomVolUpStart.matched === false, '低位放量阴线 → 未命中（非阳线启动）');
 
-  // ---- ⑥主升浪缩量上涨（正向确认）----
-  const m1 = call('上涨中途', { level: '温和缩量', ratio5: 0.5, confirm: '缩量', chgPct: 2 });
-  ok(m1.mainRiseShrinkControl.matched === true && m1.mainRiseShrinkControl.tone === 've-bull', '上涨中途+缩量+上涨 → 主升浪缩量上涨命中（控盘）');
-  ok(/筹码锁定良好|控盘/.test(m1.mainRiseShrinkControl.conclusion), '结论为筹码锁定良好口径');
-  const m2 = call('上涨中途', { level: '大量', ratio5: 2, confirm: '放量', chgPct: 2 });
-  ok(m2.mainRiseShrinkControl.matched === false, '上涨中途放量上涨 → 未命中（非缩量）');
-  const m3 = call('上涨中途', { level: '温和缩量', ratio5: 0.5, confirm: '缩量', chgPct: -2 });
-  ok(m3.mainRiseShrinkControl.matched === false, '上涨中途缩量下跌 → 未命中（非上涨）');
+  // ---- ⑥旧「主升浪缩量上涨（控盘）」规则已退役（20261106a）：仅验证永不命中 ----
+  const m1 = call('中位区间', { level: '温和缩量', ratio5: 0.5, confirm: '缩量', chgPct: 2 });
+  ok(m1.mainRiseShrinkControl.matched === false, '20261106a 旧规则退役：旧「主升浪缩量上涨（控盘）」不再命中');
+  ok(!/筹码锁定良好|控盘/.test(m1.mainRiseShrinkControl.conclusion), '不再产出旧体系控盘结论');
+  const m2 = call('中位区间', { level: '大量', ratio5: 2, confirm: '放量', chgPct: 2 });
+  ok(m2.mainRiseShrinkControl.matched === false, '中位区间放量上涨 → 旧规则仍不命中');
+  const m3 = call('中位区间', { level: '温和缩量', ratio5: 0.5, confirm: '缩量', chgPct: -2 });
+  ok(m3.mainRiseShrinkControl.matched === false, '中位区间缩量下跌 → 旧规则仍不命中');
 
   // ---- 归集总结：6 项逐条完整输出 ----
   const sm = VE._buildSummaries({
@@ -615,16 +620,19 @@ group('13. 预期量能规则（20261019d：该放/该缩缺口补充，3 风险
     });
   }
   const e2e = VE.computeVolumeEngine({ symbol: 'X', name: 'X', bars, barsSource: 'tencent' });
-  const e2eHvd = e2e.expectedVolumeSummary.items.find(i => i.form === '高位放量下跌');
+  // 20261106j：预期量能规则不再随 API 响应下发（expectedVolumeSummary 已移除），
+  // 改为直接以 _expectedVolumeRules 复算验证端到端场景命中（与 API 同源）。
+  const pcE2e = VE._precompute(bars);
+  const expE2e = VE._expectedVolumeRules(pcE2e, { position: e2e.position, levels: { resistance: { price: 10 }, support: { price: 9 } }, breakThrough: false, rules: [] });
   // 20261020a：新增 bottomPhase 底部区域相位分类 → schema 升至 20261020a
   // 20261020b：口诀4 阈值具象化（均值×0.7=阈值 + 实际近3日量能同屏）→ schema 升至 20261020b
   // 20261020c：规则5 尾盘窗口按 time 时间戳剔除盘后条目（零量盘后条目曾致系统性误命中）→ schema 升至 20261020c
   // 20261020d：11.3.1「该放量未放量」结论文案阈值具象化（均值×1.5=阈值 + 当日实际量同屏）→ schema 升至 20261020d
   // 20261023d：新增 tenRules 量价十口诀（郭睿体系）主判层；平量涨/跌方向 neutral→observe → schema 升至 20261023d
   // 20261101d：新增 posJudgment 位置感知量价判定主判（图片 24 格矩阵；十口诀降为补充辅助）→ schema 升至 20261101d
-  ok(e2e.schema === 'volume-engine-20261101d', `schema 已升 20261101d（实际 ${e2e.schema}）`);
-  ok(e2e.posJudgment && e2e.posJudgment.position && Array.isArray(e2e.posJudgment.cells), '端到端输出含 posJudgment（位置 + 6 格矩阵）');
-  ok(e2eHvd.matched === true && e2eHvd.status === '命中', `端到端高位放量大跌命中（位置 ${e2e.position.label}）`);
+  ok(e2e.schema === 'volume-engine-20261106p', `schema 已升 20261106j（实际 ${e2e.schema}）`);
+  ok(e2e.posJudgment && e2e.posJudgment.position && e2e.posJudgment.cell !== undefined && e2e.posJudgment.signals, '端到端输出含 posJudgment（位置 + 135 格主判 + 信号叠加层）');
+  ok(expE2e.highVolumeDrop.matched === true && expE2e.highVolumeDrop.status === '命中', `端到端高位放量大跌命中（位置 ${e2e.position.label}）`);
   ok(e2e.riskTags.includes('高位放量大阴线派发风险'), '命中 → 风险标签「高位放量大阴线派发风险」同步输出');
   ok(!/看多信号/.test(e2e.signal.category), `高位放量大跌不得输出看多信号（实际 ${e2e.signal.category}）`);
 
@@ -641,8 +649,10 @@ group('13. 预期量能规则（20261019d：该放/该缩缺口补充，3 风险
     });
   }
   const e2e2 = VE.computeVolumeEngine({ symbol: 'X', name: 'X', bars: bars2, barsSource: 'tencent' });
-  const hit = e2e2.expectedVolumeSummary.items.find(i => i.form === '低位倍量阳线');
-  ok(hit.matched === true && hit.status === '命中', `端到端低位倍量阳线命中（位置 ${e2e2.position.label}）`);
+  // 20261106j：同 e2e，改为直接以 _expectedVolumeRules 复算验证端到端场景命中
+  const pcE2e2 = VE._precompute(bars2);
+  const expE2e2 = VE._expectedVolumeRules(pcE2e2, { position: e2e2.position, levels: { resistance: { price: 10 }, support: { price: 9 } }, breakThrough: false, rules: [] });
+  ok(expE2e2.bottomVolUpStart.matched === true && expE2e2.bottomVolUpStart.status === '命中', `端到端低位倍量阳线命中（位置 ${e2e2.position.label}）`);
   ok(e2e2.signal.bullSupport.includes('低位倍量阳线启动，底部启动信号'), '正向量能确认进入 signal.bullSupport');
 });
 

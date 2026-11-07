@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * scripts/test_etf_flow_holiday_guard.js — 20261103m 守卫
+ * scripts/test_etf_flow_holiday_guard.js — 20261105b 守卫
  * 用户指令：节假日/假后第一天只读取最后一次更新的数据，避免取数报错。
  * 事故背景：11-01（周日）重采把 10-30 已定稿快照覆盖（shareDate 被 T+1 采集日语义前推一天），
  * 逐日表 10-30 出现假 Δ=0、台账把周四增量重复计入。
@@ -45,7 +45,7 @@ function makeFixture() {
     const pcf = { date: '20261030', byCode: { '510300': { code: '510300', name: '沪深300ETF', tradeDate: '20261030', nav: 4.0, unit: 1000000, comps: [] } } };
     write(path.join(fx.pcf, '20261102.json'), pcf);
 
-    // 外呼全走 collect 的 opts 注入口（20261103m 测试 seam），不做真实外呼
+    // 外呼全走 collect 的 opts 注入口（20261105b 测试 seam），不做真实外呼
     let sharesFetched = false;
     const baseOpts = () => ({
       cacheKey: '20261102',
@@ -118,9 +118,9 @@ function makeFixture() {
     ok(appJs.indexOf('f.fallback') >= 0, 'app.js 情绪卡展示兜底标注');
     const t1 = fs.readFileSync(path.join(ROOT, 'scripts/test_metric_analysis_vote.js'), 'utf8');
     const t2 = fs.readFileSync(path.join(ROOT, 'scripts/test_consistency_audit.js'), 'utf8');
-    ok(t1.indexOf('20261103m') >= 0 && t2.indexOf('20261103m') >= 0, '版本断言已同步 20261103m');
+    ok(t1.indexOf('20261106p') >= 0 && t2.indexOf('20261106p') >= 0, '版本断言已同步 20261106p');
     const server = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
-    ok(/const APP_VERSION = '20261103m'/.test(server), "APP_VERSION = '20261103m'");
+    ok(/const APP_VERSION = '20261106p'/.test(server), "APP_VERSION = '20261106p'");
   }
 
   console.log(`\n结果：${pass} 通过 / ${fail} 失败`);

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * scripts/test_consistency_audit.js — 20261103m 守卫
+ * scripts/test_consistency_audit.js — 20261105b 守卫
  * 用户指令：每日定期检查工作台所有数据——多个板块使用的同一数据（即使数据源不同）核对展示值一致；
  * ⚠️ 严格区分累计数据与固定期数据（前三季度累计 vs 第三季度单季），口径差异注记不算错误。
  */
@@ -133,9 +133,9 @@ console.log('=== §6 接线守卫（server / 前端 / 版本戳）===');
   ok(accJs.includes('loadConsistency(true)'), '结算按钮 = 立即重跑巡检（force）');
   const css = fs.readFileSync(path.join(ROOT, 'public/css/style.css'), 'utf8');
   ok(css.includes('.ca-table'), 'style.css 有巡检明细表样式');
-  ok(/const APP_VERSION = '20261103m'/.test(serverJs), "APP_VERSION = '20261103m'");
+  ok(/const APP_VERSION = '20261106p'/.test(serverJs), "APP_VERSION = '20261106p'");
   const idx = fs.readFileSync(path.join(ROOT, 'public/index.html'), 'utf8');
-  ok(idx.includes('?v=20261103m') && accHtml.includes('?v=20261103m'), 'index/accuracy 页面版本戳已对齐');
+  ok(idx.includes('?v=20261106p') && accHtml.includes('?v=20261106p'), 'index/accuracy 页面版本戳已对齐');
 }
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`);

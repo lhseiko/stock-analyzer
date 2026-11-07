@@ -49,8 +49,9 @@ console.log('=== §1 evaluateSignals 百分数口径契约（×100 放大回归�
   ok(src.indexOf('Math.abs(pgRaw) < 1') < 0, 'analysis.js 已无 pgRaw <1 即 ×100 启发式');
 }
 
-console.log('=== §2 dimsVote 五维多数决 ===');
+console.log('=== §2 dimsVote 五维多数决·水平锚定（20261105b）===');
 {
+  // 2a) 成长类（anchorChange=false）：三项利空维度 → 总体利空（20261103d 规则原样保留）
   const dims3Bear = {
     yoy: { available: true, signal: 'bear', text: 'a' },
     qoq: { available: true, signal: 'bear', text: 'b' },
@@ -58,20 +59,72 @@ console.log('=== §2 dimsVote 五维多数决 ===');
     pct: { available: true, signal: 'bull', text: 'd' },
     marginal: { available: false, signal: null, text: '' },
   };
-  const v1 = dimsVote(dims3Bear, { signal: 'bull', reason: '信号判定利好' });
-  ok(v1.conflict === true, '3 利空 vs 1 利好 → 多数决判利空且标记冲突');
+  const v1 = dimsVote(dims3Bear, { signal: 'bull', reason: '信号判定利好' }, { anchorChange: false });
+  ok(v1.conflict === true, '成长类 3 利空 vs 1 利好 → 多数决判利空且标记冲突');
   ok(v1.judgment.signal === 'bear', `多数决 signal=bear（实际 ${v1.judgment.signal}）`);
   ok(v1.judgment.reason.indexOf('已按多数决为准') >= 0, 'reason 显式标注「已按多数决为准」');
   ok(v1.judgment.reason.indexOf('信号判定利好') >= 0, 'reason 保留原判定依据');
 
-  const v2 = dimsVote({ yoy: dims3Bear.yoy }, { signal: 'bull', reason: '仅一维' });
-  ok(v2.conflict === false && v2.judgment.signal === 'bull', '可用维度 <2 → 沿用原判定不投票');
+  // 2b) 水平锚定（20261105b 核心）：水平型指标 + 水平利好 + 4 变化维度利空（industry 不可得，
+  //     忠实复刻万润负债率 29.4% 实况）→ 不再被覆盖为利空
+  const v2 = dimsVote({
+    yoy: { available: true, signal: 'bear', text: 'a' },
+    qoq: { available: true, signal: 'bear', text: 'b' },
+    industry: { available: false, signal: null, text: '' },
+    pct: { available: true, signal: 'bear', text: 'd' },
+    marginal: { available: true, signal: 'bear', text: 'e' },
+  }, { signal: 'bull', reason: '负债率较低，财务稳健' });
+  ok(v2.judgment.signal === 'neutral', `水平型：变化维度与水平锚相反降级中性 → 判 neutral 不再误判利空（实际 ${v2.judgment.signal}）`);
+  ok(v2.judgment.reason.indexOf('水平锚定') >= 0, 'reason 标注「水平锚定」');
+  ok(v2.judgment.reason.indexOf('已降级中性') >= 0, 'reason 标注降级票数');
+  ok(v2.judgment.reason.indexOf('原判定依据：负债率较低，财务稳健') >= 0, '原判定依据保留');
 
+  // 2c) 水平锚定 + 同向变化票（圣湘负债率实况）：yoy bear/qoq bull/pct bear + 水平利好 → 利好
   const v3 = dimsVote({
+    yoy: { available: true, signal: 'bear', text: 'a' },
+    qoq: { available: true, signal: 'bull', text: 'b' },
+    industry: { available: false, signal: null, text: '' },
+    pct: { available: true, signal: 'bear', text: 'd' },
+    marginal: { available: false, signal: null, text: '' },
+  }, { signal: 'bull', reason: '负债率 26.4% 较低，财务稳健' });
+  ok(v3.judgment.signal === 'bull', `水平利好+同向变化票 → 方向票以水平锚兜底 → bull（修复圣湘负债率误判，实际 ${v3.judgment.signal}）`);
+  ok(v3.conflict === false, '水平锚兜底结果与原判定一致 → 不计冲突');
+  ok(v3.judgment.reason.indexOf('不改变方向判定') >= 0, '同向兜底时标注降级说明');
+
+  // 2d) 中性票需严格多于方向票最大者才单独成判（修复 v1 忽略中性票缺陷）
+  const v4 = dimsVote({
+    yoy: { available: true, signal: 'bear', text: 'a' },
+    industry: { available: true, signal: 'bear', text: 'c' },
+  }, { signal: 'neutral', reason: '水平中性' });
+  ok(v4.judgment.signal === 'bear', `bear2 > neutral1（水平中性票）→ bear（实际 ${v4.judgment.signal}）`);
+  const v5 = dimsVote({
+    yoy: { available: true, signal: 'bear', text: 'a' },
+    industry: { available: true, signal: 'neutral', text: 'c' },
+    pct: { available: true, signal: 'neutral', text: 'd' },
+  }, { signal: 'neutral', reason: '水平中性' });
+  ok(v5.judgment.signal === 'neutral', `neutral3 严格多于 bear1 → neutral（实际 ${v5.judgment.signal}）`);
+
+  // 2e) 可用票 <2 → 沿用原判定
+  const v6 = dimsVote({ yoy: dims3Bear.yoy }, { signal: 'bull', reason: '仅一维' });
+  ok(v6.conflict === false && v6.judgment.signal === 'bull', '可用维度 <2 → 沿用原判定不投票');
+
+  // 2f) 多数决与原判定一致 → 原判定原样保留
+  const v7 = dimsVote({
     yoy: { available: true, signal: 'bull', text: 'a' },
     qoq: { available: true, signal: 'bull', text: 'b' },
   }, { signal: 'bull', reason: '一致' });
-  ok(v3.conflict === false && v3.judgment.reason === '一致', '多数决与原判定一致 → 原判定原样保留');
+  ok(v7.conflict === false && v7.judgment.reason === '一致', '多数决与原判定一致 → 原判定原样保留');
+
+  // 2g) 成长类不锚定键集合守卫（源码级，防漏登记/误删）
+  const maSrc = fs.readFileSync(path.join(ROOT, 'lib/metricAnalysis.js'), 'utf8');
+  const setMatch = maSrc.match(/CHANGE_INHERENT_KEYS = new Set\(\[([^\]]*)\]\)/);
+  ok(!!setMatch, 'metricAnalysis.js 存在 CHANGE_INHERENT_KEYS 键集合');
+  if (setMatch) {
+    const keys = setMatch[1].split(',').map(s => s.trim().replace(/^'|'$/g, '')).filter(Boolean);
+    ok(keys.indexOf('growth') >= 0 && keys.indexOf('profitGrowth') >= 0 && keys.indexOf('dedProfitGrowth') >= 0 && keys.indexOf('opProfit') >= 0,
+      `成长类不锚定键集合完整（实际 ${keys.join('/')}）`);
+  }
+  ok(maSrc.indexOf('anchorChange: !CHANGE_INHERENT_KEYS.has(mm.key)') >= 0, '投票调用按指标键开关锚定');
 }
 
 console.log('=== §3 单季差分（sqSeries / sqQoqDim）===');
@@ -141,9 +194,9 @@ console.log('=== §5 前端/版本戳守卫 ===');
   const cnt = (appJs.match(/metricAnalysis\?\.metrics \|\| \[\]\)\.forEach/g) || []).length;
   ok(cnt === 2, `app.js 左卡 + 顶栏两处消费 metricAnalysis judgment（实际 ${cnt} 处）`);
   const serverJs = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
-  ok(/const APP_VERSION = '20261103m'/.test(serverJs), "APP_VERSION = '20261103m'");
+  ok(/const APP_VERSION = '20261106p'/.test(serverJs), "APP_VERSION = '20261106p'");
   const idx = fs.readFileSync(path.join(ROOT, 'public/index.html'), 'utf8');
-  ok(idx.indexOf('?v=20261103m') >= 0, 'index.html 版本戳 ?v=20261103m');
+  ok(idx.indexOf('?v=20261106p') >= 0, 'index.html 版本戳 ?v=20261106p');
 }
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`);

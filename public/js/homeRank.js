@@ -10,6 +10,7 @@ const HomeRank = (() => {
   let loading = false;
   let lastLoad = 0;
   let pollTimer = null;
+  let lastSig = null; // 20261104j：上一轮渲染数据签名（相同则跳过重建，保滚动位置）
   const THROTTLE = 4000;
   const POLL_MS = 3000;
 
@@ -198,6 +199,20 @@ const HomeRank = (() => {
 
   const TOP_N = 20;
 
+  // 20261104j：数据签名——渲染输入中所有影响显示的字段。签名不变 → render 跳过 innerHTML 重建
+  // （轮询中大多数轮次数据没变，重建只会打断浏览；头部「更新 HH:MM」时间戳不受影响照常刷新）。
+  function dataSig(data) {
+    const c = data.coverage || {}, q = data.quarter || {}, p = data.progress || {};
+    return JSON.stringify([
+      p.running, p.phase, p.done, p.rate, p.etaSec, p.remaining, p.failed, p.lastError,
+      q.done, q.published, q.inWindow, q.updatedTo, q.nextCheckAt, q.lastProbeLabel, q.lastRunDate,
+      c.fundsAtTarget, c.fundsComparable, c.universe, c.stocks, c.totalMarketValueYi, c.prevTotalMarketValueYi,
+      data.periodLabel, data.note,
+      (data.industries || []).map(i => [i.name, i.marketValueYi, i.changeYi, i.changePct, i.share, i.fundCount, i.stockCount,
+        (i.topStocks || []).map(s => s.name + ':' + s.marketValue + ':' + s.fundCount)]),
+    ]);
+  }
+
   function rankView(data) {
     const all = data.industries || [];
     if (!all.length) {
@@ -241,6 +256,17 @@ const HomeRank = (() => {
       updEl.textContent = parts.join(' · ');
     }
 
+    // 20261104j：滚动稳定修复（用户报障：名单向下浏览时自动回弹到名单前面）。
+    // 根因=分批更新期间每 3 秒轮询 → render() 无条件 body.innerHTML 全量重建 →
+    //   浏览器滚动锚定的 anchor 节点在被销毁子树内失效 → .main-content 滚动位置回弹。
+    // 两道保险：
+    //   ① 数据签名比对——本轮数据与上轮完全一致（轮询中大多数轮次）→ 跳过重建，DOM 与滚动位置原样保留；
+    //   ② 数据确实变化必须重建时做「滚动锚定」——重建前记录名单表格容器相对视口的位置，
+    //      重建后把差值校正回 .main-content.scrollTop（滚动容器=main-content，20261104g 口径），内容钉在原位。
+    const sig = dataSig(data);
+    if (sig === lastSig) return;
+    lastSig = sig;
+
     const running = data.progress && data.progress.running;
     let html = '';
     html += quarterView(data);
@@ -250,7 +276,18 @@ const HomeRank = (() => {
     if (data.note) {
       html += `<div class="rank-note">📌 ${escapeHtml(data.note)}<div style="margin-top:4px;color:var(--text-light);">仅供研究参考，不构成投资建议。</div></div>`;
     }
+    // 锚定：优先名单表格容器（用户浏览的主体），退化到状态条（表格尚未渲染时）
+    const main = document.querySelector('.main-content') || document.scrollingElement;
+    const oldAnchor = body.querySelector('.fmr-table-wrap') || body.querySelector('.fmr-quarter');
+    const beforeTop = oldAnchor ? oldAnchor.getBoundingClientRect().top : null;
     body.innerHTML = html;
+    if (beforeTop != null && main && typeof main.scrollTop === 'number') {
+      const newAnchor = body.querySelector('.fmr-table-wrap') || body.querySelector('.fmr-quarter');
+      if (newAnchor) {
+        const delta = newAnchor.getBoundingClientRect().top - beforeTop;
+        if (Math.abs(delta) >= 1) main.scrollTop += delta;
+      }
+    }
   }
 
   function schedulePoll() {
@@ -295,6 +332,7 @@ const HomeRank = (() => {
       await fetch('/api/fund-industry-matrix/crawl', { method: 'POST' });
     } catch (e) { /* 忽略，继续拉取 */ }
     lastLoad = 0;
+    lastSig = null; // 20261104j：手动刷新强制重建一次（用户主动动作，期望看到重渲染反馈）
     await load(true);
     if (btn) { btn.disabled = false; btn.textContent = prev || '🔄 刷新'; }
   }
@@ -309,3 +347,6 @@ const HomeRank = (() => {
 
   return { load, refresh, bind };
 })();
+
+// 20261104j：node 守卫 require 用（浏览器无 module，typeof 守卫不抛错）
+if (typeof module !== 'undefined' && module.exports) module.exports = HomeRank;

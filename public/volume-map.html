@@ -1,439 +1,884 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>量能涨跌关系分析 · 股票分析工作台</title>
-  <link rel="icon" type="image/x-icon" href="favicon.ico?v=20261025f">
-  <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=20261025f">
-  <link rel="stylesheet" href="css/style.css?v=20261102k">
-  <!-- 20261102f（用户指令：尽可能展示整个思维导图，模块原仅占页宽约 1/3）：页面放宽 1400→1920px、
-       收紧页头/工具条占位（画布高度 210→184 扣减、min-height 520→600）、fit 留白 32→20——
-       大屏下思维导图可用宽度 +37%、fit 初始缩放更高；独立长页外壳（与 notes.html 同构）+ 页内思维导图样式（本页专用，不进共享 style.css） -->
+<meta charset="UTF-8">
+<title>量价判定模型（合并版） · 股票分析工作台</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { max-width:1980px; margin:0 auto; min-width:1980px; background:#0D1117; color:#E6EDF3;
+    font-family:"Microsoft YaHei","PingFang SC",sans-serif; padding:26px 30px 24px; }
+  .root { text-align:center; margin-bottom:6px; }
+  .root h1 { display:inline-block; font-size:26px; font-weight:700; color:#F0B97B;
+    padding:10px 34px; border:1.5px solid #F0B97B; border-radius:12px;
+    background:linear-gradient(135deg, rgba(240,185,123,.16), rgba(240,185,123,.05)); }
+  .root .sub { margin-top:8px; font-size:13px; color:#8B949E; }
+  .root .sub b { color:#C9D1D9; font-weight:600; }
+  .cols { display:flex; gap:18px; margin-top:16px; align-items:flex-start; }
+  .zone { flex:1; border:1px solid #21262D; border-top:3px solid; border-radius:10px;
+    background:#161B22; padding:12px 12px 10px; }
+  .zone-h { display:flex; align-items:baseline; gap:10px; padding:2px 2px 10px; }
+  .zone-name { font-size:19px; font-weight:700; }
+  .zone-pct { font-size:12px; color:#8B949E; }
+  .state { margin-bottom:10px; }
+  .state:last-child { margin-bottom:0; }
+  .state-h { font-size:15px; font-weight:700; color:#E6EDF3; padding:6px 10px; margin-bottom:8px;
+    border-left:3px solid; background:#1C2128; border-radius:6px; }
+  .vol { margin-left:8px; padding:2px 0 4px 10px; border-left:2px solid; margin-bottom:6px; }
+  .vol:last-child { margin-bottom:0; }
+  .vol-h { font-size:13px; font-weight:700; padding:2px 0 4px; }
+  .leaf { padding:5px 8px; border-radius:6px; background:#1C2128; margin-bottom:4px; }
+  .leaf:last-child { margin-bottom:0; }
+  .leaf-t { font-size:12px; line-height:1.5; }
+  .leaf-day { font-weight:700; margin-right:8px; }
+  .t-bigup { color:#F6465D; } .t-up { color:#E39AA4; } .t-flat { color:#F0B97B; }
+  .t-down { color:#5FBF97; } .t-bigdown { color:#0ECB81; }
+  .leaf-combo { color:#8B949E; }
+  .dv { font-size:10px; color:#8B949E; border:1px solid #30363D; border-radius:8px; padding:0 6px; margin-left:6px; }
+  .leaf-d { font-size:12px; line-height:1.55; color:#A8B3BF; margin-top:2px; }
+  .sig-layer { margin-top:18px; border:1px solid #30363D; border-radius:12px; background:#10151C; padding:14px 16px 12px; }
+  .sig-layer-h { text-align:center; font-size:16px; font-weight:700; color:#E6EDF3; margin-bottom:10px; }
+  .sig-layer-h small { display:block; font-weight:400; font-size:11px; color:#8B949E; margin-top:4px; }
+  .sig-cards { display:flex; gap:16px; }
+  .sig-card { flex:1; border:1px solid #21262D; border-radius:10px; background:#161B22; padding:10px 12px; }
+  .sig-title { font-size:15px; font-weight:700; padding-bottom:8px; }
+  .sig-item { margin-bottom:8px; }
+  .sig-item:last-child { margin-bottom:0; }
+  .sig-name { font-size:13px; font-weight:700; }
+  .sig-cond { font-weight:400; font-size:11px; color:#8B949E; margin-left:10px; }
+  .sig-row { display:flex; gap:8px; align-items:baseline; padding:3px 8px; border-radius:5px;
+    background:#1C2128; margin-top:3px; }
+  .sig-zone { flex:0 0 52px; font-size:11px; font-weight:700; color:#C9D1D9; }
+  .sig-text { font-size:12px; color:#A8B3BF; line-height:1.5; }
+  .rules { margin-top:14px; border:1px solid #21262D; border-radius:10px; background:#161B22; padding:10px 14px; }
+  .rule { display:flex; gap:12px; align-items:baseline; padding:3px 0; }
+  .rule-k { flex:0 0 110px; font-size:12px; font-weight:700; color:#F0B97B; }
+  .rule-v { font-size:12px; color:#A8B3BF; line-height:1.55; }
+  .rule-v b { color:#E6EDF3; }
+  .exc { margin-top:12px; border:1px dashed #6E7681; border-radius:10px; background:#161B22;
+    padding:10px 18px; display:flex; align-items:center; gap:18px; }
+  .exc-t { font-size:14px; font-weight:700; color:#F0883E; white-space:nowrap; }
+  .exc-t small { display:block; font-size:11px; font-weight:400; color:#8B949E; margin-top:2px; }
+  .exc-items { display:flex; gap:12px; flex-wrap:wrap; }
+  .exc-item { font-size:12px; color:#C9D1D9; background:#1C2128; border:1px solid #30363D;
+    border-radius:14px; padding:4px 14px; }
+</style>
+  <link rel="icon" type="image/x-icon" href="favicon.ico?v=20261106p">
+  <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=20261106p">
+  <link rel="stylesheet" href="css/style.css?v=20261106p">
   <style>
-    html, body { height: auto !important; overflow-y: auto !important; overflow-x: hidden; }
-    .vm-page { max-width: 1920px; margin: 0 auto; padding: 16px 20px 24px; }
-    .vm-subtitle { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
-    .vm-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 14px 0 10px; }
-    .vm-btn { font-size: 12px; color: var(--text-secondary); background: var(--bg-secondary);
-      border: 1px solid var(--border); border-radius: 6px; padding: 5px 12px; cursor: pointer; }
-    .vm-btn:hover { color: var(--text-primary); border-color: var(--text-secondary); }
-    .vm-hint { font-size: 11px; color: var(--text-light); margin-left: auto; }
-    .vm-viewport { position: relative; height: calc(100vh - 184px); min-height: 600px;
-      border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
-      background: var(--bg-primary); cursor: grab; }
-    .vm-viewport.dragging { cursor: grabbing; }
-    .vm-canvas { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
-    .vm-canvas svg { position: absolute; left: 0; top: 0; pointer-events: none; }
-    .vm-node { position: absolute; box-sizing: border-box; cursor: default; user-select: none; }
-    /* 根节点：金强调大标题（DESIGN.md 主色） */
-    .vm-root { display: flex; align-items: center; justify-content: center; text-align: center;
-      padding: 10px 14px; border-radius: 10px; background: linear-gradient(135deg, rgba(240,185,123,.16), rgba(240,185,123,.05));
-      border: 1.5px solid #F0B97B; font-size: 16px; font-weight: 700; color: #F0B97B; line-height: 1.5; }
-    /* 一级分支：四大阶段，分支色描边 + 8% 底色 */
-    .vm-branch { display: flex; align-items: center; text-align: left; padding: 9px 12px;
-      border-radius: 9px; font-size: 14px; font-weight: 700; line-height: 1.5; cursor: pointer; }
-    /* 二级分组：左色条 + 分支色文字 */
-    .vm-group { display: flex; align-items: center; padding: 7px 10px 7px 12px; border-radius: 8px;
-      background: var(--bg-secondary); font-size: 13px; font-weight: 600; line-height: 1.5; cursor: pointer;
-      border-left: 3px solid; }
-    /* 三级叶子：标题分支色加粗 + 解读正文 */
-    .vm-leaf { padding: 7px 10px; border-radius: 7px; background: var(--bg-secondary);
-      font-size: 12px; line-height: 1.55; color: var(--text-secondary); text-align: left; }
-    .vm-leaf b { font-weight: 700; }
-    .vm-fold { display: inline-block; width: 14px; font-size: 10px; color: var(--text-light); }
-    .vm-footer { font-size: 11px; color: var(--text-light); margin-top: 10px; line-height: 1.6; }
+    /* 20261105e：恢复页面滚动 + 缩放/平移（仅本页覆盖，不动全站 style.css 的 body overflow:hidden） */
+    html, body { height:auto !important; overflow:auto !important; }
+    body.vm-grabbing { cursor:grabbing !important; }
+    body.vm-grab { cursor:grab; }
+    #vm-zoombar { position:fixed; right:16px; bottom:16px; z-index:9999; display:flex; align-items:center; gap:6px;
+      background:#161B22; border:1px solid #30363D; border-radius:10px; padding:6px 10px;
+      box-shadow:0 4px 16px rgba(0,0,0,.45); font-size:12px; color:#E6EDF3; user-select:none; }
+    #vm-zoombar button { background:#21262D; color:#E6EDF3; border:1px solid #30363D; border-radius:6px;
+      min-width:26px; height:26px; padding:0 8px; cursor:pointer; font-size:14px; line-height:1; transition:background .15s; }
+    #vm-zoombar button:hover { background:#30363D; }
+    #vm-zoombar .vm-zoom-val { min-width:44px; text-align:center; color:#F0B97B; font-weight:600; }
+    #vm-zoombar .vm-zoom-wide { font-size:12px; }
   </style>
 </head>
 <body>
-  <div class="vm-page">
-    <header class="jd-header">
-      <h1 class="jd-title">📊 量能涨跌关系分析</h1>
-      <div class="jd-actions">
-        <a href="notes.html?scope=global" class="btn-text">返回投资心得</a>
-        <a href="index.html" class="btn-text">返回工作台</a>
-      </div>
-    </header>
-    <div class="vm-subtitle">股价涨跌 × 量能状态的完整推演：低位区 / 高位区 / 上涨途中 / 下跌途中，每阶段按 趋势运行 · 区间横盘震荡 · 量价背离 · 极端量能 展开</div>
-
-    <div class="vm-toolbar">
-      <button class="vm-btn" id="vmFit" type="button">适应全图</button>
-      <button class="vm-btn" id="vmReset" type="button">100%</button>
-      <button class="vm-btn" id="vmExpand" type="button">全部展开</button>
-      <button class="vm-btn" id="vmCollapse" type="button">仅显示分支</button>
-      <span class="vm-hint">滚轮缩放 · 拖动平移 · 点击分支/分组节点可折叠</span>
+  <header class="jd-header">
+    <h1 class="jd-title">📊 量价判定模型（合并版）</h1>
+    <div class="jd-actions">
+      <a href="notes.html?scope=global" class="btn-text">返回投资心得</a>
+      <a href="index.html" class="btn-text">返回工作台</a>
     </div>
-
-    <div class="vm-viewport" id="vmViewport">
-      <div class="vm-canvas" id="vmCanvas"></div>
-    </div>
-
-    <div class="vm-footer">本页为量价分析方法论整理（思维导图），静态知识内容、不接入行情数据，仅供复盘与学习参考。</div>
+  </header>
+  <div class="root">
+    <h1>量价判定模型 · 合并版 v2</h1>
+    <div class="sub"><b>主轴 135 格</b>＝位置 3 × 状态 3 × 量能 3 × 当日走势 <b>5 档（大涨 / 上涨 / 震荡 / 下跌 / 大跌）</b>　＋　<b>信号叠加层</b>＝量价背离 · 极端量能 · 弱方向异动（滞涨 / 滞跌）　＋　<b>异常特例排除</b></div>
   </div>
+  <div class="cols">
+    <div class="zone" style="border-top-color:#E8684A">
+    <div class="zone-h"><span class="zone-name" style="color:#E8684A">① 高位区间</span><span class="zone-pct">价格百分位 ≥70%</span></div>
+    <div class="state"><div class="state-h" style="border-color:#E8684A">趋势向上</div><div class="vol" style="border-left-color:#E8684A"><div class="vol-h" style="color:#E8684A">放量</div>
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigup">大涨</span><span class="leaf-combo">价格高位+趋势向上+放量大涨</span></div>
+          <div class="leaf-d">高位放量大涨，多空分歧最大，多为诱多拉升或最后一冲；警惕主力对倒出货，严禁追高</div>
+        </div>
 
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-up">上涨</span><span class="leaf-combo">价格高位+趋势向上+放量上涨</span></div>
+          <div class="leaf-d">资金主动推升，强势延续；⚠️如果是天量，资金分歧放大，见顶风险显著升高</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-flat">震荡</span><span class="leaf-combo">价格高位+趋势向上+放量震荡</span></div>
+          <div class="leaf-d">多空分歧加大，资金开始换手，滞涨信号，警惕拐头</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-down">下跌</span><span class="leaf-combo">价格高位+趋势向上+放量下跌</span></div>
+          <div class="leaf-d">主力兑现离场，抛压释放，趋势大概率即将反转</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigdown">大跌</span><span class="leaf-combo">价格高位+趋势向上+放量大跌</span></div>
+          <div class="leaf-d">高位放量大跌，获利盘集中出逃、主力派发明确；头部确认信号，下跌空间打开，优先减仓离场</div>
+        </div></div>
+<div class="vol" style="border-left-color:#E8684A"><div class="vol-h" style="color:#E8684A">平量</div>
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigup">大涨</span><span class="leaf-combo">价格高位+趋势向上+平量大涨</span></div>
+          <div class="leaf-d">高位平量大涨，量能不济却强行拉升，多头透支信号；冲高持续性差，警惕见顶回落</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-up">上涨</span><span class="leaf-combo">价格高位+趋势向上+平量上涨</span></div>
+          <div class="leaf-d">上涨动能衰减，跟进资金不足，上涨持续性偏弱</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-flat">震荡</span><span class="leaf-combo">价格高位+趋势向上+平量震荡</span></div>
+          <div class="leaf-d">多空暂时平衡，资金观望，方向等待选择</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-down">下跌</span><span class="leaf-combo">价格高位+趋势向上+平量下跌</span></div>
+          <div class="leaf-d">抛压温和释放，多头承接乏力，慢慢走弱</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigdown">大跌</span><span class="leaf-combo">价格高位+趋势向上+平量大跌</span></div>
+          <div class="leaf-d">高位平量大跌，无承接盘的阴跌加速；主力多已在前期完成派发，破位风险高，规避</div>
+        </div></div>
+<div class="vol" style="border-left-color:#E8684A"><div class="vol-h" style="color:#E8684A">缩量</div>
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigup">大涨</span><span class="leaf-combo">价格高位+趋势向上+缩量大涨</span></div>
+          <div class="leaf-d">高位缩量大涨，无量虚涨、买盘枯竭；多为诱多脉冲，随时可能拐头，谨防跳水</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-up">上涨</span><span class="leaf-combo">价格高位+趋势向上+缩量上涨</span></div>
+          <div class="leaf-d">浮筹锁定，但增量资金枯竭，属于无量虚涨，容易回落</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-flat">震荡</span><span class="leaf-combo">价格高位+趋势向上+缩量震荡</span></div>
+          <div class="leaf-d">交易情绪降温，资金观望，变盘窗口临近</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-down">下跌</span><span class="leaf-combo">价格高位+趋势向上+缩量下跌</span></div>
+          <div class="leaf-d">抛压暂时不大，多头尚有抵抗，不一定直接走熊</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigdown">大跌</span><span class="leaf-combo">价格高位+趋势向上+缩量大跌</span></div>
+          <div class="leaf-d">高位缩量大跌，承接稀少直接砸穿，抛压无需放量即可打压；头部结构强化，尽快离场</div>
+        </div></div></div>
+<div class="state"><div class="state-h" style="border-color:#E8684A">趋势向下</div><div class="vol" style="border-left-color:#E8684A"><div class="vol-h" style="color:#E8684A">放量</div>
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigup">大涨</span><span class="leaf-combo">价格高位+趋势向下+放量大涨</span><span class="dv">推导</span></div>
+          <div class="leaf-d">高位趋势向下放量大涨，属于高位反弹诱多；反弹空间有限，反弹结束继续下行，不追</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-up">上涨</span><span class="leaf-combo">价格高位+趋势向下+放量上涨</span></div>
+          <div class="leaf-d">反弹资金进场，属于高位反弹，大多是诱多</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-flat">震荡</span><span class="leaf-combo">价格高位+趋势向下+放量震荡</span></div>
+          <div class="leaf-d">反弹换手激烈，上方抛压很重，反弹空间有限</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-down">下跌</span><span class="leaf-combo">价格高位+趋势向下+放量下跌</span></div>
+          <div class="leaf-d">抛压集中释放，空头主导，下跌加速信号</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigdown">大跌</span><span class="leaf-combo">价格高位+趋势向下+放量大跌</span><span class="dv">推导</span></div>
+          <div class="leaf-d">高位趋势向下放量大跌，头部破位后恐慌加速；下跌空间打开，空头主导，优先离场</div>
+        </div></div>
+<div class="vol" style="border-left-color:#E8684A"><div class="vol-h" style="color:#E8684A">平量</div>
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigup">大涨</span><span class="leaf-combo">价格高位+趋势向下+平量大涨</span><span class="dv">推导</span></div>
+          <div class="leaf-d">高位趋势向下平量大涨，无量反抽；承接不足持续性差，反弹结束延续下行</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-up">上涨</span><span class="leaf-combo">价格高位+趋势向下+平量上涨</span></div>
+          <div class="leaf-d">反弹缺少增量，反弹持续性差</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-flat">震荡</span><span class="leaf-combo">价格高位+趋势向下+平量震荡</span></div>
+          <div class="leaf-d">下跌途中短暂休整，休整后继续下行概率大</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-down">下跌</span><span class="leaf-combo">价格高位+趋势向下+平量下跌</span></div>
+          <div class="leaf-d">下跌节奏平稳，空头趋势延续</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigdown">大跌</span><span class="leaf-combo">价格高位+趋势向下+平量大跌</span><span class="dv">推导</span></div>
+          <div class="leaf-d">高位趋势向下平量大跌，空头主导的阴跌加速；趋势未变，继续规避</div>
+        </div></div>
+<div class="vol" style="border-left-color:#E8684A"><div class="vol-h" style="color:#E8684A">缩量</div>
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigup">大涨</span><span class="leaf-combo">价格高位+趋势向下+缩量大涨</span><span class="dv">推导</span></div>
+          <div class="leaf-d">高位趋势向下缩量大涨，无量虚涨诱多；买盘枯竭，随时回落，谨防跳水</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-up">上涨</span><span class="leaf-combo">价格高位+趋势向下+缩量上涨</span></div>
+          <div class="leaf-d">无量反弹，没有资金认可，反弹极易夭折</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-flat">震荡</span><span class="leaf-combo">价格高位+趋势向下+缩量震荡</span></div>
+          <div class="leaf-d">交投冷清，空头暂时歇脚，不是企稳信号</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-down">下跌</span><span class="leaf-combo">价格高位+趋势向下+缩量下跌</span></div>
+          <div class="leaf-d">抛压慢慢衰竭，但不代表见底，只是跌速放缓</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigdown">大跌</span><span class="leaf-combo">价格高位+趋势向下+缩量大跌</span><span class="dv">推导</span></div>
+          <div class="leaf-d">高位趋势向下缩量大跌，承接枯竭的阴跌；跌速或放缓但趋势未变，不宜抄底</div>
+        </div></div></div>
+<div class="state"><div class="state-h" style="border-color:#E8684A">区间震荡</div><div class="vol" style="border-left-color:#E8684A"><div class="vol-h" style="color:#E8684A">放量</div>
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigup">大涨</span><span class="leaf-combo">价格高位+震荡+放量大涨</span></div>
+          <div class="leaf-d">放量大涨突破箱体上沿；高位诱多突破概率大，警惕拉高出货，谨慎追入</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-up">上涨</span><span class="leaf-combo">价格高位+震荡+放量上涨</span></div>
+          <div class="leaf-d">试探震荡上沿，放量是试盘，能否突破看后续承接</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-flat">震荡</span><span class="leaf-combo">价格高位+震荡+放量震荡</span></div>
+          <div class="leaf-d">震荡区间内部剧烈换手，资金博弈加剧，即将选择方向</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-down">下跌</span><span class="leaf-combo">价格高位+震荡+放量下跌</span></div>
+          <div class="leaf-d">冲击震荡下沿，抛压变强，有向下破位风险</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigdown">大跌</span><span class="leaf-combo">价格高位+震荡+放量大跌</span></div>
+          <div class="leaf-d">放量大跌砸穿箱体下沿；头部确立，箱体支撑失效，下跌空间打开，优先离场</div>
+        </div></div>
+<div class="vol" style="border-left-color:#E8684A"><div class="vol-h" style="color:#E8684A">平量</div>
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigup">大涨</span><span class="leaf-combo">价格高位+震荡+平量大涨</span></div>
+          <div class="leaf-d">平量大涨冲上沿；多头透支的虚假突破，冲高持续性差，警惕见顶</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-up">上涨</span><span class="leaf-combo">价格高位+震荡+平量上涨</span></div>
+          <div class="leaf-d">靠近上沿，动能一般，突破难度高</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-flat">震荡</span><span class="leaf-combo">价格高位+震荡+平量震荡</span></div>
+          <div class="leaf-d">震荡常态，没有明确方向信号</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-down">下跌</span><span class="leaf-combo">价格高位+震荡+平量下跌</span></div>
+          <div class="leaf-d">向震荡下沿靠近，承接一般</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigdown">大跌</span><span class="leaf-combo">价格高位+震荡+平量大跌</span></div>
+          <div class="leaf-d">平量大跌破下沿；无承接阴跌破位，箱体下沿失守后易加速，规避</div>
+        </div></div>
+<div class="vol" style="border-left-color:#E8684A"><div class="vol-h" style="color:#E8684A">缩量</div>
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigup">大涨</span><span class="leaf-combo">价格高位+震荡+缩量大涨</span></div>
+          <div class="leaf-d">缩量大涨冲高；买盘枯竭的虚涨突破，随时回落，谨防跳水</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-up">上涨</span><span class="leaf-combo">价格高位+震荡+缩量上涨</span></div>
+          <div class="leaf-d">无量摸上沿，很难有效突破</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-flat">震荡</span><span class="leaf-combo">价格高位+震荡+缩量震荡</span></div>
+          <div class="leaf-d">震荡进入尾声，交投低迷，等待放量打破平衡</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-down">下跌</span><span class="leaf-combo">价格高位+震荡+缩量下跌</span></div>
+          <div class="leaf-d">向下试探，抛压不强，区间结构暂时完好</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigdown">大跌</span><span class="leaf-combo">价格高位+震荡+缩量大跌</span></div>
+          <div class="leaf-d">缩量大跌跌破下沿；承接稀少的破位，头部结构强化，尽快离场</div>
+        </div></div></div></div>
+<div class="zone" style="border-top-color:#F0A23A">
+    <div class="zone-h"><span class="zone-name" style="color:#F0A23A">② 中位区间</span><span class="zone-pct">价格百分位 30%～70%</span></div>
+    <div class="state"><div class="state-h" style="border-color:#F0A23A">趋势向上</div><div class="vol" style="border-left-color:#F0A23A"><div class="vol-h" style="color:#F0A23A">放量</div>
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigup">大涨</span><span class="leaf-combo">中位+趋势向上+放量大涨</span></div>
+          <div class="leaf-d">上涨途中放量大涨，增量资金加速进场；主升浪特征，结构健康强势，可顺势持有</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-up">上涨</span><span class="leaf-combo">中位+趋势向上+放量上涨</span></div>
+          <div class="leaf-d">健康主升，量价配合，趋势延续性较好</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-flat">震荡</span><span class="leaf-combo">中位+趋势向上+放量震荡</span></div>
+          <div class="leaf-d">途中换手洗盘，清洗浮筹，洗盘后继续上行概率高</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-down">下跌</span><span class="leaf-combo">中位+趋势向上+放量下跌</span></div>
+          <div class="leaf-d">短期集中抛压，需要重点观察支撑，谨防趋势拐头</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigdown">大跌</span><span class="leaf-combo">中位+趋势向上+放量大跌</span></div>
+          <div class="leaf-d">上涨途中放量大跌，获利盘集中兑现引发的急洗盘；只要趋势支撑不破，多为快速换手，观察止跌后的资金回补</div>
+        </div></div>
+<div class="vol" style="border-left-color:#F0A23A"><div class="vol-h" style="color:#F0A23A">平量</div>
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigup">大涨</span><span class="leaf-combo">中位+趋势向上+平量大涨</span></div>
+          <div class="leaf-d">上涨途中平量大涨，量能未跟上涨幅，上涨动能存疑；留意后续是否补量，若持续缩量滞涨则阶段见顶风险上升</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-up">上涨</span><span class="leaf-combo">中位+趋势向上+平量上涨</span></div>
+          <div class="leaf-d">稳步抬升，节奏温和，属于良性上涨</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-flat">震荡</span><span class="leaf-combo">中位+趋势向上+平量震荡</span></div>
+          <div class="leaf-d">正常休整，多空均衡</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-down">下跌</span><span class="leaf-combo">中位+趋势向上+平量下跌</span></div>
+          <div class="leaf-d">小幅回踩，多头趋势里的正常回调</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigdown">大跌</span><span class="leaf-combo">中位+趋势向上+平量大跌</span></div>
+          <div class="leaf-d">上涨途中平量大跌，多空分歧有限、无恐慌放量；多为节奏性回调，紧盯趋势支撑，不破可继续观察</div>
+        </div></div>
+<div class="vol" style="border-left-color:#F0A23A"><div class="vol-h" style="color:#F0A23A">缩量</div>
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigup">大涨</span><span class="leaf-combo">中位+趋势向上+缩量大涨</span></div>
+          <div class="leaf-d">上涨途中缩量大涨，筹码高度锁定、惜售推升；控盘度高的强势特征，趋势易延续</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-up">上涨</span><span class="leaf-combo">中位+趋势向上+缩量上涨</span></div>
+          <div class="leaf-d">筹码稳定，但是缺少增量，上涨后劲不足</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-flat">震荡</span><span class="leaf-combo">中位+趋势向上+缩量震荡</span></div>
+          <div class="leaf-d">洗盘接近尾声，等待放量再起</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-down">下跌</span><span class="leaf-combo">中位+趋势向上+缩量下跌</span></div>
+          <div class="leaf-d">缩量回踩，抛压不大，大概率是良性回调</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigdown">大跌</span><span class="leaf-combo">中位+趋势向上+缩量大跌</span></div>
+          <div class="leaf-d">上涨途中缩量大跌，抛压虽不重但无承接，走势偏离健康节奏；警惕趋势转弱，关注支撑位能否守住</div>
+        </div></div></div>
+<div class="state"><div class="state-h" style="border-color:#F0A23A">趋势向下</div><div class="vol" style="border-left-color:#F0A23A"><div class="vol-h" style="color:#F0A23A">放量</div>
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigup">大涨</span><span class="leaf-combo">中位+趋势向下+放量大涨</span></div>
+          <div class="leaf-d">下跌途中放量大涨，短线资金抄底博反弹；诱多概率大，快进快出持续性差，不当作反转</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-up">上涨</span><span class="leaf-combo">中位+趋势向下+放量上涨</span></div>
+          <div class="leaf-d">放量反弹，资金进场博弈反弹，重点观察能否扭转下跌趋势</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-flat">震荡</span><span class="leaf-combo">中位+趋势向下+放量震荡</span></div>
+          <div class="leaf-d">多空激烈争夺，反弹抵抗，方向未定</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-down">下跌</span><span class="leaf-combo">中位+趋势向下+放量下跌</span></div>
+          <div class="leaf-d">抛压释放，下跌趋势加速</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigdown">大跌</span><span class="leaf-combo">中位+趋势向下+放量大跌</span></div>
+          <div class="leaf-d">下跌途中放量大跌，恐慌集中释放、空头加速；下跌动能强，坚决回避，等待企稳信号</div>
+        </div></div>
+<div class="vol" style="border-left-color:#F0A23A"><div class="vol-h" style="color:#F0A23A">平量</div>
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigup">大涨</span><span class="leaf-combo">中位+趋势向下+平量大涨</span></div>
+          <div class="leaf-d">下跌途中平量大涨，无增量资金的超跌脉冲；反弹动能不足，反弹结束后大概率延续下行</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-up">上涨</span><span class="leaf-combo">中位+趋势向下+平量上涨</span></div>
+          <div class="leaf-d">反弹力度有限，很难直接反转</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-flat">震荡</span><span class="leaf-combo">中位+趋势向下+平量震荡</span></div>
+          <div class="leaf-d">下跌中途休整平台</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-down">下跌</span><span class="leaf-combo">中位+趋势向下+平量下跌</span></div>
+          <div class="leaf-d">下跌趋势平稳延续</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigdown">大跌</span><span class="leaf-combo">中位+趋势向下+平量大跌</span></div>
+          <div class="leaf-d">下跌途中平量大跌，无恐慌释放也无承接，空头温和持续；趋势无企稳信号，继续规避</div>
+        </div></div>
+<div class="vol" style="border-left-color:#F0A23A"><div class="vol-h" style="color:#F0A23A">缩量</div>
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigup">大涨</span><span class="leaf-combo">中位+趋势向下+缩量大涨</span></div>
+          <div class="leaf-d">下跌途中缩量大涨，无量反弹缺乏资金认可；弱势反抽，反弹后继续创新低概率大</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-up">上涨</span><span class="leaf-combo">中位+趋势向下+缩量上涨</span></div>
+          <div class="leaf-d">无量反弹，可信度低</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-flat">震荡</span><span class="leaf-combo">中位+趋势向下+缩量震荡</span></div>
+          <div class="leaf-d">交投冷淡，反弹无力</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-down">下跌</span><span class="leaf-combo">中位+趋势向下+缩量下跌</span></div>
+          <div class="leaf-d">跌速放缓，抛压逐步消耗</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigdown">大跌</span><span class="leaf-combo">中位+趋势向下+缩量大跌</span></div>
+          <div class="leaf-d">下跌途中缩量大跌，卖盘持续而承接枯竭；阴跌加速段，下跌周期未见尽头，规避</div>
+        </div></div></div>
+<div class="state"><div class="state-h" style="border-color:#F0A23A">区间震荡</div><div class="vol" style="border-left-color:#F0A23A"><div class="vol-h" style="color:#F0A23A">放量</div>
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigup">大涨</span><span class="leaf-combo">中位震荡+放量大涨</span></div>
+          <div class="leaf-d">放量大涨突破箱体上沿；有效突破信号增强，需次日确认站稳上沿，谨防假突破</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-up">上涨</span><span class="leaf-combo">中位震荡+放量上涨</span></div>
+          <div class="leaf-d">放量试探上轨，突破有效性看后续确认</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-flat">震荡</span><span class="leaf-combo">中位震荡+放量震荡</span></div>
+          <div class="leaf-d">区间内分歧加大，方向选择节点</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-down">下跌</span><span class="leaf-combo">中位震荡+放量下跌</span></div>
+          <div class="leaf-d">放量试探下轨，破位风险上升</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigdown">大跌</span><span class="leaf-combo">中位震荡+放量大跌</span></div>
+          <div class="leaf-d">放量大跌砸破箱体下沿；破位信号增强，观察能否快速收回，收不回则箱体失效、方向选择向下</div>
+        </div></div>
+<div class="vol" style="border-left-color:#F0A23A"><div class="vol-h" style="color:#F0A23A">平量</div>
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigup">大涨</span><span class="leaf-combo">中位震荡+平量大涨</span></div>
+          <div class="leaf-d">平量大涨向上离开箱体；量能未放大的突破可信度低，需补量确认</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-up">上涨</span><span class="leaf-combo">中位震荡+平量上涨</span></div>
+          <div class="leaf-d">靠近上轨，动能一般</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-flat">震荡</span><span class="leaf-combo">中位震荡+平量震荡</span></div>
+          <div class="leaf-d">标准震荡行情，无信号</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-down">下跌</span><span class="leaf-combo">中位震荡+平量下跌</span></div>
+          <div class="leaf-d">靠近下轨，承接一般</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigdown">大跌</span><span class="leaf-combo">中位震荡+平量大跌</span></div>
+          <div class="leaf-d">平量大跌向下离开箱体；无承接的破位，箱体延续性被破坏，方向选择向下风险大</div>
+        </div></div>
+<div class="vol" style="border-left-color:#F0A23A"><div class="vol-h" style="color:#F0A23A">缩量</div>
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigup">大涨</span><span class="leaf-combo">中位震荡+缩量大涨</span></div>
+          <div class="leaf-d">缩量大涨冲上箱体上沿；量能不足的突破，假突破概率大，容易遇阻回落</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-up">上涨</span><span class="leaf-combo">中位震荡+缩量上涨</span></div>
+          <div class="leaf-d">无量冲轨，很难突破</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-flat">震荡</span><span class="leaf-combo">中位震荡+缩量震荡</span></div>
+          <div class="leaf-d">震荡收敛，等待放量选择方向</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-down">下跌</span><span class="leaf-combo">中位震荡+缩量下跌</span></div>
+          <div class="leaf-d">下沿试探，抛压不大，区间暂时安全</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigdown">大跌</span><span class="leaf-combo">中位震荡+缩量大跌</span></div>
+          <div class="leaf-d">缩量大跌砸向箱体下沿；承接偏弱的破位尝试，关注下轨能否止跌</div>
+        </div></div></div></div>
+<div class="zone" style="border-top-color:#5B8FF9">
+    <div class="zone-h"><span class="zone-name" style="color:#5B8FF9">③ 低位区间</span><span class="zone-pct">价格百分位 ≤30%</span></div>
+    <div class="state"><div class="state-h" style="border-color:#5B8FF9">趋势向上</div><div class="vol" style="border-left-color:#5B8FF9"><div class="vol-h" style="color:#5B8FF9">放量</div>
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigup">大涨</span><span class="leaf-combo">低位+趋势向上+放量大涨</span><span class="dv">推导</span></div>
+          <div class="leaf-d">低位趋势向上放量大涨，底部启动与增量资金共振；启动确认信号，放量级别越大可靠性越高</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-up">上涨</span><span class="leaf-combo">低位+趋势向上+放量上涨</span></div>
+          <div class="leaf-d">底部启动信号；放量级别越大，启动可靠性越高</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-flat">震荡</span><span class="leaf-combo">低位+趋势向上+放量震荡</span></div>
+          <div class="leaf-d">底部换手洗盘，消化前期套牢盘</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-down">下跌</span><span class="leaf-combo">低位+趋势向上+放量下跌</span></div>
+          <div class="leaf-d">底部反复挖坑，抛压释放，注意是否为假启动</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigdown">大跌</span><span class="leaf-combo">低位+趋势向上+放量大跌</span><span class="dv">推导</span></div>
+          <div class="leaf-d">低位趋势向上放量大跌，底部反复洗盘挖坑；抛压释放，重点观察趋势支撑能否守住</div>
+        </div></div>
+<div class="vol" style="border-left-color:#5B8FF9"><div class="vol-h" style="color:#5B8FF9">平量</div>
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigup">大涨</span><span class="leaf-combo">低位+趋势向上+平量大涨</span><span class="dv">推导</span></div>
+          <div class="leaf-d">低位趋势向上平量大涨，试探性抬升；反转信号偏弱，需后续放量确认后再跟进</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-up">上涨</span><span class="leaf-combo">低位+趋势向上+平量上涨</span></div>
+          <div class="leaf-d">初步抬升，资金试探，反转信号偏弱</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-flat">震荡</span><span class="leaf-combo">低位+趋势向上+平量震荡</span></div>
+          <div class="leaf-d">底部磨底阶段，多空平衡</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-down">下跌</span><span class="leaf-combo">低位+趋势向上+平量下跌</span></div>
+          <div class="leaf-d">底部反复磨底，支撑尚在</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigdown">大跌</span><span class="leaf-combo">低位+趋势向上+平量大跌</span><span class="dv">推导</span></div>
+          <div class="leaf-d">低位趋势向上平量大跌，磨底中的反复回踩；支撑尚在，重点观察是否假跌破</div>
+        </div></div>
+<div class="vol" style="border-left-color:#5B8FF9"><div class="vol-h" style="color:#5B8FF9">缩量</div>
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigup">大涨</span><span class="leaf-combo">低位+趋势向上+缩量大涨</span><span class="dv">推导</span></div>
+          <div class="leaf-d">低位趋势向上缩量大涨，套牢盘少但买盘有限；反弹持续性存疑，谨防冲高回落</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-up">上涨</span><span class="leaf-combo">低位+趋势向上+缩量上涨</span></div>
+          <div class="leaf-d">套牢盘少，但缺少买盘，反弹持续性弱</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-flat">震荡</span><span class="leaf-combo">低位+趋势向上+缩量震荡</span></div>
+          <div class="leaf-d">交投清淡，磨底阶段；⚠️如果是地量，恐慌基本出清</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-down">下跌</span><span class="leaf-combo">低位+趋势向上+缩量下跌</span></div>
+          <div class="leaf-d">抛压枯竭，下跌空间有限</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigdown">大跌</span><span class="leaf-combo">低位+趋势向上+缩量大跌</span><span class="dv">推导</span></div>
+          <div class="leaf-d">低位趋势向上缩量大跌，抛压枯竭的浅回踩；下跌空间有限，大概率良性回踩</div>
+        </div></div></div>
+<div class="state"><div class="state-h" style="border-color:#5B8FF9">趋势向下</div><div class="vol" style="border-left-color:#5B8FF9"><div class="vol-h" style="color:#5B8FF9">放量</div>
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigup">大涨</span><span class="leaf-combo">低位+趋势向下+放量大涨</span></div>
+          <div class="leaf-d">低位放量大涨，大资金集中进场信号明确；反转启动概率高，若能持续放量突破压力位，行情有望从磨底升级为反转</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-up">上涨</span><span class="leaf-combo">低位+趋势向下+放量上涨</span></div>
+          <div class="leaf-d">低位放量抵抗，有资金尝试承接，观察能否止跌</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-flat">震荡</span><span class="leaf-combo">低位+趋势向下+放量震荡</span></div>
+          <div class="leaf-d">恐慌盘和抄底盘互搏，博弈底部</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-down">下跌</span><span class="leaf-combo">低位+趋势向下+放量下跌</span></div>
+          <div class="leaf-d">恐慌集中释放，最后一跌的一种可能</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigdown">大跌</span><span class="leaf-combo">低位+趋势向下+放量大跌</span></div>
+          <div class="leaf-d">低位放量大跌，恐慌盘集中宣泄、空头最后释放；常见挖坑 / 赶底动作，杀跌后易现长针探底，不宜跟随杀跌</div>
+        </div></div>
+<div class="vol" style="border-left-color:#5B8FF9"><div class="vol-h" style="color:#5B8FF9">平量</div>
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigup">大涨</span><span class="leaf-combo">低位+趋势向下+平量大涨</span></div>
+          <div class="leaf-d">低位平量大涨，量能未放大却大幅推升，缺乏增量资金背书；多为脉冲式反弹，需后续放量确认后才可跟进</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-up">上涨</span><span class="leaf-combo">低位+趋势向下+平量上涨</span></div>
+          <div class="leaf-d">小幅抵抗，止跌信号不强</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-flat">震荡</span><span class="leaf-combo">低位+趋势向下+平量震荡</span></div>
+          <div class="leaf-d">下跌放缓，进入磨底阶段</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-down">下跌</span><span class="leaf-combo">低位+趋势向下+平量下跌</span></div>
+          <div class="leaf-d">缓慢阴跌，底部还没确认</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigdown">大跌</span><span class="leaf-combo">低位+趋势向下+平量大跌</span></div>
+          <div class="leaf-d">低位平量大跌，无恐慌放量也无主动承接，多属阴跌加速段；底部信号仍需量能结构确认，不宜提前抄底</div>
+        </div></div>
+<div class="vol" style="border-left-color:#5B8FF9"><div class="vol-h" style="color:#5B8FF9">缩量</div>
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigup">大涨</span><span class="leaf-combo">低位+趋势向下+缩量大涨</span></div>
+          <div class="leaf-d">低位缩量大涨，买盘稀少却大幅推升股价，多为超跌反抽或试探性拉升；缺乏量能支撑，持续性存疑，谨防冲高回落</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-up">上涨</span><span class="leaf-combo">低位+趋势向下+缩量上涨</span></div>
+          <div class="leaf-d">无量小反弹，抄底意愿弱</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-flat">震荡</span><span class="leaf-combo">低位+趋势向下+缩量震荡</span></div>
+          <div class="leaf-d">交易冷清；⚠️如果是地量，大概率接近底部区域</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-down">下跌</span><span class="leaf-combo">低位+趋势向下+缩量下跌</span></div>
+          <div class="leaf-d">抛压衰竭，阴跌尾声，不要盲目杀跌</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigdown">大跌</span><span class="leaf-combo">低位+趋势向下+缩量大跌</span></div>
+          <div class="leaf-d">低位缩量大跌，卖压释放但承接同样稀少；多见于流动性差的阴跌尾声，等待地量与承接信号共同确认底部</div>
+        </div></div></div>
+<div class="state"><div class="state-h" style="border-color:#5B8FF9">区间震荡</div><div class="vol" style="border-left-color:#5B8FF9"><div class="vol-h" style="color:#5B8FF9">放量</div>
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigup">大涨</span><span class="leaf-combo">低位震荡+放量大涨</span></div>
+          <div class="leaf-d">放量大涨突破箱体上沿；强突破信号，突破有效性高，关注次日能否站稳上沿，站稳则反转启动</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-up">上涨</span><span class="leaf-combo">低位震荡+放量上涨</span></div>
+          <div class="leaf-d">放量试探震荡上沿，有尝试脱离底部的意图</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-flat">震荡</span><span class="leaf-combo">低位震荡+放量震荡</span></div>
+          <div class="leaf-d">底部换手，多空博弈激烈</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-down">下跌</span><span class="leaf-combo">低位震荡+放量下跌</span></div>
+          <div class="leaf-d">下沿试盘，恐慌盘涌出</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigdown">大跌</span><span class="leaf-combo">低位震荡+放量大跌</span></div>
+          <div class="leaf-d">放量大跌砸穿箱体下沿；空头最后宣泄与挖坑诱空并存，观察能否快速收回，收回则是黄金坑</div>
+        </div></div>
+<div class="vol" style="border-left-color:#5B8FF9"><div class="vol-h" style="color:#5B8FF9">平量</div>
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigup">大涨</span><span class="leaf-combo">低位震荡+平量大涨</span></div>
+          <div class="leaf-d">平量大涨离开箱体上沿；量能未放大的突破可信度低，多为脉冲，回踩箱体概率大</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-up">上涨</span><span class="leaf-combo">低位震荡+平量上涨</span></div>
+          <div class="leaf-d">小幅向上试探，力度不足</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-flat">震荡</span><span class="leaf-combo">低位震荡+平量震荡</span></div>
+          <div class="leaf-d">标准底部箱体磨底</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-down">下跌</span><span class="leaf-combo">低位震荡+平量下跌</span></div>
+          <div class="leaf-d">回踩箱体下沿</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigdown">大跌</span><span class="leaf-combo">低位震荡+平量大跌</span></div>
+          <div class="leaf-d">平量大跌离开箱体下沿；无恐慌也无承接的破位，箱体结构走坏，继续观察</div>
+        </div></div>
+<div class="vol" style="border-left-color:#5B8FF9"><div class="vol-h" style="color:#5B8FF9">缩量</div>
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigup">大涨</span><span class="leaf-combo">低位震荡+缩量大涨</span></div>
+          <div class="leaf-d">缩量大涨冲上箱体上沿；突破动能不足，假突破概率大，谨防冲高回落</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-up">上涨</span><span class="leaf-combo">低位震荡+缩量上涨</span></div>
+          <div class="leaf-d">无量反弹，很难突破箱体</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-flat">震荡</span><span class="leaf-combo">低位震荡+缩量震荡</span></div>
+          <div class="leaf-d">地量常出现在这里，底部磨盘典型特征</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-down">下跌</span><span class="leaf-combo">低位震荡+缩量下跌</span></div>
+          <div class="leaf-d">回踩下沿，抛压很小，箱体支撑有效</div>
+        </div>
+
+        <div class="leaf">
+          <div class="leaf-t"><span class="leaf-day t-bigdown">大跌</span><span class="leaf-combo">低位震荡+缩量大跌</span></div>
+          <div class="leaf-d">缩量大跌跌破箱体下沿；承接稀少的阴跌破位，箱体失效，等待止跌信号</div>
+        </div></div></div></div>
+  </div>
+  <div class="sig-layer">
+    <div class="sig-layer-h">信号叠加层（主判之后检查，命中即追加警示，不覆盖主判）
+      <small>滞涨 / 滞跌核心是「量增价滞 / 量增价不跌」的量价背离，与顶底背离、天量地量同属信号层；低位区 / 高位区文案取自旧图，「推导」角标为旧图未覆盖处的新增折中文案</small>
+    </div>
+    <div class="sig-cards"><div class="sig-card"><div class="sig-title" style="color:#CF8E8E">◈ 量价背离</div>
+    <div class="sig-item">
+      <div class="sig-name" style="color:#CF8E8E">顶背离<span class="sig-cond">股价创新高，成交量无法同步创新高</span></div>
+      <div class="sig-row"><span class="sig-zone">高位区</span><span class="sig-text">强烈见顶预警，重点防范回落</span></div>
+<div class="sig-row"><span class="sig-zone">中位区</span><span class="sig-text">提示阶段性回调风险，不一定反转（合并推导）</span></div>
+<div class="sig-row"><span class="sig-zone">低位区</span><span class="sig-text">反弹衰竭信号，大概率重回磨底</span></div>
+    </div>
+
+    <div class="sig-item">
+      <div class="sig-name" style="color:#CF8E8E">底背离<span class="sig-cond">股价创新低，成交量不再创新低</span></div>
+      <div class="sig-row"><span class="sig-zone">低位区</span><span class="sig-text">低位企稳、反转预警信号，不等于马上反转</span></div>
+<div class="sig-row"><span class="sig-zone">中位区</span><span class="sig-text">下跌动能衰减，容易迎来反弹修复（合并推导）</span></div>
+<div class="sig-row"><span class="sig-zone">高位区</span><span class="sig-text">仅短暂承接，很难形成反转，多为反弹</span></div>
+    </div></div><div class="sig-card"><div class="sig-title" style="color:#7FA8C9">◈ 极端量能</div>
+    <div class="sig-item">
+      <div class="sig-name" style="color:#7FA8C9">天量<span class="sig-cond">当日成交量达近期峰值（显著超出 5 日/60 日量级）</span></div>
+      <div class="sig-row"><span class="sig-zone">高位区</span><span class="sig-text">「天量天价」，典型见顶信号</span></div>
+<div class="sig-row"><span class="sig-zone">中位区</span><span class="sig-text">分歧集中释放，大概率阶段高点或洗盘节点，观察能否续量（合并推导）</span></div>
+<div class="sig-row"><span class="sig-zone">低位区</span><span class="sig-text">大资金集中进场，强反转信号</span></div>
+    </div>
+
+    <div class="sig-item">
+      <div class="sig-name" style="color:#7FA8C9">地量<span class="sig-cond">当日成交量萎缩至近期地量（显著低于 5 日/60 日量级）</span></div>
+      <div class="sig-row"><span class="sig-zone">低位区</span><span class="sig-text">抛压耗尽，经典「地量见地价」，底部信号</span></div>
+<div class="sig-row"><span class="sig-zone">中位区</span><span class="sig-text">交投极度低迷，多空观望，等待放量选择方向（合并推导）</span></div>
+<div class="sig-row"><span class="sig-zone">高位区</span><span class="sig-text">买盘枯竭、场外资金不愿接力，上涨动能枯竭预警</span></div>
+    </div></div><div class="sig-card"><div class="sig-title" style="color:#F0B97B">◈ 弱方向异动（滞涨 / 滞跌）</div>
+    <div class="sig-item">
+      <div class="sig-name" style="color:#F0B97B">滞涨<span class="sig-cond">放量但当日涨幅不足 1.2%（量增价滞，量价背离家族）</span></div>
+      <div class="sig-row"><span class="sig-zone">高位区</span><span class="sig-text">放量到上沿无法突破；高位出货经典形态，抛压沉重</span></div>
+<div class="sig-row"><span class="sig-zone">中位区</span><span class="sig-text">上涨中继分歧洗盘，消化浮筹，等待选择方向（合并推导）</span></div>
+<div class="sig-row"><span class="sig-zone">低位区</span><span class="sig-text">主力压盘吸筹，消化上方套牢盘，底部蓄势</span></div>
+    </div>
+
+    <div class="sig-item">
+      <div class="sig-name" style="color:#F0B97B">滞跌<span class="sig-cond">放量但当日跌幅不足 1.2%（量增价不跌，量价背离家族）</span></div>
+      <div class="sig-row"><span class="sig-zone">低位区</span><span class="sig-text">放量打到下沿无法有效跌破；下沿承接有力，诱空动作，见底信号优先观察</span></div>
+<div class="sig-row"><span class="sig-zone">中位区</span><span class="sig-text">假破位洗盘，清洗恐慌筹码（合并推导）</span></div>
+<div class="sig-row"><span class="sig-zone">高位区</span><span class="sig-text">放量砸下下沿又收回；短线资金护盘自救，属于诱多，后续破位风险大</span></div>
+    </div></div></div>
+  </div>
+  <div class="rules">
+    <div class="rule"><span class="rule-k">第 1 步 · 主判</span><span class="rule-v">按主轴 4 级定位：价格百分位 → 运行状态 → 量能档位 → 当日走势（<b>大涨 ≥5% · 上涨 1.2%～5% · 震荡 |涨跌幅|＜1.2% · 下跌 -1.2%～-5% · 大跌 ≤-5%</b>），命中 135 格中唯一一格，输出主判结论</span></div>
+<div class="rule"><span class="rule-k">第 2 步 · 信号叠加</span><span class="rule-v">主判后检查信号叠加层（量价背离 / 极端量能 / 弱方向异动）：命中则在主判下方追加警示行，<b>不覆盖、不改变主判归属</b></span></div>
+<div class="rule"><span class="rule-k">第 3 步 · 异常排除</span><span class="rule-v">命中异常特例（一字板 / 黑天鹅跳空 / 对倒虚量 / 停牌复牌）时<b>不进主轴推演</b>，如实标注「异常行情，模型不适用」</span></div>
+<div class="rule"><span class="rule-k">文案来源</span><span class="rule-v">大涨 / 大跌 54 格：旧图趋势强形态 + 箱体强形态逐字映射，仅 12 格为推导（标「推导」角标）；上涨 / 震荡 / 下跌 81 格：新模型原文；信号层低位 / 高位文案取自旧图，中位为新折中（标「推导」）</span></div>
+  </div>
+  <div class="exc">
+    <div class="exc-t">⚠️ 异常特例分支<small>不纳入主轴推演</small></div>
+    <div class="exc-items"><span class="exc-item">一字涨停 / 一字跌停</span><span class="exc-item">突发黑天鹅、重大公告跳空</span><span class="exc-item">人为对倒虚量（虚假成交量）</span><span class="exc-item">停牌复牌后异动</span></div>
+  </div>
+  <div class="vm-footer" style="font-size:11px;color:#8B949E;margin-top:14px;line-height:1.6;">本页为量价分析方法论整理（20261105e：合并版 v2 —— 主轴 135 格 + 信号叠加层 + 异常特例，替代原「量能涨跌关系分析」推演图；支持缩放与拖拽平移），静态知识内容、不接入行情数据，仅供复盘与学习参考。</div>
+  <div id="vm-zoombar">
+    <button id="vm-zoom-out" title="缩小">−</button>
+    <span class="vm-zoom-val" id="vm-zoom-val">100%</span>
+    <button id="vm-zoom-in" title="放大">+</button>
+    <button id="vm-zoom-fit" class="vm-zoom-wide" title="缩放到刚好看到全图宽度">适应宽度</button>
+    <button id="vm-zoom-reset" class="vm-zoom-wide" title="恢复 100%">重置</button>
+  </div>
   <script>
   (function () {
-    'use strict';
-    // ---------- 思维导图数据（用户 2026-11-01 提供全文，逐条录入） ----------
-    var DATA = {
-      t: '股价涨跌与量能关系分析',
-      children: [
-        { t: '一、低位区（长期大幅下跌后，估值低位，筹码成本偏低）', color: '#5B8FF9', children: [
-          { t: '趋势运行', children: [
-            { l: '放量上涨', d: '增量资金进场吸筹、试盘；反转潜力高，重点观察能否持续放量突破压力' },
-            { l: '放量大涨', d: '低位放量大涨，大资金集中进场信号明确；反转启动概率高，若能持续放量突破压力位，行情有望从磨底升级为反转' },
-            { l: '放量震荡', d: '放量但股价区间震荡，多空分歧加剧，主力压盘吸筹消化套牢盘，底部蓄势' },
-            { l: '放量下跌', d: '恐慌盘集中释放，空头最后宣泄；多为赶底金针探底，警惕诱空杀跌' },
-            { l: '放量大跌', d: '低位放量大跌，恐慌盘集中宣泄、空头最后释放；常见挖坑 / 赶底动作，杀跌后易现长针探底，不宜跟随杀跌' },
-            { l: '缩量上涨', d: '抛压轻，套牢盘不愿割肉；多为弱反弹，缺少增量资金，震荡磨底概率大' },
-            { l: '缩量大涨', d: '低位缩量大涨，买盘稀少却大幅推升股价，多为超跌反抽或试探性拉升；缺乏量能支撑，持续性存疑，谨防冲高回落' },
-            { l: '缩量震荡', d: '缩量股价窄幅波动，抛压逐步枯竭，多空僵持，典型底部磨底特征' },
-            { l: '缩量下跌', d: '卖盘枯竭，抛压释放充分；下跌动能衰竭，底部磨底阶段，等待资金信号' },
-            { l: '缩量大跌', d: '低位缩量大跌，卖压释放但承接同样稀少；多见于流动性差的阴跌尾声，等待地量与承接信号共同确认底部' },
-            { l: '平量上涨', d: '成交维持原有水平，无新增资金大举入场；存量小幅推升，底部弱反弹，很难直接走主升，需放量确认' },
-            { l: '平量大涨', d: '低位平量大涨，量能未放大却大幅推升，缺乏增量资金背书；多为脉冲式反弹，需后续放量确认后才可跟进' },
-            { l: '平量震荡', d: '成交持平股价震荡，存量资金博弈，无新增资金进场，底部横盘整理' },
-            { l: '平量下跌', d: '多空均衡，无恐慌抛盘、无主动承接；平缓阴磨底，磨底周期长，不宜提前重仓抄底' },
-            { l: '平量大跌', d: '低位平量大跌，无恐慌放量也无主动承接，多属阴跌加速段；底部信号仍需量能结构确认，不宜提前抄底' },
-            { l: '放量滞涨', d: '放量但股价涨幅很小/收十字；主力压盘吸筹，消化上方套牢盘，属于底部蓄势' },
-            { l: '放量滞跌', d: '放量但股价跌不动，常收长下影；承接资金进场，空头力量衰减，见底信号优先观察' }
-          ] },
-          { t: '区间横盘震荡（底部箱体）', children: [
-            { l: '放量上涨', d: '放量向上突破箱体上沿；突破信号，需次日确认守住上沿，才有机会开启反转' },
-            { l: '放量大涨', d: '放量大涨突破箱体上沿；强突破信号，突破有效性高，关注次日能否站稳上沿，站稳则反转启动' },
-            { l: '放量下跌', d: '放量砸破箱体下沿；假破位居多，主力挖坑诱空，重点观察能否快速收回' },
-            { l: '放量大跌', d: '放量大跌砸穿箱体下沿；空头最后宣泄与挖坑诱空并存，观察能否快速收回，收回则是黄金坑' },
-            { l: '缩量上涨', d: '缩量靠近箱体上轨；上轨压力压制，量能不足很难突破，大概率遇阻回落' },
-            { l: '缩量大涨', d: '缩量大涨冲上箱体上沿；突破动能不足，假突破概率大，谨防冲高回落' },
-            { l: '缩量下跌', d: '缩量靠近箱体下轨；下轨承接存在，抛压很小，容易在下轨止跌反弹' },
-            { l: '缩量大跌', d: '缩量大跌跌破箱体下沿；承接稀少的阴跌破位，箱体失效，等待止跌信号' },
-            { l: '平量上涨', d: '成交平稳，小幅向上靠近上轨；箱体内小幅轮动，没有突破动能，继续震荡' },
-            { l: '平量大涨', d: '平量大涨离开箱体上沿；量能未放大的突破可信度低，多为脉冲，回踩箱体概率大' },
-            { l: '平量下跌', d: '成交平稳，小幅向下靠近下轨；箱体内正常回调，无破位力量，维持震荡' },
-            { l: '平量大跌', d: '平量大跌离开箱体下沿；无恐慌也无承接的破位，箱体结构走坏，继续观察' },
-            { l: '放量滞涨', d: '放量冲到上沿但是无法站稳；上沿套牢盘抛压重，假突破，容易回落箱体' },
-            { l: '放量滞跌', d: '放量打到下沿但是无法有效跌破；下沿承接有力，诱空动作，容易收回箱体' }
-          ] },
-          { t: '量价背离', children: [
-            { l: '底背离', d: '股价创新低，成交量不再创新低；低位企稳、反转预警信号，不等于马上反转' },
-            { l: '顶背离', d: '低位反弹过程中股价新高、量能跟不上；属于反弹衰竭，大概率重回磨底' }
-          ] },
-          { t: '极端量能（天量/地量）', children: [
-            { l: '天量', d: '低位天量，大资金集中进场，强反转信号' },
-            { l: '地量', d: '低位地量，抛压耗尽，经典「地量见地价」，底部信号' }
-          ] }
-        ] },
-        { t: '二、高位区（一轮大涨之后，累计涨幅大，获利盘丰厚）', color: '#2FBF9B', children: [
-          { t: '趋势运行', children: [
-            { l: '放量上涨', d: '分歧巨大，主力对倒诱多出货；筹码大规模换手，风险极高，严禁追高' },
-            { l: '放量大涨', d: '高位放量大涨，多空分歧最大，多为诱多拉升或最后一冲；警惕主力对倒出货，严禁追高' },
-            { l: '放量震荡', d: '放量股价高位震荡，多空分歧巨大，主力换手派发，高位滞涨风险凸显' },
-            { l: '放量下跌', d: '获利盘集中出逃，主力派发；见顶确认信号，下跌空间打开，优先减仓离场' },
-            { l: '放量大跌', d: '高位放量大跌，获利盘集中出逃、主力派发明确；头部确认信号，下跌空间打开，优先减仓离场' },
-            { l: '缩量上涨', d: '跟风买盘枯竭，买盘后继无力；无量虚涨诱多，随时容易拐头跳水' },
-            { l: '缩量大涨', d: '高位缩量大涨，无量虚涨、买盘枯竭；多为诱多脉冲，随时可能拐头，谨防跳水' },
-            { l: '缩量震荡', d: '缩量股价高位震荡，买盘承接不足，多头力量持续衰减，风险逐步累积' },
-            { l: '缩量下跌', d: '主力暂未大规模出货，少量筹码兑现；高位阴跌开端，风险逐步累积' },
-            { l: '缩量大跌', d: '高位缩量大跌，承接稀少直接砸穿，抛压无需放量即可打压；头部结构强化，尽快离场' },
-            { l: '平量上涨', d: '量能不能继续放大，多头力量耗尽；存量博弈滞涨，上涨没有后劲，警惕转头下跌' },
-            { l: '平量大涨', d: '高位平量大涨，量能不济却强行拉升，多头透支信号；冲高持续性差，警惕见顶回落' },
-            { l: '平量震荡', d: '成交持平股价震荡，存量博弈为主，上涨动能耗尽，临近方向选择' },
-            { l: '平量下跌', d: '成交平稳，无踩踏抛盘；主力分批缓慢派发，温水煮青蛙式阴跌，后续容易加速破位' },
-            { l: '平量大跌', d: '高位平量大跌，无承接盘的阴跌加速；主力多已在前期完成派发，破位风险高，规避' },
-            { l: '放量滞涨', d: '成交量明显放大，股价停滞不前；经典高位出货形态，多空分歧拉满，风险信号' },
-            { l: '放量滞跌', d: '放量下跌但跌速放缓、收长下影；短线资金抄底博弈，大多是短暂抵抗，反弹后继续下杀概率大' }
-          ] },
-          { t: '区间横盘震荡（高位箱体）', children: [
-            { l: '放量上涨', d: '放量冲击箱体上沿；高位诱多突破，大多是拉高出货，谨慎追入' },
-            { l: '放量大涨', d: '放量大涨突破箱体上沿；高位诱多突破概率大，警惕拉高出货，谨慎追入' },
-            { l: '放量下跌', d: '放量跌破箱体下沿；箱体支撑失效，头部确立，下跌趋势开启' },
-            { l: '放量大跌', d: '放量大跌砸穿箱体下沿；头部确立，箱体支撑失效，下跌空间打开，优先离场' },
-            { l: '缩量上涨', d: '缩量靠近上轨；买盘不足，很难持续突破上轨，遇阻回落概率大' },
-            { l: '缩量大涨', d: '缩量大涨冲高；买盘枯竭的虚涨突破，随时回落，谨防跳水' },
-            { l: '缩量下跌', d: '缩量回踩箱体下轨；承接尚可，暂时维持箱体格局，但风险持续累积' },
-            { l: '缩量大跌', d: '缩量大跌跌破下沿；承接稀少的破位，头部结构强化，尽快离场' },
-            { l: '平量上涨', d: '成交平稳小幅上行；箱体内部波动，多头已经无力打出新高' },
-            { l: '平量大涨', d: '平量大涨冲上沿；多头透支的虚假突破，冲高持续性差，警惕见顶' },
-            { l: '平量下跌', d: '成交平稳小幅下行；箱体内部轮动，慢慢消耗多头力量' },
-            { l: '平量大跌', d: '平量大跌破下沿；无承接阴跌破位，箱体下沿失守后易加速，规避' },
-            { l: '放量滞涨', d: '放量到上沿无法突破；高位出货经典形态，抛压沉重' },
-            { l: '放量滞跌', d: '放量砸下下沿又收回；短线资金护盘自救，属于诱多，后续破位风险大' }
-          ] },
-          { t: '量价背离', children: [
-            { l: '顶背离', d: '股价创新高，成交量无法同步新高；强烈见顶预警，重点防范回落' },
-            { l: '底背离', d: '高位震荡中股价新低、量能萎缩；仅短暂承接，很难形成反转，多为反弹' }
-          ] },
-          { t: '极端量能（天量/地量）', children: [
-            { l: '天量', d: '高位天量，「天量天价」，典型见顶信号' },
-            { l: '地量', d: '高位地量，买盘枯竭、场外资金不愿接力，上涨动能枯竭预警' }
-          ] }
-        ] },
-        { t: '三、上涨途中（趋势多头，均线向上，尚未到达高位兑现区）', color: '#F0A23A', children: [
-          { t: '趋势运行', children: [
-            { l: '放量上涨', d: '增量资金持续进场，多头强势；主升延续，健康上涨结构' },
-            { l: '放量大涨', d: '上涨途中放量大涨，增量资金加速进场；主升浪特征，结构健康强势，可顺势持有' },
-            { l: '放量震荡', d: '放量股价区间震荡，多空充分换手洗盘，消化短线获利盘，上涨中继蓄势' },
-            { l: '放量下跌', d: '上涨途中换手洗盘，短线获利盘兑现；清洗浮筹，支撑不破则趋势延续' },
-            { l: '放量大跌', d: '上涨途中放量大跌，获利盘集中兑现引发的急洗盘；只要趋势支撑不破，多为快速换手，观察止跌后的资金回补' },
-            { l: '缩量上涨', d: '筹码锁定良好，持股者惜售；主力控盘度高，强势持有信号' },
-            { l: '缩量大涨', d: '上涨途中缩量大涨，筹码高度锁定、惜售推升；控盘度高的强势特征，趋势易延续' },
-            { l: '缩量震荡', d: '缩量股价窄幅震荡，筹码锁定良好，浮筹清洗充分，趋势延续性强' },
-            { l: '缩量下跌', d: '抛压有限，洗盘力度弱；浅幅回踩，大概率很快重回上升通道' },
-            { l: '缩量大跌', d: '上涨途中缩量大跌，抛压虽不重但无承接，走势偏离健康节奏；警惕趋势转弱，关注支撑位能否守住' },
-            { l: '平量上涨', d: '量能稳定，没有持续增量；上涨节奏放缓，进入震荡爬升休整，不破趋势线可持有，等待补量' },
-            { l: '平量大涨', d: '上涨途中平量大涨，量能未跟上涨幅，上涨动能存疑；留意后续是否补量，若持续缩量滞涨则阶段见顶风险上升' },
-            { l: '平量震荡', d: '成交持平股价震荡，多空力量平衡，上涨途中良性休整，等待补量突破' },
-            { l: '平量下跌', d: '多空暂时平衡，无恐慌出逃；平缓式回调洗盘，不是趋势反转，紧盯趋势支撑' },
-            { l: '平量大跌', d: '上涨途中平量大跌，多空分歧有限、无恐慌放量；多为节奏性回调，紧盯趋势支撑，不破可继续观察' },
-            { l: '放量滞涨', d: '放量但股价停滞；上涨中继分歧洗盘，清洗短线浮筹，支撑有效可继续看趋势' },
-            { l: '放量滞跌', d: '放量下杀但跌不动；恐慌浮筹一次性释放，承接资金承接，大概率快速收回' }
-          ] },
-          { t: '区间横盘震荡（上涨中继箱体）', children: [
-            { l: '放量上涨', d: '放量突破箱体上沿；中继突破，主升有望延续，是加仓信号之一' },
-            { l: '放量大涨', d: '放量大涨突破箱体上沿；中继强突破，主升有望延续，加仓信号之一' },
-            { l: '放量下跌', d: '放量跌破箱体下沿；警惕趋势走坏，观察能否快速收回，收不回则趋势转弱' },
-            { l: '放量大跌', d: '放量大跌砸穿箱体下沿；警惕趋势走坏，观察能否快速收回，收不回则趋势转弱' },
-            { l: '缩量上涨', d: '缩量靠近上轨；量能不足，突破有效性差，容易遇阻回落' },
-            { l: '缩量大涨', d: '缩量大涨突破上沿；量能不足的突破有效性差，容易假突破回落' },
-            { l: '缩量下跌', d: '缩量回踩箱体下轨；抛压很小，下轨支撑有效，是良性洗盘' },
-            { l: '缩量大跌', d: '缩量大跌回踩下沿；抛压不重但需观察承接，守住下轨则是良性洗盘' },
-            { l: '平量上涨', d: '成交平稳小幅向上；箱体内部震荡，蓄势等待放量突破' },
-            { l: '平量大涨', d: '平量大涨向上离开箱体；量能未跟上的突破需补量确认，未补量谨防回落' },
-            { l: '平量下跌', d: '成交平稳小幅向下；箱体内部正常回调，趋势结构没有破坏' },
-            { l: '平量大跌', d: '平量大跌离开箱体下沿；趋势结构受损，重点观察趋势支撑能否守住' },
-            { l: '放量滞涨', d: '放量冲击上沿过不去；中继洗盘动作，消化浮筹，等待后续选择方向' },
-            { l: '放量滞跌', d: '放量砸下下沿快速收回；假破位洗盘，清洗恐慌筹码' }
-          ] },
-          { t: '量价背离', children: [
-            { l: '顶背离', d: '股价创出阶段新高，量能跟不上；提示阶段性回调风险，不一定反转' },
-            { l: '底背离', d: '回调阶段股价新低、量能不再创新低；回调动能衰减，容易迎来反弹修复' }
-          ] },
-          { t: '极端量能（天量/地量）', children: [
-            { l: '天量', d: '上涨途中天量，分歧放大，大概率阶段高点、洗盘节点' },
-            { l: '地量', d: '上涨途中地量上涨，筹码高度锁仓，主力控盘强' }
-          ] }
-        ] },
-        { t: '四、下跌途中（趋势空头，均线向下，反弹持续性差）', color: '#E8684A', children: [
-          { t: '趋势运行', children: [
-            { l: '放量上涨', d: '短线游资抄底博弈反弹；属于诱多反弹，资金快进快出，不要当成反转' },
-            { l: '放量大涨', d: '下跌途中放量大涨，短线资金抄底博反弹；诱多概率大，快进快出持续性差，不当作反转' },
-            { l: '放量震荡', d: '放量股价区间震荡，多空短暂博弈，短线资金快进快出，多为下跌中继' },
-            { l: '放量下跌', d: '抛压集中释放，空头力量强盛；下跌加速，恐慌出逃，坚决回避抄底' },
-            { l: '放量大跌', d: '下跌途中放量大跌，恐慌集中释放、空头加速；下跌动能强，坚决回避，等待企稳信号' },
-            { l: '缩量上涨', d: '无量反弹，没有资金认可；弱势反弹，反弹后大概率再创新低' },
-            { l: '缩量大涨', d: '下跌途中缩量大涨，无量反弹缺乏资金认可；弱势反抽，反弹后继续创新低概率大' },
-            { l: '缩量震荡', d: '缩量股价窄幅震荡，市场交投冷清，无增量资金承接，弱势阴跌中继' },
-            { l: '缩量下跌', d: '买盘极度稀少，无承接；绵绵阴跌，下跌周期漫长' },
-            { l: '缩量大跌', d: '下跌途中缩量大跌，卖盘持续而承接枯竭；阴跌加速段，下跌周期未见尽头，规避' },
-            { l: '平量上涨', d: '成交和前期持平，无增量资金；下跌趋势里短暂弱反弹，反弹结束继续下行，是减仓机会' },
-            { l: '平量大涨', d: '下跌途中平量大涨，无增量资金的超跌脉冲；反弹动能不足，反弹结束后大概率延续下行' },
-            { l: '平量震荡', d: '成交持平股价震荡，多空弱平衡，下跌途中短暂停顿，后续仍有下行空间' },
-            { l: '平量下跌', d: '多空平稳，无集中抛压也无承接；缓慢阴跌，没有企稳信号，尽量规避' },
-            { l: '平量大跌', d: '下跌途中平量大跌，无恐慌释放也无承接，空头温和持续；趋势无企稳信号，继续规避' },
-            { l: '放量滞涨', d: '放量拉升但是涨不动；短线资金拉高出货，诱多陷阱，不要参与' },
-            { l: '放量滞跌', d: '放量下跌后跌势止住；短暂抵抗，承接力量薄弱，多数是中继，后续还有一跌' }
-          ] },
-          { t: '区间横盘震荡（下跌中继箱体）', children: [
-            { l: '放量上涨', d: '放量向上突破箱体上沿；下跌中继诱多突破，反弹结束继续下跌' },
-            { l: '放量大涨', d: '放量大涨突破箱体上沿；下跌中继诱多突破，反弹结束继续下跌，不追' },
-            { l: '放量下跌', d: '放量跌破箱体下沿；中继破位，新一轮下跌开启，及时离场' },
-            { l: '放量大跌', d: '放量大跌砸穿箱体下沿；中继破位加速，新一轮下跌开启，及时离场' },
-            { l: '缩量上涨', d: '缩量靠近上轨；无量反弹，很难站稳上沿，容易回落' },
-            { l: '缩量大涨', d: '缩量大涨冲上沿；无量反弹突破，难以站稳，容易回落箱体' },
-            { l: '缩量下跌', d: '缩量靠近下轨；承接偏弱，短暂稳住，后续容易破位' },
-            { l: '缩量大跌', d: '缩量大跌破下沿；承接枯竭的阴跌破位，后续继续走弱，规避' },
-            { l: '平量上涨', d: '成交平稳小幅上行；箱体里面弱反弹，没有反转资金' },
-            { l: '平量大涨', d: '平量大涨冲上沿；无增量资金的箱体内脉冲，反弹结束继续下行' },
-            { l: '平量下跌', d: '成交平稳小幅下行；箱体内部消耗，空头依旧占据主动' },
-            { l: '平量大跌', d: '平量大跌破下沿；空头持续占据主动，箱体下沿失守，继续规避' },
-            { l: '放量滞涨', d: '放量冲过上沿但是站不住；典型诱多，资金借机出货' },
-            { l: '放量滞跌', d: '放量打下下沿收回；短暂抵抗，支撑虚假，后续破位概率高' }
-          ] },
-          { t: '量价背离', children: [
-            { l: '底背离', d: '股价创新低，成交量不再创新低；仅代表反弹机会，下跌趋势大概率不会反转' },
-            { l: '顶背离', d: '反弹新高量能跟不上；反弹衰竭信号，反弹结束继续下行' }
-          ] },
-          { t: '极端量能（天量/地量）', children: [
-            { l: '天量', d: '下跌途中天量下跌，恐慌集中释放，加速赶底' },
-            { l: '地量', d: '下跌途中地量下跌，阴跌无底，短期很难企稳' }
-          ] }
-        ] }
-      ]
-    };
-
-    // ---------- 布局常量（x：各层左缘；宽度决定换行估算） ----------
-    var X = { root: 16, branch: 250, group: 590, leaf: 850 };
-    var W = { root: 170, branch: 285, group: 200, leaf: 360 };
-    var GAP_LEAF = 8, GAP_GROUP = 22, GAP_BRANCH = 40;
-    var PAD_R = 24, PAD_B = 24;
-
-    var canvas = document.getElementById('vmCanvas');
-    var viewport = document.getElementById('vmViewport');
-    var nodes = [];   // [{el, x, y, w, h, color, type, node}]
-    var edges = [];   // [{parent, child}]
-    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    canvas.appendChild(svg);
-
-    // ---------- 文本换行估算（中文字宽 ≈ font-size，守卫无需 DOM 测量） ----------
-    function lines(text, inner, fs) {
-      var per = Math.max(4, Math.floor(inner / fs));
-      return Math.max(1, Math.ceil(text.length / per));
+    var zoom = 1, MIN = 0.4, MAX = 2, BASE_W = 1980;
+    var doc = document.documentElement;
+    var valEl = document.getElementById('vm-zoom-val');
+    function apply() { document.body.style.zoom = zoom; valEl.textContent = Math.round(zoom * 100) + '%'; }
+    function setZoom(z) {
+      // 以视口中心为锚点缩放，保持中心内容不跳
+      var cx = doc.scrollLeft + doc.clientWidth / 2, cy = doc.scrollTop + doc.clientHeight / 2;
+      var nz = Math.min(MAX, Math.max(MIN, z));
+      cx = cx * nz / zoom - doc.clientWidth / 2;
+      cy = cy * nz / zoom - doc.clientHeight / 2;
+      zoom = nz; apply();
+      doc.scrollLeft = Math.max(0, cx); doc.scrollTop = Math.max(0, cy);
     }
-    function spanH(node, depth) {
-      if (node.l !== undefined) { // 叶子
-        var text = node.l + '：' + node.d;
-        var n = lines(text, W.leaf - 20, 12);
-        node._h = 14 + n * 18.5;
-        node._span = node._h;
-        return;
-      }
-      var kids = node.children || [];
-      var sum = 0, gap = depth === 2 ? GAP_LEAF : (depth === 1 ? GAP_GROUP : GAP_BRANCH);
-      for (var i = 0; i < kids.length; i++) { spanH(kids[i], depth + 1); sum += kids[i]._span; }
-      if (kids.length) sum += gap * (kids.length - 1);
-      if (depth === 0) {
-        node._h = 20 + lines(node.t, W.root - 28, 16) * 24;
-      } else if (depth === 1) {
-        node._h = 18 + lines(node.t, W.branch - 24, 14) * 21;
-      } else {
-        node._h = 14 + lines(node.t, W.group - 25, 13) * 19;
-      }
-      node._span = kids.length && !node._collapsed ? Math.max(sum, node._h) : node._h;
-    }
-    function layout(node, depth, x, y) {
-      node._x = x; node._y = y + (node._span - node._h) / 2;
-      var kids = node.children || [];
-      if (!kids.length || node._collapsed) { node._open = false; return; }
-      node._open = true;
-      var cy = y, gap = depth === 2 ? GAP_LEAF : (depth === 1 ? GAP_GROUP : GAP_BRANCH);
-      for (var i = 0; i < kids.length; i++) { layout(kids[i], depth + 1, x + node._w, cy); cy += kids[i]._span + gap; }
-      node._w = node._w; // noop keep
-    }
-
-    // 布局前补宽度（root/branch/group/leaf）
-    function setW(node, depth) {
-      if (node.l !== undefined) node._w = W.leaf;
-      else if (depth === 0) node._w = W.root;
-      else if (depth === 1) node._w = W.branch;
-      else node._w = W.group;
-      (node.children || []).forEach(function (c) { setW(c, depth + 1); });
-    }
-
-    // ---------- 构建 DOM（一次创建，重排版只改位置/显隐） ----------
-    function build(node, depth, color) {
-      var el = document.createElement('div');
-      var type = node.l !== undefined ? 'leaf' : (depth === 0 ? 'root' : (depth === 1 ? 'branch' : 'group'));
-      el.className = 'vm-node vm-' + type;
-      if (type === 'leaf') {
-        el.innerHTML = '<b style="color:' + color + '">' + node.l + '：</b>' + node.d;
-      } else if (type === 'root') {
-        el.textContent = node.t;
-      } else {
-        el.innerHTML = '<span class="vm-fold"></span>' + node.t;
-        if (type === 'branch') { el.style.color = node.color; el.style.borderColor = node.color; el.style.background = hex8(node.color, 0.1); }
-        else { el.style.borderLeftColor = color; el.style.color = color; }
-        el.title = '点击折叠/展开';
-      }
-      node._el = el; node._type = type; node._color = color;
-      canvas.appendChild(el);
-      nodes.push(node);
-      var kids = node.children || [];
-      for (var i = 0; i < kids.length; i++) { edges.push({ p: node, c: kids[i] }); build(kids[i], depth + 1, type === 'root' ? kids[i].color : color); }
-    }
-    function hex8(hex, a) {
-      var r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
-      return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
-    }
-
-    // ---------- 渲染（每次折叠/展开后重算位置与连线） ----------
-    function render() {
-      setW(DATA, 0);
-      spanH(DATA, 0);
-      layout(DATA, 0, X.root, 0);
-      var ch = DATA._span + PAD_B, cw = X.leaf + W.leaf + PAD_R;
-      canvas.style.width = cw + 'px'; canvas.style.height = ch + 'px';
-      svg.setAttribute('width', cw); svg.setAttribute('height', ch);
-      var paths = [];
-      nodes.forEach(function (n) {
-        var vis = true, a = n;
-        while (a) { if (a._collapsed && a !== n) { vis = false; break; } a = a._parent; }
-        n._el.style.display = vis ? '' : 'none';
-        if (!vis) return;
-        n._el.style.left = n._x + 'px'; n._el.style.top = n._y + 'px';
-        n._el.style.width = n._w + 'px'; n._el.style.minHeight = n._h + 'px';
-        var fold = n._el.querySelector('.vm-fold');
-        if (fold && n._type !== 'leaf') fold.textContent = (n._collapsed ? '▸ ' : '▾ ');
-      });
-      edges.forEach(function (e) {
-        var vis = true, a = e.c;
-        while (a) { if (a._collapsed) { vis = false; break; } a = a._parent; }
-        if (!vis) return;
-        var x1 = e.p._x + e.p._w, y1 = e.p._y + e.p._h / 2, x2 = e.c._x, y2 = e.c._y + e.c._h / 2;
-        var dx = Math.max(30, (x2 - x1) * 0.5);
-        paths.push('<path d="M' + x1 + ' ' + y1 + ' C' + (x1 + dx) + ' ' + y1 + ',' + (x2 - dx) + ' ' + y2 + ',' + x2 + ' ' + y2 +
-          '" fill="none" stroke="' + (e.c.color || e.p._color || '#F0B97B') + '" stroke-opacity="0.55" stroke-width="' +
-          (e.c.l !== undefined ? 1.4 : 2.2) + '"/>');
-      });
-      svg.innerHTML = paths.join('');
-    }
-    // 补父指针
-    function linkParent(node) { (node.children || []).forEach(function (c) { c._parent = node; c.color = c.color || node.color; linkParent(c); }); }
-    linkParent(DATA);
-    build(DATA, 0, null);
-    render();
-
-    // ---------- 折叠交互 ----------
-    canvas.addEventListener('click', function (ev) {
-      if (moved) return;
-      var el = ev.target.closest('.vm-branch, .vm-group');
-      if (!el) return;
-      var n = null;
-      for (var i = 0; i < nodes.length; i++) if (nodes[i]._el === el) { n = nodes[i]; break; }
-      if (!n || !n.children || !n.children.length) return;
-      n._collapsed = !n._collapsed;
-      render();
-    });
-
-    // ---------- 平移 + 缩放 ----------
-    var view = { x: 0, y: 0, s: 1 }, moved = false;
-    function apply() { canvas.style.transform = 'translate(' + view.x + 'px,' + view.y + 'px) scale(' + view.s + ')'; }
-    function fit() {
-      // 20261102f：留白 32→20（配合页面放宽），缩放上限仍为 1（100% 字号清晰，不放大）
-      var cw = X.leaf + W.leaf + PAD_R, chh = DATA._span + PAD_B;
-      var vw = viewport.clientWidth, vh = viewport.clientHeight;
-      view.s = Math.min((vw - 20) / cw, (vh - 20) / chh, 1);
-      view.x = (vw - cw * view.s) / 2; view.y = (vh - chh * view.s) / 2;
-      apply();
-    }
-    viewport.addEventListener('wheel', function (ev) {
-      ev.preventDefault();
-      var r = viewport.getBoundingClientRect();
-      var mx = ev.clientX - r.left, my = ev.clientY - r.top;
-      var k = ev.deltaY < 0 ? 1.12 : 1 / 1.12;
-      var ns = Math.min(2.5, Math.max(0.12, view.s * k));
-      view.x = mx - (mx - view.x) * (ns / view.s);
-      view.y = my - (my - view.y) * (ns / view.s);
-      view.s = ns; apply();
+    document.getElementById('vm-zoom-in').onclick = function () { setZoom(zoom + 0.1); };
+    document.getElementById('vm-zoom-out').onclick = function () { setZoom(zoom - 0.1); };
+    document.getElementById('vm-zoom-reset').onclick = function () { setZoom(1); };
+    document.getElementById('vm-zoom-fit').onclick = function () { setZoom((window.innerWidth - 24) / BASE_W); };
+    // Ctrl + 滚轮缩放
+    document.addEventListener('wheel', function (e) {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      setZoom(zoom * (e.deltaY < 0 ? 1.1 : 0.9));
     }, { passive: false });
-    var drag = null;
-    viewport.addEventListener('pointerdown', function (ev) {
-      drag = { x: ev.clientX, y: ev.clientY, vx: view.x, vy: view.y }; moved = false;
-      viewport.classList.add('dragging');
+    // 按住左键拖拽平移（工具栏内除外）
+    var dragging = false, sx = 0, sy = 0, sl = 0, st = 0;
+    document.addEventListener('mousedown', function (e) {
+      if (e.button !== 0 || e.target.closest('#vm-zoombar')) return;
+      dragging = true; sx = e.clientX; sy = e.clientY; sl = window.scrollX; st = window.scrollY;
+      document.body.classList.add('vm-grabbing');
+      e.preventDefault();
     });
-    window.addEventListener('pointermove', function (ev) {
-      if (!drag) return;
-      var dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
-      if (Math.abs(dx) + Math.abs(dy) > 4) moved = true;
-      view.x = drag.vx + dx; view.y = drag.vy + dy; apply();
+    document.addEventListener('mousemove', function (e) {
+      if (!dragging) return;
+      window.scrollTo(sl - (e.clientX - sx), st - (e.clientY - sy));
     });
-    window.addEventListener('pointerup', function () { drag = null; viewport.classList.remove('dragging'); setTimeout(function () { moved = false; }, 0); });
-
-    document.getElementById('vmFit').onclick = fit;
-    document.getElementById('vmReset').onclick = function () { view = { x: 12, y: 12, s: 1 }; apply(); };
-    document.getElementById('vmExpand').onclick = function () { nodes.forEach(function (n) { n._collapsed = false; }); render(); };
-    document.getElementById('vmCollapse').onclick = function () { nodes.forEach(function (n) { if (n._type === 'group') n._collapsed = true; }); render(); };
-
-    fit();
+    document.addEventListener('mouseup', function () {
+      dragging = false; document.body.classList.remove('vm-grabbing');
+    });
+    apply();
   })();
   </script>
 </body>

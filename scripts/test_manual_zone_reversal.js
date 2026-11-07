@@ -1,5 +1,5 @@
 /**
- * scripts/test_manual_zone_reversal.js — 20261103m 守卫
+ * scripts/test_manual_zone_reversal.js — 20261105b 守卫
  * ==========================================================
  * 用户报障（2026-11-03）：「手动设定的阻力和支撑区间，也要遵守模块本身的有效性检验，
  * 而且阻力已经被突破，为什么还保持显示」。
@@ -180,14 +180,14 @@ async function main() {
     const hub = fs.readFileSync(path.join(ROOT, 'lib/priceActionHub.js'), 'utf8');
     const iM = hub.indexOf('attachManualZones(data, finalBars, symbol)');
     const iR = hub.indexOf('attachReversedZones(data, finalBars, symbol)');
-    ok(iM >= 0 && iR > iM, 'priceActionHub：手动区间并入先于反转模块（20261103m 顺序）');
+    ok(iM >= 0 && iR > iM, 'priceActionHub：手动区间并入先于反转模块（20261105b 顺序）');
     const zr = fs.readFileSync(path.join(ROOT, 'lib/zoneReversal.js'), 'utf8');
     ok(!/\|\| z\.isManual/.test(zr), 'zoneReversal：不再跳过 isManual（手动区间接入反转）');
     ok(zr.indexOf('purgeByManualId') >= 0 && zr.indexOf("origin === 'manual'") >= 0, 'zoneReversal：purgeByManualId 与手动来源标注齐备');
     ok(zr.indexOf('manualZonesMeta.reversed') >= 0, 'zoneReversal：反转事件写入 manualZonesMeta.reversed');
     const server = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
     ok(/purgeByManualId\(r\.data\.symbol, req\.params\.id\)/.test(server), 'server.js：删除路由联动 purgeByManualId');
-    ok(/const APP_VERSION = '20261103m'/.test(server), "APP_VERSION = '20261103m'");
+    ok(/const APP_VERSION = '20261106p'/.test(server), "APP_VERSION = '20261106p'");
     const app = fs.readFileSync(path.join(ROOT, 'public/js/app.js'), 'utf8');
     ok(app.indexOf('manualZonesMeta || {}).reversed') >= 0 || app.indexOf('manualZonesMeta).reversed') >= 0 || app.indexOf('revMap[r.manualId]') >= 0, 'app.js：手动页签消费 reversed 事件');
     ok(app.indexOf('pa-mz-badge reversed') >= 0, 'app.js：「已反转」徽标');
@@ -196,7 +196,7 @@ async function main() {
     ok(css.indexOf('.pa-mz-badge.reversed') >= 0, 'style.css：.pa-mz-badge.reversed 样式');
     const idx = fs.readFileSync(path.join(ROOT, 'public/index.html'), 'utf8');
     const acc = fs.readFileSync(path.join(ROOT, 'public/accuracy.html'), 'utf8');
-    ok(idx.indexOf('?v=20261103m') >= 0 && acc.indexOf('?v=20261103m') >= 0, 'index/accuracy 页面版本戳已对齐 20261103m');
+    ok(idx.indexOf('?v=20261106p') >= 0 && acc.indexOf('?v=20261106p') >= 0, 'index/accuracy 页面版本戳已对齐 20261106p');
   }
 
   cleanup();

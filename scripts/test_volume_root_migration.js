@@ -37,7 +37,9 @@ const oClamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 
 // lib/analysis.js:356-369
 function oldAnalyzeVolume(history) {
-  const recent = history.slice(-20);
+  // [20261105h] 修正历史基线口径：原 recent=slice(-20)+slice(0,-1) 实际只取前 19 日均量（与 capitalFlow 旧 bug 同源）；
+  // 现改为 slice(-21)+slice(0,-1) 取满前 20 日均量，与 capitalFlow 修正后的 20 日口径对齐。
+  const recent = history.slice(-21);
   if (recent.length === 0) return { trend: 'unknown', ratio: 0 };
   const avgVolume = recent.slice(0, -1).reduce((s, d) => s + d.volume, 0) / (recent.length - 1);
   const lastVolume = recent[recent.length - 1].volume;

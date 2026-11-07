@@ -213,7 +213,7 @@ const { fetchOpProfitSnippet } = require('../lib/deep/financials');
   ok(/'营运利润':\s*\{ title:/.test(appSrc), 'METRIC_HELP 应含「营运利润」释义');
   ok(/'NBV\(新业务价值\)':\s*\{ title:/.test(appSrc), 'METRIC_HELP 应含「NBV(新业务价值)」释义');
 
-  // D5. 右卡 note 渲染
+  // D5. 右卡 note 渲染（20261105b：恢复按需单卡，签名 renderMetricAnalysis(data, activeKey)）
   ok(appSrc.indexOf('ma-metric-note') > appSrc.indexOf('renderMetricAnalysis(data, activeKey)'),
     'renderMetricAnalysis 应支持 note 渲染（.ma-metric-note）');
   ok(/m\.note \? `<div class="ma-metric-note">/.test(appSrc), 'note 渲染应使用 .ma-metric-note 类');
@@ -222,7 +222,7 @@ const { fetchOpProfitSnippet } = require('../lib/deep/financials');
   // 左卡逻辑顺序 = 字面量 14 行 + 扣非后插两行；右卡 = METRIC_ORDER。两者应同序。
   const leftLogical = [
     '市盈率(PE·TTM)', '市净率(PB)', 'PEG', 'ROE', '毛利率', '净利率',
-    '营收增长', '利润增长', '扣非净利润增长', '营运利润', 'NBV(新业务价值)',
+    '营收增长', '归母净利润', '扣非净利润增长', '营运利润', 'NBV(新业务价值)',
     '资产负债率', '流动比率', '股息率(TTM)', '每股经营现金流',
   ];
   // 字面量顺序（从源码提取）

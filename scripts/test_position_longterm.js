@@ -1,99 +1,96 @@
 /**
- * 量价判定卡·长期趋势叠加（方案A，20261103a）回归测试
+ * 量价判定·位置标签「新标准三分区」回归守卫（20261106a 定版）
  * 运行： node scripts/test_position_longterm.js
  *
- * 用户报障（2026-11-03 海天味业 603288）：量价判定卡判「震荡整理」，但海天 2023 年以来
- * 长期总体趋势在下跌。根因：旧 _detectPosition 只看 12 个月分位 + MA20/MA60 + 阶段高低点，
- * 没有长期（MA250 年线）维度。方案A 在保持矩阵键 position.label 不变的前提下，叠加系统既有
- * 长期定论（上行/下行/震荡），仅作展示修正。
+ * 旧四类位置体系（原「上涨中途 / 下跌途中 / 震荡整理」等旧定位）已整体退役：
+ *   - position.label 值域 = 高位区间 / 中位区间 / 低位区间，由价格分位唯一决定；
+ *   - 趋势段 / 长期年线（MA250）不再改写位置，仅作为审计信息留在 basis / trendSegment；
+ *   - 方向语义交由新 135 格的运行状态 _runState（趋势向上 / 趋势向下 / 区间震荡）承担。
+ * 原 20261103a「长期趋势叠加展示」与 20261104e「位置判定阶梯」均随旧体系退役，
+ * 本守卫改为验证新三分区契约 + 旧体系字段零残留。
  *
- * 本测试直接驱动纯函数 _detectPosition（注入合成 longTerm），验证逻辑而不依赖网络。
+ * 直接驱动纯函数 _detectPosition（注入合成 longTerm / trendSeg），零网络。
  */
 'use strict';
+const fs = require('fs');
+const path = require('path');
 const ve = require('../lib/volumeEngine');
 
-// 构造 _detectPosition 所需的最小 pc（真实场景 longTerm 由 analyzeVolume 用 2400 根日K 算 MA250 推演得到）
-function mkPc(pricePct, ma20, ma60, close, longTerm) {
+const ROOT = path.join(__dirname, '..');
+const SRC = fs.readFileSync(path.join(ROOT, 'lib', 'volumeEngine.js'), 'utf8');
+
+function mkPc(pricePct, longTerm, extra) {
   return {
     pricePct12m: pricePct,
     drawdownFromHigh: -12.4,
     rallyFromLow: 11.9,
-    ma20, ma60, closeToday: close,
-    longTerm,
+    ma20: 34.26, ma60: 34.66, closeToday: 34.4,
+    longTerm: longTerm || null,
+    ...(extra || {}),
   };
 }
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { if (c) { pass++; console.log('  ✓ ' + m); } else { fail++; console.log('  ✗ ' + m); } };
+const ZONES = ['高位区间', '中位区间', '低位区间'];
 
-console.log('\n[1] 震荡整理 + 长期下行 → 叠加「长期下行通道中的区间震荡」，但矩阵键 label 不变');
+console.log('\n===== §1 位置标签只由价格分位决定（三分区） =====');
 {
   const lt = { verdict: '下行', ma250: { value: 38.2, slopeState: '下压', slopePct: -2.1, positionPct: -15.3 } };
-  const pc = mkPc(0.43, 34.26, 34.66, 34.4, lt);
-  const r = ve._detectPosition(pc, null);
-  ok(r.label === '震荡整理', `矩阵键 label 保持 '震荡整理'（不变，24 格矩阵不失效）: ${r.label}`);
-  ok(r.displayLabel === '长期下行通道中的区间震荡', `展示叠加 displayLabel = '长期下行通道中的区间震荡': ${r.displayLabel}`);
-  ok(r.longTermVerdict === '下行', `longTermVerdict = '下行': ${r.longTermVerdict}`);
-  ok(/MA250/.test(r.basis) && /下行/.test(r.basis), 'basis 追加年线长期趋势依据');
-  ok(r.longTermContext && /下跌中继/.test(r.longTermContext), `longTermContext 含「下跌中继」提示: ${r.longTermContext}`);
+  const low = ve._detectPosition(mkPc(0.2, lt), null, null);
+  const mid = ve._detectPosition(mkPc(0.5, lt), null, null);
+  const high = ve._detectPosition(mkPc(0.8, lt), null, null);
+  ok(low.label === '低位区间', `分位 20% → 低位区间（实际 ${low.label}）`);
+  ok(mid.label === '中位区间', `分位 50% → 中位区间（实际 ${mid.label}）`);
+  ok(high.label === '高位区间', `分位 80% → 高位区间（实际 ${high.label}）`);
+  ok(ZONES.includes(low.label) && ZONES.includes(mid.label) && ZONES.includes(high.label), 'label 值域严格限于三分区');
+  ok(ve._detectPosition(mkPc(0.3, null), null, null).label === '中位区间', '边界 30% 归中位（≤30% 才低位）');
+  ok(ve._detectPosition(mkPc(0.7, null), null, null).label === '中位区间', '边界 70% 归中位（≥70% 才高位）');
 }
 
-console.log('\n[2] 震荡整理 + 长期上行 → 叠加「长期上行中的区间震荡（中继整理）」');
+console.log('\n===== §2 趋势段 / 长期年线不改写位置，仅作审计 =====');
 {
-  const lt = { verdict: '上行', ma250: { value: 40, slopeState: '上翘', slopePct: 1.5, positionPct: 6 } };
-  // 横盘：ma20≈ma60 且 close 介于其间（无明确方向）→ 落入「震荡整理」
-  const pc = mkPc(0.5, 39, 39.2, 40, lt);
-  const r = ve._detectPosition(pc, null);
-  ok(r.label === '震荡整理', `label 不变: ${r.label}`);
-  ok(r.displayLabel === '长期上行中的区间震荡（中继整理）', `displayLabel 叠加: ${r.displayLabel}`);
-  ok(r.longTermContext && /上涨中继/.test(r.longTermContext), `说明：上涨中继: ${r.longTermContext}`);
+  const ltDown = { verdict: '下行', ma250: { value: 38.2, slopeState: '下压', slopePct: -2.1, positionPct: -15.3 } };
+  const ltUp = { verdict: '上行', ma250: { value: 40, slopeState: '上翘', slopePct: 1.5, positionPct: 6 } };
+  const r1 = ve._detectPosition(mkPc(0.43, ltDown), null, null);
+  const r2 = ve._detectPosition(mkPc(0.5, ltUp), null, null);
+  ok(r1.label === '中位区间', `短期横盘 + 长期下行 → 仍是中位区间（旧体系会定论「下跌途中」）: ${r1.label}`);
+  ok(r2.label === '中位区间', `短期横盘 + 长期上行 → 仍是中位区间（旧体系会定论「上涨途中」）: ${r2.label}`);
+  ok(/MA250/.test(r1.basis) && /下行/.test(r1.basis), 'basis 保留长期年线「下行」审计依据');
+  ok(/MA250/.test(r2.basis) && /上行/.test(r2.basis), 'basis 保留长期年线「上行」审计依据');
+  ok(r1.longTermVerdict === '下行' && r2.longTermVerdict === '上行', 'longTermVerdict 原样透出（仅参考）');
+  ok(/仅审计/.test(r1.basis), 'basis 明确标注长期信息「仅审计，不改写位置」');
+}
+{
+  const seg = { direction: 'up', reason: '近 120 日自低点 11.56 涨 +26.1%' };
+  const r = ve._detectPosition(mkPc(0.43, null), null, seg);
+  ok(r.label === '中位区间', `上涨趋势段不再把位置改写成「上涨中途」: ${r.label}`);
+  ok(r.trendSegment === seg, 'trendSegment 原样透出供审计');
+  ok(/趋势段/.test(r.basis) && /\+26\.1%/.test(r.basis), 'basis 含趋势段审计依据');
 }
 
-console.log('\n[3] 低位区间 + 长期下行 → 不覆盖 label，仅加说明（非反转底部）');
+console.log('\n===== §3 分歧标注与降级 =====');
 {
-  const lt = { verdict: '下行', ma250: { value: 9.0, slopeState: '下压', slopePct: -1.5, positionPct: -5 } };
-  const pc = mkPc(0.2, 10, 10.5, 9.8, lt);
-  const r = ve._detectPosition(pc, null);
-  ok(r.label === '低位区间', `label 不变: ${r.label}`);
-  ok(r.displayLabel === null, 'displayLabel 不覆盖矩阵位置（低位区不叠加）');
-  ok(r.longTermContext && /下跌途中/.test(r.longTermContext), `说明：下跌途中的低位震荡: ${r.longTermContext}`);
-  ok(/MA250/.test(r.basis), 'basis 仍含年线依据');
+  const lowDiv = ve._detectPosition(mkPc(0.2, null, { drawdownFromHigh: -5, rallyFromLow: 30 }), null, null);
+  const highDiv = ve._detectPosition(mkPc(0.8, null, { rallyFromLow: 10 }), null, null);
+  ok(lowDiv.label === '低位区间' && /分歧/.test(lowDiv.divergence || ''), '低位但距高点近 → 分歧标注保留');
+  ok(highDiv.label === '高位区间' && /分歧/.test(highDiv.divergence || ''), '高位但涨幅不足 → 分歧标注保留');
+  const noData = ve._detectPosition(mkPc(null, null), null, null);
+  ok(noData.label === '中位区间' && /数据不足/.test(noData.divergence || ''), '分位数据不足 → 中位区间 + 诚实标注');
+  const noLt = ve._detectPosition(mkPc(0.43, null), null, null);
+  ok(noLt.label === '中位区间' && noLt.longTermVerdict === null, 'longTerm 缺失 → 不崩溃、不臆造方向');
 }
 
-console.log('\n[4] 上涨中途 + 长期上行 → 方向一致，longTermContext 为 null（不冗余提示）');
+console.log('\n===== §4 旧体系字段与源码零残留 =====');
 {
-  const lt = { verdict: '上行', ma250: { value: 50, slopeState: '上翘', slopePct: 1.2, positionPct: 6 } };
-  const pc = mkPc(0.6, 50, 48, 52, lt);
-  const r = ve._detectPosition(pc, null);
-  ok(r.label === '上涨中途', `label 不变: ${r.label}`);
-  ok(r.longTermContext === null, '方向一致时 longTermContext 为 null（不冗余提示）');
-}
-
-console.log('\n[5] 长期定论缺失 → 完全降级，行为与改动前一致');
-{
-  const pc = mkPc(0.43, 34.26, 34.66, 34.4, null);
-  const r = ve._detectPosition(pc, null);
-  ok(r.label === '震荡整理' && r.longTermVerdict === null && r.displayLabel === null && r.longTermContext === null, 'longTerm 缺失时行为与改动前一致（无叠加、无崩溃）');
-}
-
-console.log('\n[6] 低位区间 + 长期震荡（中性）→ 不误写为「上行」，给中性说明');
-{
-  const lt = { verdict: '震荡', ma250: { value: 9.0, slopeState: '走平', slopePct: 0.1, positionPct: -1 } };
-  const pc = mkPc(0.2, 10, 10.5, 9.8, lt);
-  const r = ve._detectPosition(pc, null);
-  ok(r.label === '低位区间', `label 不变: ${r.label}`);
-  ok(r.longTermContext && /震荡（无明确方向）/.test(r.longTermContext), `说明为中性（不误写上行）: ${r.longTermContext}`);
-  ok(!/上行/.test(r.longTermContext), '上下文不含误导性的「上行」');
-}
-
-console.log('\n[7] 高位区间 + 长期震荡（中性）→ 不误写为「下行」，给中性说明');
-{
-  const lt = { verdict: '震荡', ma250: { value: 50, slopeState: '走平', slopePct: -0.1, positionPct: 1 } };
-  const pc = mkPc(0.8, 50, 49, 51, lt);
-  const r = ve._detectPosition(pc, null);
-  ok(r.label === '高位区间', `label 不变: ${r.label}`);
-  ok(r.longTermContext && /震荡（无明确方向）/.test(r.longTermContext), `说明为中性（不误写下行）: ${r.longTermContext}`);
-  ok(!/下行/.test(r.longTermContext), '上下文不含误导性的「下行」');
+  const r = ve._detectPosition(mkPc(0.5, null), null, null);
+  ok(r.displayLabel === undefined, 'displayLabel（旧展示叠加）已删除');
+  ok(r.longTermContext === undefined, 'longTermContext（旧中继提示）已删除');
+  ok(!Object.prototype.hasOwnProperty.call(r, 'trendUp') && !Object.prototype.hasOwnProperty.call(r, 'trendDown'), '旧趋势方向字段 trendUp/trendDown 已删除');
+  const fnBody = SRC.slice(SRC.indexOf('function _detectPosition('), SRC.indexOf('function _threeChecks('));
+  ok(!/label\s*=\s*'上涨中途'|label\s*=\s*'下跌途中'|label\s*=\s*'震荡整理'/.test(fnBody), '_detectPosition 内无旧四类标签赋值');
+  ok(!/displayLabel|longTermContext/.test(fnBody), '_detectPosition 内无旧展示叠加逻辑');
+  ok(!SRC.includes('function _tenRules('), '旧量价十口诀主判层 _tenRules 已整块删除');
 }
 
 console.log(`\n===== 结果：${pass} 通过 / ${fail} 失败 =====`);

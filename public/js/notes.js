@@ -247,6 +247,8 @@ const Notes = {
       title: note.title || '',
       content: note.content || '',
       tags: note.tags || [],
+      // 20261104h：图片等附件 [{url,name,mime,size}]——随条目持久化；旧数据无此字段，渲染侧 || [] 兜底
+      attachments: Array.isArray(note.attachments) ? note.attachments : [],
       type: note.type || 'experience',
       // 20260917j：此前漏拷 ai 标记 → 数据里 AI 条目没有 ai 字段，🤖 徽标永不显示。
       // 现显式落盘该标记（仅用于「展示」与「来源追溯」，**不用于自动删除** —— 见 generateAspects）。
@@ -350,10 +352,28 @@ const Notes = {
     if (!meta) return;
     // 20261103i：大盘记录页注入「数据库检索」面板（幂等）；有活动检索条件时结果优先于笔记流
     this.renderMarketDbPanel();
-    const list = this.getByScope(scope);
+    // 20261104h：投资心得页注入「标签分类」筛选条（幂等，仅 global 页）——按标签分类展示与管理：
+    // 全部/各标签/未分类 chips 过滤；chip 上 ✎ 重命名、× 删除（作用于所有投资心得条目）。
+    if (scope === 'global') this.renderGlobalTagFilter();
+    let list = this.getByScope(scope);
+    if (scope === 'global' && this._globalTagFilter) {
+      const f = this._globalTagFilter;
+      list = f === '__none__'
+        ? list.filter(n => !Array.isArray(n.tags) || n.tags.length === 0)
+        : list.filter(n => Array.isArray(n.tags) && n.tags.includes(f));
+    }
     body.innerHTML = list.length === 0
-      ? `<div class="notes-empty">${meta.hint}</div>`
+      ? `<div class="notes-empty">${this._globalTagFilter && scope === 'global' ? '该标签下暂无投资心得。' : meta.hint}</div>`
       : list.map(n => this.renderNoteCard(n)).join('');
+    // 20261104h：卡片右上角标签徽标点击 → 设为筛选条件并回到列表顶部
+    body.querySelectorAll('.note-tag-badge[data-tag]').forEach(el => {
+      el.addEventListener('click', () => {
+        this._globalTagFilter = el.dataset.tag;
+        this.renderScopePage();
+        const bar = document.getElementById('globalTagBar');
+        if (bar) bar.scrollIntoView({ block: 'nearest' });
+      });
+    });
     // 渲染后做正文折叠检测：长内容默认截成 3 行摘要，超长时在操作行前插入「展开全文」
     body.querySelectorAll('.note-card').forEach(card => {
       const content = card.querySelector('.note-content');
@@ -373,6 +393,72 @@ const Notes = {
     });
     // 20261103i：笔记流渲染完后，若检索条件仍生效则重跑检索（增删笔记后结果自动刷新）
     if (this._mldbQuery) this.runMarketSearch(true);
+  },
+
+  // 20261104h：投资心得标签分类筛选条（分类展示 + 管理）。标签集合实时取自当前 global 条目；
+  // 重命名/删除为全局操作（作用于所有投资心得条目的 tags），操作后 save() 落盘并重渲染。
+  renderGlobalTagFilter() {
+    const list = document.getElementById('scopePageList');
+    if (!list || !list.parentNode) return;
+    let bar = document.getElementById('globalTagBar');
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'globalTagBar';
+      bar.className = 'tag-filter-bar';
+      list.parentNode.insertBefore(bar, list);
+    }
+    const notes = this.getByScope('global');
+    const counts = {};
+    let none = 0;
+    notes.forEach(n => {
+      const ts = Array.isArray(n.tags) ? n.tags : [];
+      if (!ts.length) { none++; return; }
+      ts.forEach(t => { counts[t] = (counts[t] || 0) + 1; });
+    });
+    const f = this._globalTagFilter || '';
+    const chip = (label, val, cnt, active) =>
+      `<button type="button" class="tag-chip${active ? ' active' : ''}" data-tag="${this.escapeHtml(val)}">${this.escapeHtml(label)}${cnt != null ? ` <i>${cnt}</i>` : ''}</button>`;
+    let html = '<span class="tag-bar-title">🏷 标签分类</span>'
+      + chip('全部', '', notes.length, !f)
+      + Object.keys(counts).sort((a, b) => counts[b] - counts[a]).map(t =>
+          `<span class="tag-chip-wrap">${chip(t, t, counts[t], f === t)}`
+          + `<span class="tag-chip-manage">`
+          + `<button type="button" class="tag-manage-btn" data-manage="rename" data-tag="${this.escapeHtml(t)}" title="重命名标签（所有投资心得同步更新）">✎</button>`
+          + `<button type="button" class="tag-manage-btn" data-manage="delete" data-tag="${this.escapeHtml(t)}" title="删除标签（所有投资心得同步移除）">×</button>`
+          + `</span></span>`).join('')
+      + (none ? chip('未分类', '__none__', none, f === '__none__') : '');
+    html += '<span class="tag-bar-tip">点击标签筛选 · ✎ 重命名 · × 删除（作用于全部投资心得）</span>';
+    bar.innerHTML = html;
+    bar.querySelectorAll('.tag-chip').forEach(el => {
+      el.addEventListener('click', () => {
+        this._globalTagFilter = el.dataset.tag || null;
+        this.renderScopePage();
+      });
+    });
+    bar.querySelectorAll('.tag-manage-btn').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const tag = el.dataset.tag;
+        if (el.dataset.manage === 'rename') {
+          const nn = (prompt(`重命名标签「${tag}」为：`, tag) || '').trim();
+          if (!nn || nn === tag) return;
+          if (this.getByScope('global').some(n => Array.isArray(n.tags) && n.tags.includes(nn)) && !confirm(`标签「${nn}」已存在，合并到它？`)) return;
+          this.getByScope('global').forEach(n => {
+            if (Array.isArray(n.tags) && n.tags.includes(tag)) n.tags = [...new Set(n.tags.map(t => t === tag ? nn : t))];
+          });
+        } else {
+          const cnt = this.getByScope('global').filter(n => Array.isArray(n.tags) && n.tags.includes(tag)).length;
+          if (!confirm(`删除标签「${tag}」？将从 ${cnt} 条投资心得中移除该标签（内容保留）。`)) return;
+          this.getByScope('global').forEach(n => {
+            if (Array.isArray(n.tags) && n.tags.includes(tag)) n.tags = n.tags.filter(t => t !== tag);
+          });
+          if (this._globalTagFilter === tag) this._globalTagFilter = null;
+        }
+        this.save();
+        this.renderHome();
+        this.renderScopePage();
+      });
+    });
   },
 
   // 折叠/展开切换（独立页摘要交互）
@@ -759,9 +845,25 @@ const Notes = {
     // 两者都识别，使历史条目也能立即恢复显示 🤖 AI 徽标。
     const aiTag = (note.ai === true || note.type === 'ai') ? '<span class="sn-tag ai">🤖 AI</span>' : '';
     const ver = this.getVerificationBadge(note.verification);
-    const scopeLabel = note.scope === 'global' ? '💡 投资心得'
-                     : note.scope === 'market' ? '🌐 大盘记录'
-                     : (note.stockName ? `${note.stockName}` : '');
+    // 20261104h（用户指令）：投资心得卡片右上角不再显示「💡 投资心得」，改为该条记录的标签徽标
+    // （可点击 → 投资心得页按该标签筛选；独立页 data-tag 接线在 renderScopePage 统一绑定）；
+    // 无标签时如实不显示任何徽标，不回退旧文案。大盘记录/个股条目的右上角徽标保持不变（隔离）。
+    let scopeLabel = '';
+    if (note.scope === 'global') {
+      scopeLabel = (note.tags || []).map(t =>
+        `<span class="note-scope note-tag-badge" data-tag="${this.escapeHtml(t)}" title="按标签「${this.escapeHtml(t)}」筛选">#${this.escapeHtml(t)}</span>`).join('');
+    } else if (note.scope === 'market') {
+      scopeLabel = '<span class="note-scope">🌐 大盘记录</span>';
+    } else if (note.stockName) {
+      scopeLabel = `<span class="note-scope">${this.escapeHtml(note.stockName)}</span>`;
+    }
+    // 20261104h：附件缩略图区（写心得时上传的图片等；点击新标签页查看原图）
+    const attachHtml = (Array.isArray(note.attachments) && note.attachments.length)
+      ? `<div class="note-attach-grid">${note.attachments.map(a =>
+          `<a class="note-attach-item" href="${this.escapeHtml(a.url)}" target="_blank" rel="noopener noreferrer" title="${this.escapeHtml(a.name || '附件')}（点击查看原图）">
+             <img src="${this.escapeHtml(a.url)}" alt="${this.escapeHtml(a.name || '附件')}" loading="lazy">
+           </a>`).join('')}</div>`
+      : '';
     return `
       <div class="note-card" data-id="${note.id}">
         <div class="note-card-head">
@@ -769,11 +871,12 @@ const Notes = {
           <span class="note-head-tags">
             ${badge}
             ${aiTag}
-            ${scopeLabel ? `<span class="note-scope">${scopeLabel}</span>` : ''}
+            ${scopeLabel ? `<span class="note-head-tagwrap">${scopeLabel}</span>` : ''}
           </span>
         </div>
         <div class="note-title">${this.escapeHtml(note.title)}</div>
         <div class="note-content">${this.escapeHtml(note.content).replace(/\n/g, '<br>')}</div>
+        ${attachHtml}
         ${note.verification && note.verification.status !== 'pending' ? `<div class="note-ver">${ver}</div>` : ''}
         <div class="note-actions">
           <button class="btn-verify" onclick="Notes.verify('${note.id}')">验证</button>
@@ -830,6 +933,16 @@ const Notes = {
         </div>
       </div>`;
 
+    // 20261104h：附件状态（编辑时预填已有附件；新选图片立即上传，保存时随条目落盘）
+    this._formAttachments = Array.isArray(note.attachments) ? note.attachments.map(a => ({ ...a })) : [];
+    const attachRow = `
+      <div class="form-row">
+        <label>附件（图片，可多选）</label>
+        <input type="file" id="noteFiles" accept="image/jpeg,image/png,image/gif,image/webp" multiple>
+        <div class="form-attach-status" id="noteAttachStatus"></div>
+        <div class="form-attach-grid" id="noteAttachGrid"></div>
+      </div>`;
+
     const modal = document.createElement('div');
     modal.className = 'journal-modal-overlay form-modal';
     modal.innerHTML = `
@@ -850,6 +963,7 @@ const Notes = {
             <label>标签 (逗号分隔)</label>
             <input type="text" id="noteTags" placeholder="如: 估值,政策" value="${(note.tags || []).join(', ')}">
           </div>
+          ${attachRow}
           <div class="form-actions">
             <button class="btn-cancel" onclick="Notes.closeForm()">取消</button>
             <button class="btn-save" onclick="Notes.saveForm(${isEdit ? `'${note.id}'` : 'null'}, '${ctx.scope}', '${ctx.aspect || ''}')">${isEdit ? '更新' : '保存'}</button>
@@ -858,6 +972,60 @@ const Notes = {
       </div>`;
     document.body.appendChild(modal);
     modal.addEventListener('click', (e) => { if (e.target === modal) this.closeForm(); });
+    // 20261104h：附件上传接线——选图即传（逐个 POST /api/notes/attachments），成功后进预览网格；
+    // 移除已上传附件时调 DELETE /api/notes/attachment（best effort，失败不影响主流程）。
+    const fileInput = modal.querySelector('#noteFiles');
+    if (fileInput) fileInput.addEventListener('change', () => this._uploadFormFiles(fileInput));
+    this._renderFormAttachGrid();
+  },
+
+  // 20261104h：逐个上传表单内选中的图片，成功追加进 _formAttachments 并刷新预览
+  async _uploadFormFiles(input) {
+    const files = Array.from(input.files || []);
+    if (!files.length) return;
+    const status = document.getElementById('noteAttachStatus');
+    const setSt = (t) => { if (status) status.textContent = t; };
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      setSt(`上传中 ${i + 1}/${files.length}：${f.name}`);
+      try {
+        const fd = new FormData();
+        fd.append('file', f);
+        const resp = await fetch('/api/notes/attachments', { method: 'POST', body: fd });
+        const r = await resp.json();
+        if (!r.success) throw new Error(r.error || '上传失败');
+        this._formAttachments.push(r.attachment);
+        this._renderFormAttachGrid();
+      } catch (e) {
+        setSt(`❌ ${f.name} 上传失败：${e.message}`);
+        await new Promise(r2 => setTimeout(r2, 2500));
+      }
+    }
+    setSt(this._formAttachments.length ? `✅ 已添加 ${this._formAttachments.length} 个附件` : '');
+    input.value = '';
+  },
+
+  // 20261104h：表单附件预览网格（含移除按钮）
+  _renderFormAttachGrid() {
+    const grid = document.getElementById('noteAttachGrid');
+    if (!grid) return;
+    grid.innerHTML = (this._formAttachments || []).map((a, i) => `
+      <div class="form-attach-item">
+        <img src="${this.escapeHtml(a.url)}" alt="${this.escapeHtml(a.name || '附件')}" loading="lazy">
+        <button type="button" class="form-attach-remove" data-idx="${i}" title="移除此附件">×</button>
+      </div>`).join('');
+    grid.querySelectorAll('.form-attach-remove').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const idx = Number(btn.dataset.idx);
+        const [removed] = this._formAttachments.splice(idx, 1);
+        this._renderFormAttachGrid();
+        const status = document.getElementById('noteAttachStatus');
+        if (removed && removed.url) {
+          try { await fetch('/api/notes/attachment?url=' + encodeURIComponent(removed.url), { method: 'DELETE' }); } catch (e) { /* best effort */ }
+        }
+        if (status) status.textContent = this._formAttachments.length ? `已添加 ${this._formAttachments.length} 个附件` : '';
+      });
+    });
   },
 
   saveForm(id, scope, aspect) {
@@ -878,6 +1046,8 @@ const Notes = {
       scope,
       aspect: (scope !== 'global' && scope !== 'market') ? aspectVal : null,
       stockCode, stockName, title, content, tags,
+      // 20261104h：附件随条目落盘（编辑时移除的附件已在预览网格删除时即时清理文件）
+      attachments: Array.isArray(this._formAttachments) ? this._formAttachments.map(a => ({ ...a })) : [],
     };
 
     if (id) this.update(id, payload);
@@ -899,6 +1069,12 @@ const Notes = {
     const note = this.notes.find(n => n.id === id);
     if (note && confirm(`确定删除"${note.title}"？`)) {
       const scope = note.scope;
+      // 20261104h：best effort 清理该条目的附件文件（失败不影响删除主流程）
+      (Array.isArray(note.attachments) ? note.attachments : []).forEach(a => {
+        if (a && a.url) {
+          fetch('/api/notes/attachment?url=' + encodeURIComponent(a.url), { method: 'DELETE' }).catch(() => {});
+        }
+      });
       this.remove(id);
       this.renderHome();
       this.renderScopePage();

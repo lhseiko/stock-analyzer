@@ -565,8 +565,9 @@ const Charts = {
   indexPETrend(id, trendData) {
     const chart = this.get(id);
     if (!chart || !trendData) return;
-    const names = ['上证50', '沪深300', '科创50'];
-    const colors = ['#7fa8c9', '#cdab74', '#cf8e8e'];
+    // 20261105b：新增中证1000（用户指令：按上证50 模板对称扩展），四指数统一柔和色系
+    const names = ['上证50', '沪深300', '中证1000', '科创50'];
+    const colors = ['#7fa8c9', '#cdab74', '#a48fd8', '#cf8e8e'];
     const items = names.map((n, i) => ({ name: n, color: colors[i], data: trendData[n] })).filter(it => it.data && it.data.series && it.data.series.length);
     if (!items.length) return;
 

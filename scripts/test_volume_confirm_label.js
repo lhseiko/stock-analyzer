@@ -1,12 +1,14 @@
 /**
- * 「60日量能确认」文案一致性回归（20261024j）
+ * 量能口径一致性回归（20261106n 定版；原名「60日量能确认」文案守卫）
  * 运行： node scripts/test_volume_confirm_label.js
  *
- * 用户报障（2026-10-24 15:52 两张截图）：
- *   指标卡写「60日量能确认：未确认」，但生死位规则 1 明确给出
- *   「60 日均量（927010 手）×1.5 = 1390515 手」——用户认为前后矛盾。
- * 真相：confirm=null 不是「缺数据」，而是「当日量落在 0.7~1.5×60日均量之间」→ 60 日口径为平量。
- * 修复：指标卡改显示「平量/放量/缩量（x.xx×）」，并在 tooltip + 说明里给出均量/当日量/阈值。
+ * 演进史：
+ * - 20261024j：confirm=null 不是「缺数据」而是「平量」（0.7~1.5×60日均量中间地带）修复。
+ * - 20261106k/l：「60日量能确认」「5日量能比」卡先后退役（展示层）。
+ * - 20261106n（用户裁决「60日量能比仅用于放量/缩量判定 → 彻底删除，文字分析统一÷20」）：
+ *   60 日口径（avg60/confirm/confirmDesc）从引擎整体退役——审计确认全部消费点均为
+ *   放量/缩量判定性质，multi-day 规则基准统一 avg60 → avg20（阈值 ×1.5/×0.7 不变），
+ *   放量/缩量判定唯一真值源 = ÷20 日均量三态（放量 >1.3 / 平量 0.8~1.3 / 缩量 <0.8）。
  */
 'use strict';
 const fs = require('fs');
@@ -25,60 +27,51 @@ function mk(n, lastVol) {
   return arr;
 }
 
-console.log('\n[1] 引擎语义：confirm 三态（null = 0.7~1.5× 之间，并非缺数据）');
+console.log('\n[1] 20261106n 引擎语义：60 日口径彻底退役，÷20 统一三态为唯一放量/缩量真值源');
 {
   const mid = ve._precompute(mk(80, 1000));
-  ok(typeof mid.avg60 === 'number' && mid.avg60 > 0, `avg60 有值（${mid.avg60}）→ 60 日数据存在`);
-  ok(typeof mid.volToday === 'number', `volToday 有值（${mid.volToday}）`);
-  ok(mid.confirm === null, '当日量≈60日均量（中间地带）→ confirm=null（前端应显示「平量」，不是「未确认」）');
-  const r = mid.volToday / mid.avg60;
-  ok(r > 0.7 && r < 1.5, `比值 ${r.toFixed(2)}× 落在 0.7~1.5 之间（平量）`);
+  ok(mid.avg60 === undefined, '预计算输出无 avg60 字段（彻底删除，非置 null）');
+  ok(mid.confirm === undefined, '预计算输出无 confirm 字段（确认机制整体退役）');
+  ok(typeof mid.avg20 === 'number' && mid.avg20 > 0, `avg20 有值（${mid.avg20}）→ ÷20 主基准存在`);
+  ok(mid.ratio20 > 0.7 && mid.ratio20 < 1.5, `当日量/20日均量 = ${mid.ratio20.toFixed(2)}×（平量区样本）`);
 
-  ok(ve._precompute(mk(80, 3000)).confirm === '放量', '当日量 3× → confirm=放量');
-  ok(ve._precompute(mk(80, 400)).confirm === '缩量', '当日量 0.4× → confirm=缩量');
+  const tier = (lastVol) => ve._volumeTier(ve._precompute(mk(80, lastVol))).tier;
+  ok(tier(2630) === '放量', '当日量 2.63×20日均量 → tier=放量（>1.3，与 135 格同源）');
+  ok(tier(1000) === '平量', '当日量 ≈20日均量 → tier=平量');
+  ok(tier(400) === '缩量', '当日量 0.4×20日均量 → tier=缩量（<0.8）');
+
+  const eng = fs.readFileSync(path.join(__dirname, '..', 'lib', 'volumeEngine.js'), 'utf8');
+  ok(!eng.includes('_confirmDesc') && !/pc\.confirm\b/.test(eng), 'volumeEngine 无 _confirmDesc 函数与 pc.confirm 引用（彻底删除）');
 }
 
-console.log('\n[2] 前端文案：不再硬写「未确认」，改为展示实际比值 + 说明');
+console.log('\n[2] 前端契约：「60日量能确认」「5日量能比」卡先后退役 + 口径说明披露 60 日整体退役');
 {
   const app = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'app.js'), 'utf8');
-  ok(!app.includes("esc(vs.confirm || '未确认')"), '已移除「vs.confirm || 未确认」的旧写法');
-  ok(app.includes('confirmState'), '引入 confirmState（平量/放量/缩量/数据不足）');
-  ok(app.includes('60日量能确认') && app.includes('confirmVal'), '「60日量能确认」tile 用 confirmVal 渲染（含 60 日口径比值）');
-  ok(app.includes('当日量÷60日均量'), 'tooltip 含「当日量÷60日均量」计算口径');
-  ok(app.includes('并非缺少 60 日数据'), 'tooltip 明确「并非缺少 60 日数据」');
-  // 20261101i：用户指令——60 日口径数值句并入「60日量能确认」tile 副行，独立说明行整体删除
-  ok(!app.includes('const confirmNote') && !app.includes('${confirmNote}'), '独立说明行 confirmNote 已整体删除');
-  ok(!app.includes('两者口径不同，结论可并存'), '「另一个窗口/可并存」独立说明文字已删除（说明保留在 tooltip）');
-  ok(app.includes('cm-sub'), '60 日口径数值句并入 tile 副行（cm-sub）');
-  ok(app.includes('阈值 0.7~1.5×') && app.includes('介于之间为平量'), '中间地带判平量：副行标阈值 0.7~1.5×、tooltip 说明判平量');
-  ok(app.includes('放量确认需 >1.5×') && app.includes('缩量确认需 <0.7×'), '确认态（放量/缩量）阈值措辞齐全（tooltip）');
+  ok(!app.includes("esc(vs.confirm || '未确认')"), '历史旧写法「vs.confirm || 未确认」零残留');
+  ok(!app.includes('>60日量能确认</span>') && !app.includes('const confirmTile'), '「60日量能确认」卡与 tile 变量已整卡退役');
+  ok(!app.includes('const vr60') && !app.includes('const confirmVal') && !app.includes('const confirmSub') && !app.includes('const confirmTip'), '60 日展示层死变量（vr60/confirmVal/confirmSub/confirmTip）零残留');
+  ok(!app.includes('>5日量能比</span>') && !app.includes('>20日量能比</span>') && !app.includes('const vr20'), '20261106l：「5日量能比」卡退役，「20日量能比」历史临时卡零残留');
+  ok(app.includes('ve-cols-3') && !/\$\{volTierTile\}/.test(app), '20261106l：量价统计行改 ve-cols-3 三联，volTierTile 插槽零残留');
+  ok(app.includes('60 日均量口径整体退役') && app.includes('全量价判定与文字分析统一使用 20 日量能比'), '20261106n：口径说明披露 60 日口径整体退役、文字分析统一 ÷20');
+  ok(!app.includes('const confirmNote') && !app.includes('${confirmNote}'), '独立说明行 confirmNote 仍整体删除');
+  ok(app.includes('cm-sub'), '20日涨跌日量能比口径句保留 tile 副行（cm-sub）');
 }
 
-console.log('\n[3] 20261101g：后端 60 日口径诚实描述（修「图二写未确认、图一却有 60 日数据」矛盾）');
+console.log('\n[3] 20261106n：四维度量能状态统一 ÷20 文本 + capitalFlow 60 日片段/字段删除');
 {
-  // 用户 2026-11-01 士兰微 600460 报障：四维度·量能状态写「60 日均量口径未确认」，
-  // 同卡 60 日均量注释却给出 1.34 倍（均量 868586 / 当日量 1163319）——confirm=null
-  // 是中间地带判「平量」，不是缺数据。引擎层 _confirmDesc 单一真值源修复。
-  ok(ve._confirmDesc({ avg60: 868586, volToday: 1163319 }).includes('判「平量」'), '士兰微实测口径 1.34× → 判「平量」');
-  ok(ve._confirmDesc({ avg60: 868586, volToday: 1163319 }).includes('1.34'), '文案含实际比值 1.34 倍');
-  ok(ve._confirmDesc({ avg60: 1000, volToday: 1800 }).includes('确认为「放量」'), '>×1.5 → 确认为「放量」');
-  ok(ve._confirmDesc({ avg60: 1000, volToday: 500 }).includes('确认为「缩量」'), '<×0.7 → 确认为「缩量」');
-  ok(ve._confirmDesc({ avg60: 0, volToday: 1000 }).includes('数据不足') && ve._confirmDesc({ avg60: null, volToday: null }).includes('数据不足'), '真缺 60 日数据 → 才写「数据不足」');
-
-  // 端到端：中间地带 → 四维度·量能状态判「平量」且不出现「未确认」
+  // 端到端：平量样本 → 四维度量能状态写 ÷20 统一三态（平量），含 ÷5 原始指标披露
   const r = ve.computeVolumeEngine({ symbol: '600000', name: '测试', bars: mk(80, 1000), minutes: null, blacklistReasons: [] });
-  ok(r.dimensions.volumeState.includes('判「平量」'), `四维度·量能状态判「平量」（实际：${r.dimensions.volumeState.slice(20, 90)}…）`);
-  ok(!r.dimensions.volumeState.includes('未确认'), '中间地带四维度不再出现「未确认」');
-  ok(r.volumeTier.confirmDesc && r.volumeTier.confirmDesc.includes('判「平量」'), 'volumeTier.confirmDesc 单一真值源输出（capitalFlow 同源引用）');
+  ok(r.dimensions.volumeState.includes('÷ 20 日均量') && r.dimensions.volumeState.includes('平量'), `四维度·量能状态统一 ÷20 三态（实际：${r.dimensions.volumeState.slice(0, 60)}…）`);
+  ok(!r.dimensions.volumeState.includes('60 日均量口径') && !r.dimensions.volumeState.includes('未确认'), '四维度不再出现 60 日口径片段');
+  ok(r.volumeTier.confirm === undefined && r.volumeTier.confirmDesc === undefined, 'volumeTier 无 confirm/confirmDesc 字段');
+  ok(r.dimensions.volumeState.includes('数值不应相等'), '÷5 原始指标与 ÷20 口径差异披露（数值不应相等）');
   const r2 = ve.computeVolumeEngine({ symbol: '600000', name: '测试', bars: mk(80, 3000), minutes: null, blacklistReasons: [] });
-  ok(r2.dimensions.volumeState.includes('确认为「放量」'), 'confirm=放量 → 文案「确认为「放量」」（确认态措辞不变）');
+  ok(r2.dimensions.volumeState.includes('放量'), '放量样本 → 四维度量能状态判「放量」（÷20 统一口径）');
 
-  // 源码接线：四处旧写法全部替换；capitalFlow 改引 confirmDesc
-  const eng = fs.readFileSync(path.join(__dirname, '..', 'lib', 'volumeEngine.js'), 'utf8');
-  ok(!/pc\.confirm \|\| '未确认'/.test(eng), 'volumeEngine 内「pc.confirm || 未确认」旧写法已全部移除');
-  ok(eng.includes('confirmDesc: _confirmDesc(pc)'), 'volumeTier 挂 confirmDesc（单一真值源）');
+  // 源码接线：capitalFlow 60 日片段与 confirm 字段删除
   const cap = fs.readFileSync(path.join(__dirname, '..', 'lib', 'capitalFlow.js'), 'utf8');
-  ok(cap.includes('ut.confirmDesc || (ut.confirm || '), 'capitalFlow 资金行为文案改引 confirmDesc（无 ut 时回退原口径）');
+  ok(!cap.includes('confirmDesc') && !cap.includes('60日均量口径：'), 'capitalFlow 无 confirmDesc 引用与 60日均量口径文案');
+  ok(!cap.includes('confirm: ut.confirm'), 'capitalFlow unified 对象无 confirm 字段');
 }
 
 console.log(`\n===== 结果：${pass} 通过 / ${fail} 失败 =====`);

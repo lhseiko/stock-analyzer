@@ -30,8 +30,9 @@ ok(!app.includes('cap-signal-box'), 'app.js「量能信号」横幅已删除');
 ok(app.includes('资金量能综合判断') && app.includes('buildConclusionParts'), '「资金量能综合判断」上移替换量能信号横幅（buildConclusionParts 同源数据）');
 ok(!idx.includes('id="capConclusion"') && !idx.includes('资金量能综合判断</h3>'), '原页底「资金量能综合判断」独立卡已删除');
 ok(cc.includes('buildConclusionParts(data)') && !cc.includes('this.renderConclusion('), 'capitalCharts 导出 buildConclusionParts，renderAll 不再渲染旧卡');
-ok(app.includes('20日涨跌日') && app.includes('20日量价比') && app.includes('20日净涨跌'), '保留量价独有指标（20日涨跌日/量价比/净涨跌）');
-ok(app.includes('量比与量能档位同源，不重复展示'), '明确声明量比/量能档位不重复展示');
+ok(app.includes('20日涨跌日') && app.includes('20日涨跌日量能比') && app.includes('20日净涨跌'), '20261106b：保留量价独有指标（20日涨跌日/涨跌日量能比/净涨跌）');
+ok(app.includes('近20日上涨日均量 ÷ 下跌日均量') && app.includes('数值不应相等'), '20261106b：口径说明写明三套量比不同源、数值不应相等');
+ok(!app.includes('量比与量能档位同源，不重复展示'), '20261106b：移除口径错位的旧注释');
 ok(!app.includes('量比(÷5日均量)'), '不再重复渲染「量比(÷5日均量)」标签（去重）');
 ok(app.includes('量价数据不足（可用日K不足 20 根或数据源暂不可用）'), '量价缺失时给出明确原因（不整卡空白）');
 

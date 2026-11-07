@@ -483,11 +483,28 @@ body {
 .stock-fin-date { font-size: 13px; color: var(--text-light); white-space: nowrap; }
 .stock-fin-date::before { content: '财务 '; color: var(--text-secondary); }
 /* 20261101n：换手率/成交额自页首固定指标条移入个股标题卡信息行（标签前置伪元素，与行情日期/财务同构） */
-.stock-turnover, .stock-amount { font-size: 13px; color: var(--text-light); white-space: nowrap; }
+.stock-turnover, .stock-amount, .stock-vol-ratio { font-size: 13px; color: var(--text-light); white-space: nowrap; }
 .stock-turnover::before { content: '换手率 '; color: var(--text-secondary); }
+/* 20261106d：banner 换手率后补量比，与相邻两枚同字号同色、仅前缀标签弱化，保持信息行节奏统一 */
+.stock-vol-ratio::before { content: '量比 '; color: var(--text-secondary); }
 .stock-amount::before { content: '成交额 '; color: var(--text-secondary); }
 
 .stock-actions { display: flex; gap: 8px; align-items: center; }
+
+/* 20261104f：banner 右侧「回到顶部」按钮（softDark 主题，hover 琥珀与全站小按钮一致） */
+.back-top-btn {
+  padding: 7px 14px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 13px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+.back-top-btn:hover { border-color: var(--accent); color: var(--accent); }
+.back-top-btn:active { transform: translateY(1px); }
 
 .btn-icon {
   width: 36px;
@@ -1476,6 +1493,12 @@ body {
 .ma-row.ma-hidden { display: none; }
 .ma-empty { font-size: 12.5px; line-height: 1.7; color: var(--text-secondary); text-align: center; padding: 30px 16px; border: 1px dashed var(--border-light); border-radius: 10px; background: rgba(255,255,255,0.02); }
 .ma-empty.hidden { display: none; }
+/* ★ 20261104m：指标分析行内展开面板（手风琴）——展开在所点指标行正下方，与指标行同一水平；
+   面板内 .ma-row 克隆自右卡（同一结构），去自身边框由面板容器承载视觉；
+   .metrics-table 为 flex column + overflow hidden，面板融入列表用上下边线而非外边距 */
+.ma-inline-panel { background: var(--card-bg); border-top: 1px solid var(--border-light); border-bottom: 1px solid var(--border-light); padding: 4px 6px; }
+.ma-inline-panel .ma-row { margin: 0; border: none; background: transparent; }
+.ma-inline-panel.ma-flash { animation: maFlash 1.8s ease; }
 /* 左卡 tab 激活态：当前右卡正在展示的指标（中性金色加亮，避开红绿涨跌语义） */
 .metric-jump.active { background: rgba(240,185,123,0.28); border-color: var(--accent); }
 
@@ -2692,6 +2715,68 @@ body {
 .cm-value .cm-paren { font-size: 12px; font-weight: 500; }
 /* 20261101i：60 日口径数值句并入「60日量能确认」tile 副行（原独立说明行删除） */
 .cm-value .cm-sub { display: block; font-size: 10px; font-weight: 400; color: var(--text-light); margin-top: 3px; line-height: 1.5; }
+/* 20261106f：「20日涨跌日量能比」数值解读逻辑下拉面板（用户截图指令）。
+   排版纪律：触发器贴在卡片标签行内不额外占高度；面板在五联行下方普通流跨整行，
+   不用绝对定位浮层 → 不受滚动容器裁剪、不破坏 ve-cols-5 五列等宽。
+   着色纪律：三档解读是参考表，仅命中行保留方向色（红/绿/琥珀），其余中性灰（20261101f 铁律）；
+   结论区按「契合/相反/中性」用红/琥珀/灰，全站红涨绿跌。 */
+.cm-has-interpret { position: relative; }
+.cm-interpret-trigger {
+  position: relative; display: inline-flex; align-items: center; gap: 3px;
+  margin-left: 6px; padding: 1px 6px; vertical-align: middle;
+  font-size: 10px; font-weight: 500; line-height: 1.6;
+  color: var(--accent); background: transparent;
+  border: 1px solid var(--border); border-radius: 999px; cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
+}
+/* 透明扩展点击区：手机端也能点到，但不改变标签行高度与卡片排版 */
+.cm-interpret-trigger::before { content: ''; position: absolute; inset: -10px -4px; }
+.cm-interpret-trigger:hover { border-color: var(--accent); background: rgba(240, 185, 123, 0.10); }
+.cm-interpret-trigger:active { transform: scale(0.97); }
+.cm-interpret-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cm-interpret-trigger.is-open { border-color: var(--accent); background: rgba(240, 185, 123, 0.12); }
+.cmi-chev { display: inline-block; font-size: 9px; transition: transform 180ms ease; }
+.cm-interpret-trigger.is-open .cmi-chev { transform: rotate(180deg); }
+.cm-interpret-panel[hidden] { display: none; }
+.cm-interpret-panel {
+  margin-top: 10px; padding: 12px 14px; text-align: left;
+  background: var(--bg-primary); border: 1px solid var(--border-light);
+  border-left: 3px solid var(--accent); border-radius: 8px;
+}
+.cmi-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin-bottom: 10px; font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.cmi-head-sub { font-size: 11px; font-weight: 400; color: var(--text-secondary); }
+.cmi-rows { display: grid; gap: 8px; }
+.cmi-row { display: flex; align-items: flex-start; gap: 10px; padding: 8px 10px; background: var(--bg-secondary); border: 1px solid var(--border-light); border-radius: 6px; }
+.cmi-row-hit { border-color: var(--border); }
+.cmi-badge { flex: none; min-width: 32px; padding: 2px 6px; text-align: center; font-size: 11px; font-weight: 700; border-radius: 4px; }
+.cmi-ref { color: var(--text-secondary); background: var(--bg-elevated); }
+.cmi-hit-bull { color: var(--red); background: rgba(246, 70, 93, 0.14); }
+.cmi-hit-bear { color: var(--green); background: rgba(14, 203, 129, 0.14); }
+.cmi-hit-neutral { color: var(--amber-text); background: var(--amber-bg); }
+.cmi-lines { font-size: 11.5px; line-height: 1.7; color: var(--text-primary); }
+.cmi-lines > div + div { margin-top: 2px; color: var(--text-secondary); }
+.cmi-row-hit .cmi-lines > div:first-child { font-weight: 600; }
+.cmi-foot { margin-top: 8px; font-size: 10.5px; color: var(--text-light); }
+.cmi-today { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-light); }
+.cmi-today-title { margin-bottom: 8px; font-size: 12.5px; font-weight: 600; color: var(--text-primary); }
+.cmi-facts { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+.cmi-fact { flex: 1 1 220px; padding: 8px 10px; background: var(--bg-secondary); border: 1px solid var(--border-light); border-radius: 6px; }
+.cmi-fact span { display: block; font-size: 10.5px; color: var(--text-secondary); }
+.cmi-fact b { display: block; margin: 2px 0; font-size: 14px; color: var(--text-primary); }
+.cmi-fact em { display: block; font-style: normal; font-size: 10.5px; line-height: 1.5; color: var(--text-light); }
+.cmi-verdict { padding: 9px 11px; font-size: 12px; line-height: 1.7; border: 1px solid var(--border-light); border-radius: 6px; }
+.cmi-verdict-tag { display: inline-block; margin-right: 8px; padding: 1px 7px; font-size: 10px; font-weight: 600; border-radius: 999px; background: var(--bg-elevated); }
+.cmi-bull { color: var(--red); background: rgba(246, 70, 93, 0.06); border-color: rgba(246, 70, 93, 0.28); }
+.cmi-bear { color: var(--green); background: rgba(14, 203, 129, 0.06); border-color: rgba(14, 203, 129, 0.28); }
+.cmi-warn { color: var(--amber-text); background: var(--amber-bg); border-color: rgba(224, 180, 92, 0.32); }
+.cmi-neutral { color: var(--text-secondary); background: var(--bg-secondary); }
+.cmi-example { margin-top: 8px; font-size: 10.5px; line-height: 1.6; color: var(--text-light); }
+.cmi-caliber { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--border-light); font-size: 10.5px; line-height: 1.65; color: var(--text-muted); }
+@media (max-width: 768px) {
+  .cm-interpret-panel { padding: 10px; }
+  .cm-interpret-trigger { padding: 4px 9px; font-size: 11px; }
+  .cmi-fact { flex-basis: 100%; }
+}
 /* 20261101j：长文本卡（「资金行为」卡 / 指标行「筹码转移」tile）——整句短文案用小字号常规字重，
    与相邻数值卡（15px/600）保持盒高对齐（flex 拉伸），文字左对齐更利多行阅读 */
 .cm-value-text { display: block; font-size: 12px; font-weight: 400; line-height: 1.55; color: var(--text-primary); text-align: left; }
@@ -2737,6 +2822,8 @@ body {
    cap-metrics-row 类保留给 capitalCharts 资金概要卡，量能引擎卡内不再使用） */
 .ve-tile-row { display: grid; gap: 10px; margin-top: 10px; }
 .ve-cols-5 { grid-template-columns: repeat(5, 1fr); }
+.ve-cols-4 { grid-template-columns: repeat(4, 1fr); } /* 20261106k：60日量能确认卡退役后量价统计行改四联 */
+.ve-cols-3 { grid-template-columns: repeat(3, 1fr); } /* 20261106l：5日量能比卡退役后量价统计行改三联 */
 .ve-cols-10 { grid-template-columns: repeat(10, 1fr); }
 .ve-span4 { grid-column: span 4; }
 /* 20261102c：ve-cols-10 行内 cap-metric 默认占 2 列（4+2+2+2=10 列满行，修复此前默认 1 列
@@ -2771,13 +2858,15 @@ body {
 /* 20261101r：窄屏降级——≤900px 两列（长文本卡通栏、列缝逐列对齐失效处保持整洁），≤560px 单列 */
 @media (max-width: 900px) {
   .ve-cols-5 { grid-template-columns: repeat(2, 1fr); }
+  .ve-cols-4 { grid-template-columns: repeat(2, 1fr); }
+  .ve-cols-3 { grid-template-columns: repeat(3, 1fr); }
   .ve-cols-10 { grid-template-columns: 1fr 1fr; }
   .ve-cols-10 .ve-span4 { grid-column: span 2; }
   .ve-cols-10 .cap-metric { grid-column: auto; } /* 20261102c：两列窄网格下重置为流式，两枚一行 */
   .ve-flow-row .ve-cc { flex-basis: calc(50% - 5px); }
 }
 @media (max-width: 560px) {
-  .ve-cols-5, .ve-cols-10 { grid-template-columns: 1fr; }
+  .ve-cols-5, .ve-cols-4, .ve-cols-3, .ve-cols-10 { grid-template-columns: 1fr; }
   .ve-cols-10 .ve-span4 { grid-column: auto; }
   .ve-cols-10 .cap-metric { grid-column: auto; } /* 20261102c：单列下重置，防隐式第二列 */
   .ve-flow-row .ve-cc { flex-basis: 100%; }
@@ -2833,6 +2922,16 @@ body {
 .ve-posj-pos-note { font-size: 12px; color: var(--text-secondary); }
 .ve-posj-combo { font-size: 14px; font-weight: 700; color: var(--text-primary); }
 .ve-posj-combo-note { font-size: 12px; color: var(--text-secondary); }
+/* 20261106c（用户截图指令）：第三步「当日量/20日均量」为全日口径，盘中只有半天累计量 → 常驻琥珀高亮提醒。
+   .ve-posj-step 是 flex-wrap 容器，flex:1 1 100% 使其独占整行排在文案之后，不被挤成窄列；
+   配色沿用工作台金强调（--amber-*），与参考表「仅命中行着色」铁律无关（本条是口径警示，不是方向判定）。 */
+.ve-posj-caliber-warn {
+  flex: 1 1 100%; margin-top: 2px; padding: 5px 10px;
+  font-size: 11.5px; font-weight: 600; line-height: 1.6;
+  color: var(--amber-text); background: var(--amber-bg);
+  border: 1px solid rgba(224,180,92,0.32); border-left: 3px solid var(--amber);
+  border-radius: 4px;
+}
 .ve-posj-main { margin: 8px 0; padding: 10px 12px; border-radius: 8px; font-size: 13px; line-height: 1.7; background: var(--bg-primary); border-left: 3px solid var(--text-muted); color: var(--text-primary); }
 .ve-posj-main.bull { border-left-color: var(--red); }
 .ve-posj-main.bear { border-left-color: var(--green); }
@@ -2858,6 +2957,35 @@ body {
 .ve-posj-anomaly-list { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
 .ve-posj-anomaly-item { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
 .ve-posj-anomaly-name { font-size: 12.5px; font-weight: 600; color: var(--text-primary); }
+
+/* 20261105f-b：五步判定链紧凑区（从第二步行内移出，单列小字可审计）
+   20261106h（回滚 20261106g 失败改造）：g 版把 .ve-posj-chain-item 改成 28px 双列栅格，
+   但 .ve-rule-badge 里装的是「① 道氏结构 / ⑤ 量价健康度」这类中文标签，被压到 28px 后
+   逐字竖排，整个判定链崩坏（用户截图 15:38「界面优化完全失败」）。已整块撤销覆盖规则，
+   恢复本处 flex 基线。本轮只做两处零风险修正：
+   ① margin 去掉单侧 140px 左缩进，判定链左右边界与三步骤 / 警示 / 主判 / 参考表对齐；
+   ② 徽标固定 96px 且 nowrap —— 既让 5 行文字起点统一，也永久防止中文标签被压成竖排。 */
+.ve-posj-chain { margin: 6px 0 2px 0; padding: 6px 10px; background: rgba(240, 185, 123, 0.04); border-left: 2px solid rgba(240, 185, 123, 0.35); border-radius: 4px; display: flex; flex-direction: column; gap: 3px; }
+.ve-posj-chain-title { font-size: 10.5px; color: var(--text-muted); letter-spacing: 0.5px; }
+.ve-posj-chain-item { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.ve-posj-chain-item > .ve-rule-badge { flex: 0 0 96px; white-space: nowrap; }
+.ve-posj-chain-text { font-size: 11.5px; color: var(--text-secondary); min-width: 0; flex: 1; }
+@media (max-width: 768px) {
+  .ve-posj-chain-item > .ve-rule-badge { flex: 0 0 auto; }
+  /* 20261106h：窄屏说明文字独占整行，避免与结果列挤在同一行被右侧裁切；仅窄屏生效，宽屏零变化 */
+  .ve-posj-step > .ve-posj-pos-note, .ve-posj-step > .ve-posj-combo-note { flex: 1 1 100%; min-width: 0; }
+}
+/* 20261105f-b：信号叠加层未触发单行 chips */
+.ve-sig-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; }
+.ve-sig-chip { display: inline-flex; align-items: baseline; gap: 4px; font-size: 12px; color: var(--text-secondary); }
+
+/* ---- 20261106h：20261106g 对称化覆盖块已整块撤销（事故留档）----
+   失效原因：g 版把 .ve-posj-chain-item 改成 grid 28px + 1fr，误以为第一列是圆形数字徽标；
+   实际 .ve-rule-badge 的内容是「① 道氏结构」「⑤ 量价健康度」等中文标签（见 lib/volumeEngine.js
+   _runState 的 steps.k），28px 只放得下一个汉字 → 五步判定链整列竖排，用户截图判定「界面优化完全失败」。
+   教训：改布局前必须先读真实 DOM 的子元素内容，不能按类名想当然；无头截图复刻页必须与真实 DOM
+   一字不差（g 版复刻页用了短徽标，所以两轮截图都没抓到这个 bug）。
+   现行方案见上方 20261105f-b 区块：flex 基线 + 取消单侧缩进 + 徽标 96px nowrap。 */
 
 /* ---- 公司类型分类面板（20260902i 重设计：中性卡面 + 类型色左强调线 + 数据栅格）---- */
 .company-type-panel { margin-bottom: 16px; }
@@ -3284,13 +3412,14 @@ body {
 /* ===== 大盘估值趋势（上证50 / 沪深300 / 科创50 近5年PE-TTM） ===== */
 .index-pe-trend-card { min-height: 0; }
 .index-pe-trend-body { display: flex; flex-direction: column; gap: 12px; }
-.ipe-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.ipe-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
 .ipe-stat {
   background: var(--bg-hover); border-radius: var(--radius-sm); padding: 12px 14px;
   border-left: 3px solid var(--accent); display: flex; flex-direction: column; gap: 4px;
 }
 .ipe-stat.ipe-sz50 { border-left-color: #7fa8c9; }
 .ipe-stat.ipe-hs300 { border-left-color: #cdab74; }
+.ipe-stat.ipe-ci1000 { border-left-color: #a48fd8; }
 .ipe-stat.ipe-kc50 { border-left-color: #cf8e8e; }
 .ipe-name { font-size: 13px; color: var(--text-secondary); font-weight: 500; }
 .ipe-pe { font-size: 22px; color: var(--text-primary); font-weight: 700; line-height: 1.2; }
@@ -3433,6 +3562,38 @@ body {
 .note-content { font-size: 13px; color: var(--text-secondary); line-height: 1.75; white-space: pre-wrap; margin: 0; }
 .note-ver { font-size: 12px; }
 .note-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--border); }
+
+/* ===== 20261104h：投资心得图片附件 + 标签分类（用户指令：写心得可加图片；按标签分类展示管理；
+   卡片右上角「💡 投资心得」改为显示标签） ===== */
+/* 卡片右上角标签徽标（可点击筛选；样式沿用 note-scope 小字口径 + 琥珀描边轻强调） */
+.note-tag-badge { cursor: pointer; padding: 1px 7px; border: 1px solid var(--accent-light); border-radius: 4px; color: var(--accent); background: var(--accent-light); transition: all 0.15s; }
+.note-tag-badge:hover { border-color: var(--accent); }
+.note-head-tagwrap { display: inline-flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+/* 卡片附件缩略图区 */
+.note-attach-grid { display: flex; gap: 8px; flex-wrap: wrap; }
+.note-attach-item { display: block; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; line-height: 0; transition: border-color 0.15s; }
+.note-attach-item:hover { border-color: var(--accent); }
+.note-attach-item img { width: 96px; height: 72px; object-fit: cover; display: block; }
+/* 表单附件上传区 */
+.form-attach-status { font-size: 12px; color: var(--text-secondary); min-height: 18px; }
+.form-attach-grid { display: flex; gap: 8px; flex-wrap: wrap; }
+.form-attach-item { position: relative; width: 84px; height: 64px; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+.form-attach-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.form-attach-remove { position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; border: none; border-radius: 50%; background: rgba(0,0,0,0.6); color: #fff; font-size: 12px; line-height: 18px; padding: 0; cursor: pointer; }
+.form-attach-remove:hover { background: var(--red); }
+/* 投资心得页标签分类筛选条 */
+.tag-filter-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; padding: 10px 14px; background: var(--bg-hover); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.tag-bar-title { font-size: 12.5px; color: var(--text-secondary); font-weight: 600; }
+.tag-bar-tip { font-size: 11px; color: var(--text-light); margin-left: auto; }
+.tag-chip-wrap { display: inline-flex; align-items: center; }
+.tag-chip { font-size: 12px; padding: 3px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-card); color: var(--text-secondary); cursor: pointer; transition: all 0.15s; }
+.tag-chip i { font-style: normal; font-size: 10.5px; color: var(--text-light); margin-left: 3px; }
+.tag-chip:hover { border-color: var(--accent); color: var(--accent); }
+.tag-chip.active { border-color: var(--accent); color: var(--accent); background: var(--accent-light); }
+.tag-chip-manage { display: none; gap: 2px; margin-left: 4px; }
+.tag-chip-wrap:hover .tag-chip-manage { display: inline-flex; }
+.tag-manage-btn { width: 18px; height: 18px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-card); color: var(--text-secondary); font-size: 11px; line-height: 16px; padding: 0; cursor: pointer; }
+.tag-manage-btn:hover { border-color: var(--accent); color: var(--accent); }
 .sn-tag.hl { font-size: 10.5px; padding: 1px 6px; border-radius: 4px; background: var(--red-light); color: var(--red); }
 .sn-tag.rk { font-size: 10.5px; padding: 1px 6px; border-radius: 4px; background: var(--green-light); color: var(--green); }
 .sn-tag.ai { font-size: 10.5px; padding: 1px 6px; border-radius: 4px; background: var(--accent-light); color: var(--accent); }
@@ -5894,3 +6055,16 @@ body { display: flex; flex-direction: column; }
 }
 .notes-sync-toast.warn { background: #2a1f10; border: 1px solid #F0B97B; color: #F0B97B; }
 .notes-sync-toast.ok   { background: #10231c; border: 1px solid #0ECB81; color: #0ECB81; }
+
+/* 20261104b：增长口径一键切换按钮（左卡「关键财务指标」卡头；单季 ↔ 累计） */
+.growth-caliber-btn {
+  float: right; margin-left: 8px; margin-top: -2px;
+  padding: 3px 10px; font-size: 11px; font-weight: 600; line-height: 1.4;
+  color: var(--accent); background: rgba(240, 185, 123, 0.10);
+  border: 1px solid rgba(240, 185, 123, 0.35); border-radius: 6px;
+  cursor: pointer; white-space: nowrap;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+.growth-caliber-btn:hover { background: rgba(240, 185, 123, 0.22); }
+.growth-caliber-btn:active { transform: scale(0.95); }
+.growth-caliber-btn:disabled { opacity: 0.5; cursor: wait; }

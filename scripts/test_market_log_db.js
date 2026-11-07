@@ -1,5 +1,5 @@
 /**
- * scripts/test_market_log_db.js — 20261103m 守卫
+ * scripts/test_market_log_db.js — 20261105b 守卫
  * ==========================================================
  * 用户指令（2026-11-03）：「把大盘记录做成一个简单的数据库，添加相应的检索功能，
  * 能够按日期、行业和涨跌等关键词进行搜索。」
@@ -159,17 +159,17 @@ async function main() {
     {
       const server = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
       ok(server.includes("require('./lib/marketLogDb')") && server.includes("app.get('/api/market-log'"), 'server.js：marketLogDb 接线 + /api/market-log 路由');
-      ok(/const APP_VERSION = '20261103m'/.test(server), "APP_VERSION = '20261103m'");
+      ok(/const APP_VERSION = '20261106p'/.test(server), "APP_VERSION = '20261106p'");
       const notesJs = fs.readFileSync(path.join(ROOT, 'public/js/notes.js'), 'utf8');
       ok(notesJs.includes('renderMarketDbPanel') && notesJs.includes('runMarketSearch') && notesJs.includes('mldbSearch'), 'notes.js：检索面板/检索执行函数齐备');
       ok(notesJs.includes("data-page-scope") && /renderMarketDbPanel\(\);\n/.test(notesJs), 'notes.js：面板按 market scope 注入（投资心得页零变化）');
       const css = fs.readFileSync(path.join(ROOT, 'public/css/style.css'), 'utf8');
       ok(css.includes('.mldb-panel') && css.includes('.mldb-dir.up') && css.includes('.mldb-dir.down'), 'style.css：检索面板与方向徽标样式齐备');
       const notesHtml = fs.readFileSync(path.join(ROOT, 'public/notes.html'), 'utf8');
-      ok(notesHtml.includes('js/notes.js?v=20261103m') && notesHtml.includes('css/style.css?v=20261103m'), 'notes.html：notes.js/style.css 版本戳已对齐');
+      ok(notesHtml.includes('js/notes.js?v=20261106p') && notesHtml.includes('css/style.css?v=20261106p'), 'notes.html：notes.js/style.css 版本戳已对齐');
       const idx = fs.readFileSync(path.join(ROOT, 'public/index.html'), 'utf8');
       const acc = fs.readFileSync(path.join(ROOT, 'public/accuracy.html'), 'utf8');
-      ok(idx.includes('?v=20261103m') && acc.includes('?v=20261103m'), 'index/accuracy 页面版本戳已对齐 20261103m');
+      ok(idx.includes('?v=20261106p') && acc.includes('?v=20261106p'), 'index/accuracy 页面版本戳已对齐 20261106p');
       const lib = fs.readFileSync(path.join(ROOT, 'lib/marketLogDb.js'), 'utf8');
       ok(lib.includes("require('node:sqlite')") && lib.includes('ensureSynced'), 'marketLogDb.js：node:sqlite + mtime 自动重建');
     }

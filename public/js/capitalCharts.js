@@ -2,6 +2,185 @@
  * Capital Flow Charts Module
  * 资金量能分析前端渲染
  */
+
+/**
+ * 20261106f：「20日涨跌日量能比」数值解读逻辑下拉面板（用户截图指令）。
+ * 纯前端确定性规则 —— 结论一律由代码按规则表计算输出，不调用 LLM、不估算数值；
+ * 供 app.js（资金量能页五联行）与 capitalCharts.js（资金概要兼容渲染路径）两条链路共用单一真值源。
+ *
+ * 三条口径铁律：
+ *  ① 三档解读是「参考表」→ 仅当前命中行保留方向色（红/绿/琥珀），其余行中性灰徽标，
+ *     表下附「仅高亮行是当前命中判定」对照说明（20261101f 参考表着色铁律）。
+ *  ② 今日结合结论 = 历史结构（ratio 三档）× 当日量价信号（vp.signal）确定性比对，
+ *     规则表写死；契合→可信度高，相反→警惕诱多/结构转弱，中性/数据不足→诚实降级。
+ *  ③ ratio = 近20日上涨日均量 ÷ 下跌日均量（与「量价判定」⑤量价健康度同源，量能口径为成交量·手）；
+ *     ≈1 的 0.95~1.05 只是「解读分档容差」，不改变指标算法，也不是新口径。
+ */
+const VpRatioInterpret = (function () {
+  'use strict';
+
+  const esc = (s) => String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+  const EQ_LO = 0.95, EQ_HI = 1.05; // 「≈1」解读分档容差
+
+  // 三档解读（用户提供的文案原样保留，仅按命中与否着色）
+  const BAND_ROWS = [
+    {
+      key: 'gt', label: '＞1', tone: 'bull',
+      lines: [
+        '上涨日均量 > 下跌日均量',
+        '上涨时花钱更多、放量拉；下跌时舍不得砸、缩量跌。',
+        '典型多头偏好结构：放量上涨、缩量回调，是趋势票健康的量价特征。',
+        '数值越高，代表多头发力明显强于空头抛压。',
+        '例：比值 1.8 → 上涨那天平均资金，差不多是下跌那天平均资金的 1.8 倍。',
+      ],
+    },
+    {
+      key: 'eq', label: '≈1', tone: 'neutral',
+      lines: ['多空出手体量差不多，涨也放量、跌也放量，震荡拉锯、分歧均衡，没有明显倾向性。'],
+    },
+    {
+      key: 'lt', label: '＜1', tone: 'bear',
+      lines: [
+        '上涨日均量 < 下跌日均量',
+        '上涨惜量、拉不动；一旦下跌就放量出逃。',
+        '空头占优结构：缩量反弹、放量杀跌，是弱势、风险结构，反弹容易是诱多。',
+      ],
+    },
+  ];
+
+  const HIST_TEXT = {
+    bull: '涨放量、跌缩量（典型多头偏好结构）',
+    bear: '涨缩量、跌放量（空头占优结构）',
+    neutral: '涨也放量、跌也放量（分歧均衡）',
+    na: '量能比数据不足，无法归纳历史习惯',
+  };
+
+  function ratioBand(r) {
+    if (typeof r !== 'number' || !isFinite(r)) return { key: 'na', bias: 'na', label: '数据不足' };
+    if (r > EQ_HI) return { key: 'gt', bias: 'bull', label: '＞1' };
+    if (r < EQ_LO) return { key: 'lt', bias: 'bear', label: '＜1' };
+    return { key: 'eq', bias: 'neutral', label: '≈1' };
+  }
+
+  // 当日量价信号 → 今日量能结构倾向（站在「上涨日 vs 下跌日谁更活跃」的视角）
+  function signalBias(signal) {
+    const s = String(signal || '');
+    if (!s) return { direction: 'na', vol: 'na', bias: 'na' };
+    const up = /上涨|齐升/.test(s);
+    const down = /下跌|回调/.test(s);
+    const amp = /放量|巨量|齐升/.test(s);
+    const dry = /缩量|地量/.test(s);
+    if (up && amp) return { direction: 'up', vol: 'up-amp', bias: 'bull' };   // 上涨日放量
+    if (up && dry) return { direction: 'up', vol: 'up-dry', bias: 'bear' };   // 上涨惜量
+    if (down && amp) return { direction: 'down', vol: 'dn-amp', bias: 'bear' }; // 下跌日放量
+    if (down && dry) return { direction: 'down', vol: 'dn-dry', bias: 'bull' }; // 缩量回调、抛压有限
+    return { direction: up ? 'up' : down ? 'down' : 'na', vol: 'flat', bias: 'flat' }; // 平量/温和/量价平衡
+  }
+
+  const TODAY_TEXT = {
+    'up-amp': '上涨方向放量，与「涨放量」同侧',
+    'up-dry': '上涨惜量，与「涨缩量」同侧',
+    'dn-amp': '下跌方向放量，与「跌放量」同侧',
+    'dn-dry': '下跌缩量、抛压有限，与「跌缩量」同侧',
+    'flat': '量能平量/温和，未明显放大',
+    'na': '当日量价信号数据不足',
+  };
+
+  // 确定性比对：历史结构 × 今日信号
+  function combine(band, sig, ratio, signal) {
+    const r = (typeof ratio === 'number' && isFinite(ratio)) ? ratio.toFixed(2) : '--';
+    const s = signal ? String(signal) : '数据不足';
+    const base = {
+      ratioText: r, signalText: s, band: band.key, bias: band.bias, sigBias: sig.bias,
+      histText: HIST_TEXT[band.bias] || HIST_TEXT.na,
+      todayText: TODAY_TEXT[sig.vol] || TODAY_TEXT.na,
+    };
+    if (band.bias === 'na' || sig.bias === 'na') {
+      return Object.assign(base, {
+        tone: 'neutral', alignment: 'na',
+        verdict: '量能比或当日量价信号数据不足，无法做历史结构与今日信号的结构比对；上方数值解读逻辑仍可照常参考。',
+      });
+    }
+    if (sig.bias === 'flat') {
+      return Object.assign(base, {
+        tone: 'neutral', alignment: 'flat',
+        verdict: `历史习惯是「${base.histText}」；今日「${s}」量能未明显放大，对固有结构的印证有限，先按当日信号本身看待，不宜据此下强结论。`,
+      });
+    }
+    if (band.bias === 'neutral') {
+      return Object.assign(base, {
+        tone: 'neutral', alignment: 'flat',
+        verdict: `近20日比值 ${r} ≈1，多空出手体量接近、没有明显倾向性；今日「${s}」按当日信号独立看待，历史结构对本次的印证有限。`,
+      });
+    }
+    if (band.bias === sig.bias) {
+      const bullOK = band.bias === 'bull';
+      return Object.assign(base, {
+        tone: bullOK ? 'bull' : 'bear', alignment: 'match',
+        // 20261106f 实测修正：结论不得写死「放量上涨」——今日信号可能是「缩量回调」「缩量上涨」等，
+        // 契合判定只表示与历史结构同侧，不代表今日一定是放量上涨。措辞随 ${s} 动态代入、后半句保持中性。
+        verdict: `历史习惯是「${base.histText}」（${r}）→ 这次「${s}」，`
+          + (bullOK
+            ? '契合它本身的多头量能习惯，本次量价信号的可信度高。'
+            : '与固有的空头占优结构一致，弱势延续；反弹容易是诱多，别把单次放量当成反转。'),
+      });
+    }
+    const todayBull = sig.bias === 'bull';
+    return Object.assign(base, {
+      tone: 'warn', alignment: 'diverge',
+      verdict: `历史习惯是「${base.histText}」（${r}）→ 这次「${s}」，和它固有结构相反，`
+        + (todayBull
+          ? '要警惕诱多：上涨日一贯不活跃，今日量能却偏向多头一侧，需验证是否有真实增量资金。'
+          : '要警惕结构转弱：上涨日一贯更活跃，今日量能却偏向空头一侧（下跌放量或上涨惜量），抛压可能真实。'),
+    });
+  }
+
+  function buildTrigger(open) {
+    return `<button type="button" class="cm-interpret-trigger${open ? ' is-open' : ''}"`
+      + ` data-action="toggle-vp-interpret" aria-expanded="${open ? 'true' : 'false'}"`
+      + ` title="展开/收起「数值解读逻辑」与今日量价结构比对">解读 <span class="cmi-chev">▾</span></button>`;
+  }
+
+  function buildPanel(vp, opts) {
+    const o = opts || {};
+    const ratio = vp && typeof vp.ratio === 'number' && isFinite(vp.ratio) ? vp.ratio : null;
+    const signal = vp && vp.signal ? vp.signal : null;
+    const band = ratioBand(ratio);
+    const sig = signalBias(signal);
+    const c = combine(band, sig, ratio, signal);
+
+    const rows = BAND_ROWS.map(row => {
+      const hit = row.key === band.key;
+      const badge = hit ? `cmi-badge cmi-hit-${row.tone}` : 'cmi-badge cmi-ref';
+      return `<div class="cmi-row${hit ? ' cmi-row-hit' : ''}">`
+        + `<span class="${badge}">${row.label}</span>`
+        + `<div class="cmi-lines">${row.lines.map(t => `<div>${esc(t)}</div>`).join('')}</div>`
+        + `</div>`;
+    }).join('');
+
+    return `<div class="cm-interpret-panel" data-cm-interpret="1"${o.open ? '' : ' hidden'}>`
+      + `<div class="cmi-head">数值解读逻辑<span class="cmi-head-sub">20日涨跌日量能比 = 近20日上涨日均量 ÷ 下跌日均量</span></div>`
+      + `<div class="cmi-rows">${rows}</div>`
+      + `<div class="cmi-foot">仅高亮行是当前命中判定（当前比值 ${esc(c.ratioText)}，${esc(band.label)}）；其余为参考说明。</div>`
+      + `<div class="cmi-today">`
+      + `<div class="cmi-today-title">区分同是放量，结构好不好 · 结合今日量价关系判定</div>`
+      + `<div class="cmi-facts">`
+      + `<div class="cmi-fact"><span>近20日比值</span><b>${esc(c.ratioText)}</b><em>${esc(band.label)} · ${esc(c.histText)}</em></div>`
+      + `<div class="cmi-fact"><span>今日量价信号</span><b>${esc(c.signalText)}</b><em>${esc(c.todayText)}</em></div>`
+      + `</div>`
+      + `<div class="cmi-verdict cmi-${c.tone}"><span class="cmi-verdict-tag">${c.alignment === 'match' ? '结构契合' : c.alignment === 'diverge' ? '结构相反' : '中性／待观察'}</span>${esc(c.verdict)}</div>`
+      + `<div class="cmi-example">对照示例：A 票比值 1.7 + 放量上涨 → 契合多头习惯，可信度高；B 票比值 0.6 + 放量上涨 → 与固有结构相反，要警惕诱多。</div>`
+      + `</div>`
+      + `<div class="cmi-caliber">口径说明：本卡为成交量（手）比值，与「量价判定」⑤量价健康度同源；「≈1」按 ${EQ_LO}~${EQ_HI} 容差仅用于解读分档，不改变指标算法；与「当日量/20日均量」（135 格归格口径）是不同分母的独立口径，数值不应相等；20261106n 起 60 日均量口径已整体退役，全量价判定与文字分析统一 ÷20 日均量；20261106o 起涨跌判定也与 135 格走势档同源（大涨≥5% / 上涨≥1.2% / 震荡 |涨跌|<1.2% / 下跌 / 大跌≤-5%），震荡档信号 = 量能档+震荡（如「缩量震荡」），判定结论直接引用 135 格归格文本。</div>`
+      + `</div>`;
+  }
+
+  return { esc, ratioBand, signalBias, combine, buildTrigger, buildPanel, EQ_LO, EQ_HI };
+})();
+
 const CapitalCharts = {
   instances: {},
 
@@ -145,6 +324,12 @@ const CapitalCharts = {
       '缩量回调': 'cap-neutral',
       '地量回调': 'cap-neutral',
       '量价平衡': 'cap-neutral',
+      // 20261106o：震荡档（与 135 格走势档同源）一律中性色——震荡=观察，无方向语义
+      '巨量震荡': 'cap-neutral',
+      '放量震荡': 'cap-neutral',
+      '平量震荡': 'cap-neutral',
+      '缩量震荡': 'cap-neutral',
+      '地量震荡': 'cap-neutral',
     };
     const dayPct = typeof vp.dayChangePct === 'number' ? vp.dayChangePct : null;
     const dayPctHtml = dayPct !== null
@@ -159,9 +344,18 @@ const CapitalCharts = {
     const ratioVal = (un && typeof un.ratio5 === 'number') ? un.ratio5 : dayVolRatio;
     const ratioLabel = un ? '量比(÷5日均量)' : '今日量比';
     const ratioCls = ratioVal !== null ? (ratioVal > 1.3 ? 'cap-pos' : (ratioVal < 0.7 ? 'cap-neg' : '')) : '';
+    // 20261106d（用户截图指令）：20日涨跌日卡按「涨天数 vs 跌天数」着色——涨多红、跌多绿、持平中性。
+    // 全站红涨绿跌语义；与「20日净涨跌」的数值方向色同源（cap-pos / cap-neg）。
+    const daysCls = (typeof vp.upDays === 'number' && typeof vp.downDays === 'number')
+      ? (vp.upDays > vp.downDays ? 'cap-pos' : vp.upDays < vp.downDays ? 'cap-neg' : '') : '';
     const basisNote = un
       ? `量能口径（与「量能分析」同源）：${un.basis}${un.confirm ? `　当前 60 日均量口径：${un.confirm}` : ''}${un.divergenceNote ? `　${un.divergenceNote}` : ''}`
       : '';
+    // 20261106f：数值解读下拉面板。展开状态在静默轮询 innerHTML 全量重建前读取、重建后恢复，
+    // 避免每 60s 刷新把用户点开的面板自动收起（20261104j 轮询渲染铁律同源）。
+    const interpretOpen = !!el.querySelector('.cm-interpret-panel:not([hidden])');
+    const interpretTrigger = VpRatioInterpret.buildTrigger(interpretOpen);
+    const interpretPanel = VpRatioInterpret.buildPanel(vp, { open: interpretOpen });
     el.innerHTML = `
       <div class="cap-signal-box ${signalClass[vp.signal] || ''}">
         <div class="cap-signal-label">量价信号（当日）</div>
@@ -171,11 +365,12 @@ const CapitalCharts = {
       <div class="cap-metrics-row">
         <div class="cap-metric"><span class="cm-label">今日涨跌</span>${dayPctHtml}</div>
         <div class="cap-metric"><span class="cm-label">${ratioLabel}</span><span class="cm-value ${ratioCls}">${ratioVal !== null ? ratioVal.toFixed(2) : '--'}</span></div>
-        <div class="cap-metric"><span class="cm-label">20日涨跌日</span><span class="cm-value">${vp.upDays}天/${vp.downDays}天</span></div>
-        <div class="cap-metric"><span class="cm-label">20日量价比</span><span class="cm-value ${vp.ratio > 1 ? 'cap-pos' : 'cap-neg'}">${vp.ratio}</span></div>
+        <div class="cap-metric"><span class="cm-label" title="近20日上涨天数 / 下跌天数；涨天数多于跌天数标红，反之标绿（全站红涨绿跌）">20日涨跌日</span><span class="cm-value ${daysCls}">${vp.upDays}天/${vp.downDays}天</span></div>
+        <div class="cap-metric cm-has-interpret"><span class="cm-label" title="近20日上涨日均量 ÷ 下跌日均量，衡量量价健康度（与「量价判定」⑤量价健康度同源）">20日涨跌日量能比${interpretTrigger}</span><span class="cm-value ${vp.ratio > 1 ? 'cap-pos' : 'cap-neg'}">${vp.ratio}<span class="cm-sub" title="近20日上涨日平均成交量 ÷ 下跌日平均成交量 = ${vp.ratio}；≥1.15 视为量价健康">近20日涨日均量 ÷ 跌日均量</span></span></div>
         <div class="cap-metric"><span class="cm-label">20日净涨跌</span><span class="cm-value ${vp.netChangePct > 0 ? 'cap-pos' : vp.netChangePct < 0 ? 'cap-neg' : ''}">${vp.netChangePct > 0 ? '+' : ''}${vp.netChangePct}%</span></div>
         <div class="cap-metric"><span class="cm-label">量能热度</span><span class="cm-value">${vp.heatLevel || '--'}</span></div>
       </div>
+      ${interpretPanel}
       <div class="cap-date-note">${dateNote}${basisNote ? `<br>${basisNote}` : ''}</div>
     `;
   },
@@ -506,13 +701,15 @@ const CapitalCharts = {
       '放量上涨': 'bull', '量价齐升': 'bull', '温和上涨': 'bull', '缩量回调': 'bull',
       '缩量上涨': 'bear', '温和回调': 'bear', '地量上涨': 'bear', '地量回调': 'bear', '缩量下跌': 'bear', '地量下跌': 'bear',
       '巨量下跌': 'bear', '放量下跌': 'bear', '显著下跌': 'bear',
+      // 20261106o：震荡档与 135 格「震荡=观察」同源 → neutral（缺省亦为 neutral，显式列出防漏）
+      '巨量震荡': 'neutral', '放量震荡': 'neutral', '平量震荡': 'neutral', '缩量震荡': 'neutral', '地量震荡': 'neutral',
     };
     const moneyTone = (v) => v > 0 ? 'bull' : v < 0 ? 'bear' : 'neutral';
 
     // 量价关系（长文本 → 网格通栏）
     if (vi?.volumePrice) {
       const vp = vi.volumePrice;
-      rows.push({ icon: '📊', label: '量价关系', text: `${vp.signal} — ${vp.description}`, wide: true, tone: VP_TONE[vp.signal] || 'neutral' });
+      rows.push({ icon: '📊', label: '今日量价关系判定（唯一结论）', text: `${vp.signal} — ${vp.description}`, wide: true, tone: VP_TONE[vp.signal] || 'neutral' });
     }
 
     // 资金流向
@@ -521,13 +718,23 @@ const CapitalCharts = {
       const estNote = isEst ? '（估算）' : '';
       const s5 = mf.summary.summary['5d'];
       const s20 = mf.summary.summary['20d'];
+      // 20261106d（用户截图指令）：短期/中期资金文字分析补「日均净流入/净流出」。
+      // 日均 = 窗口累计主力净额 ÷ 窗口交易日天数（5 / 20），单位亿/日，保留两位小数；
+      // 方向按 mainNet 符号独立判定（不复用 direction 字符串，防止累计与日均方向不一致时静默错标）；
+      // 数值缺失/非有限值时只显示累计额，不编造日均值（诚实降级）。
+      const dailyText = (s, days) => {
+        if (!s || typeof s.mainNet !== 'number' || !isFinite(s.mainNet) || !(days > 0)) return '';
+        const avg = Math.abs(s.mainNet) / days;
+        const d = s.mainNet > 0 ? '净流入' : s.mainNet < 0 ? '净流出' : '持平';
+        return ` · 日均${d}${avg.toFixed(2)}亿`;
+      };
       if (s5) {
         const dir = s5.direction;
-        rows.push({ icon: '💰', label: `短期资金${estNote}`, text: `近5日主力${dir}${Math.abs(s5.mainNet)}亿`, tone: moneyTone(s5.mainNet) });
+        rows.push({ icon: '💰', label: `短期资金${estNote}`, text: `近5日主力${dir}${Math.abs(s5.mainNet)}亿${dailyText(s5, 5)}`, tone: moneyTone(s5.mainNet) });
       }
       if (s20) {
         const dir = s20.direction;
-        rows.push({ icon: '📈', label: `中期资金${estNote}`, text: `近20日主力${dir}${Math.abs(s20.mainNet)}亿`, tone: moneyTone(s20.mainNet) });
+        rows.push({ icon: '📈', label: `中期资金${estNote}`, text: `近20日主力${dir}${Math.abs(s20.mainNet)}亿${dailyText(s20, 20)}`, tone: moneyTone(s20.mainNet) });
       }
     }
 
@@ -545,9 +752,11 @@ const CapitalCharts = {
     // 融资融券
     if (margin?.hasData) {
       const l = margin.latest;
-      const netBuyStr = l.rzNetBuy !== undefined ? `，净买入${(l.rzNetBuy / 1e8).toFixed(2)}亿` : '';
+      // 20261104d（用户截图报障）：「（占流通市值X%）」指的是融资余额的占比，原拼接顺序跟在「净买入」后
+      // 产生歧义（读成净买入占流通市值 4.46%）→ 调整为紧贴「融资余额」之后：融资余额15.7亿（占流通市值4.46%），净买入0.27亿
       const ratioStr = l.rzRatio ? `（占流通市值${l.rzRatio.toFixed(2)}%）` : '';
-      rows.push({ icon: '🏦', label: '融资融券', text: `融资余额${(l.rzBalance / 1e8).toFixed(1)}亿${netBuyStr}${ratioStr}，${margin.trend}`, tone: moneyTone(l.rzChange) });
+      const netBuyStr = l.rzNetBuy !== undefined ? `，净买入${(l.rzNetBuy / 1e8).toFixed(2)}亿` : '';
+      rows.push({ icon: '🏦', label: '融资融券', text: `融资余额${(l.rzBalance / 1e8).toFixed(1)}亿${ratioStr}${netBuyStr}，${margin.trend}`, tone: moneyTone(l.rzChange) });
     }
 
     // 综合判断（优先复用后端统一结论，与判断引擎因子保持一致）→ verdict
@@ -582,6 +791,10 @@ const CapitalCharts = {
 
     // 语义色调：偏多→bull（红晕）、偏空→bear（绿晕）、中性→neutral（灰底）
     const tone = /偏空|注意风险/.test(overall) ? 'bear' : /偏多|支撑上涨/.test(overall) ? 'bull' : 'neutral';
+    // 20261106n（用户裁决）：20261106m 的「全模块综合总结（代码聚合）」行整体删除——
+    // 用户实测反馈「总结的输出十分不理想」（点名式票型罗列冗长、与结论横幅信息重复且
+    // 把「融资融券净买入」等中性信息也计票，可读性差）。恢复 m 版前的 rows/verdict 结构。
+
     return { rows, verdict: { label: overall, tone, bull: bs, bear: br } };
   },
 
@@ -753,3 +966,9 @@ const CapitalCharts = {
     };
   },
 };
+
+// 20261106f：Node 守卫可 require 本文件做纯函数实测（浏览器顶层 const 仍是全局词法绑定，
+// app.js 在同页可直接访问 CapitalCharts 与 VpRatioInterpret，无需额外 script 标签）。
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { CapitalCharts, VpRatioInterpret };
+}

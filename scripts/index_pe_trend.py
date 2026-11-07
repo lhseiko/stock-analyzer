@@ -1,18 +1,23 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-抓取三大指数近5年市盈率趋势数据
-- 上证50、沪深300：乐咕乐股(legulegu.com)月度滚动市盈率(TTM)
+抓取四大指数市盈率趋势数据（20261105b：上证50/沪深300/中证1000/科创50）
+- 上证50、沪深300、中证1000：乐咕乐股(legulegu.com)月度滚动市盈率(TTM)
 - 科创50：东方财富·市场估值(RPT_VALUEMARKET)日频平均市盈率(TTM)，按月采样
+
+每家输出：
+- series：近5年月度序列（折线图用）
+- seriesAll：全历史月度序列（服务端计算「历史百分位」用，与东方财富全部历史口径对齐）
 
 输出JSON结构：
 {
   "success": true,
   "updatedAt": "2026-08-29T...",
   "data": {
-    "上证50": {"source": "乐咕乐股", "peField": "滚动市盈率", "series": [{"date":"2021-09-01","pe":...,"close":...}]},
+    "上证50": {"source": "乐咕乐股", "peField": "滚动市盈率", "series": [{"date":"2021-09-01","pe":...,"close":...}], "seriesAll": [...]},
     "沪深300": {...},
-    "科创50": {"source": "东方财富·市场估值", "peField": "PE_TTM_AVG", "series": [...]}
+    "中证1000": {...},
+    "科创50": {"source": "东方财富·市场估值", "peField": "PE_TTM_AVG", "series": [...], "seriesAll": [...]}
   }
 }
 """
@@ -37,7 +42,9 @@ def log(msg):
     print(msg, file=sys.stderr)
 
 def legu_pe(name):
-    """从乐咕乐股获取月度PE序列"""
+    """从乐咕乐股获取月度PE序列（20261105b：同时返回全历史月度序列 seriesAll，供「历史百分位」计算）。
+    乐咕 stock_index_pe_lg 返回的本身就是全历史月度序列（上证50 2005 起、中证1000 2014-10 起），
+    series 为近5年截断（图表用），seriesAll 为全量（历史百分位用，与东方财富「全部历史」口径对齐）。"""
     df = ak.stock_index_pe_lg(symbol=name)
     # 列：日期, 指数, 等权静态市盈率, 静态市盈率, 静态市盈率中位数, 等权滚动市盈率, 滚动市盈率, 滚动市盈率中位数
     df = df.rename(columns={
@@ -49,21 +56,24 @@ def legu_pe(name):
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     df = df.dropna(subset=["date"])
     df = df.sort_values("date")
-    cutoff = datetime.now() - relativedelta(years=YEARS)
-    df = df[df["date"] >= cutoff]
-    # 只保留每月最后一个数据点，避免月内日线过多
+    # 乐咕数据本身为月度序列，无需再按月采样（保留原采样逻辑兜底月内多点）
     df["ym"] = df["date"].dt.to_period("M")
     df = df.groupby("ym").tail(1).drop(columns=["ym"])
     df["date"] = df["date"].dt.strftime("%Y-%m-%d")
     df["pe"] = pd.to_numeric(df["pe"], errors="coerce")
     df["close"] = pd.to_numeric(df["close"], errors="coerce")
-    return df.dropna().to_dict(orient="records")
+    all_rows = df.dropna().to_dict(orient="records")
+    cutoff = datetime.now() - relativedelta(years=YEARS)
+    cutoff_str = cutoff.strftime("%Y-%m-%d")
+    recent_rows = [r for r in all_rows if r["date"] >= cutoff_str]
+    return {"series": recent_rows, "seriesAll": all_rows}
 
 def eastmoney_kc50():
-    """从东方财富市场估值获取科创50日频PE，并按月采样"""
+    """从东方财富市场估值获取科创50日频PE，并按月采样（20261105b：全历史抓取，返回 {series, seriesAll}）"""
     end = datetime.now()
     start = end - relativedelta(years=YEARS)
     start_str = start.strftime("%Y-%m-%d")
+    all_start_str = "2019-01-01"  # 科创50 指数基日 2019-12-31，全历史从这里足够
     all_rows = []
     page = 1
     while True:
@@ -83,9 +93,9 @@ def eastmoney_kc50():
             if not rows:
                 break
             all_rows.extend(rows)
-            # 如果最早一条已超出5年范围，可停止
+            # 如果最早一条已早于全历史起点（2019-01-01），可停止（20261105b：seriesAll 需全历史）
             last_date = str(rows[-1].get("TRADE_DATE", "")).split()[0]
-            if last_date and last_date < start_str:
+            if last_date and last_date < all_start_str:
                 break
             if len(rows) < 500:
                 break
@@ -96,11 +106,11 @@ def eastmoney_kc50():
 
     df = pd.DataFrame(all_rows)
     if df.empty:
-        return []
+        return {"series": [], "seriesAll": []}
     df["date"] = pd.to_datetime(df["TRADE_DATE"], errors="coerce")
     df = df.dropna(subset=["date"])
     df = df.sort_values("date")
-    df = df[df["date"] >= start]
+    df = df[df["date"] >= all_start_str]
     df = df.rename(columns={"CLOSE_PRICE": "close", "PE_TTM_AVG": "pe"})
     df["close"] = pd.to_numeric(df["close"], errors="coerce")
     df["pe"] = pd.to_numeric(df["pe"], errors="coerce")
@@ -108,25 +118,31 @@ def eastmoney_kc50():
     df["ym"] = df["date"].dt.to_period("M")
     df = df.groupby("ym").tail(1).drop(columns=["ym"])
     df["date"] = df["date"].dt.strftime("%Y-%m-%d")
-    return df[["date", "close", "pe"]].dropna().to_dict(orient="records")
+    rows_all = df[["date", "close", "pe"]].dropna().to_dict(orient="records")
+    recent = [r for r in rows_all if r["date"] >= start_str]
+    return {"series": recent, "seriesAll": rows_all}
 
 def main():
     try:
         data = {}
-        # 上证50、沪深300
-        for name in ["上证50", "沪深300"]:
+        # 上证50、沪深300、中证1000（20261105b 用户指令：按上证50 模板对称扩展中证1000）
+        for name in ["上证50", "沪深300", "中证1000"]:
             log("[IndexPETrend] fetching %s from legulegu" % name)
+            legu = legu_pe(name)
             data[name] = {
                 "source": "乐咕乐股",
                 "peField": "滚动市盈率(TTM)",
-                "series": legu_pe(name)
+                "series": legu["series"],
+                "seriesAll": legu["seriesAll"],
             }
         # 科创50
         log("[IndexPETrend] fetching 科创50 from Eastmoney RPT_VALUEMARKET")
+        kc = eastmoney_kc50()
         data["科创50"] = {
             "source": "东方财富·市场估值",
             "peField": "平均市盈率(TTM)",
-            "series": eastmoney_kc50()
+            "series": kc["series"],
+            "seriesAll": kc["seriesAll"],
         }
         out = {
             "success": True,

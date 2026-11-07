@@ -107,7 +107,7 @@ console.log('\n[4] 近 3 日重心上移 + 当日大涨 → 仍不命中');
 // ============================================================================
 console.log('\n[5] 边界');
 ok(ruleAt(mkPc({ chgPct: 0.5, lowToday: 9.7 })).matched === false, '创近 20 日新低 → 不命中');
-ok(ruleAt(mkPc({ chgPct: 0.5 }), '上涨中途').matched === false, '非低位区间 → 不命中');
+ok(ruleAt(mkPc({ chgPct: 0.5 }), '中位区间').matched === false, '非低位区间 → 不命中');
 ok(ruleAt(mkPc({ chgPct: 0.5, level: '平量', ratio5: 0.9 })).matched === false, '未放量（平量、量比 0.9）→ 不命中');
 
 // ============================================================================

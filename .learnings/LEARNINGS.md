@@ -2405,3 +2405,463 @@ volumeEngine：extJudgment 块开放给 pos=震荡整理（极端量能/背离�
 - Pattern-Key: ux.neutral_badge_must_keep_semantic_text
 - See Also: LRN-20261101-001
 ---
+
+## [LRN-20261104-002] correction
+
+**Logged**: 2026-11-04T16:35:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+文案括号挂靠对象歧义：「融资余额15.7亿，净买入0.27亿（占流通市值4.46%）」括号跟在净买入后，用户读成「净买入占流通市值4.46%」，实际指融资余额占比。
+
+### Details
+capitalCharts.js 融资融券 tile 拼接顺序：余额 → 净买入 → 占比。括号注解必须紧跟其语义所属的数值。
+
+### Suggested Action
+拼接含括号注解的文案时，注解片段必须紧贴其所属数值之后再拼其他片段；同类排查点：所有 `X亿（占比%）` 模式文案。
+
+### Metadata
+- Source: user_feedback
+- Related Files: public/js/capitalCharts.js
+- Tags: 文案, 括号歧义, 融资融券
+- Pattern-Key: harden.parenthetical_attachment_ambiguity
+
+---
+
+## LRN-20261104-003
+**Date**: 2026-11-04
+**Type**: rule_refinement
+**Priority**: high
+**Status**: resolved
+**Area**: engine
+
+### Summary
+量价判定位置定位混乱：推演图只有四种股价定位（低位区/高位区/上涨途中/下跌途中），但新洋丰 000902 自 7 月约 11 元涨至接近 15 元（+27%，趋势运行）被判「震荡整理」，与第二步运行状态「趋势运行·上涨趋势」同屏打架。
+
+### Details
+根因：`_detectPosition` 只看 12 个月分位 + MA20/MA60——MA 粘合（13.78/13.80）+ 分位被年初高点稀释到 41.5% → 直接兜底「震荡整理」，完全不看任何趋势证据。用户给出定位原则：① 原则上只有四种定位；② 无法判定先看短期是否趋势运行；③ 短期区间震荡拉长参考时间（海天味业一年横盘、3-4 年长期下跌）。
+
+### Suggested Action
+修复模式：`_trendSegment` 近 120 日趋势段检测（自窗口最低收盘涨幅 ≥20% + 锚点距今 ≥10 根 + 期间回撤 ≤ 顺向幅度 ×60%；下跌段对称；两段同存取锚点更近者）→ `_detectPosition` 兜底前插阶梯：趋势段 → 上涨/下跌中途；无趋势段 → 长期 MA250 定论定位；两者皆无才诚实兜底。通用教训：**多指标兜底型判定不能只看单一窗口**——分位被窗口内历史极值稀释、MA 粘合期趋势证据仍在，兜底前应穷尽多尺度证据（短窗趋势段 → 长期年线）再落「无法判定」。
+
+### Metadata
+- Source: user_feedback
+- Related Files: lib/volumeEngine.js
+- Tags: 量价判定, 位置定位, 趋势段, 多尺度证据
+- Pattern-Key: harden.position_multi_scale_evidence
+
+---
+
+## LRN-20261104-004
+**Date**: 2026-11-04
+**Type**: rule_refinement
+**Priority**: high
+**Status**: resolved
+**Area**: engine
+
+### Summary
+威高血净（603014）专属估值模型落地时发现：专属模型接线实际是**四处**而非惯常认知的三处——`lib/ai/valuation.js` 存在**两个独立接线点**：① `hasDedicatedValuation()`（路由闸门，决定前端免 API Key）+ ② `analyzeValuation()` 主体内的**逐标的内联分支**（决定真正执行确定性计算）。漏接 ② 时标的会**静默掉进通用 LLM 流程**：不报错、不崩溃，但专属卡永不渲染（可能卡 API Key 校验或走慢速联网 LLM）。
+
+### Details
+三个既有检查点全部通过（hasDedicatedValuation=true、conclusion.js 顶部评级卡接线成功、app.js 渲染分支就位），但 E2E 调 `POST /api/ai/valuation` 返回 804ms 内无 weigao 字段 + 服务日志出现「[AI 估值] 603014 已注入财报解读摘要」= 掉进 LLM 流程的铁证。`hasDedicatedValuation` 只是布尔闸门（供前端 `this._isDedicated` 判断免 Key），真正的执行分流在 `analyzeValuation` 主体——每个专属标的一个 `try { const xModel = require(...); if (xModel.isXxxModel(bareSym)) { ... return Object.assign({}, x, {success:true, dedicated:true, ver:'DEDICATED'}) } }` 内联块。
+
+### Suggested Action
+**新增专属估值模型的完整接线清单（四处，缺一即静默失败）**：① `lib/ai/valuation.js hasDedicatedValuation()` 加一行；② `lib/ai/valuation.js analyzeValuation()` 主体加内联分支（getQuote → run → return DEDICATED）；③ `lib/deep/conclusion.js` sym 分支（顶部综合评级卡引用）；④ `public/js/app.js` `j.dedicated && j.<kind>` 渲染分支。守卫必须断言全部四处 + E2E 必须验证 `/api/ai/valuation` 返回体含专属标记字段（`ver:'DEDICATED'` / `kind:true`），仅断言源码字符串不够。通用教训：**同一文件里的「闸门函数」和「执行函数」可能是两套独立接线**——闸门通过 ≠ 执行路径接通。
+
+### Metadata
+- Source: self_discovery
+- Related Files: lib/ai/valuation.js, lib/valuation/weigao603014.js, scripts/test_valuation_weigao.js
+- Tags: 专属估值模型, 接线完整性, 静默降级, E2E
+- Pattern-Key: harden.dedicated_model_four_point_wiring
+
+---
+
+## LRN-20261104-005
+**Logged**: 2026-11-04T19:55:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+**轮询 + innerHTML 全量重建 = 滚动回弹**：任何「定时拉数据 → 整容器 innerHTML 重建」的卡片，只要重建发生在用户浏览期间，滚动锚定就会失效回弹——即使数据没变。
+
+### Details
+homeRank 基金行业配置名单每 3 秒轮询，render 无条件重建整卡 DOM。数据未变的轮次（大多数）也重建。修复范式：① 数据签名（JSON.stringify 所有显示相关字段）未变 → render 直接 return，DOM/滚动原样保留；② 签名变化必须重建时做滚动锚定——重建前记录主体内容容器相对视口 top，重建后差值校正回滚动容器 scrollTop。手动刷新（用户主动动作）强制重建保留视觉反馈。
+
+### Suggested Action
+**排查同类模式**：项目中所有 setInterval/轮询 + innerHTML 全量重建的卡片（首页多卡、市场页）均适用此范式；新写轮询渲染时默认带签名比对。滚动定位一律作用 .main-content（ERR-20261104-002 同源）。
+
+### Metadata
+- Source: user_feedback
+- Related Files: public/js/homeRank.js, scripts/test_home_rank_scroll.js
+- Tags: 轮询, innerHTML, 滚动回弹, scroll-anchoring, 数据签名
+- See Also: LRN-20261104-003, ERR-20261104-002
+- Pattern-Key: harden.polling_innerhtml_scroll_anchor
+
+---
+
+## LRN-20261104-006
+**Logged**: 2026-11-04T21:40:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: data-caliber
+
+### Summary
+**比率型指标卡片的「主值 vs 维度」必须同口径**：右卡「指标分析」主值取 TTM（37.78%）而同比/环比维度取报告期累计口径（41.47%），用户读作「毛利率的数据不一致」——两套口径同屏展示会被当成数据错误报障，note 里的口径解释句救不了。
+
+### Details
+根因：lib/stockData.js computeTtmMetrics（TTM 单一权威源）只算了本期 TTM（grossMarginTtm）与 ROE 的去年同期 TTM（roePrev，20260909j 已有），毛利率/净利率缺 TTM prev/prevQ → metricAnalysis 的 yoyDim/qoqDim 只能回退 zyzb 累计口径（XSMLL/XSJLL），与主值口径错配。修复：marginsOf helper 抽取复用同一滚动逻辑，补 grossMarginTtmPrev/netMarginTtmPrev（去年同期 TTM）+ *PrevQ/roeTtmPrevQ（上一报告期 TTM），三指标同比/环比维度 TTM 同口径优先、不可得回退累计并保留原标注。
+
+### Suggested Action
+**通用规则**：任何展示「主值 + 对比维度」的卡片，维度取数必须与主值同源同口径；新增 TTM/滚动类主值时必须同步补齐「去年同期/上一披露期」的同口径对比值（roll 函数窗口复用同一 helper），而不是拿报告期累计序列凑数。同口径排查要覆盖同类全部指标（本次毛利率/净利率/ROE 三个一起修，不只修用户报的毛利率）。
+
+### Metadata
+- Source: user_feedback
+- Related Files: lib/stockData.js, lib/metricAnalysis.js, scripts/test_margin_caliber_rename.js
+- Tags: 口径一致, TTM, 指标分析, 数据一致性
+- Pattern-Key: harden.metric_dims_same_caliber_as_primary
+
+---
+
+## LRN-20261105-001
+**Logged**: 2026-11-05T11:35:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: data-caliber
+
+### Summary
+**整齐极端值的镜像案例：极端值也可能是真的**——上证50「近5年百分位 99%」被用户质疑计算错误，实测当前 PE 11.72 恰为近5年窗口最高值，99% 数学正确（中位排名法 (60+0.5)/61）。真正的问题是中位排名法对最高点永远显示不出 100%，裸 99% 触发「假数据」怀疑。
+
+### Details
+判读路径：① 读缓存重算——61 个月度点（乐咕乐股），60 个低于当前、0 个高于，重算 99% 与显示一致 → 算法无误；② 双链交叉——东方财富日频 PE 11.79（同量级）、3年百分位 89.68%~90.51%（同处高位区）→ 数据可信；③ 图形自洽——曲线右端正是全图最高点。根因 = 展示歧义而非计算错误。
+
+### Suggested Action
+修复（20261105a）：当前 PE = 窗口最高（series.every(d => d.pe <= latest.pe)）时显示「近5年新高（百分位 99%）」替代裸 99%。**通用规则：报障判读「整齐极端值」时先重算 + 双链交叉再下结论，极端值与假 0 一样可能是真的；若为真且表述易误读，改表述（加语义标注）而非改算法**。
+
+### Metadata
+- Source: user_feedback
+- Related Files: lib/indexPETrend.js, public/js/app.js, scripts/test_index_pe_window_high.js
+- Tags: 百分位, 中位排名, 极端值判读, 双链交叉验证
+- See Also: 工作区记忆「用户报障判读惯例」（0.00 亿/0 只类假 0）
+- Pattern-Key: harden.extreme_value_verdict_dual_chain
+
+---
+
+## LRN-20261105-002
+**Logged**: 2026-11-05T11:50:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+**用户纠正（correction）：「近5年新高」方案被否，改用「历史百分位」全历史口径**——20261105a 的语义标注方案（近5年新高 99%）没有解决用户对刺眼数字的本能不适；用户给的是东方财富估值页参照（PE百分位 60.63%，注：百分位数基于全部历史数据得出），期望的是**更长时间窗口下的温和口径**。
+
+### Details
+近5年窗口太短（乐咕月度 61 点），窗口内最高点百分位必然 99%；而全部历史窗口（上证50 乐咕 263 点、2005 年起）包含 2007/2015/2021 大顶，当前 11.72 只处于 67% 位置——与东财全部历史口径 60.63% 同量级。方案：乐咕接口本身返回全历史月度序列，脚本输出 seriesAll（科创50 东财抓取起点提前至 2019），服务端算 quantileAll，前端显示「历史百分位 X%」。同时按用户指令新增中证1000（乐咕同源，2014-10 起 146 点）四指数对称展示。
+
+### Suggested Action
+**估值分位类展示默认用全历史口径**（「历史百分位」），短窗口百分位只作辅助参考；用户报「数字刺眼/可疑」时，除验证真假外还要考虑窗口选择是否合理——更长的窗口往往给出更符合直觉的数字。
+
+### Metadata
+- Source: conversation (user correction)
+- Related Files: scripts/index_pe_trend.py, lib/indexPETrend.js, public/js/app.js, public/js/charts.js, public/css/style.css
+- Tags: 历史百分位, 窗口选择, 中证1000, 对称布局
+- See Also: LRN-20261105-001（99% 真实性判读）
+- Pattern-Key: harden.valuation_quantile_full_history_window
+
+---
+
+## LRN-20261106-001
+**Logged**: 2026-11-06T00:10:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: backend
+
+### Summary
+**误判「死分支」（correction + knowledge_gap）**：20261105j 汇报称 capitalFlow 的 `POS_VP_DESC`/`VP_POS_OVERRIDE`/`computeCapitalConclusion` 里 `'上涨中途'/'下跌途中'` 在 D2 后是「永不命中的死分支」；用户追问能否删除后复核发现**完全相反——它们是仍在生效的活路径**。
+
+### Details
+D2 删除的只是判定卡那套 `POS_VM_*` 知识表；`computeVolumeEngine` 内部的 `_detectPosition`（lib/volumeEngine.js:552-596）仍在运行并产出旧四类标签（低位区间/高位区间/上涨中途/下跌途中/震荡整理），经 3212 行 `position.label` 输出。`capitalFlow.js:872` 与 `sameDayJudgment.js:1682` 都从 `volumeEngine.position.label` 取值，因此旧键正常命中。新三分区（高位/中位/低位区间）只存在于新判定链 `_posVolumeMatrix` 返回的 `pj.position`（2359-2366）——**是另一个对象**。
+实测 `cf.vpPositionSignal`：`缩量上涨@上涨中途 = +0.4` vs `@中位区间/无位置 = -0.25`（偏多翻偏空）；`地量上涨 +0.2 vs -0.15`；`放量下跌 -0.7 vs -0.45`；`巨量下跌 -0.8 vs -0.6`。`test_volume_engine.js:137` 断言 `pos.label === '上涨中途'` 且全量回归通过，本就是「旧标签仍存活」的现成证据，当时未追查。
+
+### Suggested Action
+判断某键/分支是否为死代码，**必须追到该值的上游值域**（谁产生、有哪些取值、是否有测试断言），不能凭「新标准已上线 / 旧表已删」推断。删除前用导出的纯函数做一次「命中 vs 不命中」实测对比；分值或文案有差异就不是死分支。本例正确结论：不是删死分支，而是「两套位置标签并存」的口径分叉（清单 W1），统一需用户裁决且会改变结论。已同步纠正 server.js [20261105j] 注释、工作日志与 MEMORY.md 中的错误表述。
+
+### Metadata
+- Source: conversation (user question: 「永不命中的死分支能不能删除，会有什么影响」)
+- Related Files: lib/capitalFlow.js, lib/volumeEngine.js, lib/sameDayJudgment.js, scripts/test_volume_engine.js
+- Tags: 死代码判读, 位置标签, 口径分叉, D2, W1
+- See Also: LRN-20261105-003（20261105h 误判 latestVsPriorAvg 为死代码）
+- Pattern-Key: simplify.dead_code
+- Recurrence-Count: 2
+- First-Seen: 2026-11-05
+- Last-Seen: 2026-11-06
+
+### Resolution
+- **Resolved**: 2026-11-06T01:10:00+08:00
+- **Notes**: 清单 W1 已于 20261106a 完成：两条 position 链统一为三分区，旧四类标签与旧方向规则整体退役，守卫 `test_position_unified.js` 固化，全量回归 105/105。
+
+---
+
+## [LRN-20261106-002] best_practice
+
+**Logged**: 2026-11-06T11:50:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+同屏「20日量价比 1.19」与「量比(20日) 1.07」被读成同一指标而报「数据不一致」，实为两个不同公式；判读前必须先还原「标签 × 公式 × 数据源」三要素。
+
+### Details
+用户截图（000902 新洋丰，2026-11-06 11:43 盘中）报障。实时 API 数值闭环：
+- `volumePrice.ratio = 1.19` = `avgUpVol(122275) / avgDownVol(102440)`，即近 20 日**上涨日均量 ÷ 下跌日均量**（`lib/capitalFlow.js:315-318`，抗脉冲截尾），前端标签「20日量价比」（`public/js/app.js:2450`），与量价判定「⑤ 量价健康度：上涨日均量为下跌日 1.19 倍」（`lib/volumeEngine.js:1819-1833`）同源同值。
+- `posJudgment.volume.ratio20 = 1.07` = `volToday / avg20`（`lib/volumeEngine.js:280`），即**当日成交量 ÷ 前 20 日均量**，用于 135 格量能归格（0.8~1.3 → 平量），前端标签「量比(20日)」（`public/js/app.js:2547`）；与 `capitalFlow.unified.ratio20 = 1.07` 一致，两条数据链无冲突。
+- 两者公式不同且都算对了，**不是数据 bug**。根因是「20日」「量比」字样高度重合，加上卡片底部注释「量比与量能档位同源，不重复展示」（`app.js:2453`）口径描述错位——该注释指的是当日量比，卡片显示的却是涨/跌日量能比。
+- 次要放大因素：11:43 盘中 `volToday` 是半天累计且未做时间归一化，`ratio20=1.07` 约为全天预估的一半；而 `dayVolRatio=2.13`（`capitalFlow.js:337-340` 乘 `intradayVolFactor≈2`）与 `unified.ratio5=1.58`（腾讯直采量比）已归一化。页面已有「盘中停判」徽标，第三步「平量」是临时结论。
+
+### Suggested Action
+1. 报障「两个数字不一致」时，逐个追到赋值语句还原公式，用实时 API 把同屏相关字段一次性列出，禁止先假设数据链出错或改数。
+2. 修 UX 优先改标签/注释而非数值：把「20日量价比」改名为「20日涨跌日量能比」并加公式说明；把「量比(20日)」写成「当日量/20日均量」；修正底部「不重复展示」注释。数值与判定逻辑零改动。
+3. 若要动 1.07 的盘中归一化，会改变 135 格归格结论，必须单独评估并升版本戳，不可顺手做。
+
+### Metadata
+- Source: conversation (user screenshot question: 「图中两个20日量比数据不一致是为什么？」)
+- Related Files: public/js/app.js, lib/capitalFlow.js, lib/volumeEngine.js
+- Tags: 口径分叉, 量比, 标签歧义, 盘中折算, 数据一致性
+- See Also: LRN-20261030-001（同名财务指标不同报告期）, LRN-20261019-006（量比定档与市场标准矛盾）
+- Pattern-Key: diagnose.same_name_different_caliber
+- Recurrence-Count: 2
+- First-Seen: 2026-10-30
+- Last-Seen: 2026-11-06
+
+### Resolution
+- **Resolved**: 2026-11-06T12:05:00+08:00
+- **Notes**: 用户终裁「方案 A：只改标签和注释，零数值风险」，已落地 20261106b。① 卡片标签「20日量价比」→「20日涨跌日量能比」+ title 公式说明；② 第三步「量比(20日)」→「当日量/20日均量」+ title 公式与盘中提示；③ 底部注释改为显式列出三套口径并写明「数值不应相等」，删除错位旧注释；④ `public/js/capitalCharts.js` 兼容渲染路径同步改名（同类排查发现的第二处）；⑤ `scripts/test_volume_merge.js` 断言同步，新增 `scripts/test_volume_ratio_labels.js`（26 断言）固化「文案与口径分离」。数值/公式/判定逻辑/引擎 schema/LAYOUT_VERSION 全部零改动；APP_VERSION 与 5 个 HTML ?v= 升 20261106b。全量 quick 回归 106/106、实时 HTTP 验证通过。
+
+---
+
+## [LRN-20261106-003] correction
+
+**Logged**: 2026-11-06T15:45:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: backend
+
+### Summary
+20261105f 新增的「135 格主判」未接入引擎既有的「量价信号/量能热度/资金行为三处同源」铁律，
+导致同一天同一只股票在量能分析模块里出现互相矛盾的量价关系判定结论。
+
+### Details
+用户三张截图（2026-11-06 15:20 / 15:21 / 15:32，同一标的、当日 +2.08%）：
+- ①「资金量能综合判断 · 量价关系」：`温和上涨 — 当日 +2.08%，量能平量（当日量÷前5日均量 1.2 倍，
+  60日均量口径确认为「放量」3.26 倍），平量上涨，涨势平稳但动能一般`
+  → `lib/capitalFlow.js computeVolumeIndicators` 的 `volumePrice.signal/description`，
+    `volBucket` 来自 `opts.unifiedTier`（=`volumeEngine.volumeTier`，定档用 `ratio5` ÷前5日均量）。
+    前端渲染 `public/js/capitalCharts.js:704`（`${vp.signal} — ${vp.description}`）。
+- ②「量价判定 · 主判」：`放量 + 上涨（当日量/20日均量 2.63）` → `主判·偏多 健康主升，增量资金进场，趋势延续性较好`
+  → `lib/volumeEngine.js:2084 _posVolumeMatrix` → `_volTier5`（`lib/volumeEngine.js:1898`，
+    **用 `pc.ratio20` ÷20日均量，阈值 >1.3 放量**）→ `volCell()` → `lib/posModel135.js:222` 的 conclusion。
+- ③「资金行为」：`量平价升：…没有增量资金大举进场…弱需求上涨、持续性存疑；只作观察`
+  → `lib/volumeEngine.js:1008` 的 conclusion（用 `pc.ratio5` 的 amplified/shrunk 分支），
+    前端 `public/js/app.js:2451` 的 `dim.capitalBehavior`。
+
+①③ 同源（`ratio5`，判平量上涨，语义一致）；②另用 `ratio20` 判放量上涨，
+于是「增量资金进场 / 健康主升」与「没有增量资金大举进场 / 持续性存疑」**直接互斥**。
+`lib/volumeEngine.js:162 / 308 / 3003` 的注释明确写过「引擎资金行为三处结论同源，杜绝同屏互斥」
+（都走 ratio5），但 20261105f 引入 135 格主判时没有把新层接入这条既有约束，形成口径分叉。
+注意这与 LRN-20261106-002 的「同名不同数值、都算对」不同：这次是**两套量能分母派生出两套定性结论**，
+用户明确要求「要统一，整个模块不应该出现不一样的量价关系判定结论」。
+
+### Suggested Action
+1. 先向用户确认统一到哪个口径再动代码（改动会波及 135 格全部归格、推演图、sameDayJudgment
+   量价配合子因子、判断记录 LAYOUT_VERSION 与大量守卫基线，属重大改动，禁止擅自决定）：
+   A 统一到 `ratio5`（工作台既有唯一量能真值源，135 格归格全变）；
+   B 统一到 `ratio20`（135 格现行口径，老三卡量价信号与资金行为全变）；
+   C 判定数值全不动，只把同屏收敛为一个「今日量价关系判定」结论 + 显式标注两套分母用途。
+2. 无论选哪个，必须补「三处结论语义一致性」守卫：遍历 15 种 `volumePrice.signal` × 三分区 ×
+   三量能档，断言同屏不出现「增量资金进场」与「没有增量资金」并存。
+3. 新判定层接入时，先 grep 项目里既有的「单一真值源 / 同源」注释与铁律并显式接线，不能另起一套分母。
+
+### Metadata
+- Source: conversation (user screenshot: 「图片的模块结论不一样，是不是使用了不同的逻辑判定，如果是要统一」)
+- Related Files: lib/volumeEngine.js, lib/posModel135.js, lib/capitalFlow.js, public/js/app.js, public/js/capitalCharts.js
+- Tags: 结论互斥, 量能分母, 135格, 单一真值源, 跨模块一致性
+- See Also: LRN-20261106-002（同名不同口径）, LRN-20261104-005（比率主值与维度同口径）
+- Pattern-Key: harden.new_judgment_layer_must_join_existing_single_source
+- Recurrence-Count: 1
+- First-Seen: 2026-11-06
+- Last-Seen: 2026-11-06
+
+### Resolution
+- **Resolved**: 2026-11-06T16:10:00+08:00
+- **Notes**: 用户裁决「只统一结论展示（方案 C）」，已落地 20261106i，判定逻辑与数值零改动。① 唯一结论出口 =「资金量能综合判断」卡的量价关系行，标签改「今日量价关系判定（唯一结论）」，文本仍是 `vp.signal — vp.description`；② `lib/posModel135.js` 两处 conclusion 去掉「增量资金进场」（中位→「健康主升，量价配合，趋势延续性较好」；低位→「底部启动信号…」），`public/volume-map.html` 两处按 20261105f 同源契约逐字同步；③ `public/js/app.js`「主判 ·」改称「135 格综合判定 ·」，新增常驻口径说明（135 格 ÷20 日均量 / 量价关系与资金行为 ÷前5日均量，两套分母用途不同、数值不应相等，量价关系判定以「资金量能综合判断」为唯一结论）；④ 数值 / 公式 / 评分 / 判断记录 / API 结构 / 引擎 schema / LAYOUT_VERSION 全部零改动。守卫 `scripts/test_vp_conclusion_unified.js`（43/43，含 15 种 signal 值域真实调用 `buildConclusionParts` 遍历、135 格全遍历断言归格 key 不变、引擎-推演图同源抽查）；全量 quick 回归 111/111、退出码 0。另记一次已知铁律复发：版本戳脚本盲扫把 `test_posj_symmetry.js` 里作为功能引入戳的 `20261106h` 误升为 `i`，导致 2 条断言假失败，已逐条回正。
+- **Escalated**: 20261106j 用户进一步裁决「引擎级彻底合并」，根因修复超越方案 C：`volumeTier.tier` 重写为 ÷20 三态（与 135 格 `_volTier5` 同源，`_volumeTier` 阈值 放量>1.3/平量0.8~1.3/缩量<0.8），7.4/11.3/预期量能/7.5 四张归集卡删展示+删 API 输出（评分函数体保留）；生死位五规则卡暂留。三条新增教训：① **升 LAYOUT_VERSION 前必须 grep 子因子消费链**——`sameDayJudgment` 量价配合子因子经 `unifiedTier` 间接受分母影响（同日数据「平量上涨」→「放量上涨」改判，vpSigMap 分值变化），哈希不捕获，差点漏升；② API 输出已删的 summary 字段，守卫一律改调 `_buildSummaries`/`_expectedVolumeRules`/`_contradictionRules` 导出函数直接复算，不另造数据；③ tier 已是确定三态值域时守卫直断字面值、不过方向映射函数（`tierDir` 旧正则按 ÷5 六态词写，÷20 三态下出现独立复算与守卫环境不一致的幽灵失败）。全量回归 124/124、退出码 0。
+
+---
+
+---
+
+## [LRN-20261106-004] correction
+
+**Logged**: 2026-11-06T21:55:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: backend
+
+### Summary
+20261106j「量能分母统一 ÷20」漏改 `_comboEngine` 的 amplified/shrunk（仍用 ratio5>1.2/<0.8 旧 ÷5 链），
+用户截图抓出同屏互斥复发（LRN-20261106-001 同类：两条链并存、下游读旧链）；
+「该放量未放量」判定门（÷5 非大量/天量即命中）与 ÷20 主基准互斥是第二个分叉根因。
+
+### Details
+- j 轮只改了 `_volumeTier`/135 格 `_volTier5`/capitalFlow unifiedTier，未 grep 全引擎比较点字面量（>1.2/<0.8/>1.3）。
+- n 轮修复：`_comboEngine` amplified=`ratio20>1.3`/shrunk=`ratio20<0.8`（huge 极端档保留 ÷5）；
+  「该放量未放量」门改 `ampOkUnified = ratio20 > 1.3`（放量即「量能跟上」不命中）；命中文案改 ÷20 措辞。
+- 顺带完成用户裁决：avg60/confirm/_confirmDesc 引擎级整体退役（审计确认全部消费点均为放量/缩量判定性质），
+  基准全改 ÷20（×1.5/×0.7 阈值不变），schema → volume-engine-20261106n；LAYOUT_VERSION 保持 j（sameDayJudgment 不消费 combo/confirm）。
+- 真机验证：600460 量价关系=显著下跌（÷20 0.88 平量）与资金行为 combo=「平量下跌」同屏一致，互斥消除。
+
+### Suggested Action
+**凡「统一口径/统一分母」类改动，必须 grep 全引擎阈值字面量与旧口径字段引用（含 combo/四维度/riskTag/相位规则），
+列出全部比较点清单再动手；新判定层接线前先 grep「单一真值源/同源」注释（LRN-20261106-003 同源铁律）。**
+
+### Metadata
+- Source: conversation (user screenshot ×3: 「量能的判定还是有大量的不一致，可见之前几个任务的修改有明细的漏洞」)
+- Related Files: lib/volumeEngine.js, lib/capitalFlow.js
+- Tags: 分母统一, 漏改复发, 同屏互斥, 阈值字面量扫描, 60日口径退役
+- See Also: LRN-20261106-001（双 position 旧路径复发）, LRN-20261106-003（同源铁律）
+- Pattern-Key: harden.caliber_unification_must_scan_all_comparison_sites
+- Recurrence-Count: 2
+- First-Seen: 2026-11-06
+- Last-Seen: 2026-11-06
+
+### Resolution
+- **Resolved**: 20261106n 落地，全量回归 124/124、退出码 0；守卫层面 test_volume_confirm_label 整文件重写（23/23）、
+  volume_engine(301)/consistency(230)/unit_contract(28)/vp_conclusion_unified(46) 全绿。
+
+---
+
+## [LRN-20261106-005] best_practice
+
+**Logged**: 2026-11-06T21:58:00+08:00
+**Priority**: medium
+**Status**: active
+**Area**: tooling
+
+### Summary
+三条工程教训：① 守卫版本戳批量升级时负断言必须指向「上一版」并用占位符保护（m 轮曾把
+`!html.includes('?v=20261106l')` 一并升 m 造成自相矛盾）；② `curl | python - <<EOF` 会拿空 JSON
+（heredoc 与数据抢同一个 stdin），检验脚本必须 Write 落盘后 `curl | python 文件`；
+③ fixture 造数前先探测引擎实际值——avg20 不含当日，地量线 0.5×avg20 与脉冲前后缩量 0.7×avg20
+都吃 avg20 基准，必须抬高前段量能才能造出「后段地量」场景（n 轮场景1/2/4 fixture 重造实证）。
+
+### Details
+- 负断言占位规则：批量脚本先替换正断言为新版本号，负断言目标改为「上一版」字符串，用后即删。
+- stdin 冲突：`python -` 从 stdin 读脚本后 sys.stdin 已到 EOF，json.load 拿到空 → JSONDecodeError。
+- fixture 数学约束实例：场景2 目标 ratio20≈1.22 平量 + lowVolDays≥6 → 249:100/250-255:30/256-258:200/259:115。
+
+### Suggested Action
+守卫批量升级脚本沿用 n 轮范式（占位符保护+跳过 section(/注释/功能戳行）；
+API 文案检验一律落盘脚本；改口径后造 fixture 先跑探测脚本核对引擎实际中间值。
+
+### Metadata
+- Source: conversation (n 轮实操)
+- Related Files: scripts/test_volume_engine.js, scripts/test_vp_conclusion_unified.js
+- Tags: 守卫维护, 批量升级, stdin 冲突, fixture 设计
+- Pattern-Key: tooling.guard_batch_and_fixture_probe_discipline
+- First-Seen: 2026-11-06
+- Last-Seen: 2026-11-06
+
+---
+
+## [LRN-20261106-006] correction
+
+**Logged**: 2026-11-06T23:10:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: backend
+
+### Summary
+跨模块「判定一致」类改动只统一了单一维度（量能）而漏掉其余维度（涨跌判定/运行状态）——
+n 轮统一量能分母后，用户截图立刻抓出「唯一结论行缩量上涨 vs 135 格缩量+震荡」的涨跌幅档分叉
+（旧 ±0.05% 符号二分 vs `_walkTier5` 五档）。这是同源铁律的第四个维度缺口。
+
+### Details
+- 量价判定共四维：位置（i 轮已接线 position.label）、量能（j/n 轮已统一 ÷20）、运行状态（o 轮经 cell.conclusion 直引补齐）、涨跌判定（o 轮改消费 posJudgment.price.walk）。
+- 修复时曾把 bigUp/bigDown 3%→5% 对齐「大涨档」，被 test_volume_price_signal_wiring 的圣湘生物案例抓出：
+  用户 20260921c 已裁决 ≥3% 平量涨=中性「大涨平量」——同名字「大涨」不同概念（文案分级线 vs 归格线），不强行对齐。
+- 事故：python 正则替换 server.js 超长单行 APP_VERSION 说明，`(.*?)\n` 吞掉下一行 app.use 进注释行尾 → SyntaxError。
+
+### Suggested Action
+**「判定一致」类改动必须先列全维度矩阵（每一维：判定输入从哪来、消费方是谁、阈值在哪定义），逐维接线；
+同一中文词（大涨/震荡）在不同模块可能是不同概念，对齐阈值前先查该词是否有用户实测定案。**
+替换超长单行后必须 `node --check`；批量升版 skip 规则要先跑全量回归抓同模式断言漏网。
+
+### Metadata
+- Source: conversation (user screenshot: 「除了量能，股价定位，运行状态和涨跌判定也必须一致」)
+- Related Files: lib/capitalFlow.js, lib/volumeEngine.js, public/js/capitalCharts.js, lib/sameDayJudgment.js, server.js
+- Tags: 四维同源, 走势档, 符号二分, 语义同名异, 版本戳事故
+- See Also: LRN-20261106-004（分母统一漏改复发）, LRN-20261106-003（同源铁律）
+- Pattern-Key: harden.multi_dimension_unification_matrix
+- Recurrence-Count: 2
+- First-Seen: 2026-11-06
+- Last-Seen: 2026-11-06
+
+### Resolution
+- **Resolved**: 20261106o 落地：涨跌判定消费 posJudgment.price.walk，震荡档 5 种中性信号（VP_POS_BASE 0 分），
+  desc 直引 cell.conclusion；全量 124/124、退出码 0；3018 真机 601318 两处 PASS 同屏一致。
+
+## [LRN-20261106-007] best_practice
+
+**Logged**: 2026-11-06T15:35:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: backend
+
+### Summary
+「截图数值与实测不符」的诊断纪律：三路实测（独立重算 + 现役实例 API + 聚类明细对照）全部健康后才可定性为「陈旧异常态」，禁止无法复现时臆造根因。
+
+### Details
+p 轮诊断 601318 资金量能卡「关键支撑 21.85/压力 26.02」（距现价 -60%）：探测脚本重算 priceActionHub 快照（区间全在 46~62）→ 3005 现役实例 /api/capital-flow 实测（支撑 53.22/压力 56.78）→ 快照区间明细逐条对照（无 21~26 区间）。三路全健康 → 定性为截图时的陈旧异常态（页面未硬刷新或快照缓存瞬时坏值），已自愈。注意：现役实例每请求实时重算（无服务端缓存），陈旧态只能来自前端渲染或当时的瞬时快照坏值。
+
+### Suggested Action
+遇截图值与实测不符：① 先跑独立重算探测；② 查现役实例 API（注意该链路无服务端缓存，每请求实时重算）；③ 三路一致健康 → 定性陈旧态并建议用户重启+Ctrl+F5，勿臆造根因；④ 若仍不可复现，请用户复现时保留现场（不刷新）再抓快照。
+
+### Metadata
+- Source: conversation
+- Related Files: lib/priceActionHub.js, lib/zoneLevelsHint.js, lib/capitalFlow.js
+- Tags: 诊断纪律, 数据一致性, 陈旧缓存
+- See Also: LRN-20261106-005
+
+---
+
+## [LRN-20261106-008] correction
+
+**Logged**: 2026-11-06T15:35:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: tests
+
+### Summary
+批量升版 sed 的三个盲区：① 元断言守卫（test_pos_vm_strong 遍历断言**其他守卫文件**含版本字符串）必须同步；② 复合引号字符串 `'homeRank.js?v=20261106o'` 不被 `'20261106o'` 单引号模式命中，需 `?v=20261106o` 复合模式补刀；③ 断言消息文本（'缓存戳全部对齐 20261106n'）是陈旧 n 文案，升级时一并回正避免误导。另：Bash 工具内 `cmd &` 分离的后台服务会随命令结束被回收（表现为代理 502「目标计算机积极拒绝」），长驻服务必须用 run_in_background。
+
+### Details
+p 轮全量回归首轮 10 文件红：缓存戳断言 o（文件已 p）+ 消息文本仍写 n（o 轮 skip 遗留）+ 元断言未同步。三轮 sed 修复：排除 LAYOUT_VERSION 行（LAYOUT 保持 o）→ 裸正则 /20261106o/ → 复合 ?v= 模式 → 消息文本模式（应为/已对齐/同步至/已同步/版本戳=/缓存戳全部对齐）。历史注释（「20261106n：60 日口径删除」等）保留不动。
+
+### Suggested Action
+批量升版 sed 后必跑全量回归（退出码判定）；sed 模式清单固定为：排除 LAYOUT 行的引号模式 + 裸正则模式 + ?v= 复合模式 + 消息文本五模式；新守卫落地时消息文本与断言同版。
+
+### Metadata
+- Source: conversation
+- Related Files: scripts/test_pos_vm_strong.js, scripts/test_dashboard_ui_d.js, scripts/run_all_tests.js
+- Tags: 批量升版, sed盲区, 元断言, 后台进程
+- See Also: LRN-20261106-005
+- Pattern-Key: harden.batch_version_bump
+- Recurrence-Count: 2
+- First-Seen: 2026-11-06 (o 轮 skip 误伤)
+- Last-Seen: 2026-11-06
+
+---

@@ -107,23 +107,28 @@ console.log('\n[5] 源码守卫：禁止再按「是否 tencent」二分做单�
 
 console.log('\n[6] 文案自洽：结论里的当日量与阈值倍数必须同源');
 {
-  // 构造：60 日均量 1000、当日 800 → 阈值 1500、当日/阈值 = 0.53 → 应说「未达」
+  // 构造：20 日均量 1000、当日 800 → 阈值 1500、当日/阈值 = 0.53 → 应说「资金未跟上」（20261106n 文案改版）
   const bars = [];
   for (let i = 0; i < 70; i++) {
     bars.push({ date: `2026-0${i < 30 ? 8 : 9}-${String((i % 28) + 1).padStart(2, '0')}`, open: 10, high: 10.2, low: 9.9, close: 10, volume: 1000 });
   }
   bars.push({ date: T, open: 10, high: 10.6, low: 9.9, close: 10.5, volume: 800 });
-  const r = VE.computeVolumeEngine({
-    bars, symbol: 'TEST', name: '测试', barsSource: 'eastmoney',
-    position: { label: '高位区间' },
-    minutes: null,
-  });
-  const item = (r.contradictionSummary.items || []).find(x => /该放量未放量/.test(x.signal || ''));
-  ok(!!item, '拿到「该放量未放量」条目');
+  // 20261106j：API 响应不再下发 contradictionSummary，改为直接复算 _contradictionRules 验证文案自洽
+  const pcU = VE._precompute(bars);
+  const spU = VE._sidewaysAndPlatform(bars);
+  const platformU = spU.platform;
+  const positionU = VE._detectPosition(pcU, platformU, undefined);
+  positionU.label = '高位区间';
+  const levelsU = VE._keyLevels(pcU, platformU);
+  const rulesU = VE._lifeRules(pcU, { bars, pc: pcU, platform: platformU, levels: levelsU, position: positionU, minutes: null });
+  const sequenceU = VE._sequenceRule(pcU);
+  const contraU = VE._contradictionRules(pcU, { bars, pc: pcU, platform: platformU, levels: levelsU, position: positionU, rules: rulesU, sequence: sequenceU, currentSideways: spU.currentSideways, breakThrough: false, intradayPending: false });
+  const item = contraU.shouldAmpNot;
+  ok(!!item && /该放量未放量/.test(item.signal || ''), '拿到「该放量未放量」条目');
   if (item) {
-    ok(/60 日均量 1000 ×1\.5 = 1500（当日量 800）/.test(item.conclusion), '同屏展示 均值×1.5=阈值（当日量）');
+    ok(/20 日均量 1000 ×1\.5 = 1500（当日量 800）/.test(item.conclusion), '同屏展示 均值×1.5=阈值（当日量）');
     ok(/当日量为阈值的 0\.53 倍/.test(item.conclusion), '同时给出「当日量 ÷ 阈值」倍数，用户可自行核对');
-    ok(/未达/.test(item.conclusion), '0.53 倍确实未达 → 文案说「未达」');
+    ok(/资金未跟上/.test(item.conclusion), '0.53 倍确实未达 → 文案说「资金未跟上」（20261106n 统一口径措辞）');
   }
 }
 

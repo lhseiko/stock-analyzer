@@ -1,5 +1,5 @@
 /**
- * scripts/test_cap_vol_ratio_chart.js — 20261103m 守卫
+ * scripts/test_cap_vol_ratio_chart.js — 20261105b 守卫
  * ==========================================================
  * 用户指令（2026-11-03）：「在资金量能里面，主力资金流向（近60日）卡片外的正下方
  * 添加每日量比折线趋势图，记录每日量比的变化。」
@@ -82,13 +82,13 @@ async function main() {
   console.log('\n§3 版本断言');
   {
     const server = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
-    ok(/const APP_VERSION = '20261103m'/.test(server), "APP_VERSION = '20261103m'");
+    ok(/const APP_VERSION = '20261106p'/.test(server), "APP_VERSION = '20261106p'");
     const idx = fs.readFileSync(path.join(ROOT, 'public/index.html'), 'utf8');
     const acc = fs.readFileSync(path.join(ROOT, 'public/accuracy.html'), 'utf8');
-    ok(idx.includes('?v=20261103m') && acc.includes('?v=20261103m'), 'index/accuracy 页面版本戳已对齐 20261103m');
+    ok(idx.includes('?v=20261106p') && acc.includes('?v=20261106p'), 'index/accuracy 页面版本戳已对齐 20261106p');
     const t1 = fs.readFileSync(path.join(ROOT, 'scripts/test_metric_analysis_vote.js'), 'utf8');
     const t2 = fs.readFileSync(path.join(ROOT, 'scripts/test_market_log_db.js'), 'utf8');
-    ok(t1.includes('20261103m') && t2.includes('20261103m'), '既有守卫版本断言已同步 20261103m');
+    ok(t1.includes('20261106p') && t2.includes('20261106p'), '既有守卫版本断言已同步 20261106p');
   }
 
   console.log(`\n结果：${pass} 通过 / ${fail} 失败`);

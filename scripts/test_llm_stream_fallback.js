@@ -54,7 +54,7 @@ const server = http.createServer((req, res) => {
     const model = String(body.model || '');
     const stream = body.stream === true;
     const hasSearch = body.enable_search !== undefined || Array.isArray(body.tools);
-    seen.push({ model, stream, hasSearch });
+    seen.push({ model, stream, hasSearch, noTemp: body.temperature === undefined });
 
     const json = (code, obj) => {
       res.writeHead(code, { 'Content-Type': 'application/json' });
@@ -80,6 +80,14 @@ const server = http.createServer((req, res) => {
     if (/sseerror/.test(model)) {
       if (!stream) return json(400, { error: { message: STREAM_MSG, code: 'invalid_parameter_error' } });
       return sse(sseChunks([{ error: { message: 'InternalError.Algo.InvalidParameter: boom', code: 'x' } }]));
+    }
+    // ⑤ 20261104c：不接受 temperature 参数的模型（kimi-k3 真实报错文案）：
+    //    带 temperature → 400 InvalidParameter；剔除后 → 正常返回
+    if (/notemp/.test(model)) {
+      if (body.temperature !== undefined) {
+        return json(400, { error: { message: "InternalError.Algo.InvalidParameter: Parameter 'temperature'=0.3 is not supported for kimi-k3 model.", code: 'InternalError.Algo.InvalidParameter' } });
+      }
+      return json(200, { choices: [{ message: { content: '温度已剔除' } }] });
     }
     // ④ 普通模型：非流式正常返回（回归基线）
     return json(200, { choices: [{ message: { content: 'HELLO-NORMAL' } }] });
@@ -133,6 +141,10 @@ const server = http.createServer((req, res) => {
   const src = read('lib/ai/llm.js');
   ok('STREAM_ONLY_MODELS 记忆集合存在', /const STREAM_ONLY_MODELS = new Set\(\)/.test(src));
   ok('NO_SEARCH_PARAM_MODELS 记忆集合存在', /const NO_SEARCH_PARAM_MODELS = new Set\(\)/.test(src));
+  ok('NO_TEMPERATURE_MODELS 记忆集合存在（20261104c）', /const NO_TEMPERATURE_MODELS = new Set\(\)/.test(src));
+  ok('_stripTemperature 降级函数存在', /function _stripTemperature\(/.test(src));
+  ok('postLLM 自学习分支③：temperature 400 识别并剔除重发', /temperature/i.test(src) && /NO_TEMPERATURE_MODELS\.add\(model\)/.test(src));
+  ok('buildRequestBody kimi 系预判剔除 temperature', /isNoTemperatureModel\(m\)/.test(src) && /function isNoTemperatureModel\(/.test(src));
   ok('SSE 解析函数存在', /function _parseSseContent\(/.test(src));
   ok('SSE error 归一化存在', /function _sseError\(/.test(src));
   ok('错误保留 response/status（修好此前形同虚设的 400 兜底）', /err\.response = \(e && e\.response\) \|\| undefined;/.test(src));
@@ -144,6 +156,23 @@ const server = http.createServer((req, res) => {
     String((callLLMBody.match(/callBudgeted\(/g) || []).length));
   const rb = llm.buildRequestBody('qwen', 'qwen-plus', [], { webSearch: false });
   ok('buildRequestBody 默认仍产出 stream:false（隔离性）', rb.stream === false);
+
+  console.log('\n===== §F 不支持 temperature 的模型（kimi-k3，20261104c）：预判剔除 + 自学习重发 =====');
+  const fk = llm.buildRequestBody('qwen', 'kimi-k3', [], { webSearch: false });
+  ok('buildRequestBody：kimi-k3 请求体不带 temperature（预判剔除，省一次必然失败请求）', fk.temperature === undefined, 'temperature=' + String(fk.temperature));
+  const fk2 = llm.buildRequestBody('qwen', 'kimi-k2', [], { webSearch: false });
+  ok('buildRequestBody：kimi-k2 同样剔除', fk2.temperature === undefined);
+  const fq = llm.buildRequestBody('qwen', 'qwen-plus', [], { webSearch: false });
+  ok('buildRequestBody：qwen-plus 仍带 temperature=0.3（零回归）', fq.temperature === 0.3);
+  seen.length = 0;
+  const f1 = await llm.postLLM(url, 'k', body('test-notemp-A', { temperature: 0.3 }), 30000);
+  ok('首见 400 后剔除 temperature 重发成功', f1 === '温度已剔除', JSON.stringify(f1));
+  ok('共 2 次请求（带 temperature 400 → 剔除后成功）', seen.length === 2, '实际 ' + seen.length);
+  ok('第 2 次请求已无 temperature', seen[1] && seen[1].noTemp === true, JSON.stringify(seen[1]));
+  seen.length = 0;
+  const f2 = await llm.postLLM(url, 'k', body('test-notemp-A', { temperature: 0.3 }), 30000);
+  ok('第二次调用一次成功（记忆生效，直接剔除）', seen.length === 1 && seen[0].noTemp === true, '请求数 ' + seen.length);
+  ok('第二次内容正确', f2 === '温度已剔除', JSON.stringify(f2));
 
   server.close();
   console.log('\n===================================');
