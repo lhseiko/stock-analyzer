@@ -6,7 +6,7 @@
   <title>股票投资分析工作台</title>
   <link rel="icon" type="image/x-icon" href="favicon.ico?v=20261106p">
   <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=20261106p">
-  <link rel="stylesheet" href="css/style.css?v=20261106p">
+  <link rel="stylesheet" href="css/style.css?v=20261108d">
   <script>
     // 启动时确保 URL 带 ?v= 参数（用于破坏静态资源缓存）。
     // 重要：版本号以 server.js 的 APP_VERSION 为准，由服务端重定向统一下发，
@@ -106,11 +106,16 @@
 
     <!-- Main Content -->
     <main class="main-content">
-      <!-- 常驻顶部导航：投资心得 / 大盘记录 / AI设置（所有页面都显示） + 个股页操作按钮 -->
+      <!-- 常驻顶部导航：投资心得 / 大盘记录 / 每日复盘 / AI设置（所有页面都显示） + 个股页操作按钮 -->
       <nav class="global-nav">
         <div class="global-nav-common">
           <button class="home-action-btn" onclick="window.open('notes.html?scope=global', '_blank')" title="在新标签页打开投资心得">投资心得</button>
           <button class="home-action-btn" onclick="window.open('notes.html?scope=market', '_blank')" title="在新标签页打开大盘记录">大盘记录</button>
+          <!-- 20261107：每日复盘（Key=daily-review / 路由 /daily-review / 组件 DailyReviewPage / 排序 30）。
+               工作台为原生多页面无前端路由，故用 data 属性承载规格元数据，按钮新开独立页。 -->
+          <button class="home-action-btn home-action-btn-accent" data-nav-key="daily-review" data-nav-order="30"
+                  onclick="window.open('/daily-review?v=20261108d', '_blank')"
+                  title="每日复盘：交易日 15:35 自动生成，固定 14 段结构 + 热点归因 + 机会/风险分级">每日复盘</button>
           <button class="home-action-btn" onclick="App.openAISettings()">AI 设置</button>
           <button class="home-action-btn" onclick="window.open('logic-model.html', '_blank')" title="在新标签页按页面布局查看整个工作台的逻辑框架">工作台逻辑模型</button>
         </div>
@@ -1027,13 +1032,53 @@
             </div>
           </div>
 
-          <!-- 个股记录（20261025l：按日期排序的手动记录，值得注意的问题；纯手动，不参与任何判断） -->
+          <!-- 个股行情判断记录（20261107 升级：原「个股记录」改为行情判断记录；
+               含涨跌方向下拉、判断依据下拉、备注输入、关键词检索、方向/依据筛选、日期排序切换；纯手动，不参与任何判断） -->
           <div id="tab-stocklog" class="tab-panel">
             <div class="sl-wrap">
               <div class="sl-add">
-                <input type="date" id="slDate">
-                <textarea id="slText" rows="2" placeholder="记录该个股值得注意的问题（如：减持公告、业绩雷点、监管问询、股东异动…）"></textarea>
+                <div class="sl-add-head-row">
+                  <div class="sl-add-head">添加行情判断</div>
+                  <!-- 20261108d：单行胶囊标签，与标题同一基线；完整明细/口径收进 title，不再撑高头部 -->
+                  <div class="sl-acc" id="slAccuracy" title="读取中…">
+                    <span class="sl-acc-label">涨跌幅判断准确率</span>
+                    <span class="sl-acc-value" id="slAccRate">—</span>
+                    <span class="sl-acc-sub" id="slAccDetail">—</span>
+                  </div>
+                </div>
+                <div class="sl-add-row">
+                  <input type="date" id="slDate" title="判断日期">
+                  <select id="slDir" title="涨跌方向（可不选；未选不纳入准确率统计）">
+                    <option value="" selected>未选方向</option>
+                    <option value="up">上涨</option>
+                    <option value="sideways">震荡</option>
+                    <option value="down">下跌</option>
+                  </select>
+                  <select id="slBasis" title="判断依据（可不选）">
+                    <option value="" selected>未选依据</option>
+                    <option value="technical">技术面</option>
+                    <option value="news">消息面</option>
+                    <option value="other">其他</option>
+                  </select>
+                </div>
+                <textarea id="slNote" rows="2" placeholder="记录该个股的行情判断（如：缩量止跌、政策利好、减持公告……）"></textarea>
                 <button id="slAdd" class="btn-primary">添加记录</button>
+              </div>
+              <div class="sl-toolbar">
+                <input type="text" id="slSearch" class="sl-search" placeholder="🔍 检索备注 / 日期 / 方向 / 依据…">
+                <select id="slFilterDir" class="sl-filter" title="按方向筛选">
+                  <option value="">全部方向</option>
+                  <option value="up">上涨</option>
+                  <option value="sideways">震荡</option>
+                  <option value="down">下跌</option>
+                </select>
+                <select id="slFilterBasis" class="sl-filter" title="按依据筛选">
+                  <option value="">全部依据</option>
+                  <option value="technical">技术面</option>
+                  <option value="news">消息面</option>
+                  <option value="other">其他</option>
+                </select>
+                <button id="slSortBtn" class="sl-sort" title="切换排序（先后/倒序）">日期↑（先后）</button>
               </div>
               <div id="stockLogContainer" class="sl-list"></div>
             </div>
@@ -1109,7 +1154,7 @@
   <script src="js/dataStatus.js?v=20261106p"></script>
   <!-- logicModel.js 已移至独立页面 logic-model.html 引用（20261025c 弹窗改页面），首页不再加载 -->
 
-  <script src="js/stockLog.js?v=20261106p"></script>
+  <script src="js/stockLog.js?v=20261108d"></script>
   <script src="js/app.js?v=20261106p"></script>
   <script src="js/backtestUI.js?v=20261106p"></script>
 

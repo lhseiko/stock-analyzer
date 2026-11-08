@@ -272,6 +272,31 @@
     if (upd) upd.textContent = `数据更新：${new Date().toLocaleString('zh-CN')}`;
   }
 
+  // ---------- 135 格综合判定展示（20261107）：量价维度「每日生效唯一判定」 ----------
+  // 头徽标：紧凑展示 看多/看空/中性 + 颜色（红=看多/绿=看空，A股惯例），缺数据则不出
+  function pos135Badge(r) {
+    if (!r.pos135) return '';
+    const p = r.pos135;
+    const cls = p.direction === 'bull' ? 'jd-bull' : p.direction === 'bear' ? 'jd-bear' : 'jd-flat';
+    const tag = p.suspended ? '⚠️挂起' : (p.derived ? '推导' : '');
+    return `<span class="jd-pos135 ${cls}" title="135 格综合判定（量价 · 每日生效唯一判定）${p.suspended ? ' · 异常特例命中，综合判定挂起' : ''}">
+      <span class="jd-pos135-label">135格</span>
+      <span class="jd-pos135-dir">${escapeHtml(p.dirText || '中性')}</span>
+      ${tag ? `<span class="jd-pos135-tag">${escapeHtml(tag)}</span>` : ''}
+    </span>`;
+  }
+  // 展开明细：完整 135 格综合判定（方向 + 结论 + 生效路径/挂起说明）
+  function pos135Detail(r) {
+    if (!r.pos135) return '';
+    const p = r.pos135;
+    const cls = p.direction === 'bull' ? 'jd-bull' : p.direction === 'bear' ? 'jd-bear' : 'jd-flat';
+    return `<div class="jd-pos135-box">
+      <div class="jd-pos135-title">📐 135 格综合判定（量价 · 每日生效唯一判定）</div>
+      <div class="jd-pos135-main ${cls}"><span class="jd-pos135-dir-big">${escapeHtml(p.dirText || '中性')}</span>${escapeHtml(p.conclusion || '')}</div>
+      <div class="jd-pos135-path">生效路径：主轴 135 格归格 · ${escapeHtml(p.key || '—')}${p.derived ? '（推导格）' : ''}——${p.suspended ? '异常特例命中，综合判定已挂起（' + escapeHtml(p.specialType || '') + '）' : '信号叠加层与异常特例均未改变综合判定'}</div>
+    </div>`;
+  }
+
   // ---------- 渲染：单条记录卡片 ----------
   function recCardHtml(r) {
     const check = checkRecord(r);
@@ -375,6 +400,7 @@
           <span class="jd-conf ${confCls}">${r.confidence}置信</span>
           <span class="jd-rec-score">分 ${r.score > 0 ? '+' : ''}${r.score}</span>
           <span class="jd-status ${statusCls}">${statusTxt}</span>
+          ${pos135Badge(r)}
           ${warnBadge}
         </div>
         <div class="jd-rec-row3">
@@ -387,6 +413,7 @@
         </div>
       </div>
       <div class="jd-rec-detail" style="display:none">
+        ${pos135Detail(r)}
         <div class="jd-factors">
           <table class="jd-factor-tbl">
             <thead><tr><th>因子</th><th>信号</th><th>归一化权重</th><th>贡献分</th></tr></thead>

@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>每日复盘 · 股票分析工作台</title>
+  <link rel="icon" type="image/x-icon" href="favicon.ico?v=20261108d">
+  <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=20261108d">
+  <link rel="stylesheet" href="css/style.css?v=20261108d">
+  <!-- 独立长页：恢复滚动（与 notes.html / accuracy.html 同一外壳口径，html,body 须同时覆盖） -->
+  <style>
+    html, body { height: auto !important; overflow-y: auto !important; overflow-x: hidden; }
+  </style>
+</head>
+<body>
+  <!-- DailyReviewPage：每日复盘（Key=daily-review，路由 /daily-review，排序 30） -->
+  <div class="jd-page dr-page">
+    <header class="jd-header">
+      <div>
+        <h1 class="jd-title">📋 每日复盘</h1>
+        <div class="dr-subtitle" id="drSubtitle">交易日 15:35 自动生成 · 固定 14 段结构 · 热点归因 · 机会/风险分级 · 数据缺失如实标注</div>
+      </div>
+      <div class="jd-actions">
+        <button id="drRerunBtn" class="btn-secondary" type="button" title="管理员手动重跑当日复盘">↻ 手动重跑</button>
+        <a href="index.html" class="btn-text">返回工作台</a>
+      </div>
+    </header>
+
+    <!-- 状态条：交易日 / 休市 / running / 版本 / 完整度 -->
+    <div class="dr-statusbar" id="drStatusBar">
+      <span class="dr-chip" id="drChipDate">—</span>
+      <span class="dr-chip" id="drChipDay">加载中…</span>
+      <span class="dr-chip" id="drChipVersion">—</span>
+      <span class="dr-chip" id="drChipCompleteness">—</span>
+      <span class="dr-chip dr-chip-running hidden" id="drChipRunning">⏳ 生成中…</span>
+      <span class="dr-spacer"></span>
+      <span class="dr-meta" id="drMeta"></span>
+    </div>
+
+    <!-- 工具条：历史检索 + 按日期查询 -->
+    <div class="jd-toolbar dr-toolbar">
+      <button class="np-tab active" type="button" id="drTabToday">当日复盘</button>
+      <button class="np-tab" type="button" id="drTabHistory">历史复盘</button>
+      <input type="date" id="drDateInput" class="dr-input" title="按日期查询复盘">
+      <button class="btn-secondary dr-btn" type="button" id="drByDateBtn">按日期查看</button>
+      <span class="dr-toolbar-note" id="drToolbarNote"></span>
+    </div>
+
+    <!-- 主内容 -->
+    <main class="dr-main" id="drMain">
+      <div class="dr-loading">正在加载当日复盘…</div>
+    </main>
+
+    <!-- 历史列表面板（默认隐藏） -->
+    <section class="dr-history hidden" id="drHistoryPanel">
+      <div class="dr-history-head">
+        <span class="dr-history-title">历史复盘</span>
+        <span class="dr-meta" id="drHistoryCount"></span>
+      </div>
+      <div id="drHistoryList"></div>
+    </section>
+  </div>
+
+  <script src="js/dailyReview.js?v=20261108d"></script>
+  <script>
+    // 页面组件入口：DailyReviewPage.init()（点击后自动加载当日复盘）
+    document.addEventListener('DOMContentLoaded', function () {
+      if (window.DailyReviewPage) window.DailyReviewPage.init();
+    });
+  </script>
+</body>
+</html>
