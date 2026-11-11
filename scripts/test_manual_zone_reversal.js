@@ -187,7 +187,7 @@ async function main() {
     ok(zr.indexOf('manualZonesMeta.reversed') >= 0, 'zoneReversal：反转事件写入 manualZonesMeta.reversed');
     const server = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
     ok(/purgeByManualId\(r\.data\.symbol, req\.params\.id\)/.test(server), 'server.js：删除路由联动 purgeByManualId');
-    ok(/const APP_VERSION = '20261111b'/.test(server), "APP_VERSION = '20261111b'");
+    ok(/const APP_VERSION = '20261111d'/.test(server), "APP_VERSION = '20261111d'");
     const app = fs.readFileSync(path.join(ROOT, 'public/js/app.js'), 'utf8');
     ok(app.indexOf('manualZonesMeta || {}).reversed') >= 0 || app.indexOf('manualZonesMeta).reversed') >= 0 || app.indexOf('revMap[r.manualId]') >= 0, 'app.js：手动页签消费 reversed 事件');
     ok(app.indexOf('pa-mz-badge reversed') >= 0, 'app.js：「已反转」徽标');
@@ -196,7 +196,7 @@ async function main() {
     ok(css.indexOf('.pa-mz-badge.reversed') >= 0, 'style.css：.pa-mz-badge.reversed 样式');
     const idx = fs.readFileSync(path.join(ROOT, 'public/index.html'), 'utf8');
     const acc = fs.readFileSync(path.join(ROOT, 'public/accuracy.html'), 'utf8');
-    ok(idx.indexOf('?v=20261111b') >= 0 && acc.indexOf('?v=20261111b') >= 0, 'index/accuracy 页面版本戳已对齐 20261111b');
+    ok(idx.indexOf('?v=20261111d') >= 0 && acc.indexOf('?v=20261111d') >= 0, 'index/accuracy 页面版本戳已对齐 20261111d');
   }
 
   cleanup();

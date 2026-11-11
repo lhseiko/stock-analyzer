@@ -71,11 +71,11 @@ console.log('\n== §4 模块可加载与导出契约 ==');
 console.log('\n== §5 版本戳 ==');
 {
   const server = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
-  ok(/const APP_VERSION = '20261111b'/.test(server), "server.js APP_VERSION=20261111b");
+  ok(/const APP_VERSION = '20261111d'/.test(server), "server.js APP_VERSION=20261111d");
   ok(server.includes('[20261104j] 基金行业配置名单滚动稳定'), 'server.js 含 [20261104j] 版本注释条目（本功能引入版本，历史条目不随全局版本升级）');
   ok(server.includes('[20261104i] 威高血净（603014）专属估值模型'), '前版 [20261104i] 条目保留');
   const idx = fs.readFileSync(path.join(ROOT, 'public/index.html'), 'utf8');
-  ok(idx.includes('homeRank.js?v=20261111b'), 'index.html homeRank.js 版本戳已对齐 20261111b');
+  ok(idx.includes('homeRank.js?v=20261111d'), 'index.html homeRank.js 版本戳已对齐 20261111d');
 }
 
 console.log(`\n===== 结果：${pass} 通过 / ${fail} 失败 =====`);

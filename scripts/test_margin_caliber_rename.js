@@ -176,7 +176,7 @@ ok(appSrc.includes("kEl.closest('.metric-row')"), '重渲染后应按 activeMetr
 ok(/20261104m/.test(appSrc.slice(rmaStart - 500, smaEnd)), '指标分析相关函数应带 20261104m 注释标记（功能引入版本不随全局升版）');
 
 // ---------- §6 版本戳 ----------
-ok(/const APP_VERSION = '20261111b'/.test(serverSrc), 'server.js APP_VERSION 应为 20261111b');
+ok(/const APP_VERSION = '20261111d'/.test(serverSrc), 'server.js APP_VERSION 应为 20261111d');
 ok(/\[20261104k\]/.test(serverSrc), 'server.js 应有 [20261104k] 独立注释条目（本功能引入版本，历史条目不随全局版本升级）');
 ok(/\[20261104m\]/.test(serverSrc), 'server.js 应有 [20261104m] 行内展开条目（功能引入版本，历史条目不随全局升版）');
 const cssSrc = fs.readFileSync(path.join(__dirname, '..', 'public/css/style.css'), 'utf8');

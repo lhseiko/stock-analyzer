@@ -211,3 +211,147 @@
 - **WAL 自愈清理（用户建议）**：`dataDir.cleanupStaleTmpDirs()` 扫 `os.tmpdir()` 仅匹配 `sa-stocklog-test-*` 前缀、删 >24h 旧目录（绝不碰 /tmp 其他文件）；`run_all_tests.js` 启动即调用。回归：该 catch 初版为空 catch 触发 `test_swallow_catch_guard` +1 → 改为 `failed++` 计数（非静默吞），回归消除（138=基线）。
 - **验证（实跑）**：`test_swallow_catch_guard` 138=基线通过；`run_all_tests --quick` **123/123**、无快照；`test_stock_log` 66/0。
 - **批次 2 排序（用户指令）**：同步后第一件事 = P2-1 批次 2「E2E 固化（5 条链路，复用本轮 dataDir 机制）」；两悬浮 backlog（techFace 纳入 factorHash / bump 版本断言 token 扫描）**放批次 2 之后**。本次未同步（等指令）。
+
+### P2-1 批次 2 开工（E2E 固化 5 条链路 · 2026-11-11 · 链路 1 落地）
+- **依据**：整改方案 v1.1 阶段 3（P2）；用户指令「先继续 P2-1 批次 2，GitHub 推送暂缓」。
+- **目标**：把 5 条核心链路固化为独立、可重复、零网络的 E2E 测试，统一复用 P2-1 批次 1 的 dataDir 隔离机制（env 在 require 前设到项目外临时目录 + 收尾清理）。
+- **优先级（用户指定）**：① 个股复盘 run 幂等（B0-1/B0-2/B0-4）> ② deep-analysis 降级链 > ③ analysis > ④ 复盘生成 > ⑤ 数据源降级链。
+- **实现手法**：对需触网链路用 `require.cache` 合成桩替换数据层（stockData/quoteHub/capitalFlow/sectorLimitStats/newsSearch）+ `ai/llm`+`ai/config`，做到真实 `generateReview` 双调用实测而不触网；降级链通过桩注入「无 AI 配置」验证 `degraded` 如实披露、快照照常落盘、不抛、无 `[object Object]`。
+- **落点文件**：新建 `scripts/test_e2e_chains.js`（逐链追加，每链独立 section，全量 runner 自动纳入）；本 WAL 条目。
+- **本轮（链路 1）**：实现并验证 个股复盘 run 幂等 + 降级链（§A 批量幂等 / §B generateReview 双调用幂等 callLLM 仅 1 次 / §C 降级快照落盘不抛 / §D 降级缓存可幂等读）。
+- **范围隔离**：仅新增 test 文件 + 本 WAL；不动业务 lib（生产零行为变更）。
+- **验证（实跑）**：`node scripts/test_e2e_chains.js` → 全绿；`run_all_tests --quick` 纳入后由原 123 → **124/124**。
+- **未做（如实）**：链路 3-5 待后续回合逐条追加；未升 APP_VERSION；未 git 同步（等指令）。
+
+### P2-1 批次 2 · 链路 2 落地（deep-analysis 当前价降级 E2E · 2026-11-11）
+- **依据**：整改方案 v1.1 P0-1「价格来自降级口径须可见」；用户批准范围表（B2：先改 pipeline 透出 degraded 再测；批准链路 2 范围）。
+- **范围（已批）**：只测「当前价降级」一条（pipeline.js:188-209）；直调 `deepAnalysis`（不混路由 `_deepJobs` 状态机，属链路 3）；4 段 §A-§D。
+- **三前置确认结论**：① 降级点唯一 E2E 价值点 = `wrapQuote` 取不到有效价 → 真实降级分支回退 `history[末].close` 并打 `degraded`；② 直调 pipeline（非 HTTP），用 `require.cache` 桩替换全部网络数据层；③ 桩边界——可桩：stockData/quoteHub/eastmoneyValuation/valuationHub/financeHub/financials/dividends/research/changeAnalysis/db/ai(config+llm+cache)；不可桩（保持真实执行）：pipeline/statements/conclusions/conclusion/companyType/chipDistribution/insuranceAnalysis。
+- **pipeline.js 改动（最小隔离，P0-1 透出）**：`sections` 新增 `currentPrice: priceRef` 与 `dataGaps` 数组（degraded 时含 `{field:'currentPrice', level:'degraded', note: source}`）。此前 `degraded` 只留在内部 `priceRef` 与 DB `data_points.extra`，前端/下游拿不到 → 违反价格口径可见性。
+- **链路 2 测试（test_e2e_chains.js 追加）**：
+  - §A 降级触发：传「无 .price 的 quote 对象」（行情网关不可用但非 null，规避 pipeline:300 在 null 上挂属性抛错）→ 真实 wrapQuote 返回 null → 回退 9.5，degraded=true，source 含「降级」，不抛。
+  - §B 降级标记透出：sections.currentPrice.degraded===true 且 sections.dataGaps 含 currentPrice 降级项。
+  - §C 双重降级不崩溃：quote 无价 + history 空 → 不抛，price 兜底 0 仍标记 degraded。
+  - §D 缓存与降级共存：§D-1 同降级口径复现 degraded（确定性，不静默修复）；§D-2 恢复有效 quote → 非降级（degraded 不为 true、price=12.3、dataGaps 清空）→ 证明降级非粘性、不永久缓存。
+- **实测发现（如实）**：有效 quote 时 `priceRef.degraded` 为 `undefined`（仅在降级分支显式置 true；缺省即正常）。前端以 `priceRef.degraded ?` 判降级，undefined 视为正常——语义正确，无需改代码；测试断言用 `!== true` 表述。
+- **范围隔离**：仅改 pipeline.js 返回对象 + test 文件 + 本 WAL；未升 APP_VERSION、未改其他模块、未 git 同步。
+- **验证（实跑）**：`node scripts/test_e2e_chains.js` → **29/0 全绿**；`run_all_tests --quick` → 维持 **124/124**（链路 1+2 同文件 test_e2e_chains.js，自动纳入）。
+
+### 个股每日复盘模块「游资升级」（user intent C · 2026-11-11 · 已完成）
+- **用户意图**：复盘卡片 System Prompt 换成「10 年 A 股短线游资」人格 + 四段式推演 + 新增第 4 节「🧠 历史规律与自省纠错」；并明确「只改 Prompt 不够——底层 Node 代码必须捞出该股过去 1-3 日复盘喂给大模型」。
+- **隔离决策（铁律·模块修改）**：历史记录注入属「通用模板」改动，须对所有同类复用；但底层 giveup-streak / 反查 / 前端角标依赖 `> 评级判定` / `> 放弃信号判定` 两行确定性标记（extractMarks→computeGiveupStreak→buildBackcheck→前端），**保留两行标记原样**以零爆炸半径保护整条管道；同时把模板里嵌示例文字的标记行改为单行干净格式，避免模型照抄示例导致评级恒为 S。
+- **代码改动（lib/stockReview.js，生产行为变更：新增历史注入）**：
+  1. 新增 `getPastReviews(symbol, beforeDate, limit)`：用 `listReviews` 取 beforeDate 前最近 limit(默认3) 条，逐条 `store.readJsonSafe` 读落盘 JSON（损坏/缺失→留痕 warn+回退，杜绝静默空 catch），抽 `extractScriptSection`（彼时「明日剧本」预判）+ rating + giveupTriggered。
+  2. `buildContext` 在 `backcheck` 后算 `const pastReviews = getPastReviews(symbol, date, 3)`，并加入返回 `history: { giveupStreak, backcheck, pastReviews }`。
+  3. `module.exports` 补 `getPastReviews`；`llmGenerate` 经 `JSON.stringify(context)` 自动把 pastReviews 透传给模型（无需改 prompt 拼装）。
+  4. **去静默吞错**：原 getPastReviews 的 `try{ JSON.parse }catch(e){}` 空 catch 违反 R17 纪律守卫 → 改用 `store.readJsonSafe(...).data`（项目「不静默、不臆造」惯例，损坏即 warn 留痕），空 catch 归零，swallow 守卫回到 138=基线。
+- **Prompt 改动（prompts/stock-review-system.md）**：游资人格 + 6 铁律（说人话/资金投票/四段式/禁荐股/数值权威/防诱多）+ 四段式输出模板（第 4 节历史自省：往日判断核查[已验证/被打脸/待验证]+错误归因4选项+股性规律）；文末「历史记录注入说明」告知模型过去1-3日记录由代码注入；标记行改为 `> 评级判定：S` / `> 放弃信号判定：触发` 单行格式 + 输出格式节明确「只填实际判定、不得保留示例文字」。
+- **测试（实跑非自称）**：test_stock_review 65/3 失败 → 因断言照搬旧 prompt 字面（严禁买卖建议/四段式/连续放弃反查节）→ 按「守卫不变式、不守字面」更新 3 条断言匹配游资版措辞 → **68/0 全绿**；test_e2e_chains 29/0；test_swallow_catch_guard **138=基线通过**；run_all_tests --quick **124/124**（跳过13需网络）。
+- **未做（如实）**：服务端改动需重启 3005 生效（pastReviews 才真正进 Context）；未升 APP_VERSION（prompt 内容变更未强制版本戳，但 promptSha1 已进落盘元信息可追溯）；未 git 同步（等指令）。
+
+### 首页「大盘每日复盘」历史预判核查补丁（user intent C 反向应用 · 2026-11-11 · 已完成）
+- **用户意图**：把刚完成的【个股复盘】历史自省机制反向应用到【大盘每日复盘】。要求①代码层取数（读过去 1-3 个交易日大盘复盘 JSON，抽【情绪周期判断】/【题材评级 S/A/B/C】/【明日验证信号】）；② Context 注入（精简防超时）；③ Prompt 新增「🧠 历史预判核查与规律提取」节；④ 防幻觉与隔离（确定性字段/质检规则不变，大模型只做文字推演归因）。
+- **隔离决策（铁律·模块修改 + SCHEMA 升级铁律）**：本补丁改的是大盘复盘 Context 结构（新增 history.dailyReviews）→ 必须升 SCHEMA_VERSION 以打破旧落盘 JSON 的 idempotency 复用；确定性字段（表格列/标题/质检）原样保留，只让 LLM 负责文字归因，不新增任何确定性标记。
+- **代码改动（lib/reviewService.js，生产行为变更：新增历史注入）**：
+  1. 新增 `extractSection(md,keyword)`：定位 `### 标题` 含 keyword 的段落，截断 400 字。
+  2. 新增 `extractTableRows(md,marker,limit)`：定位 `**【…】**` marker，跳过非 `|` 行直到表头，跳过 `|---|` 分隔，返回 `[header, ...rows]`（列名驱动，兼容旧表列数漂移）。
+  3. 新增 `extractDailyReviewSummary(markdown)`：用 `colOf(header,'阶段评级')`/`colOf(header,'明日观察什么')` 按列名抽情绪 prose + S/A/B/C 题材评级 + 明日验证信号，过滤「暂无」与非 [SABC] 评级。
+  4. 新增 `getPastDailyReviews(date,limit)`：`previousTradingDates(date,HIST_DAYS).slice(0,limit||3)` 取过去交易日，逐日 `readReviewSync` 读 `data/reviews/{d}.json` 当前版本 markdown，返回 `[{date,emotion,topicRatings,verifySignals}]`。
+  5. `runReview` 内 attempt 循环、stockMarks 之后接 `let dailyReviews=[]; try{dailyReviews=getPastDailyReviews(date,3)}catch(e){dailyReviews=[]}`，并 `reviewContext.build({...stockMarks, dailyReviews})`。
+  6. `module.exports` 补 `getPastDailyReviews, extractDailyReviewSummary, extractTableRows, extractSection`。
+- **Context 改动（lib/reviewContext.js）**：SCHEMA_VERSION `review-llm-20261110c`→`review-llm-20261111a`；CONTEXT_VERSION `review-context-20261110c`→`review-context-20261111a`；build() 的 history 块注入 `dailyReviews`（每条约束 date/emotion≤300/topicRatings≤6/verifySignals≤6）；trimToBudget 末步再压到 dailyReviews≤2、emotion≤200、各表≤4，确保 <12000 预算防超时。
+- **Prompt 改动（prompts/daily-review-system.md）**：骨架新增第 8 项 `### 🧠 历史预判核查与规律提取`（对照 history.dailyReviews，模板见第八节）；文末新增 `## 八、历史预判核查与规律提取（必须严格输出）`，含 3 子节——① 往日大盘预判核查[已验证/被打脸/待验证]；② 大盘错误归因分析（4 强制选项：宏观与突发事件/周期误判/资金错位/数据缺失）；③ 市场环境与规律总结；明确引用 history.dailyReviews、禁止臆造、保留合规红线。
+- **测试守卫更新**：test_daily_review.js 中 `review-llm-20261110c`→`20261111a`（109/340/439）与 `review-context-20261110c`→`review-context-20261111a`（120/296/342/362）全部替换（第 102 行 `js/markdown.js?v=20261111b` 为缓存破坏令牌非 schema，不动）；test_stock_review.js:219 同改。
+- **测试（实跑非自称）**：`node --check reviewService.js && reviewContext.js` → CHECK_OK；`test_daily_review.js` → **30/0**；`test_swallow_catch_guard.js` → **138=基线通过**（空 catch 未增）；`run_all_tests --quick` → **124/124**（跳 13 网络）。跨格式实测：11-10→6 评级+2 信号、11-09→6+3、11-06→4+3 均正确（兼容旧表列漂移）。
+- **未做（如实）**：服务端需重启 3005 才会真正把 dailyReviews 注入大盘 Context；未升 APP_VERSION；未 git 同步（等指令）。
+
+### 个股观察池评级按板块地位保底（user intent · 2026-11-11 · 已完成）
+- **用户意图**：个股观察池（每日复盘 `【明日核心观察池】`）评级列在整体大盘退潮期被 LLM 留空显示「—」，要求改为「即使在退潮期也按个股在板块内的地位（逆势活口/最高标/首板试错）给出评级，确定性不足给 B级（试错）/C级（观察），绝不空白」。
+- **根因定位**：引擎 `reviewEngines.js` `gradeOf` 恒产出 A/B/C/D（不会空白）；`computed.engine.candidates[].grade` 喂给 Prompt（原第 60 行要求「沿用引擎字母」），最终 LLM 生成表格「评级」列——「—」是 LLM 在退潮期对评级列留空。
+- **代码改动（lib/reviewEngines.js，生产行为变更：评级逻辑）**：
+  1. 新增 `sectorPositionOf(cand,ctx,maxBoardsByIndustry)`：按各行业最高连板判定 `最高标`（板块空间板）/ `逆势活口`（板块处高潮·退潮期但个股仍连板）/ `梯队中位` / `首板试错` / `跟风/独立`。
+  2. 新增 `applySectorFloor(cand)`：仅当 grade==='C' 且**无硬否决、无软否决、无漏斗明确未通过**（即 C 仅因确认项不足）时，若 `sectorPosition` 为 最高标/逆势活口 → 升为 **B（试错）** 并置 `trialGrade=true`；首板/跟风维持 C（观察）。
+  3. 新增 `gradeLabelOf(cand)`：产出语义标注 `A` / `B（试错）` / `B` / `C（观察）` / `D（剔除）`。
+  4. `analyze()` 内、gradeOf 之后做跨候选二次覆盖：先算各行业最高连板，再逐候选标注 `sectorPosition`、应用保底、重算 `trackable`、写入 `gradeLabel`；`opportunityTable`/`watchPool` 输出补 `gradeLabel`/`sectorPosition`。
+  5. **铁律保护**：硬否决→D、软否决→C 永不 A/B、漏斗明确未通过→C 三条均不动摇（新增测试 [5b] 复核）。
+- **Context 改动（lib/reviewContext.js，SCHEMA 升级铁律）**：`CANDIDATE_KEYS` 补 `gradeLabel`/`sectorPosition`/`trialGrade`；`SCHEMA_VERSION` `review-llm-20261111a`→`review-llm-20261111b`、`CONTEXT_VERSION` `review-context-20261111a`→`review-context-20261111b`（候选对象结构变更，强制重算）。
+- **Prompt 改动（prompts/daily-review-system.md）**：第 60 行「沿用引擎 S/A/B/C」改为「沿用引擎 A/B/C（D 剔除不进池）+ gradeLabel 语义标注（B（试错）/C（观察）），退潮期也必须给评级、严禁留空或写「—」」；第 63 行兜底改为优先取 `computed.engine.candidates[].gradeLabel`，无则按板块地位给 B（试错）/C（观察）。
+- **测试（实跑非自称）**：`test_review_engines.js` 43/0（新增 [5b] 板块地位保底 + 铁律不破坏两用例，放宽 [5] 允许试错级 B 确认项<4）；`test_daily_review.js` 30/0（schema 令牌同步 20261111b）；`test_swallow_catch_guard.js` 138=基线；`run_all_tests --quick` 124/124。
+- **未做（如实）**：服务端需重启 3005 才会真正按新评级逻辑生成；未升 APP_VERSION；未 git 同步（等指令）。
+
+### 个股复盘三处「数据缺失」补齐（user intent · 2026-11-11 · 已完成）
+- **用户意图**：截图（中国平安 601318 复盘卡片）显示三处红字缺失——「分时明细数据缺失（按 OHLC 还原）」「板块数据缺失（行业识别失败，无该股板块涨跌停/中军数据）」「龙虎榜数据缺失」；明确建议「量能数据引用资金量能模块，板块数据引用行业分析模块或者通过 mcp 获得」。
+- **根因定位**：全库检索确认这些「缺失」字符串**不在源码里**，是 LLM 因 Context JSON 无对应字段、按 `prompts/stock-review-system.md` 铁律5「Context 没有的数据写数据缺失」自行补的占位文字。三个缺口分别对应：`getSectorData` 把行业参数传成 `''`（行业识别失败）、`buildContext` 未采集量能引擎结论、未采集龙虎榜。属「数据源未接线」，非「数据源不可用」。
+- **隔离性（两条铁律第一条）**：`buildContext`/`generateReview` 仅被个股复盘（server.js:2534）+ 自身测试消费，`sectorLimitStats`/`capitalFlow`/`boardReviewData` 原有输出字段与语义零变化；新增 `byCode` 为纯新增字段，大盘复盘 `reviewContext.lhbBlock` 只挑固定字段、不读取它（已加断言固化）。大盘复盘不受影响。
+- **代码改动（lib/stockReview.js）**：
+  1. `SCHEMA_VERSION` `stock-review-20261110b`→`stock-review-20261111c`（Context 结构新增三块，升级铁律）。
+  2. `getSectorData`：先 `require('./sectorIdentity').resolveSectorIdentity(symbol,name)` 拿真实行业，再带 industry 入参调 `getSectorLimitStats`；即便涨跌停统计不可用，只要行业识别成功也透出 `industryName`（不再「行业识别失败」空白）。行业解析失败的 catch 改为 `console.warn` 显式告警（避免新增静默吞错）。
+  3. `getCapitalData`：复用 `analyzeCapitalFlow` 已算好的 `c.volumeEngine`（`volumeState`/`volumeTier`/`position`/`dataGaps`），透出 `capital.volume`；`buildContext` 加顶层 `volume`。**不重复跑引擎**。
+  4. 新增 `getLhbData(symbol,date)`：走 `boardReviewData.getLhbOnly(date)`（`--lhb-only` 轻量通道，5 分钟进程内缓存），按代码精确匹配 `lhb.byCode`；`listed=true/false` 真实判定，兼容旧数据层无 byCode 时退回 top5 并如实标 `coverage:'top5-only'`、`listed:null`（不臆断）。
+  5. `buildContext` 三路 `Promise.all` 并行取 sector/news/lhb，返回对象加 `volume`、`lhb`；`volume: (capital && capital.volume) || null` 防 capital 为 null 抛错。
+  6. `toSnapshotMarkdown` 新增「板块联动 / 龙虎榜 / 量能」三行；`volumeTier` 是对象，只取 `.tier` 文本——修掉实测中出现的 `[object Object]` 回归。
+- **数据层改动（scripts/board_review_data.py `build_lhb`）**：新增 `byCode`（全量上榜明细按代码索引：netBuyYi/buyYi/sellYi/reason/changePct），解决原本只保留 topNetBuy/topNetSell 前5 无法判定个股是否上榜的问题；block 默认 `{}`。既有字段/语义/顺序不变。
+- **Prompt 改动（prompts/stock-review-system.md）**：开头明列 `sector`/`volume`/`lhb` 三类字段；铁律5 改为「已包含三类数据，严禁写『缺失』『数据缺失』『按 OHLC 还原』等占位，`available=false` 按 note 写状态」；第1节量价表现改引用 `volume`（量比/档位/位置）、板块地位改引用 `sector`、资金与催化改引用 `lhb`（分 listed true/false/null/available=false 四种写法）。
+- **测试（实跑非自称）**：`test_stock_review.js` 76/0（SCHEMA 断言升级 + §1 新增 6 条接线断言含隔离性 + §6 新增 3 条快照渲染断言）；`test_e2e_chains.js` 35/0（补 `sectorIdentity`/`boardReviewData` 桩、callLLM 捕获完整 Context，§B 端到端断言三块数据注入、§C 断言降级快照两行渲染）；`test_swallow_catch_guard.js` 138=基线；`run_all_tests --quick` 124/124（跳过 13 需网络）。
+- **真实数据链路实测（非桩，2026-11-11 当日）**：`resolveSectorIdentity(601318)` → 保险 / code-override / conf=1；`getSectorLimitStats(...,'保险')` → ok:true、涨停 0 / 跌停 0 / 总数 5；`getLhbOnly` → ok:true、85 条上榜记录 / 75 只个股 / byCode 生效；强制降级快照真实输出：「板块联动｜保险 · 涨停 0 家 · 跌停 0 家」「龙虎榜｜今日未上龙虎榜（当日全市场共 85 只上榜，按代码精确核对）」「量能｜量比(÷5日) 0.88；量能档位 缩量；位置 低位区间」。三处「缺失」全部消失。
+- **文档**：`docs/logic/stock-23-stock-review.md` 结构版本同步 20261111c，补三块数据源接线说明与 volumeTier `[object Object]` 回归警示。
+- **未做（如实）**：服务端需重启 3005 才会加载新代码；未升 APP_VERSION（本次只改后端/提示词/python，前端资源未变）；未 git 同步（等指令）。东财 push2his 资金流接口 socket hang up（既有沙箱现状），资金流降级为「按K线估算」，与本次改动无关、量能引擎仍正常出结论。
+
+### 用户截图反馈「还是原样？」→ SCHEMA 复用侧漏洞修复（2026-11-11 19:16 · 已完成）
+- **现象**：用户 19:16 截图，中国平安复盘卡三处「缺失」一字未变；且是有完整资金流数据（主力净流出 4.59 亿）的 LLM 正式稿，非降级快照。
+- **诊断（先摆事实，不猜）**：
+  - 服务 PID 17108 启动 19:14:39 > 代码改完 18:35 / 提示词 18:32 → **用户已重启，新代码已加载**，排除「没重启」。
+  - `data/stock-reviews/601318/2026-11-11.json` 存在，`schemaVersion=stock-review-20261110b`（旧）、`createdAt=18:13`（早于改码）、`llm.degraded=false`，markdown 内三处「缺失」全在。
+  - 打开复盘页走 `GET /api/stock-review/:symbol` → `getLatestReview` **直接读旧文件渲染**，不经生成链；即便点「生成今日复盘」，`forceNext` 仅在 `llm.degraded===true` 时置位 → `force:false` → `generateReview` 命中缓存原样返回。**所以刷新和点按钮都还是原样**。
+- **根因**：`generateReview` 命中缓存只判断「文件存在」，**完全不比对 schemaVersion**——这是「SCHEMA_VERSION 升级铁律」的复用侧漏洞：只升版本、不让旧记录失效，旧卡片会被永久复用（用户记忆里反复强调的旧记录复用问题，这次是反向变体）。
+- **立即见效动作**：把当日旧卡片重命名备份为 `data/stock-reviews/601318/2026-11-11.json.bak-20261110b`（保留可还原，未删除）。`listReviews` 只认 `^\d{4}-\d{2}-\d{2}\.json$`，`.bak` 不污染历史列表。当前已加载新代码的服务在点「生成今日复盘」时缓存 miss → 用含 sector/volume/lhb 的新 Context 重生成。
+- **根因修复（下次重启后生效）**：
+  1. `lib/stockReview.js generateReview`：命中缓存时 `cached.schemaVersion === SCHEMA_VERSION` 才复用，否则 `console.warn` 并自动重生成（无需手动清缓存 / force）。
+  2. `lib/stockReview.js runPoolBatch`：同口径校验，旧 schema 当日记录不算「已有」（协同进化，20:35 批量槽同步覆盖）。
+  3. `server.js`：新增 `refreshOutdatedReview(r,symbol)`，两个 GET 读取路由对**当日**且 schema 过期的记录自愈重生成；历史日期一律原样保留、不篡改；传 `force=false` 由 generateReview 判定以保留 LLM 在途合并，避免并发重复调用；自愈失败 catch 降级返回原记录。
+- **为什么不让 AI 直接代跑一次生成**：本机沙箱访问东财 push2his 报 socket hang up，资金流会降级为「按K线估算」，卡片质量低于服务进程（用户截图里 4.59 亿是真实接口值）。故由 3005 服务进程生成，用户点一次按钮即可。
+- **测试（实跑非自称）**：`test_stock_review.js` 79/0（§1 新增 3 条：generateReview 校验 / runPoolBatch 同口径 / server 两 GET 自愈）；`test_e2e_chains.js` 40/0（新增 §E：写入旧 schema 正式稿 → 非 force 生成触发 1 次 LLM 并返回新 schema、旧「缺失」文案消失、二次读取幂等、结果按新 schema 落盘）；`test_swallow_catch_guard.js` 138=基线；`run_all_tests --quick` 124/124。
+- **用户操作口径**：**现在不必重启**——点「生成今日复盘」等约 40 秒即可看到新卡片；上述根因修复需下次方便时重启一次 3005 才加载（重启后新卡片 schema 已是 20261111c，不会被再次重生成）。
+- **未做（如实）**：未升 APP_VERSION（本次零前端改动）；未 git 同步（等指令）。
+
+#### 实际执行结果补充（19:27，代跑成功，用户无需点按钮）
+- 确认 `lib/ai/config.js loadPromptFile` 按文件 mtime 热加载 → 服务**不重启也能用上 18:32 改过的新提示词**；服务 19:14 启动已加载 18:35 的新 Context 代码。
+- 由 AI 直接调 `POST http://127.0.0.1:3005/api/stock-review/601318/run`（`{"name":"中国平安","force":true}`），让 **3005 服务进程**（非本地沙箱）跑 LLM 生成，绕开本机沙箱东财不通的问题。
+- 结果：`success:true`、`schemaVersion=stock-review-20261111c`、`model=deepseek-v4.1-flash-1017`、`degraded=false`、`elapsedMs=33619`、`markdown 2713 字`；**三处旧「缺失」占位全部消失**（板块/龙虎榜/分时均 false），新数据全部出现。
+- 新卡片写实内容抽样：量价表现引用量能引擎「量比(5日) 0.88 平量 / 20日主基准 0.68 倍缩量 / 12个月分位 28.26% 低位区间 + divergenceNote」；板块地位「保险，涨停 0 / 跌停 0 / 样本 5 只，绝对权重中军，无共振护盘」；资金与催化「今日未上龙虎榜」+ 全市场口径。**不再有「行业识别失败」**。
+- 如实记录：本次生成 `moneyFlowSource=estimated`（东财逐笔资金流当时未入库），卡片已按「估算口径，量能＋两融合成」如实标注，未冒充真实值；旧 18:13 卡片里的「主力净流出 4.59 亿」是接口可用时的真实值。属数据源瞬时状态，非本次改动引入。
+- 用户操作简化为：**Ctrl+F5 硬刷新即可看到新卡片**（无需点按钮、无需重启）。根因修复（GET 自愈 / 缓存 schema 校验 / runPoolBatch 同口径）仍建议方便时重启一次 3005 加载；新卡片 schema 已是 20261111c，重启后不会被重复重生成。
+
+### 分时仍非真实分钟数据 → AKShare 主源 + 腾讯降级（`stock-review-20261111d` · 2026-11-11 完成）
+- **用户意图**：指出 20261111c 只补了日K/量能引擎结论，不是分钟级分时；要求「继续深度使用 AKShare」，示例 `stock_zh_a_spot_em(symbol="601318")` / `stock_intraday_em`，强调改动最小、集成最快。
+- **接口事实实测（不照抄示例）**：项目 Python 为 `C:/Users/16507/.workbuddy/binaries/python/envs/default/Scripts/python.exe`，AKShare 1.18.94。默认 Python 3.13 的 pandas DLL 被「应用程序控制策略」阻止，不可用。实测 `stock_zh_a_spot_em()` **不接受 symbol 参数**、返回全市场实时快照，且 `scripts/board_review_data.py` 头部既有规定禁用（asOf 错位、耗时不可接受）→ 未按示例接线。改用 `stock_zh_a_hist_min_em(symbol, start_date, end_date, period='1', adjust='')` 与 `stock_intraday_em(symbol)`。
+- **网络现状如实**：AKShare 两个分时接口均 `ProxyError`（`push2his.eastmoney.com` / `70.push2.eastmoney.com` 被代理拦截，约 2.8s 快速失败），当日无法取到东财分钟数据。故保留 AKShare 为**首选主源**，并降级到项目现成的 `stockData.fetchTencentMinutes()`；网络恢复后自动回到 AKShare，无需改码。
+- **代码落地（隔离：仅个股复盘链路，其他模块输出格式零变化）**：
+  1. `scripts/board_review_data.py`：新增 `build_intraday(symbol,date_str)` + `--intraday-symbol` / `--intraday-date` 早退通道（与 `--lhb-only` 同范式，不跑复盘主流程）；只做客观数值整理，过滤非连续竞价时段；`stock_intraday_em` 当日快照把 `asOf` 标为脚本运行日，防止历史复盘冒充复盘日。
+  2. `lib/boardReviewData.js`：新增并导出 `getIntraday(symbol,dateStr)`（90s 超时、UTF-8、16MB buffer）。
+  3. `lib/stockReview.js`：`SCHEMA_VERSION` c→**d**；新增纯函数 `summarizeIntraday()`（导出供单测）与 `getIntradayData()`（5min 缓存、AKShare→腾讯降级、全失败 `available=false`+`note`）；`buildContext` 并行取数并透出 `Context.intraday`；`toSnapshotMarkdown` 加「分时」行/不可用原因行。
+  4. `prompts/stock-review-system.md`：三类数据→**四类**（sector/volume/lhb/intraday）；量价表现强制引用 pattern / segments / highTime+lowTime / tailChgPct / closeVsAvgPct / peakVolTime / source；铁律5 禁「分时明细数据缺失」「按 OHLC 还原」；`dateMatches=false` 必须注明口径日不一致。
+  5. 空 catch 修复：腾讯降级失败原为静默吞错，改 `console.warn`（守卫基线 138 不涨）。分段改半开区间 `[from,to)`，四段量能占比合计=100%；腾讯 15:01-15:30 盘后条目在降级侧过滤（267→242 点）；形态边界加 `roseFromOpen`，开在最高一路下行判「单边下行」而非「冲高回落」。
+- **真实链路实测（非桩，601318 / 2026-11-11）**：AKShare `ok:false / points:0 / note=东财 push2 不可达`；腾讯 `date=2026-11-11 / prevClose=54.1 / 267 点→过滤 242 点`；特征 `pattern=冲高回落`、`open=54.1 / close=53.41 / high=54.3@0943 / low=53.41@1500`、`changePctFromPrev=-1.28%`、`tailChgPct=-0.22%`、`closeVsAvgPct=-0.77%`、四段量能占比 15.12/27.13/37.33/20.42（合计 100）、`source=腾讯分时 ifzq.gtimg.cn`、`dateMatches=true`、`degradedFrom=AKShare 分时不可用`。
+- **测试（实跑非自称）**：`node --check` 四文件 + 项目 Python `py_compile` 全通过；`test_stock_review.js` **105/0**（§1 新增 14 条接线/隔离断言、§6 新增 2 条快照分时行、新 §6b 10 条纯函数单测：累计量/当分钟量、形态边界、四段占比、点不足、口径日）；`test_e2e_chains.js` **51/0**（新增 `getIntraday` 与 `fetchTencentMinutes` 桩，§B 断言 AKShare 主源特征注入且不含 raw minutes，新增 §F 主源失败→腾讯降级 7 条断言）；`test_swallow_catch_guard.js` 138=基线；`run_all_tests.js --quick` **124/124**（跳过 13 需网络）。
+- **文档**：`docs/logic/stock-23-stock-review.md` 结构版本→20261111d，补数据源 / 降级链 / 代码权威 / 五要素说明与 3 条自查项。
+- **生效口径（重要，避免再次「还是原样」）**：本次改的是 **JS 代码**，提示词虽按 mtime 热加载，但 `SCHEMA_VERSION=d` 与新的 Context 代码必须**重启 3005 服务**才生效；重启后 GET 自愈会把当日 `20261111c` 的中国平安卡片自动重生成（历史日期不动）。用户操作：双击桌面「Stock Analyzer」→ 打开页面 → **Ctrl+F5 硬刷新** → 进入「每日复盘」，若未自动更新再点一次「生成今日复盘」。未重启前页面仍是 20261111c 卡片，属预期。
+- **未做（如实）**：未升 APP_VERSION（本次零前端资源改动）；未替用户重启 3005（服务由桌面入口启动，需用户点一下）；**未 git 同步**（等用户明确说「同步」）；AKShare 主源当前确实取不到数，实际卡片分时来自腾讯降级，已在 Context / 卡片中如实标注，不可声称 AKShare 已成功。
+- **代跑重启尝试记录**：曾尝试由 AI 直接执行项目既有 `start.vbs`（等价于双击桌面图标，会 kill 3005 旧进程再起新进程），命令被本机安全策略以「Windows LOLBin 可执行任意代码」为由拒绝，按纪律不重试、不换等价手段绕过 → **保留用户双击桌面「Stock Analyzer」这一步**，不擅自重启用户正在使用的服务。已提前把当日 `20261111c` 卡片备份为 `data/stock-reviews/601318/2026-11-11.json.bak-20261111c`（可还原，`.bak` 不进历史列表）；py_compile 产生的 `scripts/__pycache__` 已清理干净。
+- **最终状态**：本地代码 / 提示词 / 测试 / 文档 / WAL 全部完成且实跑通过；3005 服务仍在跑旧代码（PID 29168，当日卡片 c），这是预期状态。用户重启后 GET 自愈会把当日 c 卡片自动重生成到 d；若首屏等待较久，点一次「生成今日复盘」即可。
+
+### 整改任务：B2 前端闭环 + 版本戳（2026-11-11 20:04 · 用户三条尾巴，完成）
+- **用户指令**：进入链路 3 前必须收口三条尾巴——① 前端没渲染 `dataGaps.degraded` 警告条，B2 修复「修了寂寞」；② `sections.currentPrice` 与 `sections.conclusion.currentPrice` 两套价格口径漂移；③ 后端 JSON 结构 + 前端 UI 都改了却没升 `APP_VERSION`。
+- **前置确认（先摆事实，三条全属实，第②条比用户判断更严重）**：
+  - `public/js/deepCharts.js` 全文件**零处**读 `sections.dataGaps` / `sections.currentPrice`；`renderAll` 只把 `sections.conclusion` 传给 `renderConclusion`，`dataGaps` 在前端唯一出现是 `app.js:2716` 的估值模块（无关）。
+  - `conclusion.currentPrice` 来自 `lib/deep/conclusion.js:20` 的 `quote?.price || dcf?.currentPrice || 0`，且该函数内部还用它算 EPS、六只专属估值模型、股息率 → **降级时前端不只是缺警告，价格本身会显示 0 / 旧 DCF 价 / `--`**。
+  - `server.js:160 APP_VERSION = '20261111b'`，`index.html` 26 处 `?v=20261111b` 未动。
+  - 远端 `git@github.com:lhseiko/stock-analyzer.git` SSH 实测连通（`ls-remote` 返回 master `611683e`）。
+- **修复① 口径统一（从入参下手，非返回处盖值）**：`lib/deep/pipeline.js` 新增 `conclusionQuote = Object.assign({}, quote || {}, { price: authoritativePrice })` 传给 `generateConclusion`，异常兜底分支也改用 `authoritativePrice`。`sections.currentPrice = priceRef` 保持唯一权威对象；`conclusion.currentPrice` 降为**兼容镜像**，恒等于 `priceRef.value`，前端不得另立口径（代码内写明契约）。浅拷贝不污染上游 quote。
+- **修复② 前端闭环**：`public/js/deepCharts.js` 新增 `renderDataGapsWarning(dataGaps, priceRef)`，`renderAll` 最先调用；`level === 'degraded'` 时在 `#deepContent` 顶部插入 `class="bl-warn deep-degraded-bar"` 琥珀警告条「⚠️ 行情接口不可用，当前价格回退为日线收盘价（¥9.50 · 口径日 2026-11-09）」+ 来源行；重复渲染先移除旧条，`dataGaps` 清空时警告条消失（与 §D 降级非粘性同口径）；note 经 `escapeHtml` 转义。`renderConclusion(data, priceRef)` 用 `priceRef.value` 覆盖估值卡价格，无 priceRef（旧缓存响应）时安全回退。`public/css/style.css` 加 `.deep-degraded-bar`（`var(--accent)` 琥珀 + 主题变量，无裸色值）。
+- **修复③ 版本戳**：`node scripts/bump_version.js 20261111d --note "..."`，31 处文件变更：`APP_VERSION` b→d、8 个 HTML 共 56 处 `?v=`、23 个测试脚本的 `APP_VERSION`/`?v=` 断言行；SCHEMA 名（`review-llm-20261111b`）未被误伤。`test_cache_bust_guard.js` 3/0/0 全绿。`test_daily_review.js` 两处自相矛盾的历史描述（「保持差异戳 d/c」）顺手改自洽，断言逻辑未动。
+- **连带根因修复（历史 backlog「bump_version version-assertion token scan」）**：首次全量回归红灯——`test_index_pe_window_high` / `test_pos_vm_strong` / `test_volume_caliber_warn` / `test_etf_flow_holiday_guard` 有 5 行「跨文件版本断言扫描」硬编码 `20261111b`，这些行既不含 `APP_VERSION` 也不含 `?v=`，被 bump 的行级限定替换漏掉。已同步这 5 行到 d，并给 `scripts/bump_version.js` 的 `inCtx` 增加 `版本断言|版本戳|版本标识|版本注释|缓存破坏` 语境；d→e dry-run 验证这些行现在会被覆盖，而 `test_daily_review.js` / `test_stock_review.js` 的 SCHEMA 断言行仍保持 b 不被误伤。
+- **新增守卫 `scripts/test_deep_degraded_guard.js`（26/0）**：用 `vm` + 最小 DOM 桩**加载真实 `deepCharts.js`**，实测 `renderDataGapsWarning`（插入/移除/文案/价格/口径日/来源/XSS 转义）与 `renderConclusion`（权威价覆盖、旧响应兼容），另加后端单一权威源 / renderAll 接线 / CSS / 版本戳静态断言。非静态字符串自欺，是真实函数级验证。
+- **测试（实跑非自称）**：`test_e2e_chains.js` **54/0**（链路2 §A/§B/§D 新增 3 条：降级态 `conclusion.currentPrice === 9.5`、恢复态 `=== 12.3`、`dataGaps.note` 带降级来源）；`test_cache_bust_guard.js` 3/0/0；`test_swallow_catch_guard.js` 138=基线；`run_all_tests.js --quick` **125/125**（新增守卫自动纳入，跳过 13 需网络）。`node --check` 全部通过。
+- **提交口径**：用户本轮明确要求「git commit 并立即 push（或本地 tag/bundle 备份）」，故本轮执行 commit + push（不违反「任务完成后不自动同步」——那是**无指令时**的默认纪律；三端同步仪式 / 工作空间克隆 fetch+ff / md5 校验仍等用户明确说「同步」）。提交范围为工作区累积的全部改动（分时 AKShare、观察池评级、个股复盘三处缺失与缓存自愈、B2 前端闭环、版本戳、守卫、WAL），避免把改动拆散悬在本地。
+- **未做 / 待用户（如实）**：未在真实浏览器里肉眼确认警告条（AI 侧无 GUI 浏览器；上一轮 `start.vbs` 代跑被安全策略以 LOLBin 拒绝），已用 DOM 桩做等价函数级实测；服务重启与 Ctrl+F5 仍需用户点一下桌面图标。链路 3（路由后台状态机：并发请求 / running|done|error 轮询 / 服务重启后状态恢复）**未开**，按用户要求等本轮收口后再启动。

@@ -46,7 +46,7 @@
 
 | 层 | 内容 |
 |---|---|
-| 数据源 | 腾讯行情（getQuote）/ 东财历史 bar / 东方财富资金流（analyzeCapitalFlow）/ 费市场涨跌停池（sectorLimitStats）/ 东方财富新闻（newsSearch） |
+| 数据源 | 腾讯行情（getQuote）/ 东财历史 bar / 东方财富资金流（analyzeCapitalFlow）/ 全市场涨跌停池（sectorLimitStats）/ 东方财富新闻（newsSearch）/ **AKShare 分钟分时（主源）→ 腾讯分时 ifzq.gtimg.cn（降级）** / AKShare 龙虎榜（boardReviewData --lhb-only） |
 | 采集/落盘 | 每只股票生成一次：`data/stock-reviews/{symbol}/{date}.json`（含 markdown + marks + llm 元信息 + resolve 留痕） |
 | 调度 | 20:35 定时槽（REVIEW_SLOTS，server.js）对**当日大盘复盘观察池**逐只批量生成；幂等（当日已有即跳过）；串行，单只失败不阻塞；非交易日先查 trade_calendar 跳过 |
 | 前端取数 | GET /api/stock-review/pool、/:symbol、/:symbol/:date、/:symbol/history；POST /:symbol/run（参数经 validStockSymbol/validReviewDate 守卫，非法 400） |
@@ -55,8 +55,14 @@
 
 - **LLM 未配置 / 超时 / 报错 / 空返回** → 降级为**数据快照**照常落盘（:434 toSnapshotMarkdown），顶栏明示降级原因；不拒绝发布、不编造结论。
 - 快照只输出纯文本数值（成交额=亿、换手率独立成行、资金摘要为代码拼好的字符串、板块缺失标「数据缺失」），**禁止 `[object Object]` 与 raw JSON dump**（20261110e 事故回归，守卫 test_stock_review.js §6）。
+- 20261111c：快照新增「板块联动 / 龙虎榜 / 量能」三行。`volumeTier` 是对象，只取 `.tier` 文本（直接拼对象会复现 `[object Object]`，已由 test_e2e_chains.js §C 固化回归）。
 - 名称解析失败 / 歧义：resolveSymbol 返回 null 或 ambiguous=true，落盘 `resolve.ambiguous` 如实标注，不假装确定。
 - 数据缺失（板块 ok:false / 新闻失败 / 前日成交额缺失）→ 逐项标「数据缺失/不可用」，主流程不中断。
+- 20261111c 三块数据源接线：`sector` 先经 `sectorIdentity.resolveSectorIdentity` 解析行业再传 `getSectorLimitStats`（根治「行业识别失败」）；`volume` 复用 `analyzeCapitalFlow` 内部的 `volumeEngine` 结论；`lhb` 走 `boardReviewData.getLhbOnly(--lhb-only)` + `byCode` 全量代码索引按代码精确判定上榜状态。`lhb.available=false`（盘后未发布）按 note 写「待晚间补录」，不写「数据缺失」。
+- **20261111d 分钟级真实分时（Context.intraday）**：取数链 `scripts/board_review_data.py build_intraday()`（`--intraday-symbol` 早退通道）→ `lib/boardReviewData.js getIntraday()` → `lib/stockReview.js getIntradayData()`。AKShare 首选 `stock_zh_a_hist_min_em(period='1')`，失败退回 `stock_intraday_em(symbol)`；两者皆不可达（当前沙箱东财 `push2his` / `70.push2` 被代理拦截）时降级到项目现成 `stockData.fetchTencentMinutes()`，来源写 `腾讯分时 ifzq.gtimg.cn` 并用 `degradedFrom` 记录主源失败原因，**不冒充 AKShare**。
+- **不使用 `stock_zh_a_spot_em`**：实测该接口无 `symbol` 参数、返回全市场实时快照，且本脚本既有规定禁用（asOf 错位、耗时不可接受）；它只给单只股票的实时价，不是分时数据。
+- **代码权威 / Context 体积**：240+ 条分钟点不进 LLM Context，由 `summarizeIntraday()` 压成结构化特征（`pattern` / 四段 `segments.chgPct`+`volPct` / `highTime`+`lowTime` / `tailChgPct` / `closeVsAvgPct` / `peakVolTime` / `points`）。走势形态由代码判定，LLM 只叙事。累计量（腾讯 cumVol）与当分钟量（AKShare）按单调性自动识别；分段用半开区间 `[from,to)`，四段量能占比合计 = 100%。腾讯 15:01-15:30 盘后零量条目在降级侧先行过滤（否则稀释量能占比、错把 15:30 当末点）。
+- **五要素 / 口径日**：`intraday.source` + `date` + `dateMatches` 必带。`stock_intraday_em` 只给当日快照，Python 侧把 `asOf` 标为脚本运行日，历史复盘会得到 `dateMatches=false`，提示词要求明写「分时口径日与复盘日不一致」，禁止把旧分时当今日走势。两条取数路径都不可用时 `available=false` + `note` 如实说明，快照渲染「数据源暂不可用（原因）」，不写「分时明细数据缺失 / 按 OHLC 还原」。
 - 连续放弃链在降级日断开：**AI 故障 ≠ 信号解除**，页面与落盘均如实呈现。
 
 ## 六、逻辑漏洞自查清单（审计用）
@@ -70,6 +76,9 @@
 - [ ] 20:35 批量是否幂等？当日已有文件即 skipped 不调 LLM（:608 runPoolBatch）；非交易日跳过；失败逐只记录不阻塞。
 - [ ] 反向联动是否只注入计数与枚举？history.stockMarks 不带个股复盘正文（reviewContext.js compactStockMarks），不超 12000 字符预算。
 - [ ] 大盘页入口是否只给「带代码列」的表加链接？无代码列旧复盘不加（dailyReview.js decorateWatchPool），不猜股票代码。
+- [ ] 分时是否真实分钟级、且来源与口径日如实？`Context.intraday` 必带 source/date/dateMatches，降级必带 degradedFrom；快照不出现「分时明细数据缺失 / 按 OHLC 还原」（test_stock_review.js §1/§6/§6b、test_e2e_chains.js §B/§F）。
+- [ ] 分钟点是否被压缩进 Context？只允许结构化特征，禁止 raw points 数组注入 LLM（test_e2e_chains.js §B）。
+- [ ] 结构版本升级后，复用侧是否比对 schemaVersion？generateReview / runPoolBatch / 两个 GET 读取路由三处同口径（20261111c 缓存漏洞回归）。
 - [ ] 颜色纪律：评级 S/A=红、B=中性灰、C=绿；放弃信号=绿；警告横幅=绿（利空绿）；注入样式一律 var() 令牌（stockReviewUI.js ensureStyles）。
 
 ## 七、可配置项
@@ -83,4 +92,4 @@
 | 消息面条数 | 10 | NEWS_LIMIT |
 | 观察池最大行数 | 20（解析）/ 12（批量生成） | parseWatchPool / runPoolBatch |
 | 定时槽 | 20:35（Asia/Shanghai） | server.js REVIEW_SLOTS |
-| 结构版本 | stock-review-20261110b | SCHEMA_VERSION |
+| 结构版本 | stock-review-20261111d（Context 新增 intraday 分钟级分时） | SCHEMA_VERSION |

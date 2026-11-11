@@ -10,8 +10,9 @@
  * 做什么（幂等）：
  *   1. server.js：APP_VERSION '旧' → '新'，并在注释最前插入 `// [新] <note>`（历史版本注释原样保留）；
  *   2. 全部 public/*.html：`?v=旧` → `?v=新`；
- *   3. scripts/test_*.js：**行级限定替换**——仅含 `APP_VERSION` 或 `?v=` 的行内 旧→新
- *      （杜绝上轮裸 token 替换误伤历史条目断言/测试名的问题，如威高守卫的 20261104i）。
+ *   3. scripts/test_*.js：**行级限定替换**——含 `APP_VERSION` / `?v=` / 版本断言扫描关键词的行内 旧→新
+ *      （杜绝上轮裸 token 替换误伤历史条目断言/测试名的问题，如威高守卫的 20261104i；
+ *        20261111d 起补「版本断言/版本戳/版本注释」语境，修跨文件版本断言扫描漏改）。
  *
  * 不做什么：
  *   - 不动 data/ 落盘数据的版本字段（历史 SCHEMA 版本不随代码版本升级）；
@@ -95,13 +96,18 @@ for (const f of tests) {
   let hit = 0;
   const out = lines.map(line => {
     if (oldVer === nextVer) return line;
-    const inCtx = line.includes('APP_VERSION') || line.includes('?v=');
+    // [20261111d] 补「版本断言扫描」语境：多个守卫脚本用
+    //   「XX.js 版本断言同步至 <旧>」/「版本戳=<旧>」/「版本注释应对齐 <旧>」
+    // 做跨文件字面量同步检查，这些行既不含 APP_VERSION 也不含 ?v=，旧规则会漏改 → 全量回归红灯。
+    // 关键词均取中文断言措辞，不会误伤 SCHEMA_VERSION 名（review-llm-2026xxxx）或历史功能标记。
+    const inCtx = line.includes('APP_VERSION') || line.includes('?v=')
+      || /版本断言|版本戳|版本标识|版本注释|缓存破坏/.test(line);
     if (inCtx && line.includes(oldVer)) { hit++; return line.split(oldVer).join(nextVer); }
     return line;
   }).join('\n');
   if (hit > 0) {
     if (!dryRun) write(p, out);
-    changed++; report.push(`scripts/${f}: ${hit} 行（APP_VERSION/?v= 语境）${oldVer} → ${nextVer}`);
+    changed++; report.push(`scripts/${f}: ${hit} 行（版本戳/版本断言语境）${oldVer} → ${nextVer}`);
   }
 }
 

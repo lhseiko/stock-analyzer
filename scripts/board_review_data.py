@@ -276,6 +276,7 @@ def build_lhb(rows, date_str):
         'count': None, 'netBuyTotal': None, 'buyTotal': None, 'sellTotal': None,
         'topNetBuy': [], 'topNetSell': [], 'reasonStats': [],
         'institutionBuyMentions': None, 'institutionSellMentions': None,
+        'byCode': {},  # 20261111c：全量上榜明细按代码索引，供个股复盘精确判定是否上榜
         'note': '',
     }
     if not rows:
@@ -298,6 +299,19 @@ def build_lhb(rows, date_str):
         })
     block['ok'] = True
     block['count'] = len(recs)
+    # 20261111c：个股复盘需精确判定「该股今日是否上榜」，而 topNetBuy/topNetSell 只有净买卖前5，
+    # 不足以判断。此处透出全量按代码索引的明细（纯新增字段）。
+    # 隔离性：大盘复盘 reviewContext.lhbBlock 只挑固定字段，不读取 byCode，既有字段/语义/顺序零变化。
+    block['byCode'] = {
+        x['code']: {
+            'name': x['name'],
+            'netBuyYi': round(x['netBuy'] / 1e8, 2) if x['netBuy'] is not None else None,
+            'buyYi': round(x['buy'] / 1e8, 2) if x['buy'] is not None else None,
+            'sellYi': round(x['sell'] / 1e8, 2) if x['sell'] is not None else None,
+            'reason': x['reason'],
+            'changePct': x['changePct'],
+        } for x in recs if x['code']
+    }
     for key, field in (('netBuyTotal', 'netBuy'), ('buyTotal', 'buy'), ('sellTotal', 'sell')):
         vals = [x[field] for x in recs if x[field] is not None]
         block[key] = round(sum(vals) / 1e8, 2) if vals else None  # 亿元
@@ -656,13 +670,124 @@ def build_history_row(ak, hd, out, industry_counter=None):
     return row
 
 
+def build_intraday(symbol, date_str):
+    """20261111d 个股复盘·分钟级分时取数（AKShare 东财）。
+
+    优先按复盘日拉 1 分钟 K 线（可复盘历史某日），失败再退回当日分时明细。
+    只做客观数值整理（时间 / 价 / 均价 / 量）；走势形态与分段量能一律由 Node 侧代码计算，
+    LLM 仅叙事，符合「代码权威」铁律。
+    注意：stock_zh_a_spot_em 是全量实时快照、不接受 symbol 参数，且本脚本既有规定禁用（asOf 错位）。
+    """
+    import re
+    raw = str(date_str or '').strip().replace('-', '')
+    d = (raw[:4] + '-' + raw[4:6] + '-' + raw[6:8]) if (len(raw) == 8 and raw.isdigit()) else None
+    block = {
+        'ok': False, 'symbol': _str(symbol), 'date': d, 'asOf': None,
+        'source': None, 'points': [], 'note': '', 'issues': [],
+    }
+    try:
+        import akshare as ak
+    except Exception as e:
+        block['note'] = 'akshare 未安装或导入失败：' + str(e)[:120]
+        return block
+
+    df, src = None, None
+    if d:
+        try:
+            t = ak.stock_zh_a_hist_min_em(symbol=symbol, start_date=d + ' 09:30:00',
+                                          end_date=d + ' 15:00:00', period='1', adjust='')
+            if t is not None and len(t):
+                df, src = t, 'akshare stock_zh_a_hist_min_em(period=1)'
+        except Exception as e:
+            block['issues'].append('hist_min_em: ' + str(e)[:140])
+    if df is None:
+        try:
+            t = ak.stock_intraday_em(symbol=symbol)
+            if t is not None and len(t):
+                df, src = t, 'akshare stock_intraday_em'
+        except Exception as e:
+            block['issues'].append('intraday_em: ' + str(e)[:140])
+    if df is None or not len(df):
+        block['note'] = 'AKShare 分时接口未返回数据（东财 push2 行情域名不可达 / 该日无分时）'
+        return block
+
+    def pick(*names):
+        for n in names:
+            for c in df.columns:
+                if str(c) == n:
+                    return c
+        for n in names:
+            for c in df.columns:
+                if n in str(c):
+                    return c
+        return None
+
+    c_time = pick('时间', 'datetime', 'time')
+    c_price = pick('收盘', '价格', '成交价', '最新价', 'close', 'price')
+    c_avg = pick('均价', 'avg_price', 'avg')
+    c_vol = pick('成交量', 'volume', 'vol')
+    if not c_time or not c_price:
+        block['note'] = '分时返回缺少时间/价格列：' + ','.join(map(str, df.columns))[:160]
+        return block
+
+    # stock_intraday_em 只返回「当日」分时明细（时间列无日期），历史复盘时不得冒充复盘日：
+    # asOf 取脚本运行日，Node 侧据此算 dateMatches=false 并在卡片中如实提示口径日不一致。
+    intraday_snapshot = (src == 'akshare stock_intraday_em')
+    pts, asof = [], (datetime.now().strftime('%Y-%m-%d') if intraday_snapshot else None)
+    for _, r in df.iterrows():
+        s = str(r.get(c_time, '')).strip()
+        m = re.search(r'(\d{1,2}):(\d{2})(?::\d{2})?', s)
+        if m:
+            hhmm = m.group(1).zfill(2) + m.group(2)
+        else:
+            digits = re.sub(r'\D', '', s)
+            hhmm = digits[-4:] if len(digits) >= 4 else ''
+        # 只保留连续竞价时段；剔除 15:01-15:30 盘后零量条目（volumeEngine 既有教训）
+        if not hhmm or not (('0930' <= hhmm <= '1130') or ('1300' <= hhmm <= '1500')):
+            continue
+        px = _num(r.get(c_price))
+        if px is None or px <= 0:
+            continue
+        dm = re.search(r'(\d{4})-?(\d{2})-?(\d{2})', s)
+        if dm and not asof:
+            asof = dm.group(1) + '-' + dm.group(2) + '-' + dm.group(3)
+        pts.append({
+            'time': hhmm,
+            'price': px,
+            'avg': _num(r.get(c_avg)) if c_avg else None,
+            'volume': _num(r.get(c_vol)) if c_vol else None,
+        })
+    if len(pts) < 30:
+        block['note'] = '分时有效点不足 30（实际 %d），不输出半成品' % len(pts)
+        return block
+    block['ok'] = True
+    block['source'] = src
+    block['asOf'] = asof or d
+    block['points'] = pts
+    block['note'] = '分时点为客观成交数值；走势形态/分段量能由 Node 侧代码计算，LLM 仅叙事'
+    if intraday_snapshot:
+        block['note'] += '；stock_intraday_em 为当日快照（asOf=' + block['asOf'] + '），历史复盘须核对 dateMatches'
+    return block
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument('--date', required=True, help='交易日 YYYYMMDD')
     p.add_argument('--prev-date', default='', help='上一交易日 YYYYMMDD（算晋级率）')
     p.add_argument('--hist-dates', default='', help='复盘日之前的前3-5个交易日，逗号分隔 YYYYMMDD（由 Node 侧传入）')
     p.add_argument('--lhb-only', action='store_true', help='晚间龙虎榜补录：只抓当日龙虎榜明细，不跑涨停池/多日序列')
+    p.add_argument('--intraday-symbol', default='', help='20261111d 个股分时取数：6 位代码（早退通道，不跑复盘主流程）')
+    p.add_argument('--intraday-date', default='', help='分时交易日 YYYYMMDD（默认取 --date）')
     a = p.parse_args()
+    # 20261111d 分时早退通道：与 --lhb-only 同范式，互不干扰主流程 / 龙虎榜补录
+    if a.intraday_symbol:
+        sys.stdout.write(json.dumps({
+            'ok': True, 'date': a.date.strip(),
+            'fetchedAt': datetime.now().isoformat(timespec='seconds'),
+            'intraday': build_intraday(a.intraday_symbol.strip(), a.intraday_date.strip() or a.date.strip()),
+        }, ensure_ascii=False, default=str))
+        sys.stdout.write('\n')
+        return
     d, pd = a.date.strip(), a.prev_date.strip()
     hist_dates = [x.strip() for x in a.hist_dates.strip().split(',') if x.strip()]
     out = {

@@ -85,18 +85,18 @@ ok(ve.includes("schema: 'volume-engine-20261109c'"), '引擎 schema = volume-eng
 ok(sjd.includes("const LAYOUT_VERSION = '20261109c'"), 'LAYOUT_VERSION 已升 20261106o（量价配合子信号输入 signal 值域与分值变化：涨跌判定与 135 格走势档同源，判断记录强制重算）');
 
 section('§6 版本戳与缓存破坏');
-ok(/const APP_VERSION = '20261111b'/.test(server), 'APP_VERSION = 20261111b');
+ok(/const APP_VERSION = '20261111d'/.test(server), 'APP_VERSION = 20261111d');
 ok(server.includes('[20261106e]'), 'server.js 存在 [20261106e] 独立变更日志条目');
 ok(server.includes('[20261106c]'), 'server.js 存在 [20261106c] 独立变更日志条目');
 ok(server.includes('[20261106b]'), '[20261106b] 功能引入版本号保留，未随全局升版误改（铁律）');
 for (const f of ['index.html', 'accuracy.html', 'logic-model.html', 'notes.html', 'volume-map.html']) {
   const html = read('public/' + f);
-  ok(html.includes('?v=20261111b') && !html.includes('?v=20261106l'), `public/${f} 缓存戳全部对齐 20261111b`);
+  ok(html.includes('?v=20261111d') && !html.includes('?v=20261106l'), `public/${f} 缓存戳全部对齐 20261111d`);
 }
 const guards = ['test_volume_ratio_labels.js', 'test_position_trend_segment.js', 'test_consistency_audit.js']; // test_cap_vol_ratio_chart 动态读取 APP_VERSION（无版本字面量），不参与字面量同步断言
 for (const g of guards) {
   const s = read('scripts/' + g);
-  ok(s.includes('20261111b'), `既有守卫当前版本断言已同步 20261111b：${g}`);
+  ok(s.includes('20261111d'), `既有守卫当前版本断言已同步 20261111d：${g}`);
 }
 
 console.log(`\n===== 汇总：通过 ${pass} / ${fail} 失败 =====`);

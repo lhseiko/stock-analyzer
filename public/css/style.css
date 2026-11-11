@@ -6205,6 +6205,9 @@ body { display: flex; flex-direction: column; }
 .bl-strip { background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; }
 .bl-strip .mt-acc-chip { display: inline-flex; }
 .bl-warn { margin-top: 8px; color: var(--accent); font-size: 12px; line-height: 1.7; }
+/* [20261111d] 深度分析·当前价降级警告条（复用 bl-warn 琥珀语义；由 dataGaps.degraded 驱动） */
+.deep-degraded-bar { display: block; margin: 0 0 12px; padding: 9px 12px; background: rgba(240,185,123,0.08); border: 1px solid rgba(240,185,123,0.35); border-left: 3px solid var(--accent); border-radius: var(--radius); font-size: 12px; line-height: 1.7; color: var(--accent); }
+.deep-degraded-bar .deep-degraded-src { display: block; margin-top: 2px; color: var(--text-secondary); font-size: 11px; }
 .bl-sub { margin-top: 4px; color: var(--text-secondary); font-size: 12px; line-height: 1.6; word-break: break-all; }
 .bl-months { margin-top: 8px; font-size: 12px; }
 .bl-months summary { cursor: pointer; color: var(--text-secondary); user-select: none; }

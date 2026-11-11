@@ -1,15 +1,15 @@
 # 测试回归报告（docs/test-report.md）
 
-> 生成时间：2026-11-11T06:49:15.075Z
+> 生成时间：2026-11-11T12:17:46.933Z
 > 模式：quick（跳过需网络测试）
 > 命令：`node scripts/run_all_tests.js --quick`
 
 ## 结论
 
-**✅ 123/123 全绿（另跳过 13 个需网络测试）**
+**✅ 125/125 全绿（另跳过 13 个需网络测试）**
 
-- 执行测试数：123
-- 通过：123　失败：0　跳过（需网络）：13
+- 执行测试数：125
+- 通过：125　失败：0　跳过（需网络）：13
 
 ## 明细
 
@@ -33,6 +33,8 @@
 | ✅ | `test_dashboard_ui_d.js` | 0 |
 | ✅ | `test_data_honesty.js` | 0 |
 | ✅ | `test_deep_chip_u1.js` | 0 |
+| ✅ | `test_deep_degraded_guard.js` | 0 |
+| ✅ | `test_e2e_chains.js` | 0 |
 | ✅ | `test_emotion_judgment_consistency.js` | 0 |
 | ✅ | `test_emotion_margin_dual.js` | 0 |
 | ✅ | `test_emotion_margin_render.js` | 0 |

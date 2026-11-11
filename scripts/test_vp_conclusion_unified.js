@@ -129,12 +129,12 @@ ok(!chartsCode.includes('全模块综合总结（代码聚合）'), '聚合行�
 ok(!chartsCode.includes('20261106m（用户裁决'), 'm 轮聚合块注释已清理（留档注释除外）');
 
 section('§8 版本戳 / 缓存破坏');
-ok(/const APP_VERSION = '20261111b'/.test(server), 'APP_VERSION = 20261111b');
+ok(/const APP_VERSION = '20261111d'/.test(server), 'APP_VERSION = 20261111d');
 ok(server.includes('[20261106i]'), 'server.js 存在 [20261106i] 独立变更日志');
 ok(server.includes('[20261106h]') && server.includes('[20261106g]'), '功能引入版本号保留（铁律）');
 for (const f of ['index.html', 'accuracy.html', 'logic-model.html', 'notes.html', 'volume-map.html']) {
   const html = read('public/' + f);
-  ok(html.includes('?v=20261111b') && !html.includes('?v=20261106l'), `public/${f} 缓存戳全部对齐 20261111b`);
+  ok(html.includes('?v=20261111d') && !html.includes('?v=20261106l'), `public/${f} 缓存戳全部对齐 20261111d`);
 }
 
 console.log(`\n===== 汇总：通过 ${pass} / ${fail} 失败 =====`);

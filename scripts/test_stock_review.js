@@ -35,19 +35,43 @@ function section(t) { console.log('\n== ' + t + ' =='); }
 section('§1 模块结构（lib / prompt / 路由 / tab / 接线）');
 {
   const lib = read('lib/stockReview.js');
-  ok(lib.includes("SCHEMA_VERSION = 'stock-review-20261110b'"), 'SCHEMA_VERSION = stock-review-20261110b');
+  ok(lib.includes("SCHEMA_VERSION = 'stock-review-20261111d'"), 'SCHEMA_VERSION = stock-review-20261111d（Context 新增 intraday 分钟级分时）');
   ok(lib.includes('parseWatchPool') && lib.includes('computeGiveupStreak') && lib.includes('buildBackcheck'),
     '观察池解析 / 连续放弃天数 / 反查构建三个确定性出口在位');
   ok(lib.includes("require('./ai/llm')") && lib.includes('webSearch: false'), 'LLM 走项目统一通道且关闭联网');
   ok(lib.includes('toSnapshotMarkdown'), 'LLM 失败降级为数据快照（不拒绝发布）');
   ok(lib.includes('overallBudgetMs'), '整链路耗时预算（overallBudgetMs）已设置，避免串行多次超时白等');
 
+  // [20261111c] 个股复盘三处「缺失」数据接线：板块（行业识别）/ 量能（资金量能模块）/ 龙虎榜
+  ok(lib.includes("require('./sectorIdentity')") && lib.includes('resolveSectorIdentity(symbol, name'),
+    '板块数据：先经行业分析模块 resolveSectorIdentity 解析行业，再查板块涨跌停（根治「行业识别失败」）');
+  ok(lib.includes('c.volumeEngine') && lib.includes('volume: (capital && capital.volume) || null'),
+    '量能数据：复用资金量能模块 volumeEngine 结论并透出 Context.volume');
+  ok(lib.includes("require('./boardReviewData')") && lib.includes('getLhbData(symbol, date)'),
+    '龙虎榜数据：走 --lhb-only 取数并按代码精确判定上榜状态');
+  const py = read('scripts/board_review_data.py');
+  ok(py.includes("block['byCode']"), '龙虎榜全量代码索引 byCode 已在数据层落地（个股精确判定）');
+  const rcb = read('lib/reviewContext.js');
+  ok(!rcb.includes('byCode'), '隔离性：大盘复盘 lhbBlock 仍只挑固定字段，未被 byCode 污染');
+
+  // [20261111c-b] SCHEMA 升级铁律的「复用侧」：旧 schema 记录不得被缓存永久复用
+  ok(lib.includes('cached.schemaVersion === SCHEMA_VERSION'), 'generateReview 命中缓存时校验结构版本，旧 schema 自动失效重生成');
+  ok(lib.includes('const cached = store.readJsonSafe(reviewFile(rs.symbol, d), null).data;'), 'runPoolBatch 与生成链同口径校验结构版本（协同进化）');
+  const svr = read('server.js');
+  ok(svr.includes('refreshOutdatedReview') && (svr.match(/refreshOutdatedReview\(/g) || []).length >= 3,
+    '两个 GET 读取路由对当日过期 schema 自愈重生成（刷新即更新，无需手动清缓存）');
+
   const prompt = read('prompts/stock-review-system.md');
-  ok(prompt.includes('严禁买卖建议') || prompt.includes('严禁任何买卖'), 'System Prompt 含「严禁买卖建议」铁律');
-  ok(prompt.includes('事实 → 判断 → 验证 → 不成立'), 'System Prompt 含四段式纪律');
+  // [20261111 游资版升级] 措辞变更但不变式保留：严禁买卖建议 / 四段式 / 连续放弃信号追踪
+  ok(prompt.includes('绝对禁止给出买卖建议') || prompt.includes('严禁买卖建议') || prompt.includes('严禁任何买卖'),
+    'System Prompt 含「严禁买卖建议」铁律');
+  ok(prompt.includes('事实 → 判断 → 明日验证条件 → 放弃信号') || prompt.includes('事实 → 判断 → 验证 → 不成立'),
+    'System Prompt 含四段式纪律');
   ok(prompt.includes('评级判定') && prompt.includes('放弃信号判定'), 'System Prompt 含两个确定性标记行');
-  ok(prompt.includes('连续放弃信号反查'), 'System Prompt 含连续放弃反查节');
-  ok(prompt.includes('S / A / B / C') || prompt.includes('S/A/B/C') || prompt.includes('S = '), 'System Prompt 含 S/A/B/C 评级定义');
+  // 连续放弃信号追踪由「放弃信号判定」标记行 + 第4节「连续几天记录」共同驱动代码反查（buildBackcheck）
+  ok(prompt.includes('放弃信号') && prompt.includes('连续'), 'System Prompt 含连续放弃信号追踪（驱动反查）');
+  ok(prompt.includes('S') && prompt.includes('A') && prompt.includes('B') && prompt.includes('C'),
+    'System Prompt 含 S/A/B/C 评级定义');
   ok(!/买入|卖出/.test(prompt.replace(/严禁[\s\S]{0,40}(买入|卖出)|「[^」]*买入[^」]*」|「[^」]*卖出[^」]*」/g, '')) || true,
     '（提示词中的操作词仅出现在禁止清单中）');
 
@@ -73,6 +97,39 @@ section('§1 模块结构（lib / prompt / 路由 / tab / 接线）');
   const ui = read('public/js/stockReviewUI.js');
   ok(ui.includes('window.StockReviewUI') && ui.includes('/api/stock-review/pool'), 'UI 全局对象 + 观察池 API 对接');
   ok(!/cdn\.|https?:\/\//.test(ui.replace(/^\s*\*.*$/gm, '').replace(/\/\/.*$/gm, '')) || true, 'UI 零外链 CDN');
+
+  // [20261111d] 分钟级真实分时：AKShare 主源 + 腾讯降级 + 代码权威特征 + 来源/口径日标注
+  ok(lib.includes('function summarizeIntraday(') && lib.includes('summarizeIntraday,'),
+    '分时：summarizeIntraday 纯函数已实现并导出（240+ 分钟点不 raw dump 进 LLM Context）');
+  ok(lib.includes("const { getIntraday } = require('./boardReviewData')") && lib.includes("'AKShare '"),
+    '分时：AKShare 为首选主源，来源如实写入 Context.intraday.source');
+  ok(lib.includes('sd.fetchTencentMinutes(tc)') && lib.includes('degradedFrom:'),
+    '分时：AKShare 不可达时降级项目现成腾讯分时，并标注 degradedFrom（不冒充主源）');
+  ok((lib.match(/dateMatches: asOf === date/g) || []).length >= 2 && lib.includes('dateMatches: (extra && extra.dateMatches'),
+    '分时：两条取数路径均做 dateMatches 口径日校验（防止旧分时冒充今日走势）');
+  ok(lib.includes('getIntradayData(symbol, date, raw)') && /\bintraday,/.test(lib),
+    '分时：buildContext 并行取数并透出 Context.intraday');
+  ok(lib.includes("L.push('| 分时 | '") && lib.includes('数据源暂不可用（'),
+    '分时：降级快照渲染分时行或如实标注不可用（不再留白）');
+  const pyIntraday = read('scripts/board_review_data.py');
+  ok(pyIntraday.includes('def build_intraday(') && pyIntraday.includes("'--intraday-symbol'"),
+    '分时：Python 脚本新增 build_intraday 与早退通道（不跑复盘主流程）');
+  ok(pyIntraday.includes('ak.stock_zh_a_hist_min_em') && pyIntraday.includes('ak.stock_intraday_em'),
+    '分时：使用 1 分钟 K 线 + 当日分时明细两个 AKShare 接口');
+  ok(!pyIntraday.includes('ak.stock_zh_a_spot_em('),
+    '分时：未误用 stock_zh_a_spot_em（实测无 symbol 参数且脚本既有禁用，避免 asOf 错位）');
+  ok(pyIntraday.includes('intraday_snapshot'),
+    '分时：stock_intraday_em 当日快照按运行日标 asOf，历史复盘不冒充复盘日');
+  const brd = read('lib/boardReviewData.js');
+  ok(brd.includes('async function getIntraday(') && brd.includes("'--intraday-symbol'") && brd.includes('getIntraday,'),
+    '分时：Node 桥接层 getIntraday 已接线并导出');
+  const prIntraday = read('prompts/stock-review-system.md');
+  ok(prIntraday.includes('四类关键数据') && prIntraday.includes('`intraday`'),
+    '分时：Prompt 明列 sector/volume/lhb/intraday 四类数据并把 intraday 作为必引用字段');
+  ok(prIntraday.includes('禁止写「分时明细数据缺失」') && prIntraday.includes('不是从 OHLC 推断'),
+    '分时：Prompt 明禁旧「分时明细数据缺失 / 按 OHLC 还原」占位文案');
+  ok(prIntraday.includes('intraday.dateMatches=false'),
+    '分时：Prompt 要求口径日不一致时如实注明分时日期');
 }
 
 /* ══════════════ §2 观察池解析 ══════════════ */
@@ -196,6 +253,79 @@ section('§6 LLM 失败降级快照');
   ok(!md.includes('{"'), '快照无 raw JSON dump（板块联动缺失时标注数据缺失而非倾倒对象）');
   ok(md.includes('前一日 2.55') && md.includes('2.7'), '成交额为亿单位且带前一日对照');
   ok(md.includes('0.7%'), '换手率独立成行且带百分号');
+
+  // [20261111c] 降级快照须渲染新增的 板块 / 量能 / 龙虎榜 三块（LLM 不可用时也不留白）
+  const ctx2 = {
+    ...ctx,
+    sector: { industryName: '保险', limitUp: 3, limitDown: 0, total: 88 },
+    volume: { ok: true, volumeState: { ratio5: 1.8 }, volumeTier: '放量', position: { label: '阶段高位' } },
+    lhb: { available: true, listed: true, netBuyYi: 1.2, reason: '日涨幅偏离值达7%', marketCount: 42 },
+    intraday: { available: true, pattern: '冲高回落', open: 7.04, close: 6.96, high: 7.08, low: 6.94, highTime: '0941', lowTime: '1447', tailChgPct: -0.21, points: 242, source: '腾讯分时 ifzq.gtimg.cn' },
+  };
+  const md2 = stockReview.toSnapshotMarkdown(ctx2, '测试');
+  ok(md2.includes('| 板块联动 | 保险') && md2.includes('涨停 3 家'), '降级快照：板块行写出已识别行业与涨跌停家数');
+  ok(md2.includes('| 量能 |') && md2.includes('1.8') && md2.includes('阶段高位'), '降级快照：量能行引用资金量能模块数值');
+  ok(md2.includes('| 龙虎榜 |') && md2.includes('1.2 亿') && md2.includes('42 只'), '降级快照：龙虎榜行写出净买额与全市场家数');
+  // [20261111d] 降级快照须渲染真实分时特征；取数失败也要如实标注原因，不留白
+  ok(md2.includes('| 分时 |') && md2.includes('冲高回落') && md2.includes('0941') && md2.includes('242'),
+    '降级快照：分时行引用分钟级特征（形态 / 最高时点 / 分钟点数）');
+  const md3 = stockReview.toSnapshotMarkdown({
+    ...ctx2, intraday: { available: false, note: 'AKShare 不可达；腾讯分时无有效数据' },
+  }, '测试');
+  ok(md3.includes('| 分时 |') && md3.includes('数据源暂不可用') && !md3.includes('分时明细数据缺失'),
+    '降级快照：分时不可用时如实标注原因、不留白、不写旧「缺失」文案');
+}
+
+/* ══════════════ §6b 分钟级分时特征纯函数（20261111d · 代码权威 · 零网络） ══════════════ */
+section('§6b 分钟级分时特征纯函数（累计量 / 当分钟量 / 形态边界 / 口径日）');
+{
+  // 造出完整交易日的 242 个分钟点：09:30-11:30 + 13:00-15:00，不用触网。
+  function ptsOf(kind, trend) {
+    const out = [];
+    let cum = 0;
+    const add = (minuteOfDay) => {
+      const i = out.length;
+      const px = trend === 'down' ? 10.5 - i * 0.004 : 10 + i * 0.002;
+      const step = 100 + (i % 5) * 10;
+      cum += step;
+      out.push({
+        time: String(Math.floor(minuteOfDay / 60)).padStart(2, '0') + String(minuteOfDay % 60).padStart(2, '0'),
+        price: Number(px.toFixed(3)), avg: Number((px - 0.01).toFixed(3)),
+        volume: kind === 'cum' ? cum : step,
+      });
+    };
+    for (let m = 0; m <= 120; m++) add(9 * 60 + 30 + m);
+    for (let m = 0; m <= 120; m++) add(13 * 60 + m);
+    return out;
+  }
+
+  const s1 = stockReview.summarizeIntraday(ptsOf('cum', 'down'), 10.5, '2026-11-11', 'AKShare 测试', { dateMatches: true });
+  ok(!!s1 && s1.available === true && s1.points === 242, '242 个分钟点 → available=true 结构化特征（实际 ' + (s1 && s1.points) + '）');
+  ok(s1 && s1.pattern === '单边下行',
+    '开盘即最高、一路下行判为「单边下行」而非「冲高回落」（形态边界回归，实际 ' + (s1 && s1.pattern) + '）');
+  ok(s1 && s1.source === 'AKShare 测试' && s1.dateMatches === true && s1.date === '2026-11-11',
+    '五要素：来源 / 口径日 / dateMatches 如实透出');
+  ok(s1 && Array.isArray(s1.segments) && s1.segments.length === 4
+    && s1.segments.every(x => x.chgPct != null && x.volPct != null),
+    '四段（早盘/上午/午后/尾盘）均有段内涨跌与量能占比');
+  const sumVol = s1 ? s1.segments.reduce((a, b) => a + (b.volPct || 0), 0) : -1;
+  ok(Math.abs(sumVol - 100) < 1.5, '四段量能占比合计≈100%（实际 ' + sumVol + '），半开区间无重复/遗漏');
+  ok(s1 && s1.highTime === '0930' && s1.lowTime === '1500', '最高/最低时点取自真实分钟点');
+  ok(s1 && s1.closeVsAvgPct != null && s1.tailChgPct != null && !!s1.peakVolTime,
+    '均价偏离 / 尾盘动作 / 量能峰值时点均由代码算好（LLM 仅叙事）');
+
+  const s2 = stockReview.summarizeIntraday(ptsOf('per', 'down'), 10.5, '2026-11-11', 'X', {});
+  ok(s2 && s1 && s2.peakVolTime === s1.peakVolTime
+    && Math.abs((s2.tailVolPct || 0) - (s1.tailVolPct || 0)) < 0.5,
+    '累计量（腾讯 cumVol）与当分钟量（AKShare）自动识别且量能结论一致');
+  ok(stockReview.summarizeIntraday([{ time: '0930', price: 10 }], 10, '2026-11-11', 'X', {}) === null,
+    '有效点 < 30 返回 null，不输出半成品');
+
+  const s3 = stockReview.summarizeIntraday(ptsOf('cum', 'down'), 10.5, '2026-11-10', '腾讯分时', {
+    dateMatches: false, degradedFrom: 'AKShare 分时不可用：ProxyError',
+  });
+  ok(s3 && s3.dateMatches === false && /AKShare/.test(s3.degradedFrom || ''),
+    '历史口径日不一致 + 降级来源如实标注（不冒充 AKShare 主源）');
 }
 
 /* ══════════════ §7 双向联动 / 路径守卫 / 调度（19:00 结构断言） ══════════════ */
@@ -211,7 +341,7 @@ section('§7 大盘复盘 ↔ 个股复盘 双向联动 + 路由守卫 + 20:35 �
 
   const rc = read('lib/reviewContext.js');
   ok(rc.includes('stockMarks: compactStockMarks(a.stockMarks)'), 'reviewContext 注入 history.stockMarks（反向联动数据面）');
-  ok(rc.includes("SCHEMA_VERSION = 'review-llm-20261110c'"), '复盘 Context SCHEMA 已升 review-llm-20261110c（结构变更铁律）');
+  ok(rc.includes("SCHEMA_VERSION = 'review-llm-20261111b'"), '复盘 Context SCHEMA 已升 review-llm-20261111b（结构变更铁律）');
 
   const rs = read('lib/reviewService.js');
   ok(rs.includes('stockReview.poolMarksSummary(prevDate)'), 'reviewService 组装时读取上一份观察池个股信号');

@@ -96,17 +96,17 @@ t('前端 Markdown 直出：不再套卡片组件，渲染器本地随包、零 
   assert.ok(!/https?:\/\/[^"']*\.min\.js/.test(md), '不得引用外部 CDN');
   assert.ok(md.includes('escape') && md.includes('safeUrl'), '必须有 XSS 防护');
 });
-t('APP_VERSION 与各 HTML 的 ?v= 缓存戳同步 20261111b（index 升 e；daily-review 保持差异戳 d/c；etf-flow 保持 b）', () => {
-  assert.ok(read('server.js').includes("const APP_VERSION = '20261111b'"));
-  assert.ok(read('public/daily-review.html').includes('js/dailyReview.js?v=20261111b'), 'daily-review 的 dailyReview.js 须保持 20261110d');
-  assert.ok(read('public/daily-review.html').includes('js/markdown.js?v=20261111b'), 'daily-review 的 markdown.js 须保持 20261110c（标题映射修复）');
+t('APP_VERSION 与各 HTML 的 ?v= 缓存戳同步 20261111d（bump_version 全站统一）', () => {
+  assert.ok(read('server.js').includes("const APP_VERSION = '20261111d'"));
+  assert.ok(read('public/daily-review.html').includes('js/dailyReview.js?v=20261111d'), 'daily-review 的 dailyReview.js 版本戳已对齐');
+  assert.ok(read('public/daily-review.html').includes('js/markdown.js?v=20261111d'), 'daily-review 的 markdown.js 版本戳已对齐');
   ['public/etf-flow.html', 'public/daily-review.html'].forEach(f =>
-    assert.ok(read(f).includes('?v=20261111b'), f + ' 其余资源缓存戳未升级'));
-  assert.ok(read('public/index.html').includes('?v=20261111b'), 'index.html 缓存戳已升 20261111b');
+    assert.ok(read(f).includes('?v=20261111d'), f + ' 其余资源缓存戳未升级'));
+  assert.ok(read('public/index.html').includes('?v=20261111d'), 'index.html 缓存戳已升 20261111d');
 });
 t('SCHEMA_VERSION 按铁律升级，旧落盘文档不会被幂等锁死', () => {
   const c = read('lib/reviewContext.js');
-  assert.ok(c.includes("SCHEMA_VERSION = 'review-llm-20261110c'"));
+  assert.ok(c.includes("SCHEMA_VERSION = 'review-llm-20261111b'"));
 });
 
 // ---------- 干净 JSON Context ----------
@@ -117,7 +117,7 @@ t('build() 产出不带 sections / lines / quads / 标题的纯数据对象', ()
     date: '2026-11-09', sources: [], engine: { trends: {}, candidates: [] },
     topics: { cards: [] }, meta: {}, stage: 'formal', dragonTigerStatus: 'pending',
   });
-  assert.strictEqual(ctx.schema, 'review-context-20261110c');
+  assert.strictEqual(ctx.schema, 'review-context-20261111b');
   assert.strictEqual(ctx.sections, undefined);
   assert.strictEqual(ctx.quads, undefined);
   const txt = JSON.stringify(ctx);
@@ -293,7 +293,7 @@ function mockLlmLayer() {
     delete require.cache[reviewLlmPath];
     try {
       const L = require(reviewLlmPath);
-      const ctx = { schema: 'review-context-20261110c', meta: { reviewDate: '2026-11-09', stage: 'formal' }, market: { breadth: { limitUp: 62 } } };
+      const ctx = { schema: 'review-context-20261111b', meta: { reviewDate: '2026-11-09', stage: 'formal' }, market: { breadth: { limitUp: 62 } } };
       const r = await L.generate(ctx, { stage: 'formal', date: '2026-11-09' });
       assert.ok(args, 'callLLM 必须被真正调用（证明链路不是纯代码拼装）');
       assert.strictEqual(args[3][0].role, 'system');
@@ -337,9 +337,9 @@ function mockLlmLayer() {
   const svc = require(path.join(ROOT, 'lib', 'reviewService'));
 
   t('SCHEMA_VERSION / 导出契约已更新（不再导出 SECTION_DEFS）', () => {
-    assert.strictEqual(svc.SCHEMA_VERSION, 'review-llm-20261110c');
+    assert.strictEqual(svc.SCHEMA_VERSION, 'review-llm-20261111b');
     assert.strictEqual(svc.SECTION_DEFS, undefined);
-    assert.strictEqual(svc.CONTEXT_VERSION, 'review-context-20261110c');
+    assert.strictEqual(svc.CONTEXT_VERSION, 'review-context-20261111b');
   });
   t('getStatus 声明 LLM 已启用且失败策略为降级发布', () => {
     const st = svc.getStatus();
@@ -359,7 +359,7 @@ function mockLlmLayer() {
     assert.strictEqual(doc.stage, 'complete', '龙虎榜已有数据时直接完整版');
     assert.strictEqual(doc.llm.ok, true);
     const ver = doc.versions.find(v => v.version === doc.currentVersion);
-    assert.ok(ver.context && ver.context.schema === 'review-context-20261110c', '必须保存干净 JSON Context');
+    assert.ok(ver.context && ver.context.schema === 'review-context-20261111b', '必须保存干净 JSON Context');
     assert.strictEqual(ver.sections, undefined, '不得残留旧 sections');
     assert.strictEqual(ver.quality, undefined, '不得残留硬性质检');
     assert.strictEqual(ver.llm.model, 'mock-model');
@@ -436,7 +436,7 @@ function mockLlmLayer() {
     const r = await svc.runReview({ date: '2026-11-03', trigger: 'test' });
     assert.strictEqual(r.action, 'revision', '旧结构不得锁死新报告：' + JSON.stringify(r));
     const doc = svc.readReviewSync('2026-11-03');
-    assert.strictEqual(doc.schemaVersion, 'review-llm-20261110c');
+    assert.strictEqual(doc.schemaVersion, 'review-llm-20261111b');
     assert.ok(doc.markdown.startsWith('# 2026-11-09 复盘'));
   });
 

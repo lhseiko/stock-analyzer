@@ -241,6 +241,56 @@ t('市场级风险偏高时按规则降一级', () => {
   assert.ok(rank[hi.grade] >= rank[lo.grade], `${lo.grade} → ${hi.grade} 应降级或持平`);
 });
 
+console.log('\n[5b] 20261111 板块地位评级覆盖：退潮期也按板块地位给评级，绝不空白');
+t('板块地位保底：最高标无否决且确认不足 → 保底 B（试错），绝不空白', () => {
+  const f = fixture({
+    breadth: { up: 3000, down: 1500, limitUp: 80, limitDown: 5, flat: 100 },
+    ladder: { ok: true, limitUpCount: 80, maxBoards: 3, hasGap: true, gapAt: [2],
+      spaceBoard: { name: '空间板', code: '000001', boards: 3, industry: '半导体' },
+      tiers: [
+        { boards: 3, count: 1, stocks: [{ code: '000001', name: '空间板', industry: '半导体' }] },
+        { boards: 2, count: 1, stocks: [{ code: '000002', name: '跟风', industry: '半导体' }] },
+      ] },
+    prevPool: { ok: true, count: 84, redRate: 60, bigDropRate: 40, bigDropCount: 8,
+      topLosers: [], topGainers: [], industryBigDrop: [], promotion: [{ from: 1, to: 2, rate: 30 }] },
+    sectors: { ok: true, total: 1, top: [{ industry: '半导体', count: 3, boardsMax: 3, amountYi: 30, hasLayer: true }], singleDance: [] },
+    activity: { ok: true, ztAmountYi: 300, strongCount: 100, strongAmountYi: 500,
+      topAmount: [
+        { code: '000001', name: '空间板', amountYi: 5, chgPct: 10, industry: '半导体', from: 'zt' },
+        { code: '000002', name: '跟风', amountYi: 5, chgPct: 10, industry: '半导体', from: 'zt' },
+      ] },
+    news: [],
+    historySeries: [
+      { date: 'd1', limitUp: 80, limitDown: 5, prevRedRate: 60, promotionRate: 30, ztAmountYi: 300 },
+      { date: 'd2', limitUp: 80, limitDown: 5, prevRedRate: 60, promotionRate: 30, ztAmountYi: 300 },
+      { date: 'd3', limitUp: 80, limitDown: 5, prevRedRate: 60, promotionRate: 30, ztAmountYi: 300 },
+      { date: 'd4', limitUp: 80, limitDown: 5, prevRedRate: 60, promotionRate: 30, ztAmountYi: 300 },
+    ],
+  });
+  const o = E.analyze(f);
+  const top = o.candidates.find(c => c.code === '000001');
+  const follower = o.candidates.find(c => c.code === '000002');
+  assert.ok(top, '空间板候选应存在');
+  assert.strictEqual(top.sectorPosition, '最高标', '3 板为板块最高 → 最高标');
+  assert.strictEqual(top.grade, 'B', '最高标无否决、确认不足 → 保底 B（试错）');
+  assert.strictEqual(top.trialGrade, true, '保底 B 应标记试错级');
+  assert.strictEqual(top.gradeLabel, 'B（试错）', '语义标注应为 B（试错）');
+  assert.ok(follower.sectorPosition === '梯队中位' || follower.sectorPosition === '跟风/独立', '2 板非最高 → 梯队中位/跟风');
+  assert.strictEqual(follower.grade, 'C', '跟风确认不足 → C（观察）');
+  assert.strictEqual(follower.gradeLabel, 'C（观察）');
+  // 所有候选评级必须非空白（含板块级）
+  o.candidates.forEach(c => assert.ok(c.gradeLabel && c.gradeLabel !== '—', c.name + ' 评级不得空白'));
+});
+t('板块地位保底不破坏铁律：硬/软否决与漏斗明确未通过仍 → C/D', () => {
+  // 复用 fixture：软否决（V3 高位负反馈扩散）候选不得因板块地位升 B
+  const o = E.analyze(fixture());
+  o.candidates.forEach(c => {
+    if (c.veto.hasHardVeto) assert.strictEqual(c.grade, 'D', c.name + ' 硬否决必须 D');
+    else if ((c.veto.softHits || []).length) assert.strictEqual(c.grade, 'C', c.name + ' 软否决必须 C 永不 A/B');
+    else if (c.funnel && c.funnel.explicitFail) assert.strictEqual(c.grade, 'C', c.name + ' 漏斗未通过必须 C');
+  });
+});
+
 console.log('\n[6] 风险引擎与 analyze 主入口');
 t('assessRisks 输出 4/5/5 条，每条字段齐全', () => {
   const r = E.assessRisks(E.normInput(fixture()));
@@ -278,9 +328,9 @@ t('真实结构样例：汇总表/观察池非空，D 级不进表', () => {
   assert.ok(o.opportunityTable.every(r => r.capitalContinuity === '缺失'));
   assert.ok(o.candidates.some(c => c.grade === 'D'), '样例应有硬否决被剔除的标的');
 });
-t('所有 A/B 级候选确认项 >=4（评级有证据支撑）', () => {
+t('所有 A/B 级候选确认项 >=4（试错级 B 除外，允许确认不足）', () => {
   const o = E.analyze(fixture());
-  o.candidates.filter(c => c.trackable).forEach(c =>
+  o.candidates.filter(c => c.trackable && !c.trialGrade).forEach(c =>
     assert.ok(c.confirm.count >= 4, c.name + ' 确认项 ' + c.confirm.count));
 });
 t('观察池不足 3 个时用板块级补足并标注「板块」', () => {

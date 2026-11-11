@@ -983,9 +983,43 @@ const DeepCharts = {
   },
 
   // Render valuation conclusion panel
-  renderConclusion(data) {
+  // [20261111d] 价格口径降级警告条（B2 修复的前端闭环）。
+  // 权威输入：sections.dataGaps（后端披露的缺口）+ sections.currentPrice（唯一权威价对象）。
+  // 不读 sections.conclusion.currentPrice——它是兼容镜像，不带来源与降级标记。
+  // 复用 .bl-warn 琥珀色样式（--accent），放在深剖内容最顶部，任何分节失败也不影响它显示。
+  renderDataGapsWarning(dataGaps, priceRef) {
+    const BAR_ID = 'deepDegradedBar';
+    const anchor = document.getElementById('deepContent');
+    // 先清旧条：重复渲染不累积；无 degraded 时只做移除（降级非粘性，数据恢复后警告必须消失）
+    const old = document.getElementById(BAR_ID);
+    if (old && old.parentNode) old.parentNode.removeChild(old);
+    const gaps = Array.isArray(dataGaps) ? dataGaps : [];
+    const degraded = gaps.find(g => g && g.level === 'degraded');
+    if (!degraded || !anchor) return;
+
+    const px = (priceRef && isFinite(Number(priceRef.value)) && Number(priceRef.value) > 0)
+      ? Number(priceRef.value).toFixed(2) : null;
+    const asOf = (priceRef && priceRef.dataTime) ? String(priceRef.dataTime).slice(0, 10) : '';
+    const detail = [px ? '¥' + px : null, asOf ? '口径日 ' + asOf : null].filter(Boolean).join(' · ');
+    const note = String(degraded.note || (priceRef && priceRef.source) || '当前价来自降级口径');
+    const bar = document.createElement('div');
+    bar.id = BAR_ID;
+    bar.className = 'bl-warn deep-degraded-bar';
+    bar.setAttribute('title', note);
+    bar.innerHTML = '⚠️ 行情接口不可用，当前价格回退为日线收盘价'
+      + (detail ? '（' + this.escapeHtml(detail) + '）' : '')
+      + '<span class="deep-degraded-src">来源：' + this.escapeHtml(note) + '</span>';
+    anchor.insertBefore(bar, anchor.firstChild);
+  },
+
+  renderConclusion(data, priceRef) {
     const el = document.getElementById('deepConclusion');
     if (!el || !data) return;
+    // [20261111d] 前端价格单一权威源：只认 sections.currentPrice.value。
+    // 后端已让 conclusion.currentPrice 恒等于它；此处再兜底覆盖，避免任何旧缓存响应漂回旧口径。
+    const authoritative = (priceRef && isFinite(Number(priceRef.value)) && Number(priceRef.value) > 0)
+      ? Number(priceRef.value) : null;
+    const cardData = authoritative != null ? Object.assign({}, data, { currentPrice: authoritative }) : data;
     // 20260908h：专属估值模型（如 601318）的 AI 估值卡片是确定性计算明细，不是旧 AI 融合估值，
     // 因此仍保留规则版「综合估值评级」滑条卡，避免用户误认为原来的综合估值卡片被删除。
     // 20260902i 重设计：中性炭黑卡面，语义色只出现在评级徽章与价格锚点（消除大面积色块），
@@ -996,7 +1030,7 @@ const DeepCharts = {
 
     // 20260908m：顶部「综合估值评级」滑条卡对所有个股常显（统一平安模板布局：顶部滑条卡 + 明细卡），
     // 不再因 AI 估值视图激活而隐藏；是否专属模型（dedicated-valuation）只影响明细卡内容，不影响顶部卡。
-    el.innerHTML = this.renderValuationCardHTML(data) +
+    el.innerHTML = this.renderValuationCardHTML(cardData) +
       `<div class="conclusion-text">${(data.conclusionText || '').split('\n').map(l => `<p>${l}</p>`).join('')}</div>`;
     el.style.display = '';
   },
@@ -1754,6 +1788,9 @@ const DeepCharts = {
     // 每个分节独立 try/catch：任一分节渲染失败都不会导致整页空白
     const safe = (label, fn) => { try { fn(); } catch (e) { console.error('DeepCharts 渲染失败 [' + label + ']:', e); } };
 
+    // [20261111d] 最先渲染价格口径降级警告，独立于任何图表分节；无 degraded 时负责移除旧条
+    safe('dataGaps', () => this.renderDataGapsWarning(sections.dataGaps, sections.currentPrice));
+
     // 20260905j：公司类型/分析重点行已按需求删除（估值区合并为单模块），renderCompanyType 保留但不再调用
     // safe('companyType', () => this.renderCompanyType(sections.companyClassification));
     safe('localDocs', () => this.renderLocalDocs(sections.localDocuments));
@@ -1764,7 +1801,7 @@ const DeepCharts = {
     safe('announcements', () => this.renderAnnouncements(sections.announcementAI, this._symbol, this._stockName));
     safe('cninfoAnnouncements', () => this.loadCninfoAnnouncements(this._symbol, this._stockName));
     safe('earningsReport', () => this.renderEarningsReport(sections.earningsReport, this._symbol, this._stockName));
-    safe('conclusion', () => this.renderConclusion(sections.conclusion));
+    safe('conclusion', () => this.renderConclusion(sections.conclusion, sections.currentPrice));
     safe('revenueCost', () => this.renderRevenueCost(sections.revenueCostData));
     safe('roeMarginTrend', () => this.renderRoeMarginTrend(sections.roeMarginTrend));
     safe('shortTermRisk', () => this.renderShortTermRisk(sections.shortTermRisk));
