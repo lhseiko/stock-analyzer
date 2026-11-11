@@ -6,8 +6,17 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
-const DIR = path.join(__dirname, '..', 'data', 'stock-log');
+// P2-1 测试隔离：将个股记录落盘重定向到项目外临时目录，避免污染真实 data/ 并规避沙箱批量删除守卫。
+process.env.SA_DATA_DIR = path.join(os.tmpdir(), 'sa-stocklog-test-' + process.pid);
+const { getDataDir, cleanupStaleTmpDirs } = require('../lib/dataDir');
+
+const DIR = path.join(getDataDir(), 'stock-log');
+
+// 单独跑本测试时也能自愈清理旧临时目录（全量 quick 之外的场景）：启动即清 >24h 的 sa-stocklog-test-*。
+// 不依赖 SA_DATA_DIR（仅按前缀扫 os.tmpdir），不会删掉本运行将使用的目录（<24h）。
+try { cleanupStaleTmpDirs(); } catch (e) {}
 let pass = 0, fail = 0;
 function ok(name, cond, extra) {
   if (cond) { pass++; console.log('  ✓ ' + name); }
@@ -15,7 +24,20 @@ function ok(name, cond, extra) {
 }
 const stockLog = require('../lib/stockLog');
 const fileOf = (s) => path.join(DIR, s.replace(/^(sh|sz|bj)/i, '') + '.json');
-const clean = (s) => { const f = fileOf(s); if (fs.existsSync(f)) fs.unlinkSync(f); };
+// 隔离目录删除：包 try/catch 兜底（正常应成功删除；沙箱守卫极少见，避免裸 unlink 抛错致整测试崩溃）
+const clean = (s) => { const f = fileOf(s); try { if (fs.existsSync(f)) fs.unlinkSync(f); } catch (e) {} };
+
+// ① 前置清洁 + 断言（防脏数据污染断言）：本运行使用按 process.pid 隔离的临时目录，正常应为空；
+//    此处强制清空并断言为空，杜绝「上一运行残留」或「clean() 被守卫拦截未真正删除」导致文件残留、污染后续断言。
+try { fs.rmSync(DIR, { recursive: true, force: true }); } catch (e) {}
+fs.mkdirSync(DIR, { recursive: true });
+{
+  const leftovers = (() => { try { return fs.readdirSync(DIR).filter(f => f.endsWith('.json')); } catch (e) { return []; } })();
+  if (leftovers.length) {
+    console.error('  ✗ 前置目录非干净（残留 ' + leftovers.join(',') + '），clean() 可能未真正删除，断言可能被污染');
+    process.exit(1);
+  }
+}
 
 // 清场：只用测试专用 symbol，避免污染真实个股记录
 const A = 'sh000test', B = 'sz600test', T = 'sz888test', U = 'sh999test';

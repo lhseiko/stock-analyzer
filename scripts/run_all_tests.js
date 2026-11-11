@@ -20,6 +20,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
+const { cleanupStaleTmpDirs } = require('../lib/dataDir');
 
 const ROOT = path.join(__dirname, '..');
 const SCRIPTS = path.join(ROOT, 'scripts');
@@ -102,6 +103,11 @@ function dropScene(failed, mode, ts) {
 
 (async () => {
   cleanupScenes();              // [20261111c] 启动即清理过期快照
+  // [20261111d] 自愈清理本模块创建的测试临时目录（仅删 sa-stocklog-test-* 前缀、>24h；不碰 /tmp 其他文件）
+  try {
+    const r = cleanupStaleTmpDirs();
+    if (r.removed) console.log(`  🧹 已自愈清理 ${r.removed} 个过期测试临时目录（保留 ${r.kept} 个）`);
+  } catch (e) { /* 清理失败不阻断主流程 */ }
   const all = classify();
   const selected = QUICK ? all.filter(t => !t.net) : all;
   const skipped = QUICK ? all.filter(t => t.net) : [];
