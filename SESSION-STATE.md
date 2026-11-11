@@ -385,3 +385,10 @@
 - **线上冒烟（实跑）**：`GET /` → 302 `/index.html?v=20261111d`；`GET /api/deep-analysis/601318` → `{status:'running'}`（迁移后 handler 正常接管、后台任务已启动，非 500）；`/js/deepCharts.js?v=20261111d` → 200。
 - **git 纪律说明**：用户本轮明确要求「全绿后测三端同步仪式（clone fetch+ff、md5 校验）」，故本轮执行 commit + push + 克隆端同步；这属于有明确指令的例外，不违反「无指令不自动同步」的默认纪律。
 - **未做 / 待用户**：链路 4（复盘生成）**未开**，按用户要求等三端同步确认后再启动。
+
+### 21:3x · 三端同步仪式实跑（用户本轮明确指令，非自动同步）
+
+- **commit / push**：`8cee751 20261111d 链路3...`（8 文件 +673/−115）；首次命令因工具重跑出现 `nothing to commit` + `ahead 1`，核对后确认 commit 已建、push 未执行，单独补推 `d2ae219..8cee751` 成功。本地 = `origin/master` = GitHub 远端 = `8cee75143af9abfef079e4b694182f71d3011650`，工作树干净。
+- **克隆端 ff**：`git -C "D:/ai agent/2026-09-05-13-22-15" fetch origin` + `merge --ff-only origin/master`，从 `611683e` 快进（57 files changed, +2700/−335，含新建 `lib/deepJobManager.js`、`scripts/test_deep_jobs_e2e.js`）；`refs/remotes/origin/master` 与 `HEAD` 均为 `8cee751`，本次**未复现 workspace loose ref 静默失败**。克隆端仅遗留历史未跟踪文件 `?? bal_all.txt`，未动。
+- **md5 双口径（如实，不把差异含糊带过）**：原始字节 md5 对全部 531 个跟踪文件比对**报大量差异**；根因不是内容漂移——两端 `core.autocrlf=true`，本地工作区文件为 LF（`public/js/homeMacro.js` 前 20KB 含 0 个 CR，AI 编辑器写出），克隆端为 git 检出转换的 CRLF（同段 222 个 CR）。权威校验：两端 `git rev-parse HEAD^{tree}` 同为 `51d06dc91b810d23d0cc9cac6188f872b7d28080`；**去 CR 规范化后 531/531 文件 md5 零差异**。故三端代码内容一致，同步仪式通过。
+- **未擅自修复**：没有为让「原始字节 md5 也全等」而批量重写工作区换行符或改 `autocrlf` / 加 `.gitattributes`（会触碰 531 个文件、风险大于收益）。如用户要求字面意义的字节级一致，需单独确认后统一换行符口径。
