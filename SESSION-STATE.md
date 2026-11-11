@@ -175,9 +175,9 @@
 
 > 2026-11-11 12:13 用户裁决：禁止「已归属已完成阶段但未启动」的悬浮态。P1-2/P1-4 虽标记完成，但其交付物**未覆盖**下列增强项，故统一归类为「未覆盖 · 需单独排期」，不挂回已完成阶段。
 
-- **P1-test-isolation-audit** — 状态：**未覆盖 · 需单独排期（建议归属 P2-1）**。根因已实锤（20261111c 现场快照）：test_stock_log.js:18 拆卸时直接 unlink/trash `data/stock-log/600test.json`，触发 WorkBuddy `node-safe-delete-shim` 批量删除守卫（count:50/threshold:50/scope:turn），间歇因整轮累计删除跨阈值。**P1-4 的 store.js 原子写 ≠ 测试隔离修复**（store.js 是产品代码 IO，不解决测试写真实 data/）。修复：测试改用 SA_DATA_DIR 临时目录。用户建议：阶段 3 启动时改归 **P2-1**（做 E2E 顺手用 SA_DATA_DIR 解决，比单独立项成本低）。当前仍为悬浮→已落地为明确排期项。
-- **techFace SCHEMA_VERSION 纳入两段式 factorHash** — 状态：**未覆盖 · 需单独排期**。裁决② 已交付通用 `lib/factorHash.js`，但 techFace 仍用手写 `tf-20261111a`，未接入。属 P1-2 范围外的增强，非 P1-2 交付遗漏。
-- **bump_version.js 版本断言 token 扫描** — 状态：**未覆盖 · 需单独排期**。P1-2 已交付 bump 行级限定替换，但「扫描全站 `/"20\d{6}[a-z]"/` 形态 token 列清单确认」未做。属 P1-2 范围外增强。
+- **P1-test-isolation-audit** — 状态：**已解决（P2-1 批次 1 · 20261111d 落地）**。根因已实锤（20261111c 现场快照）：test_stock_log.js:18 裸 `unlinkSync` 删 `data/stock-log/600test.json`（无 try/catch），全量 28+ 测试累计删除跨沙箱守卫阈值 50 → 守卫抛 `SAFE_DELETE_BULK_CONFIRM_REQUIRED`，唯独本测试裸删崩溃（其余 27 个均包 try/catch 存活）。20261111d 已落地：新建 `lib/dataDir.js`（`getDataDir()` 调时读 `SA_DATA_DIR`）+ `lib/stockLog.js` 经其解析 `DIR` + `test_stock_log.js` 顶部设 `SA_DATA_DIR=os.tmpdir/sa-stocklog-test-<pid>`（项目外临时目录，不进守卫统计）且 `clean()` 包 try/catch。验证：test_stock_log 66/0、全量 123/123、无快照。生产零行为变更（SA_DATA_DIR 不设 → 仍真实 data/stock-log）。
+- **techFace SCHEMA_VERSION 纳入两段式 factorHash** — 状态：**未覆盖 · 需单独排期（P2-1 批次 2 之后，依用户指令）**。裁决② 已交付通用 `lib/factorHash.js`，但 techFace 仍用手写 `tf-20261111a`，未接入。属 P1-2 范围外的增强，非 P1-2 交付遗漏。
+- **bump_version.js 版本断言 token 扫描** — 状态：**未覆盖 · 需单独排期（P2-1 批次 2 之后，依用户指令）**。P1-2 已交付 bump 行级限定替换，但「扫描全站 `/"20\d{6}[a-z]"/` 形态 token 列清单确认」未做。属 P1-2 范围外增强。
 - **阶段 3（P2：E2E 固化 / 可观测性 / 因子相关性）**：**未启动**；P1-test-isolation-audit 计划在此阶段 P2-1 一并处理。
 
 ## 纪律变更（20261111c · 落实现场快照机制后）
@@ -191,3 +191,23 @@
   - ⚠️ 证据表纠错（12:45）：上轮误将 test_volume_caliber_warn 的 54/0 标为「P1-3 合规词全站扫描」；实测该文件仅做「§6 版本戳与缓存破坏同步」断言，合规词扫描归属于 test_single_source_taxonomy 的 §4 子断言（含于其 20/0）。已更正。
 - **启动冒烟**：端口 3005 已在监听（PID 3080，既有实例）；根路径 HTTP 302（正常重定向主面板）、/api/sameday-judgment/601318 HTTP 200（API 正常服务）。冒烟通过。⚠️ 该实例为既有进程，最新代码（techFace 归一化/迁移标记/accuracy 披露条）需三步启动仪式重启才生效。
 - **backlog 悬浮态消除**（用户 12:13 裁决）：原「归属 P1-2/P1-4 但未启动」三项改为逐条归类——P1-test-isolation-audit / techFace 纳入 factorHash / bump 版本断言扫描 均为「未覆盖·需单独排期」（P1-2/P1-4 的交付物不含这些增强，非遗漏）。P1-test-isolation-audit 按用户建议改归 **P2-1**（阶段 3 做 E2E 顺手用 SA_DATA_DIR 解决）。无「已归属但未启动」悬浮态残留。
+
+### 14:2x · P2-1 批次 1：测试隔离修复（解决 P1-test-isolation-audit · 已完成）
+
+- **根因复核（20261111c 快照 + 全量删除点扫描）**：`test_stock_log.js:18` `clean()` 裸 `fs.unlinkSync` 删 `data/stock-log/<sym>.json`（如 `sz600test`→`600test.json`），**无 try/catch**；全量 28+ 测试文件累计删除跨沙箱守卫阈值 50，守卫抛 `SAFE_DELETE_BULK_CONFIRM_REQUIRED`，唯独本测试裸删 → 崩溃（其余 27 个均包 try/catch 存活）。间歇因每次跑的删除计数与顺序不同。
+- **修复（生产零行为变更）**：
+  1. 新建 `lib/dataDir.js`：`getDataDir()` 调用时读 `process.env.SA_DATA_DIR`，设置则重定向，否则默认 `project/data/`（env 在 require 依赖前设置即生效）。
+  2. `lib/stockLog.js`：`DIR` 改经 `getDataDir()`（仅改落盘位置，输出 JSON 结构不变 → 不影响任何下游模块，隔离验证通过）。
+  3. `scripts/test_stock_log.js`：顶部设 `SA_DATA_DIR=os.tmpdir()/sa-stocklog-test-<pid>`（项目外临时目录，不进守卫统计）→ `DIR` 走 `getDataDir()`；`clean()` 加 `try/catch` 兜底（防御，正常应成功）。
+- **范围隔离**：仅改 stockLog + 本测试 + 新增 dataDir；不动 run_all_tests.js（最小爆炸半径）。`SA_DATA_DIR` 生产不设置 → 个股记录仍落真实 `data/stock-log`，行为不变。
+- **验证（实跑非自称）**：`node scripts/test_stock_log.js` → **pass=66 fail=0**；全量 `run_all_tests --quick` → **123/123 通过、跳过 13（需网络）、无快照落盘**；`data/test-scenes/` 三处旧快照均为本修复前（03:59/04:09/04:54），本次运行未新增；真实 `data/stock-log/600test.json` 经 stat 确认本运行未写入（mtime 不变，仅清理了修复前残留）。探针确认 stockLog `DIR`：设 `SA_DATA_DIR` 时落 `os.tmpdir` 临时目录，不设则仍 `project/data/stock-log`（生产零行为变更）。
+- **未做（如实）**：未升 APP_VERSION（stockLog 生产落盘路径未变，用户无需重启）；未 git 同步（等指令）。
+
+### 14:3x · P2-1 批次 1 追问闭环（A 级确认后三项细节 + WAL 自愈清理 · 已完成）
+
+- **① 脏数据污染断言风险**：`clean()` 包 try/catch 后若遇守卫拦截未真正删除，文件中途残留会污染后续断言。修复：`test_stock_log.js` 运行起点对 `DIR` 做**前置清洁+断言**——`fs.rmSync(DIR,{recursive,force})` 强制清空后 `mkdirSync`，再断言目录无 `.json` 残留（有残留即 `process.exit(1)` 显式失败）。杜绝「上一运行残留 / clean 被拦未删」两类脏数据。
+- **② dataDir 登记为基础设施**：`lib/dataDir.js` 头部加 INFRA 标识 + 迁移策略（新代码统一用、存量按改动迁移、不强制统一、仅改落盘位置不动输出契约）。`test_stock_log.js` 在 `scripts/` 范围（不在 swallow-catch 扫描域），其 best-effort 清理用空 catch 合规。
+- **③ 求值时机 + 设置顺序（排除巧合）**：双探针实测——`env 在 require 前设` → stockLog 落 **temp**（= 测试实际顺序，隔离生效）；`env 在 require 后设` → 落 **真实 project/data/**（即用户担心的「巧合」场景会失败）。证明本次实跑能过是「前设顺序」所致，非巧合。`stockLog.js` 的 `DIR` 加载期求值处加不变式注释。
+- **WAL 自愈清理（用户建议）**：`dataDir.cleanupStaleTmpDirs()` 扫 `os.tmpdir()` 仅匹配 `sa-stocklog-test-*` 前缀、删 >24h 旧目录（绝不碰 /tmp 其他文件）；`run_all_tests.js` 启动即调用。回归：该 catch 初版为空 catch 触发 `test_swallow_catch_guard` +1 → 改为 `failed++` 计数（非静默吞），回归消除（138=基线）。
+- **验证（实跑）**：`test_swallow_catch_guard` 138=基线通过；`run_all_tests --quick` **123/123**、无快照；`test_stock_log` 66/0。
+- **批次 2 排序（用户指令）**：同步后第一件事 = P2-1 批次 2「E2E 固化（5 条链路，复用本轮 dataDir 机制）」；两悬浮 backlog（techFace 纳入 factorHash / bump 版本断言 token 扫描）**放批次 2 之后**。本次未同步（等指令）。
