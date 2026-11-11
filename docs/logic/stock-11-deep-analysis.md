@@ -113,3 +113,45 @@
 - **改法**：`getLatestPartialQuarterDates` 改为**直接请求最近两年全部季末报告期**（03-31/06-30/09-30/12-31），由 F10 返回实际已披露的那些；早于披露日请求返回空，天然无副作用。12-31 仍由 `_stmtStage==='FY'` 过滤。
 - **缓存失效**：`EARNINGS_PROMPT_VERSION` 升至 `20261023h`；`lib/deep/pipeline.js` 改用 `readEarningsCache` 并丢弃 `stale` 缓存 → 前端 `renderEarningsReport` 在无 summary 时**自动触发**一次重新解读，无需用户手动点。
 - **验证**：`fetchFinancialData('SZ300232')` 最新报告期 = 2026-09-30（2026三季报）；300232 财报缓存 `stale:true`；守卫 `test_latest_report_period` 15 项。
+
+### 20261111d · 链路 3：后台任务状态机可测试化 + 6 个 B2 级缺陷修复
+
+- **可测试化**：`server.js` 顶层 `app.listen` 且无 `module.exports`，无法用 supertest 直接打接口。把 `_deepJobs` 状态机按「等价迁移」抽到 `lib/deepJobManager.js`，8 个外部依赖 + 超时常量全部构造参数注入；`server.js` 只保留生产注入与 `app.get(..., _deepJobManager.handler)` 挂载，`_deepJobs` 变量名保留供守卫/排障引用。E2E 用 `express + listen(0) + 原生 http` 独立端口，`require.cache` 把 `lib/deep/pipeline.js` 换成受控 Promise（经 `lib/deepAnalysis.js` 门面透出），零网络、零 3005 依赖。
+- **状态机流转图（修复后）**：
+
+```
+GET /api/deep-analysis/:symbol
+  │
+  ├─ 磁盘缓存命中 && !refresh ──────────────→ 200 { ...cached, fromCache:true }（秒回，不进后台）
+  │
+  └─ 未命中 → getOrStartJob(symbol, name, forceRefresh)
+        │
+        ├─ 已有 running ───────────────────→ 复用同一 job（并发/轮询去重，底层只跑 1 次）→ 200 running
+        ├─ 终态过期(>=doneTtlMs) ─────────→ 惰性清理 + 旧 job 作废 → 重建
+        ├─ error 且未投递过 ───────────────→ 复用 → 500（errorDelivered=true）
+        ├─ error 且已投递过 ───────────────→ 重建（可重试，不永久 500）
+        ├─ done 且 TTL 内 && 语义一致 ─────→ 复用内存结果 → 200 { ...result, background:true }
+        └─ 其余 ──────────────────────────→ startJob → running → 200 running
+                                                  │
+                    ┌─────────────────────────────┼──────────────────────────────┐
+                    ▼                             ▼                              ▼
+          底层完成 → done（落盘）      内层 280s / 外层 300s / 抛错 → error      迟到结果（超时后算完）
+                                                                         │
+                                                        仅落盘 + 日志；不改已终态 job
+                                                        若 job 已 superseded → 直接丢弃
+```
+
+- **B2 缺陷清单（先红灯 `27 通过 / 5 失败` 实证，再统一修复，避免先改后测自证）**：
+
+| 编号 | 缺陷 | 修复 |
+|---|---|---|
+| B2-1 | `done/error` 终态 job 永久驻留 Map，缓存失效仍被复用，且 Map 无上界 | `doneTtlMs`（默认 5min）惰性过期 + `maxJobs`（默认 2000）淘汰最旧终态；running 绝不误删 |
+| B2-2 | 超时后 `settled` 分支 `return`，把已算完的 5 分钟计算静默丢弃 | 迟到结果照样落盘并打日志，不回滚 job 状态 |
+| B2-3 | `Promise.race` 的 280s 内层 timer 从不 clear，每次分析泄漏一个定时器 | `finally { clearTimeout(innerTimer) }` |
+| B2-4 | 终态 `error` 被无限复用，不重启服务就永远 500 | 错误投递一次后（`errorDelivered`）允许同参数重建任务 |
+| B2-5 | 重试/语义变化覆盖旧 job 后，旧 job 迟到结果会污染新结果 | 旧 job 标记 `superseded`，迟到结果不落盘、不改状态 |
+| B2-6 | `writeAnalysisCache` 抛错掉进 `.catch`，把已 done 的 job 反向打成 error | 落盘 `try/catch` 隔离，只告警不改状态 |
+
+- **测试桩自身缺陷 B2-T1**：§F 曾用 `controlled.reset()` 切回 `resolve`，清空 `calls` 导致「新增次数」基准丢失出现 `-1`；改为只切 `mode/delayMs` 保留计数，断言未放宽。
+- **验证**：`scripts/test_deep_jobs_e2e.js` **39/0**（§0 接线 / §A 基本流转 / §B 3 路并发去重+3 路轮询 / §B2 状态清理 / §C 重启恢复 / §E 50ms 安全网 / §E2 迟到结果 / §E3 定时器清理 / §F error 重试 / §G 并发竞态）；`test_e2e_chains.js`、`test_cache_bust_guard.js`、`test_swallow_catch_guard.js`、`run_all_tests.js --quick` 全绿。
+- **版本戳判定**：响应 JSON 结构零变化、前端零改动 → 按 APP_VERSION 铁律**不 bump**（若 bump，`readAnalysisCache` 的 `appVersion` 门控会把全部深度分析磁盘缓存判失效，触发无谓的昂贵重算）。但 `server.js` 已改，**必须重启 3005 服务**才生效。

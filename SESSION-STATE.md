@@ -359,3 +359,29 @@
   - **服务重启（用户明确授权）**：PowerShell `Start-Process` 首次因环境变量 `HTTP_PROXY` / `http_proxy` 大小写重复触发「已添加项」异常，且旧进程已被关闭（服务短暂中断）；立即清理重复键后重启成功，新 PID `29584`，3005 监听就绪。`GET /` 返回 `302 Location: /index.html?v=20261111d`（APP_VERSION 生效）；`/js/deepCharts.js?v=20261111d` 与 `/css/style.css?v=20261111d` 均 200，且返回内容含 `renderDataGapsWarning`。`SA_NO_AUTO_OPEN=1` / `SA_NO_BG_AI=1` 已按既有约定设置。
   - **肉眼确认的可交付替代**：生成 `data/preview/deep-degraded-preview.html`（365KB，自包含），内联项目真实 `style.css`，并把真实 `deepCharts.js` 的 `escapeHtml` / `renderDataGapsWarning` 方法源码原样嵌入，两个容器对照展示「degraded → 琥珀警告条」与「正常 → 无警告条」。生成脚本用后即删，`data/` 被 .gitignore 排除，仓库仍干净。
 - **未做 / 待用户（如实）**：**未在真实深度分析页肉眼确认**警告条——当前行情接口正常，`dataGaps` 为空，按设计本就不该出现；AI 侧无 GUI 浏览器，故以「DOM 桩函数级实测 + 真实代码隔离预览」替代，不冒充真实页面验证。用户现在**只需 Ctrl+F5 硬刷新**（服务已由 AI 重启，无需再双击图标）。链路 3（路由后台状态机：并发请求 / running|done|error 轮询 / 服务重启后状态恢复）**未开**，按用户要求等本轮收口后再启动。
+
+## 2026-11-11 21:2x · P2-1 批次 2 链路 3：deep-analysis 后台任务状态机（红灯实证 → B2 修复 → 全绿）
+
+- **用户指令**：批准链路 3；先前置检查再写测试；用 supertest/原生 HTTP 独立端口 + mock `lib/deep/pipeline.js` 为受控 Promise；重点 §B 并发去重（3 个同 symbol 并发，底层只跑 1 次、所有轮询最后拿 done）与 §E 安全网超时（300s→50ms 转 error）；发现并发竞态 / 状态清理遗漏 / 超时后任务泄漏直接标 B2 并修复；全绿后测三端同步仪式，没问题再开链路 4。
+- **前置检查结论**：`server.js` 顶层 `app.listen` 且无 `module.exports`，不能直接 supertest；`/api/deep-analysis/:symbol` 仅一个 GET 路由；`_deepJobs` 是内存 Map（running/done/error），磁盘缓存另有 `APP_VERSION` + `VALUATION_MODEL_HASH` 门控；服务重启后 Map 清空、靠磁盘缓存秒回。修复后的完整流转图已落到 `docs/logic/stock-11-deep-analysis.md`。
+- **等价迁移（为可测，零行为变化）**：新建 `lib/deepJobManager.js`，8 个外部依赖 + 超时常量构造参数注入；`server.js` 只保留生产注入与 `app.get(..., _deepJobManager.handler)` 挂载，`_deepJobs` 变量名保留供守卫 / 排障引用。生产默认值仍 300s 安全网 / 280s 内层 race。
+- **先红灯实证（避免先改后测自证）**：`scripts/test_deep_jobs_e2e.js` 用 `express + listen(0) + 原生 http`，`require.cache` 把 `lib/deep/pipeline.js` 换成受控 Promise（经 `lib/deepAnalysis.js` 门面透出）；首跑 **27 通过 / 5 失败**，坐实 6 个 B2 级缺陷 + 1 个测试桩缺陷：
+
+| 编号 | B2 缺陷（原实现） | 修复 |
+|---|---|---|
+| B2-1 | done/error 终态永不清理；缓存失效仍被复用，Map 无上界 | `doneTtlMs`(5min) 惰性过期 + `maxJobs`(2000) 淘汰最旧终态，running 绝不误删 |
+| B2-2 | 超时后 `settled` 分支 `return`，已算完的 5 分钟计算被静默丢弃 | 迟到结果照样落盘 + 日志，绝不回滚已终态 job |
+| B2-3 | `Promise.race` 的 280s 内层 timer 从不 clear，每次分析泄漏一个定时器 | `finally { clearTimeout(innerTimer) }` |
+| B2-4 | 终态 error 被无限复用，不重启服务就永远 500 | 错误投递一次后（`errorDelivered`）允许同参数重建任务 |
+| B2-5 | 重试 / 语义变化覆盖旧 job 后，旧 job 迟到结果污染新结果 | 旧 job 标 `superseded`，迟到结果不落盘、不改状态 |
+| B2-6 | `writeAnalysisCache` 抛错掉进 `.catch`，把已 done 的 job 反向打成 error | 落盘 try/catch 隔离，只告警不改状态 |
+| B2-T1 | 测试桩自身：§F 误用 `controlled.reset()` 清空 calls，致「新增次数」出现 -1 | 只切 `mode/delayMs` 保留计数，断言未放宽 |
+
+- **新增 §G 并发竞态场景**：第一个 job 超时→投递 500→重建第二个 job→旧 job 迟到结果到达，断言「不落盘、不把新 job 改成 done/error」，再让新 job 完成断言「最新结果正常落盘」。
+- **分类器假绿根修（额外实锤）**：全量首跑 `125/125` 但跳过数 13→14 —— `run_all_tests.js` 的 `needsNetwork()` 把 `const http = require('http')` 判成需网络，新增 E2E 在 quick 模式**根本没跑却仍报全绿**。根修：支持脚本头 `@test-scope: local` 显式声明零网络（数据层全 mock、仅 127.0.0.1 独立端口）；E2E §0 用 `vm` 抽出真实 `needsNetwork` 函数对自身源码求值为 `false`，防止未来被改回去。修后跳过数回落到 13。
+- **APP_VERSION 判定（按铁律不 bump）**：响应 JSON 结构（running / done 结果体 / 500 error）零变化、前端零改动 → 不满足 bump 条件；且 bump 会让 `readAnalysisCache` 的 `appVersion` 门控把全部深度分析磁盘缓存判失效，触发无谓的昂贵重算。`server.js` 已改，故**必须重启 3005 才生效**。
+- **验证（全部实跑）**：`node --check` 全通过；`test_deep_jobs_e2e.js` **40/0**（§0/§A/§B/§B2/§C/§E/§E2/§E3/§F/§G）；`test_e2e_chains.js` 54/0；`test_cache_bust_guard.js` 3/0/0；`test_swallow_catch_guard.js` 空 catch 137≤138、路由内 5≤6（净减少）；`run_all_tests.js --quick` **126/126**（跳过 13 需网络，链路 3 E2E 已真跑）。`docs/test-report.md` / `docs/swallow-catch-manifest.md` 自动更新。
+- **服务重启（曲折，如实）**：PowerShell `Start-Process` 每次新会话都会重新注入 `HTTP_PROXY` 与 `http_proxy` 大小写重复键，直接抛「已添加项」；同会话 `Remove-Item Env:http_proxy,Env:https_proxy` 后可启动（PID 7624、端口就绪），但该子进程随 PowerShell 会话结束被回收，两次 HTTP 冒烟均失败。最终改用**受管后台任务** `SA_NO_AUTO_OPEN=1 SA_NO_BG_AI=1 PORT=3005 node server.js`，PID 2208 持续监听。前台 `node server.js` 亦验证过启动链正常（SQLite ready / APP_VERSION=20261111d / 调度启动）。临时启动日志 `data/_boot_*.log` 在确认无进程依赖后已删。
+- **线上冒烟（实跑）**：`GET /` → 302 `/index.html?v=20261111d`；`GET /api/deep-analysis/601318` → `{status:'running'}`（迁移后 handler 正常接管、后台任务已启动，非 500）；`/js/deepCharts.js?v=20261111d` → 200。
+- **git 纪律说明**：用户本轮明确要求「全绿后测三端同步仪式（clone fetch+ff、md5 校验）」，故本轮执行 commit + push + 克隆端同步；这属于有明确指令的例外，不违反「无指令不自动同步」的默认纪律。
+- **未做 / 待用户**：链路 4（复盘生成）**未开**，按用户要求等三端同步确认后再启动。

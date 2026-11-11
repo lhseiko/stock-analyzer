@@ -1622,24 +1622,16 @@ app.get('/api/db/datapoints/:symbol', (req, res) => {
 //   完成时写磁盘缓存并标记 status=done。同一 symbol 并发/轮询复用同一任务对象，绝不重复计算。
 // - 内部总超时放宽到 280s（财报解读子任务单项即可达 180s，旧 55s 硬超时会让慢分析永远不落盘）。
 // 与旧「在途 Promise 去重」同目标但更彻底：旧版在客户端断开后若 >55s 超时则直接 500 且不写缓存，本版保证跑完必落盘。
-const _deepJobs = new Map(); // symbol -> { status, startedAt, finishedAt, result, error, forceRefresh }
-
-async function _runDeepAnalysisOnce(symbol, name) {
-  // Fetch quote and history in parallel
-  const [quote, history] = await Promise.all([
-    getQuote(symbol),
-    getHistory(symbol, 'daily').catch(() => []),
-  ]);
-  if (!quote) return { __notFound: true };
-  // 内部总超时兜底（仅防外部接口永久挂起；放宽到 280s，远低于 _deepJobs 的 300s 安全网）
-  const result = await Promise.race([
-    deepAnalysis(symbol, name || quote.name, quote, history),
-    new Promise((_, reject) => setTimeout(() => reject(new Error('深度分析超时（外部数据接口响应过慢，请稍后重试）')), 280000)),
-  ]);
-  result.cachedAt = Date.now();
-  result.fromCache = false;
-  return result;
-}
+// [20261111d 链路 3] 后台任务状态机抽到 lib/deepJobManager.js：依赖注入后可用独立端口做 E2E，
+// 300s 安全网 / 280s 内层 race 生产默认值不变；E2E 先跑红灯 27/5 坐实 6 个 B2 缺陷后修复：
+// 终态 TTL 清理、迟到结果落盘、内层 timer clear、error 可重试、superseded 防污染、落盘异常隔离。
+// 响应 JSON 结构（running / done 结果体 / 500 error）零变化、前端无需改动，故按铁律不 bump APP_VERSION。
+const _deepJobManager = require('./lib/deepJobManager').createDeepJobManager({
+  deepAnalysis, getQuote, getHistory, detectMarket,
+  readAnalysisCache, writeAnalysisCache, getLocalDocuments,
+  attachDeepAICache: _attachDeepAICache,
+});
+const _deepJobs = _deepJobManager.jobs; // 保留原变量名，供既有守卫 / 排障引用
 
 // 把 AI 联网总结的最新版本同步进深度分析缓存结果（与旧路由同逻辑）
 function _attachDeepAICache(symbol, cached) {
@@ -1649,85 +1641,8 @@ function _attachDeepAICache(symbol, cached) {
   try { const v = readCache(symbol, '_announcements'); if (v && v.summary) cached.sections.announcementAI = v; } catch {}
 }
 
-// 启动后台任务（detached）：不把 Promise 交回 HTTP 响应，任务在 Node 进程内持续跑，完成时写缓存
-function _startDeepJob(symbol, name, forceRefresh) {
-  const job = { status: 'running', startedAt: Date.now(), finishedAt: null, result: null, error: null, forceRefresh };
-  _deepJobs.set(symbol, job);
-  let settled = false;
-  const timer = setTimeout(() => {
-    if (settled) return;
-    settled = true;
-    job.status = 'error';
-    job.error = '深度分析超时（外部数据接口响应过慢，请稍后重试或点刷新）';
-    job.finishedAt = Date.now();
-  }, 300000); // 5min 安全网
-  _runDeepAnalysisOnce(symbol, name).then((result) => {
-    if (settled) return; // 已被超时兜底接管
-    settled = true; clearTimeout(timer);
-    if (result && result.__notFound) { job.status = 'error'; job.error = '无法获取股票行情数据'; }
-    else { job.result = result; job.status = 'done'; writeAnalysisCache(symbol, result); }
-    job.finishedAt = Date.now();
-  }).catch((e) => {
-    if (settled) return;
-    settled = true; clearTimeout(timer);
-    job.status = 'error'; job.error = (e && e.message) || String(e);
-    job.finishedAt = Date.now();
-  });
-  return job;
-}
-
-// 取/启后台任务：同语义复用；语义不同但正在跑则复用当前的（避免重复跑）；否则启动新任务
-function _getOrStartDeepJob(symbol, name, forceRefresh) {
-  const existing = _deepJobs.get(symbol);
-  if (existing && existing.forceRefresh === forceRefresh) return existing;
-  if (existing && existing.status === 'running') return existing;
-  return _startDeepJob(symbol, name, forceRefresh);
-}
-
-app.get('/api/deep-analysis/:symbol', async (req, res) => {
-  try {
-    const symbol = req.params.symbol;
-    const name = req.query.name || '';
-    const forceRefresh = req.query.refresh === '1' || req.query.refresh === 'true';
-
-    // 标准化为数字股票代码（如 '601318'），用于严格按股票过滤本地资料库
-    let stockCode = symbol;
-    try {
-      const info = detectMarket(symbol);
-      stockCode = info.tencentCode.replace(/^(sh|sz)/, '');
-    } catch (e) { /* 保底使用原始 symbol */ }
-
-    console.log(`[DeepAnalysis] Request for ${symbol} (refresh=${forceRefresh})...`);
-
-    // 1) 命中磁盘缓存且非强制刷新 → 立即返回（秒回，不进后台）
-    if (!forceRefresh) {
-      const cached = readAnalysisCache(symbol);
-      if (cached) {
-        console.log(`[DeepAnalysis] Serving cached result for ${symbol}`);
-        cached.localDocuments = getLocalDocuments(stockCode);
-        _attachDeepAICache(symbol, cached);
-        return res.json({ ...cached, fromCache: true });
-      }
-    }
-
-    // 2) 启动/复用后台任务，立即返回状态（绝不阻塞等待）
-    const job = _getOrStartDeepJob(symbol, name, forceRefresh);
-    if (job.status === 'done' && job.result) {
-      const out = { ...job.result, fromCache: false, background: true };
-      out.localDocuments = getLocalDocuments(stockCode);
-      _attachDeepAICache(symbol, out);
-      return res.json(out);
-    }
-    if (job.status === 'error') {
-      return res.status(500).json({ error: job.error || '深度分析失败' });
-    }
-    // running → 秒回状态，前端轮询
-    return res.json({ status: 'running', startedAt: job.startedAt, finishedAt: null });
-  } catch (err) {
-    console.error('Deep analysis route error:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
+app.get('/api/deep-analysis/:symbol', _deepJobManager.handler);
+// [20261111d] 路由实现已迁至 lib/deepJobManager.js（此文件只负责挂载；状态机修复见该文件头注释）。
 
 // ---- Investment Journal Verification API ----
 app.post('/api/journal/verify', async (req, res) => {

@@ -34,6 +34,11 @@ function listTests() {
   return fs.readdirSync(SCRIPTS).filter(f => /^test_.*\.js$/.test(f)).sort();
 }
 function needsNetwork(src) {
+  // [20261111d] 本地回环 E2E 显式声明零网络：脚本头写 `@test-scope: local`，表示数据层
+  // 全部 mock、仅用 127.0.0.1 独立端口。否则 `const http = require('http')` 会被下面
+  // `\bhttps?\s*[:=]` 与 `require('http')` 两条正则误判成需网络，quick 模式静默跳过
+  // → 新增 E2E 不跑却仍报全绿（假绿）。声明即责任：写了标记的脚本不得触外网。
+  if (/@test-scope:\s*local/.test(src)) return false;
   return /\baxios\b|\bhttps?\s*[:=]|\bfetch\(|\brequest\(|\.get\(['"]https?:/.test(src)
     || /require\(['"]https?['"]\)/.test(src);
 }
