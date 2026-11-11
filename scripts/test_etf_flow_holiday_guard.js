@@ -49,6 +49,9 @@ function makeFixture() {
     let sharesFetched = false;
     const baseOpts = () => ({
       cacheKey: '20261102',
+      // [20261109a] 本夹具只注入 1 只 ETF，专测「跨日重采守卫」；名单完整性由
+      // test_etf_universe_integrity.js 单独覆盖，故显式声明夹具自担基准。
+      assumeCompleteUniverse: true,
       universe: [{ code: '510300', name: '沪深300ETF', group: 'hs300', groupLabel: '沪深300' }],
       fetchPcf: async () => ({ __err: '测试内不应外呼（缓存应命中）' }),
       fetchShares: async () => { sharesFetched = true; return { '510300': 38866987700 }; },
@@ -118,9 +121,9 @@ function makeFixture() {
     ok(appJs.indexOf('f.fallback') >= 0, 'app.js 情绪卡展示兜底标注');
     const t1 = fs.readFileSync(path.join(ROOT, 'scripts/test_metric_analysis_vote.js'), 'utf8');
     const t2 = fs.readFileSync(path.join(ROOT, 'scripts/test_consistency_audit.js'), 'utf8');
-    ok(t1.indexOf('20261106p') >= 0 && t2.indexOf('20261106p') >= 0, '版本断言已同步 20261106p');
+    ok(t1.indexOf('20261111b') >= 0 && t2.indexOf('20261111b') >= 0, '版本断言已同步 20261111b');
     const server = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
-    ok(/const APP_VERSION = '20261106p'/.test(server), "APP_VERSION = '20261106p'");
+    ok(/const APP_VERSION = '20261111b'/.test(server), "APP_VERSION = '20261111b'");
   }
 
   console.log(`\n结果：${pass} 通过 / ${fail} 失败`);

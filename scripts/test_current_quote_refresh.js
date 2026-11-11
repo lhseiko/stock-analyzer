@@ -46,7 +46,6 @@ ok('首页（dashboard 隐藏）不刷新', /refreshCurrentQuoteTick[\s\S]{0,400
 console.log('\n===== §4 版本戳与缓存破坏（与 APP_VERSION 一致）=====');
 ok('index.html app.js?v= 与 APP_VERSION 一致', idxSrc.includes('js/app.js?v=' + APP_V));
 ok('index.html style.css?v= 与 APP_VERSION 一致', idxSrc.includes('css/style.css?v=' + APP_V));
-ok('index.html backtestUI.js?v= 与 APP_VERSION 一致', idxSrc.includes('js/backtestUI.js?v=' + APP_V));
 ok('index.html shareholderCharts.js?v= 与 APP_VERSION 一致', idxSrc.includes('js/shareholderCharts.js?v=' + APP_V));
 ok('accuracy.html style.css?v= 与 APP_VERSION 一致', accSrc.includes('css/style.css?v=' + APP_V));
 ok('accuracy.html accuracy.js?v= 与 APP_VERSION 一致', accSrc.includes('js/accuracy.js?v=' + APP_V));

@@ -56,7 +56,7 @@ const cover = [
   '腾讯 qt.gtimg.cn', 'RPT_INDUSTRY_FUNDFLOW', 'RPTA_WEB_GETHGLIST_NEW', '巨潮资讯公告',
   '市场情绪提醒', '大盘技术分析', '大盘估值趋势', '行业板块拥挤度',
   '短期行情判断', '长期行情判断', '技术面', '专属估值模型', '深度分析',
-  '策略生成器', '回测校验', '事件驱动引擎', '准确率闭环',
+  '每日复盘', '事件驱动引擎', '准确率闭环',
   'API 层', 'AI 叙事层', '规则与守卫', '跨页面公共支撑', '页面布局',
   'SA_NO_BG_AI', '数据诚实原则', 'APP_VERSION', 'SCHEMA_VERSION', 'LAYOUT_VERSION',
   '后台预加载', 'etf-flow'
@@ -67,7 +67,7 @@ const stocks = ['海天味业', '中国平安', '圣湘生物', '士兰微', '�
 stocks.forEach(s => t('专属估值模型含「' + s + '」', ALL.includes(s)));
 t('首页 9 张卡片全部列出', ['市场情绪提醒', '实时大盘', '大盘技术分析', '大盘估值趋势', '行业板块拥挤度', '今日财经热点', '板块舆情热度周榜', '每日宏观', '基金行业配置名单']
   .every(k => ALL.includes(k)));
-t('个股页 10 个 tab 全部列出', ['简介', '技术面', '基本面', '股东分析', '深度分析', '行业分析', '资金量能', '个股亮点/雷点', '资料库', '策略']
+t('个股页 10 个 tab 全部列出', ['简介', '技术面', '基本面', '股东分析', '深度分析', '行业分析', '资金量能', '个股亮点/雷点', '资料库', '每日复盘']
   .every(k => ALL.includes(k)));
 
 // ── §3 反漂移：树里点名的模块，文件必须真实存在 ──
@@ -79,8 +79,6 @@ const files = [
   ['lib/marketTechnical.js', '大盘技术分析'],
   ['lib/indexPETrend.js', '大盘估值趋势'],
   ['lib/sectorCrowding.js', '行业板块拥挤度'],
-  ['lib/strategyGenerator.js', '策略生成器'],
-  ['lib/backtestValidator.js', '回测校验'],
   ['lib/eventEngine.js', '事件驱动引擎'],
   ['lib/techFaceJudgment.js', '技术面判定'],
   ['lib/dataHonesty.js', '数据诚实原则'],
@@ -128,7 +126,7 @@ const APP_V = avm ? avm[1] : '';
 const lmpage = read('public/logic-model.html');
 t('nav 内有 logic-model.html 新标签页入口按钮', /window\.open\('logic-model\.html', '_blank'\)/.test(idx));
 t('入口在 global-nav-common 常驻组内（与投资心得/大盘记录/AI 设置同组）',
-  /global-nav-common[\s\S]{0,600}window\.open\('logic-model\.html'[\s\S]{0,200}global-nav-extra/.test(idx));
+  /global-nav-common[\s\S]{0,900}window\.open\('logic-model\.html'[\s\S]{0,200}global-nav-extra/.test(idx));
 t('入口按钮文案为「工作台逻辑模型」', />工作台逻辑模型</.test(idx));
 t('独立页面 logic-model.html 存在', !!lmpage);
 t('独立页面含 lmPageBody/展开/收起 三个挂点',

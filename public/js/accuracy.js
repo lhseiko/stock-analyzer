@@ -47,6 +47,57 @@
       : `<span class="jd-bad">✗ ${esc(label)} 不一致：存储 ${pct(stored)} vs 重算 ${pct(recomputed)}</span>`;
   }
 
+  // ===== 基准对比 + 前视披露 + 市场状态月分组（20261110g，P0-2）=====
+  // 数据源：四链 computeAccuracy 统一输出的 baselines / lookahead 披露字段（lib/baselines.js + lib/lookahead.js）。
+  // 语义：命中率高≠有用——必须跑赢「永远涨」方向基准和随机 50% 才算有效；样本<30 明示无统计意义。
+  function renderBaselines(containerId, a) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    if (!a || !a.baselines) { el.innerHTML = ''; return; }
+    const b = a.baselines;
+    const db = b.directionBenchmark || {};
+    const mb = b.momentumBenchmark || {};
+    const chip = (label, value, sub, kls) =>
+      `<span class="mt-acc-chip ${kls || ''}"><span class="mac-label">${esc(label)}</span><span class="mac-value">${value}</span><span class="mac-sub">${esc(sub || '')}</span></span>`;
+    let out = '<b>基准对比</b> ';
+    out += chip('本链准确率', pct(a.accuracy), `${a.correct == null ? '' : a.correct + '/' + a.settledCount + ' 命中'}`, cls(a.accuracy));
+    out += chip('方向基准', pct(db.rate), db.note || '样本内永远预测涨', 'muted');
+    out += chip('随机基准', pct(b.randomBenchmark && b.randomBenchmark.rate), '随机 50% 参照线', 'muted');
+    out += chip('5日动量基准', pct(mb.rate), mb.t ? `${mb.t} 样本` : '历史记录结算后自动补齐', 'muted');
+    if (a.accuracy != null && db.rate != null) {
+      const vsDir = (a.accuracy - db.rate).toFixed(1), vsRand = (a.accuracy - 50).toFixed(1);
+      out += (+vsDir > 0 && +vsRand > 0)
+        ? `<span class="jd-ok">✓ 同时跑赢方向基准（+${vsDir}pp）与随机线（+${vsRand}pp）</span>`
+        : `<span class="jd-bad">✗ 未跑赢基准（vs 方向基准 ${+vsDir >= 0 ? '+' : ''}${vsDir}pp / vs 随机 ${+vsRand >= 0 ? '+' : ''}${vsRand}pp）</span>`;
+    }
+    if (b.sampleNote) out += `<div class="bl-warn">⚠️ ${esc(b.sampleNote)}</div>`;
+    // [P0-2 清单] 统计防线文案：防止「33% 命中率 vs 随机 50%」被误读为「系统比随机差」——
+    // 基准样本与判断记录完全同集（同 symbol/同 targetDate），此处仍必须显式声明方向参考性质。
+    out += `<div class="bl-sub">📄 样本 ${a.settledCount == null ? '—' : a.settledCount} 条；基准对比仅作方向参考，不构成统计显著性结论。</div>`;
+    // 前视披露（lib/lookahead.js：嫌疑记录不悄悄剔除，如实计入不可比样本）
+    if (a.lookaheadExcludedCount > 0) {
+      out += `<div class="bl-warn">⚠️ 前视审计排除 ${a.lookaheadExcludedCount} 条不可比样本（结算时间/因子快照早于数据可得时点）；旧口径准确率 ${pct(a.accuracyIncludingLookahead)} 留档备查。</div>`;
+      const inc = a.incomparableSamples || [];
+      if (inc.length) out += `<div class="bl-sub">排除明细：${inc.slice(0, 8).map(x => esc((x.date || '?') + (x.symbol ? '·' + x.symbol : ''))).join('、')}${inc.length > 8 ? ' 等 ' + inc.length + ' 条' : ''}</div>`;
+    } else if (a.accuracyIncludingLookahead != null) {
+      out += `<div class="bl-sub">✓ 前视审计：0 条排除，新旧口径一致（${pct(a.accuracyIncludingLookahead)}）。</div>`;
+    }
+    // 市场状态月分组（上证日K月度聚合：>1% 涨月 / <-1% 跌月 / 其余震荡月）
+    const months = b.byMonth || {};
+    const keys = Object.keys(months).sort();
+    if (keys.length) {
+      const sn = s => s === 'up' ? '涨月' : s === 'down' ? '跌月' : s === 'flat' ? '震荡月' : '—';
+      out += `<details class="bl-months"><summary>按市场状态分月（${keys.length} 个月有样本）</summary><table class="ca-table"><thead><tr><th>月份</th><th>市场状态</th><th>命中/样本</th><th>准确率</th></tr></thead><tbody>` +
+        keys.map(k => {
+          const m = months[k];
+          const r = m.t ? Math.round(m.c / m.t * 1000) / 10 : null;
+          return `<tr><td>${esc(k)}</td><td>${esc(sn(m.marketState))}</td><td>${m.c}/${m.t}</td><td><span class="mt-acc-chip ${cls(r)}" style="margin:0">${pct(r)}</span></td></tr>`;
+        }).join('') +
+        `</tbody></table></details>`;
+    }
+    el.innerHTML = out;
+  }
+
   function renderMarket() {
     const d = state.market;
     if (!d) return;
@@ -60,6 +111,7 @@
       kpi('判断总条数', String(a.totalRecords), a.horizonLabel, ''),
       kpi('过期未结算', String(s.overdueCount), s.overdueCount > 0 ? '需核查结算口径' : '无', s.overdueCount > 0 ? 'na' : ''),
     ].join('');
+    renderBaselines('marketBaselines', a);
 
     // 分方向 + 置信度校准
     const confRows = [
@@ -123,6 +175,15 @@
       kpi('过期未结算', String(a.overdueCount), a.overdueCount > 0 ? '需核查' : '无', a.overdueCount > 0 ? 'na' : ''),
       kpi('分方向', `涨 ${pct(a.bullRate)} / 跌 ${pct(a.bearRate)}`, `震荡 ${pct(a.flatRate)}（涨${a.bullTotal}/跌${a.bearTotal}/震${a.flatTotal}）`, ''),
     ].join('');
+    renderBaselines('techBaselines', a);
+    // [20261111a] 口径变更诚实披露：normalizeDir 改口径（震荡偏上→涨/偏下→跌）为历史样本回算结果，
+    // 存在后视偏差（先看分布再改口径），需前向样本持续验证。
+    // [20261111b] 精准表述修正：补多数类基准对照——57.1% 与永远跌 58.0% 持平未跑赢（125/219 vs 127/219，
+    // 差 2 条，统计不显著）；跑赢永远涨 41.6% 主要来自「不再系统性预测震荡」，不构成预测力证据。
+    const calibNote = document.getElementById('techCaliberNote');
+    if (calibNote) calibNote.innerHTML =
+      '⚠ 归因记录：2026-11-11 归一化口径变更（「震荡偏上/偏下」原归震荡，丢弃 dirScore 方向符号，旧口径命中 25.1% 跑输永远涨基准 41.6%）。新口径 57.1% 为同段历史样本回算（非前向验证），仍在验证期，暂不作为有效择时依据。' +
+      '<br>57.1% 与多数类基准（永远跌 58.0%）持平，未跑赢；跑赢方向基准（永远涨 41.6%）主要来自「不再系统性预测震荡」，不构成预测力证据。前向样本需验证能否稳定在 55%+。';
     document.getElementById('techCount').textContent = `${(d.bySymbol || []).length} 只`;
 
     document.getElementById('techBySymbol').innerHTML = (d.bySymbol || []).length
@@ -166,6 +227,7 @@
       kpi('次日口径', pct(a.nextdayRate), 'nextday', cls(a.nextdayRate)),
       kpi('过期未结算', String(a.overdueCount), a.overdueCount > 0 ? '需核查结算口径' : '无', a.overdueCount > 0 ? 'na' : ''),
     ].join('');
+    renderBaselines('sdBaselines', a);
 
     const bar = (rows) => rows.map(([n, r, t]) => t
       ? `<span class="mt-acc-chip ${cls(r)}"><span class="mac-label">${n}</span><span class="mac-value">${pct(r)}</span><span class="mac-sub">${t} 次</span></span>`
@@ -251,6 +313,7 @@
       kpi('看跌预警', pct(a.bearRate), `${a.bearTotal} 次`, cls(a.bearRate)),
       kpi('预警等级拆分', `预警 ${pct(a.warnRate)} / 强烈 ${pct(a.strongRate)}`, `样本 ${a.warnTotal} / ${a.strongTotal}`, ''),
     ].join('');
+    renderBaselines('sentBaselines', a);
 
     const recs = (d.records || []).slice().reverse();
     document.getElementById('sentCount').textContent = `${d.records.length} 条 · ${a.benchmark ? a.benchmark.name : ''} ${a.horizonLabel}`;

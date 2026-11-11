@@ -113,7 +113,7 @@ ok(eSrc.includes('weight = 0.10') && eSrc.includes('weight = 0.30'), '权重 0.1
 ok(eSrc.includes('buildBuybackEvent, // 20261023i'), 'buildBuybackEvent 已导出');
 ok(sSrc.includes('horizon: \'short\', history, buyback'), 'sameDayJudgment 把 buyback 传入事件引擎');
 ok(!/subs\.push\(\{ name: buybackHistorical/.test(sSrc), '增持减持不再 push 回购子卡片');
-ok(sSrc.includes("const LAYOUT_VERSION = '20261106o'"), 'LAYOUT_VERSION 已升 20261106o（量价配合子信号输入 signal 值域与分值变化；≥20261026b，版本链随每次口径升版前移）');
+ok(sSrc.includes("const LAYOUT_VERSION = '20261109c'"), 'LAYOUT_VERSION 已升 20261106o（量价配合子信号输入 signal 值域与分值变化；≥20261026b，版本链随每次口径升版前移）');
 
 // ============================================================================
 console.log(`\n===== 结果：${pass} 通过 / ${fail} 失败 =====`);

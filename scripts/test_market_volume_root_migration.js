@@ -45,9 +45,15 @@ const OLD_SRC = normalizeEol(execSync('git show HEAD:lib/marketEmotionModel.js',
 const NEW_SRC = normalizeEol(fs.readFileSync(path.join(__dirname, '..', 'lib', 'marketEmotionModel.js'), 'utf8'));
 
 //  rigor：新旧两版的 round / VOL_PCTL_* 必须逐字相同（否则等价比对失去意义）
+// [20261110g 修复] 原 extractFn 用非贪婪 `[\s\S]*?\n\}` 提取——round 是单行函数，
+// 提取终点落到其后第一个行首 `}`（percentile 函数尾），把 round 之后的**无关代码**
+// 卷进比对，任何无关改动（如 P1-3 常量单源迁移 LEARN_MIN_SAMPLE 行）都会误报
+// 「round 不一致」。改为按单行定义逐字比对（round 本体才是等价性前提）。
 for (const name of ['round']) {
-  const o = extractFn(OLD_SRC, name), n = extractFn(NEW_SRC, name);
-  if (o !== n) throw new Error(name + ' 实现在收敛前后不一致，等价性前提不成立');
+  const lineRe = new RegExp('^function ' + name + '\\(.*$\\n', 'm');
+  const o = (OLD_SRC.match(lineRe) || [null])[0];
+  const n = (NEW_SRC.match(lineRe) || [null])[0];
+  if (!o || !n || o !== n) throw new Error(name + ' 实现在收敛前后不一致，等价性前提不成立（单行逐字比对）');
 }
 for (const name of ['VOL_PCTL_LOW', 'VOL_PCTL_HIGH']) {
   const o = extractConst(OLD_SRC, name), n = extractConst(NEW_SRC, name);

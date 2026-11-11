@@ -47,7 +47,6 @@
 | GET | /api/macro-data | server.js:402 |
 | GET | /api/db/datapoints/:symbol（附 isFresh） | server.js:1249 |
 | GET/POST | /api/market-rank | server.js:444,453 |
-| POST | /api/backtest-validate | server.js:637 |
 | GET | *（SPA 兜底） | server.js:1925 |
 
 ### 子路由器挂载

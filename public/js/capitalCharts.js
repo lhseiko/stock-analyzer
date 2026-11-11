@@ -232,23 +232,26 @@ const CapitalCharts = {
     // buildConclusionParts），原 #capConclusion 独立卡删除，此处不再渲染。
   },
 
-  // ── 20261103m：每日量比趋势（用户指令：主力资金流向卡正下方，记录每日量比变化）──
-  // 量比口径（与 volumeEngine 量能三态 / zoneValidity 标准1 全站同源）：
-  //   量比 = 当日成交量 ÷ 前 5 日均量（**不含当日**）；量能缺失 → null（不臆造）。
-  //   市场标准阈值（20261019f 对齐东财/同花顺）：>1.2 放量、<0.8 缩量 → 图上画阈值虚线。
-  //   历史序列直接由日K成交量本机推导（K线自带历史，无需另存），即「每日量比的变化记录」。
+  // ── [20261109d] 每日20日量能比趋势（原 20261103m「每日量比趋势」，用户指令改为 ÷20 口径）──
+  //   数据口径：当日成交量 ÷ 前 20 日均量（**不含当日**），与判定层 ratio20（lib/volumeCaliber.js /
+  //   volumeEngine.avgOf(20)）同源；量能缺失 → null（不臆造）。
+  //   阈值（与全工作台唯一真值源一致）：>1.3 放量、<0.8 缩量 → 图上画阈值虚线。
+  //   ⚠️ 量能阈值参考线 ≠ 方向信号：放量/缩量仅表示量能高低、不判利好/利空 → 颜色用琥珀橙中性色，
+  //   禁止红绿方向色（颜色语义铁律）。
+  //   序列由后端 volumeIndicators.series.ratio20Series 用完整历史（~320 根）预计算并切片到近 60 日，
+  //   前端优先直接消费；computeVolRatioSeries 仅作前端兜底（老后端无此字段时本地用 volumes 重算）。
   computeVolRatioSeries(volumes) {
     const vols = Array.isArray(volumes) ? volumes : [];
     return vols.map((v, i) => {
-      if (i < 5 || v == null || !(v > 0)) return null;
+      if (i < 20 || v == null || !(v > 0)) return null;
       let sum = 0, ok = true;
-      for (let k = i - 5; k < i; k++) {
+      for (let k = i - 20; k < i; k++) {
         const p = vols[k];
         if (p == null || !(p > 0)) { ok = false; break; }
         sum += p;
       }
       if (!ok || !(sum > 0)) return null;
-      return Math.round((v / (sum / 5)) * 100) / 100;
+      return Math.round((v / (sum / 20)) * 100) / 100;
     });
   },
 
@@ -256,31 +259,34 @@ const CapitalCharts = {
     const el = document.getElementById('capVolRatioChart');
     if (!el || !vi) return;
     const s = vi.series;
-    if (!s || !Array.isArray(s.dates) || !Array.isArray(s.volumes) || s.dates.length === 0) return;
+    if (!s || !Array.isArray(s.dates) || s.dates.length === 0) return;
     const chart = this._safeInit('capVolRatioChart');
     if (!chart) return;
     this.instances.volRatio = chart;
-    const ratios = this.computeVolRatioSeries(s.volumes);
+    // 优先消费后端用完整历史预计算的 ÷20 序列（同源、无空窗）；老后端兜底用 volumes 本地算
+    const ratios = (Array.isArray(s.ratio20Series) && s.ratio20Series.length === s.dates.length)
+      ? s.ratio20Series
+      : this.computeVolRatioSeries(s.volumes);
     const dates = s.dates;
-    // 末值摘要（tooltip 之外的固定说明行不占位——阈值线即读法）
+    const last = ratios[ratios.length - 1];
     chart.setOption({
-      title: { text: `量比 = 当日量 ÷ 前5日均量（不含当日）· 最新 ${ratios[ratios.length - 1] == null ? '—' : ratios[ratios.length - 1]}`, left: 'center', top: 2, textStyle: { fontSize: 11, color: '#8b939c', fontWeight: 'normal' } },
+      title: { text: `20日量能比 = 当日量 ÷ 前20日均量（不含当日）· 最新 ${last == null ? '—' : last}`, left: 'center', top: 2, textStyle: { fontSize: 10, color: '#8b939c', fontWeight: 'normal' } },
       tooltip: {
         trigger: 'axis',
         formatter: (ps) => {
           const p = Array.isArray(ps) ? ps[0] : ps;
-          if (!p || p.value == null) return `${p && p.axisValue || ''}<br/>量比：数据不足`;
+          if (!p || p.value == null) return `${p && p.axisValue || ''}<br/>20日量能比：数据不足`;
           const v = Number(p.value);
-          const tier = v > 1.2 ? '放量' : v < 0.8 ? '缩量' : '平量';
-          return `${p.axisValue}<br/>量比：<b>${v.toFixed(2)}</b>（${tier}）`;
+          const tier = v > 1.3 ? '放量' : v < 0.8 ? '缩量' : '平量';
+          return `${p.axisValue}<br/>20日量能比：<b>${v.toFixed(2)}</b>（${tier}）`;
         },
       },
-      grid: { left: '8%', right: '5%', bottom: '10%', top: '22%' },
+      grid: { left: '8%', right: '5%', bottom: '10%', top: '24%' },
       xAxis: { type: 'category', data: dates, axisLabel: { rotate: 45, fontSize: 10 } },
-      yAxis: { type: 'value', scale: true, name: '量比', axisLabel: { formatter: v => Number(v).toFixed(1) } },
+      yAxis: { type: 'value', scale: true, name: '20日量能比', axisLabel: { formatter: v => Number(v).toFixed(1) } },
       series: [
         {
-          name: '量比', type: 'line', data: ratios, smooth: true, symbol: 'circle', symbolSize: 4,
+          name: '20日量能比', type: 'line', data: ratios, smooth: true, symbol: 'circle', symbolSize: 4,
           lineStyle: { width: 2, color: '#cdab74' }, itemStyle: { color: '#cdab74' },
           connectNulls: false,
           markLine: {
@@ -288,8 +294,9 @@ const CapitalCharts = {
             lineStyle: { type: 'dashed', width: 1 },
             label: { fontSize: 10, formatter: (p) => p.name },
             data: [
-              { name: '放量 1.2', yAxis: 1.2, lineStyle: { color: 'rgba(246,70,93,0.55)' }, label: { color: 'rgba(246,70,93,0.85)' } },
-              { name: '缩量 0.8', yAxis: 0.8, lineStyle: { color: 'rgba(14,203,129,0.55)' }, label: { color: 'rgba(14,203,129,0.85)' } },
+              // 放量 / 缩量是量能阈值参考线，不等于利好/利空 → 琥珀橙（颜色语义铁律）
+              { name: '放量 1.3', yAxis: 1.3, lineStyle: { color: 'rgba(240,185,123,0.55)' }, label: { color: 'rgba(240,185,123,0.85)' } },
+              { name: '缩量 0.8', yAxis: 0.8, lineStyle: { color: 'rgba(217,166,102,0.55)' }, label: { color: 'rgba(217,166,102,0.85)' } },
             ],
           },
         },
@@ -624,8 +631,10 @@ const CapitalCharts = {
         legend: { data: ['融资余额(亿)', '融券余额(亿)'], top: 0 },
         view: { alpha: 14, beta: -32, distance: 240 },
         series: [
-          { name: '融资余额(亿)', data: rzBalance, barSize: [16, 16], color: '#F6465D' },
-          { name: '融券余额(亿)', kind: 'line', data: rqBalance, color: '#8fb89a' },
+          // [20261109b] 融资/融券余额是「存量序列」，不是方向信号 → 中性蓝 / 琥珀，
+          // 避免把「柱子是红色」误读成利好；该卡的增减方向语义由 renderMarginSummary 的 cap-pos/cap-neg 单独承担。
+          { name: '融资余额(亿)', data: rzBalance, barSize: [16, 16], color: '#7fa8c9' },
+          { name: '融券余额(亿)', kind: 'line', data: rqBalance, color: '#cdab74' },
         ],
       });
       marginOpt.tooltip.axisPointer = undefined;
@@ -639,9 +648,9 @@ const CapitalCharts = {
         series: [
           {
             name: '融资余额(亿)', type: 'bar', data: rzBalance, barMaxWidth: 16,
-            itemStyle: { color: 'rgba(207,142,142,0.78)', borderRadius: [2, 2, 0, 0] },
+            itemStyle: { color: 'rgba(127,168,201,0.78)', borderRadius: [2, 2, 0, 0] },
           },
-          { name: '融券余额(亿)', type: 'line', data: rqBalance, smooth: true, symbol: 'none', lineStyle: { width: 2, color: '#8fb89a' } },
+          { name: '融券余额(亿)', type: 'line', data: rqBalance, smooth: true, symbol: 'none', lineStyle: { width: 2, color: '#cdab74' } },
         ],
       };
     }

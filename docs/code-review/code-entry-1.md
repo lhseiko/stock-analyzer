@@ -1,0 +1,5363 @@
+# 入口与服务层（server.js / routes / prompts / 根配置） · 第 1 卷
+
+> 共 16 个文件，本卷约 5247 行
+
+
+---
+
+## `需求汇总.md`  ·  184 行
+
+~~~md
+# 股票投资分析工作台 — 需求汇总
+
+> 整理自全部对话记录，按功能模块分类，按提出时间排序。
+
+---
+
+## 一、基础工作台（第一轮）
+
+### 1.1 核心功能
+- 构建 A 股、港股、美股的实时行情查询工具
+- 技术分析（K线图、均线、MACD、KDJ、布林带等）
+- 基本面分析（财务数据概览）
+- 新闻舆情搜索
+
+### 1.2 搜索体验
+- 支持**中文名称搜索**（输入"贵州茅台"直接搜索，而非只支持代码）
+
+### 1.3 数据显示
+- 股票名称不能乱码（腾讯API返回GBK编码需正确解码）
+
+### 1.4 数据稳定性
+- 东方财富K线API间歇性socket hang up问题需要容错/重试机制
+
+---
+
+## 二、深度分析功能（第三轮）
+
+### 2.1 分析框架
+- 参考用户提供的 `分析大纲.docx`（26节产品型公司分析框架）
+- 新增「🔬 深度分析」Tab，覆盖**10年**财务数据分析
+
+### 2.2 分析模块
+- 营收与成本分析、利润质量分析
+- 资产负债分析、现金流分析
+- DCF 估值模型
+- PE/PB/PS 统计估值
+- 十大股东变动追踪
+- 分红政策与回报分析
+
+### 2.3 估值结论
+- 综合多种估值方法，给出明确的评级（低估/合理/偏高/高估）
+- 给出投资建议文本
+
+### 2.4 技术增强
+- **筹码分布**：120日K线计算成交量价格分布、获利盘比例、平均成本
+- **技术走势判断**：综合 MA/MACD/RSI/KDJ/布林带/成交量 6类指标多空打分
+- **支撑压力位**：pivot + 成交量聚类，标注强度（★1-5）
+
+---
+
+## 三、桌面启动与图标（第三轮）
+
+### 3.1 桌面快捷方式
+- 创建桌面快捷方式，双击即可启动服务器并打开浏览器
+- 自定义图标设计（现代风格：圆角方块 + K线元素 + 渐变色）
+
+### 3.2 快捷方式修复
+- .lnk 快捷方式图标可见但**双击无法启动**
+- 美化 BAT 文件图标显示
+- 最终用户接受用 BAT 文件启动作为替代方案
+
+---
+
+## 四、保险公司分析（第五轮）
+
+### 4.1 背景
+- 参考用户提供的 `保险.docx`（18节保险分析框架）
+- A 股市场除了产品型公司，还有**服务类公司**（如提供保险业务的中国平安）
+- 工作台需要支持保险类公司的专属分析
+
+### 4.2 保险专属指标
+- **保费收入趋势**：总保费、寿险、产险、养老险、健康险（10年趋势 + 险种占比饼图）
+- **新业务价值 NBV**：趋势分析（数据源有限，需年报）
+- **综合成本率**：赔付率 + 费用率（从利润表估算）
+- **综合投资收益率**：投资收益 / 投资资产
+- **营运利润 vs 净利润对比**：检测利润差异及原因
+- **P/EV 估值**：内含价值倍数（EV ≈ 归母净资产 × 1.2 估算）
+- **DDM 股息贴现估值**：两阶段模型（10年高增长 + 永续3%，折现率10%）
+
+### 4.3 保险识别
+- 按股票代码识别（601318 平安、601628 人寿、601336 新华保险等）
+- 按名称关键词识别（保险、平安、人寿、太保等）
+
+---
+
+## 五、财务数据修订检测（第五轮）
+
+### 5.1 背景
+- 部分公司在近年公告中对**往年度财务报告数据进行了修改**
+- 典型案例：中国平安、五粮液
+
+### 5.2 功能要求
+1. **检测修订**：识别已知修订模式 + 趋势异常检测
+2. **重点标注**：在结论中重点说明这些修订
+3. **影响分析**：说清楚这些修改对往后的业绩会造成何种影响
+4. **按原标准重算**：尝试对数据按照未修改的标准进行计算然后对比
+
+---
+
+## 六、投资笔记记录与验证（第五轮）
+
+### 6.1 记录功能
+- 用户可以记录投资经验和心得
+- 笔记支持关联股票代码和名称
+- 使用 localStorage 本地持久化
+
+### 6.2 验证功能
+- 工作台对笔记内容**联网搜索历史数据进行检验核对**
+- 自动提取笔记中的量化判断（如 PE 倍数、PB 倍数、增长率、股价、净利润率等）
+- 将提取的判断与实时行情和历史财务数据对比验证
+- 给出验证结果（通过/部分通过/未验证）
+- 计算并展示**正确概率**
+- 提醒用户这些经验是否正确
+
+### 6.3 笔记类型
+- 支持分类：分析、策略、复盘、观察等
+
+---
+
+## 七、公司资料库（第六轮）
+
+### 7.1 背景
+- 自选股的数据分析需要本地存储公司年报、季报、公告等信息
+- 避免反复上网搜索数据
+
+### 7.2 功能要求
+- 创建单独的文件夹/数据库存放公司文档
+- 按公司分类管理（年报、季报、公告、研报等）
+- 支持文件上传（PDF、Word、Excel、图片等）
+- 支持文件下载/查看
+- 支持搜索文档（按标题、公司名、年份等）
+- 支持删除文档
+- 统计信息展示（文档总数、公司数、存储大小）
+
+### 7.3 存储结构
+```
+data/companies/{stockCode}/{type}/{filename}
+```
+- 类型：年报(annual)、季报(quarterly)、公告(announcement)、研报(research)、其他(other)
+
+---
+
+## 八、当前实现状态
+
+| 需求模块 | 状态 | 备注 |
+|---------|------|------|
+| 基础行情 + 技术分析 | ✅ 完成 | A股/港股/美股 |
+| 中文名称搜索 | ✅ 完成 | |
+| 深度分析（26节框架） | ✅ 完成 | 10年数据，4节需联网搜索未实现 |
+| 估值结论 | ✅ 完成 | DCF + PE/PB/PS 综合 |
+| 筹码分布 + 技术走势 | ✅ 完成 | |
+| 桌面快捷方式 | ✅ 完成 | BAT 方式启动 |
+| 保险公司分析 | ✅ 完成 | P/EV, DDM, 保费, 综合成本率, 投资收益率 |
+| 修订检测 | ✅ 完成 | 已知模式 + 趋势异常；按原标准重算为部分实现 |
+| 投资笔记 | ✅ 完成 | 记录 + 验证 + 概率 |
+| 公司资料库 | ✅ 完成 | 本地文件存储 + 上传/下载/搜索/删除 |
+| NBV 真实数据 | ⚠️ 限制 | 需年报或专业数据API，当前用估算值；可通过资料库上传年报补充 |
+| 内含价值真实数据 | ⚠️ 限制 | 同上 |
+| 按未修改标准重算 | ⚠️ 部分 | 当前标注修订并解释影响，完整重算需历史版本数据库 |
+
+---
+
+## 九、工作台一致性 · 财报事件→资料库自动同步（2026-08-21, version 20260821f）
+
+### 9.1 需求背景
+- 用户原话：「工作台的一致性是一个优先原则，不仅仅包括了数据，今天中国平安发布了中报，短期行情捕捉到了，但是资料库却没有同步更新下载」。
+- 即：判断引擎识别到的财报事件（如「2026 中报发布」）必须与资料库 PDF 同步，避免「判断捕捉到、资料库缺失」的数据不一致。
+
+### 9.2 功能要求
+1. **半年报类型**：资料库新增 `semi`（半年报）类型分组，图标 📅；「中期报告/半年度报告」正确归类到 semi，不再误归年报。
+2. **事件检测**：判断引擎扫描消息面（getNews 新闻标题 + 公告列表），按「年份 + 类型关键字」识别财报发布事件（`中国平安：2026年中期拟每股派现0.98元` 这类不含「报告」字样的标题也能识别）。
+3. **缺口检测与自动同步**：检测到事件且资料库缺该年该类型报告时，自动调用 `download_reports.py` 从巨潮下载并登记，四层幂等防重（report_sync.json / _inflight / _downloaded.json / register 幂等）。
+4. **前端提示**：短期判断卡片显示同步状态（「📥 检测到 2026半年报发布，资料库缺此报告，正在自动同步…」或「✅ 已同步」）。
+5. **手动兜底**：`POST /api/docs/sync-report` 手动触发同步；`GET /api/docs/sync-status/:symbol` 查询同步状态。
+
+### 9.3 当前实现状态
+| 项目 | 状态 | 备注 |
+|------|------|------|
+| semi 半年报类型 + 存量迁移 | ✅ 完成 | 64 条「中期报告/半年度报告」从 annual/quarterly 迁至 semi；601318 现 annual:12 / semi:8 |
+| reportSync 自动同步闭环 | ✅ 完成 | detectReportEvent → hasReportDoc → syncReportForSymbol → registerDownloadedReports |
+| 前端同步状态提示 | ✅ 完成 | 短期判断卡片 sync-gap / sync-ok 两态 |
+| 手动触发 + 状态查询 API | ✅ 完成 | /api/docs/sync-report、/api/docs/sync-status/:symbol |
+| 中报事件端到端验证 | ✅ 完成 | 601318 reportEvent=semi/2026、reportGap=False，资料库已含今日下载 PDF |
+
+~~~
+
+---
+
+## `DESIGN.md`  ·  126 行
+
+~~~md
+# 股票分析工作台 · 设计规范（DESIGN.md）
+
+> 主题：华尔街交易终端 · 深色专业主题（柔和暗色系，面向干眼症 / 强光敏感用户）。
+> 本文件是全站 UI 的唯一权威规范；与代码冲突时以本文件为准并修正代码。
+> 建立于 2026-10-16（impeccable 全量审计 + 10 项设计升级，版本 20261015i）。
+
+## 1. 语义色纪律（最高优先级，不可违反）
+
+### 1.1 涨跌语义色：全站唯一
+- 红涨 `#F6465D`（`--red`），绿跌 `#0ECB81`（`--green`），震荡灰 `#8B949E`（`--flat`）。
+- **严禁**用其他任何颜色表达涨跌（紫/蓝/橙一律不得染指涨跌语义）。
+
+### 1.2 淡底 tint 令牌（红绿成对）
+- 标准淡底 alpha = 0.10：`--tint-red: rgba(246,70,93,0.10)` / `--tint-green: rgba(14,203,129,0.10)`。
+- 旧别名 `--red-light` / `--red-soft` / `--green-light` / `--green-soft` 全部指向上述令牌，新代码直接用 `--tint-*`。
+- 强调态可用 0.12 变体（写字面量 `rgba(...,0.12)`），仅用于 hover/强提醒，不用于常规徽章。
+- **红绿规则必须成对修改**：动 `--tint-red` 的地方必须检查 `--tint-green` 孪生项。
+
+### 1.3 金色：交互强调唯一色
+- `--accent: #F0B97B`（hover `#F5C894`，淡底 `--accent-light` alpha 0.16）。
+- 仅用于：焦点环、选中态、主按钮（实底金 + 深字 `#0B0E11`）、品牌强调。不得用于涨跌。
+
+## 2. 徽章两种模式（二选一，不得混搭）
+
+| 模式 | 用法 | 对比度 |
+|---|---|---|
+| A. 实底 + 深字 | 实底 `--red`/`--green`/`--accent` + 文字 `#0B0E11` | 5.5:1 ~ 11:1 ✓ |
+| B. 淡底 + 彩字 | 底 `--tint-red`/`--tint-green` + 字 `--red`/`--green` | 需容器底色够深（见 §4） |
+
+- **禁止实底红/金上放白字**（红底白字仅 3.5:1，不达标）。
+- 模式 B 的容器必须用深表面：`--bg-card` `#161B22`、`--bg-elevated` `#1A212B`、`--bg-input` `#0F131A`、`--bg-sidebar` `#0E1217`、`--bg-primary` `#0B0E11`。
+- **禁止红/绿字压 `--bg-hover` `#1D242D`**（零 tint 也只有 4.44:1，不达标）。
+- JS 注入到卡片上的淡底徽章用 alpha 0.08（卡片上 0.10 彩字差一丝 AA），如 `deepCharts.js` 评级色。
+
+## 3. 表面层级（ elevation ）
+
+```
+--bg-primary  #0B0E11  页面最底层
+--bg-sidebar  #0E1217  侧栏
+--bg-input    #0F131A  输入框 / 深内嵌面板
+--bg-card     #161B22  卡片
+--bg-hover    #1D242D  悬停 / 次级面（⚠️ 容不得红字）
+--bg-elevated #1A212B  抬升面板（弹层 / 下拉）
+```
+- 嵌套深度：卡片内**最多再嵌一层**内嵌面板（用 `--bg-input` 或 `--bg-primary`），禁止三层套娃。
+
+## 4. 文字与对比度（WCAG AA 是硬底线）
+
+- 文字三级：`--text-primary #E6EDF3` / `--text-secondary #8B949E` / `--text-light #828B96` / `--text-disabled #484F58`。
+- 正文 ≥ 4.5:1；纯图标（非文字）≥ 3:1。
+- **`--text-light` 上禁止叠加 opacity 0.7–0.9**（合成后跌破 AA）。
+- 瞬时态（hover/active）允许贴近 4.5:1，但不得低于非文字 3:1。
+
+## 5. 排版尺度
+
+| 层级 | 尺寸 | 用途 |
+|---|---|---|
+| h1 | 21px / 700 | 页面主标题（`.logo` / `.jd-title`） |
+| h2 | 16px / 600 | 分区标题（含 emoji 产品身份） |
+| h3 | 16px / 600 | 卡片标题 |
+| 正文 | 14px | 基础字号 |
+| 辅助 | 13px / 12px | 说明、徽章、按钮 |
+| 微注 | 11px | 时间戳、标签 |
+
+- 数字一律 `font-variant-numeric: tabular-nums`（已在 body 设置）。
+- 相邻层级字号比 ≥ 1.3（21/16），避免 detect 的 flat-type-hierarchy 告警。
+
+## 6. 图标与 emoji 纪律
+
+- **分区标题**（h1/h2/h3）保留 emoji 作为产品身份（⭐🕐🎯📋🧭📡…）。
+- **按钮 / Tab / 链接动作**一律纯文字，不放装饰 emoji（刷新、导出、AI 操作等）。
+- **纯图标按钮**（✕ ▾ ⌨️ 🗑️ 等）允许图标形式，但必须有 `title` + `aria-label`。
+- 正文提示 / 状态行 / 图表 tooltip 中的 emoji（✅⚠️⏳📦…）保留为语义标记。
+
+## 7. 动效规范
+
+- 状态过渡（颜色 / 背景 / 边框）：`120ms ease`（新代码标准）。
+- 存量兼容：既有 150–200ms 过渡视为合法存量（审计已通过的可扫读区间），仅在顺路改动时收敛，不做批量替换。
+- 弹窗进出：250ms；数字刷新闪动 `numFlash` 450ms（`--dur` 可后续令牌化）。
+- `prefers-reduced-motion: reduce` 全局降级已落地（style.css 末尾，动画/过渡时长 0.01ms，WCAG 2.3.3 前庭安全）。
+- 禁止装饰性循环动效（跑马灯仅限骨架屏加载占位）。
+
+## 8. 焦点可达性
+
+- 全局 `:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }`（金色焦点环是键盘用户的唯一导航线索）。
+
+## 9. 版本戳协议（改前端必读）
+
+1. 版本号唯一权威源：`server.js` 的 `APP_VERSION`。
+2. 任何前端资源（css/js/html/图标）改动后必须 bump 版本号（格式 `20261015x`），并同步：
+   - `server.js` APP_VERSION；
+   - `index.html` / `accuracy.html` / `judgments.html` 内全部 `?v=` 戳（favicon、icon.png、css、js 引用）。
+3. `index.html` 内 URL 版本补位脚本**禁止硬编码版本号**（防重定向死循环）。
+4. 一旦某版本戳被浏览器加载过，后续前端改动必须再次 bump。
+5. 后端数据缓存版本（`lib/` cacheVer）与 UI 版本号互不相干，不随 UI bump。
+
+## 10. 已知检测保留项（不是缺陷，勿"修复"）
+
+- side-tab 43 条：红涨绿跌语义条（有意为之）。
+- border-accent-on-rounded 1 条：亮点/雷点顶条（语义横幅）。
+- dark-glow / marquee / repeating-stripes：20261015i tint 令牌化后，detect 静态扫描无法解析 `var()` 间接引用而不再报出（运行时视觉语义不变，金晕/骨架屏/不可用纹均为有意设计）。
+- detect 报文基线：total 44（side-tab 43 + border-accent 1），low-contrast 恒为 0。
+- hover 瞬时红 tint（如 doc 删除图标按钮）：非文字元素 3:1 达标，且为瞬时态。
+
+## 11. 图表红绿取色（20261015i 新增）
+
+- 图表序列红涨绿跌唯一取色点：`chartTheme.js` 的 `SA_CHART.colors.up / .down`（#F6465D / #0ECB81）。
+- `chart3D.js` lightBar 渐变（0.95/0.45/0.35 alpha）与 `deepCharts.js` 评级徽章文字色一律引用该色板，禁止散落字面量。
+- `deepCharts.js` 评级徽章「低估」bg 0.08 是 WCAG 微调值（卡片表面红字 + 0.10 tint 为 4.47:1 略低于 AA），刻意低于标准 0.10，勿"修正"。
+
+## 12. 独立长页统一外壳（20261025f）
+
+四个独立页（notes / accuracy / judgments / logic-model）共用 style.css 文末「独立长页统一外壳」段，页内 `<style>` 仅保留一条 `html, body` 滚动覆盖（html 无法由共享样式按页选择，属已知例外）。
+
+- **页宽阶梯**（内容列宽 = 阶梯值 − 2×24px 页边距，全部居中）：
+  - notes `.np-page` 808px（760 阅读列，整页单列含页头）
+  - accuracy / judgments `.acc-page` `.jd-page` 1148px（1100 数据列，与首页 `.home-card` 同宽对齐）
+  - logic-model `.lm-page` 1328px（1280 宽树列）
+- **页头**：统一 `.jd-header` 结构（标题居左 21px/700、动作居右、下边框分隔、18px 顶部呼吸）；logic-model 原独立页头结构废弃，副标题用 `.lm-head-sub` 内联。
+- **页头动作次序**：次要按钮在前、主按钮（btn-primary）在后、「返回工作台」居末。
+- **sticky 工具条**：`.np-toolbar` / `.acc-toolbar` / `.jd-toolbar` 同一套（top:0、实底 `--bg-primary`、下边框）。
+- **页面级芯片**：`.np-tab` / `.acc-tab` / `.jd-tag` 同一套（radius `--radius-sm` 13px，active = `--accent-light` 淡底 + 金字 600，模式 B 徽章）。**芯片三家族分工**：页面级筛选芯片（本条）／图表控件芯片（`.range-btn` `.period-btn` `.dy-toggle-btn`，实底金 + 深字，模式 A）／一级导航 `.tab`（下划线式）——语义不同、各自内部统一，不得跨家族混用样式。
+- **大空态**：`.np-list .notes-empty` / `.record-list .jd-empty` / `.acc-body .jd-empty` / `.acc-body .data-empty` 统一虚线框居中大空盒；表格单元格内小空态（`.jd-empty` 裸用、基类 `.data-empty` `.notes-empty`）保持原样。
+- **取色纪律**：独立页所有颜色一律 `var()` 令牌；金色淡底唯一令牌 `--accent-light`（0.16），严禁再出现 `rgba(207,174,124,…)` 等杂金与裸 hex 红绿金。
+- **动作按钮**：纯文字无 emoji（notes「写心得/记一笔」已去 ✏️；tab 文案去 🧠🌐，emoji 只保留在 h1 标题）。
+
+~~~
+
+---
+
+## `generate_icon.py`  ·  161 行
+
+~~~py
+"""Generate a modern stock analyzer icon (ICO + PNG)"""
+from PIL import Image, ImageDraw, ImageFilter
+
+def lerp_color(c1, c2, t):
+    return tuple(int(c1[i] + (c2[i] - c1[i]) * t) for i in range(3))
+
+def create_icon(size=256):
+    # Supersample for smooth edges
+    ss = 4
+    s = size * ss
+    img = Image.new('RGBA', (s, s), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+
+    # === Background: rounded square with diagonal gradient ===
+    c_top = (11, 17, 32)      # #0B1120 dark navy
+    c_mid = (19, 78, 74)      # #134E4A dark teal
+    c_bot = (13, 148, 136)    # #0D9488 teal
+
+    for y in range(s):
+        for x in range(s):
+            t = (x + y) / (2 * s)
+            if t < 0.5:
+                color = lerp_color(c_top, c_mid, t * 2)
+            else:
+                color = lerp_color(c_mid, c_bot, (t - 0.5) * 2)
+            draw.point((x, y), fill=color + (255,))
+
+    # Rounded corner mask
+    radius = int(s * 0.19)
+    mask = Image.new('L', (s, s), 0)
+    mdraw = ImageDraw.Draw(mask)
+    mdraw.rounded_rectangle([0, 0, s - 1, s - 1], radius=radius, fill=255)
+    img.putalpha(mask)
+
+    # === Subtle glow at top-right ===
+    glow = Image.new('RGBA', (s, s), (0, 0, 0, 0))
+    gdraw = ImageDraw.Draw(glow)
+    gr = int(s * 0.35)
+    gcx, gcy = int(s * 0.75), int(s * 0.25)
+    for r in range(gr, 0, -2):
+        alpha = int(25 * (1 - r / gr) ** 2)
+        gdraw.ellipse([gcx - r, gcy - r, gcx + r, gcy + r], fill=(13, 148, 136, alpha))
+    glow = glow.filter(ImageFilter.GaussianBlur(radius=int(s * 0.025)))
+    img = Image.alpha_composite(img, glow)
+    draw = ImageDraw.Draw(img)
+
+    # === Candlesticks ===
+    # Layout (fractions of size):
+    # x centers: 0.27, 0.50, 0.73
+    cx_list = [0.27, 0.50, 0.73]
+    body_w = 0.095
+    body_radius = int(s * 0.018)
+    wick_w = max(2, int(s * 0.014))
+
+    # Each: (x_center, wick_top, wick_bot, body_top, body_bot, color)
+    candles = [
+        (cx_list[0], 0.48, 0.76, 0.56, 0.69, (239, 68, 68)),    # red, small
+        (cx_list[1], 0.36, 0.70, 0.42, 0.60, (34, 197, 94)),    # green, medium
+        (cx_list[2], 0.22, 0.64, 0.27, 0.50, (74, 222, 128)),   # bright green, tall
+    ]
+
+    for cx_f, wt, wb, bt, bb, color in candles:
+        px = int(cx_f * s)
+        bw = int(body_w * s)
+        # Wick (line through the candle)
+        draw.line(
+            [(px, int(wt * s)), (px, int(wb * s))],
+            fill=color + (255,), width=wick_w
+        )
+        # Body as rounded rectangle
+        x0 = px - bw // 2
+        y0 = int(bt * s)
+        x1 = px + bw // 2
+        y1 = int(bb * s)
+        # Subtle inner highlight: lighter at top
+        # Draw body with vertical gradient
+        for dy in range(y1 - y0):
+            t = dy / max(y1 - y0, 1)
+            # Lighter at top, original at bottom
+            if t < 0.5:
+                # Lighten
+                c = tuple(min(255, int(color[i] + (255 - color[i]) * 0.25 * (1 - t * 2))) for i in range(3))
+            else:
+                c = color
+            draw.line([(x0, y0 + dy), (x1, y0 + dy)], fill=c + (255,))
+
+        # Now round the corners by clearing them
+        corner_clear = Image.new('L', (bw + 4, (y1 - y0) + 4), 255)
+        cc_draw = ImageDraw.Draw(corner_clear)
+        cc_draw.rounded_rectangle([0, 0, bw + 2, (y1 - y0) + 2], radius=body_radius, fill=0)
+        # Apply: where corner_clear == 255 (outside rounded rect), make transparent
+        for cy in range((y1 - y0) + 4):
+            for cx2 in range(bw + 4):
+                if corner_clear.getpixel((cx2, cy)) == 255:
+                    actual_x = x0 - 2 + cx2
+                    actual_y = y0 - 2 + cy
+                    if 0 <= actual_x < s and 0 <= actual_y < s:
+                        r, g, b, a = img.getpixel((actual_x, actual_y))
+                        img.putpixel((actual_x, actual_y), (r, g, b, 0))
+
+    draw = ImageDraw.Draw(img)
+
+    # === Trend line (golden, dashed look via transparency) ===
+    trend_points = [(int(cx * s), int(bt * s)) for cx, wt, wb, bt, bb, color in candles]
+    line_w = max(2, int(s * 0.009))
+    trend_color = (252, 211, 77)  # #FCD34D
+
+    # Draw solid trend line with glow
+    for r in range(int(s * 0.012), 0, -2):
+        alpha = int(40 * (1 - r / (s * 0.012)) ** 2)
+        for i in range(len(trend_points) - 1):
+            draw.line([trend_points[i], trend_points[i + 1]],
+                      fill=trend_color + (alpha,), width=line_w + r * 2)
+    # Main line
+    for i in range(len(trend_points) - 1):
+        draw.line([trend_points[i], trend_points[i + 1]],
+                  fill=trend_color + (220,), width=line_w)
+
+    # Endpoint glow + dot
+    end_x, end_y = trend_points[-1]
+    end_r = int(s * 0.028)
+    for r in range(end_r, 0, -1):
+        alpha = int(200 * (1 - r / end_r) ** 1.5)
+        draw.ellipse([end_x - r, end_y - r, end_x + r, end_y + r],
+                     fill=trend_color + (alpha,))
+    # Solid center
+    cr = int(s * 0.011)
+    draw.ellipse([end_x - cr, end_y - cr, end_x + cr, end_y + cr],
+                 fill=(255, 255, 255, 255))
+
+    # Downscale
+    img = img.resize((size, size), Image.LANCZOS)
+    return img
+
+
+def main():
+    output_dir = r"C:\Users\16507\WorkBuddy\2026-08-01-18-18-13\stock-analyzer"
+
+    # Main PNG (preview)
+    icon = create_icon(256)
+    icon.save(output_dir + r"\public\icon.png", "PNG")
+    print("Saved: public/icon.png (256x256)")
+
+    # ICO with multiple sizes for desktop shortcut
+    sizes = [256, 128, 64, 48, 32, 16]
+    images = [create_icon(sz) for sz in sizes]
+    images[0].save(output_dir + r"\icon.ico", format='ICO',
+                   sizes=[(sz, sz) for sz in sizes])
+    print(f"Saved: icon.ico (sizes: {sizes})")
+
+    # Favicon for web app
+    fav32 = create_icon(32)
+    fav32.save(output_dir + r"\public\favicon.ico", format='ICO',
+               sizes=[(32, 32), (16, 16)])
+    print("Saved: public/favicon.ico (32x32, 16x16)")
+
+    print("\nAll icons generated successfully!")
+
+
+if __name__ == '__main__':
+    main()
+~~~
+
+---
+
+## `package.json`  ·  19 行
+
+~~~json
+{
+  "name": "stock-analyzer",
+  "version": "1.0.0",
+  "description": "Stock Investment Analysis Workbench",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "node scripts/run_all_tests.js",
+    "test:quick": "node scripts/run_all_tests.js --quick"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "express": "^4.18.2",
+    "iconv-lite": "^0.7.3",
+    "multer": "^2.2.0"
+  }
+}
+
+~~~
+
+---
+
+## `prompts\broker-valuation-data.md`  ·  46 行
+
+~~~md
+# 券商估值 · STEP1 数据清洗层 Prompt（AI 抽取 6 核心指标）
+
+> 用途：本提示词只负责「数据清洗层」——从目标券商最新年报/半年报/季报抽取并计算 6 个核心指标，
+> 并以**机器可读 JSON** 输出。三维度评分与画像分类由 `lib/brokerClassification.js`（确定性代码）完成，
+> 不交给 AI，以保证「同样数据 ⇒ 同样结论」（1+1=2）。
+>
+> 直接复制下方【角色设定 + STEP1 任务】发给任意 AI 估值助手即可。
+
+## 【角色设定】
+你是一名资深券商分析师，擅长从上市公司年报/半年报/季报中精确提取与计算业务结构指标。
+请严格基于公开财报与权威数据库（如东方财富 F10、公司年报 PDF、交易所披露），只输出数据，不做估值判断。
+
+## 【STEP1 任务：计算并输出 6 个核心指标】
+对目标券商，依次计算并输出以下字段（JSON）。口径必须准确：
+
+1. `totalAssets` —— 总资产（单位：亿元）
+2. `netCapital` —— 净资本（单位：亿元，监管核心抗风险指标，取自风险管理/净资本报表）
+3. `brokerageRatio` —— 经纪业务收入占比（%，单位百分点）= 代理买卖证券业务净收入 / 营业收入 × 100
+4. `lightBizRatio` —— 投行+资管+财富管理收入合计占比（%，单位百分点）= （投行业务净收入 + 资管业务净收入 + 代销金融产品净收入）/ 营业收入 × 100
+   （注：这三项视为「创新/轻型业务」）
+5. `proprietaryRatio` —— 自营投资收入占比（%，单位百分点）= （投资收益 + 公允价值变动损益）/ 营业收入 × 100
+   （视为重资本高风险业务）
+6. `hhi` —— 收入集中度指数 HHI（0~1 标度）= Σ(各项业务收入占比)²；各项业务占比请用小数（如 0.30）参与平方和。
+   数值越接近 1 越单一，越接近 0 越多元。
+
+## 【输出格式（严格 JSON，不要任何解释文字）】
+```json
+{
+  "symbol": "目标代码",
+  "name": "目标券商",
+  "reportLabel": "数据基准（如 2025年报",
+  "totalAssets": 0,
+  "netCapital": 0,
+  "brokerageRatio": 0,
+  "lightBizRatio": 0,
+  "proprietaryRatio": 0,
+  "hhi": 0
+}
+```
+
+## 【数据质量约束】
+- 收入占比求和应接近 100（允许因「其他业务」存在小幅偏差），若显著偏离请注明。
+- 自营占比用「投资收益 + 公允价值变动损益」近似，不要用「营业利润」倒挤。
+- HHI 必须基于各业务条线真实收入占比计算，不得拍脑袋。
+- 数据来源须在 JSON 之外以 `sources` 字段列出（如「2025年报 合并利润表」「2025年报 净资本表」）。
+
+~~~
+
+---
+
+## `prompts\broker-valuation-models.md`  ·  68 行
+
+~~~md
+# 券商估值 · 4 类估值模型（AI 叙述/数据版 Prompt）
+
+> 说明：4 类估值模型的**数值计算**已由 `lib/brokerValuation.js`（确定性代码）完成，保证「同样数据 ⇒ 同样结果」。
+> 本文件保留为用户原文，供 AI 做**文字叙述、数据抓取口径说明、情景解读**时使用。
+> 分类逻辑见 `lib/brokerClassification.js`；6 指标抽取见 `prompts/broker-valuation-data.md`。
+
+---
+
+## 类型一：传统通道型中小券商 —— 单一PB（市净率）估值指令
+
+【角色】你是一名券商价值分析师。请严格按以下逻辑计算该券商的合理估值，不要使用代码，只用数学公式和文字推理。
+
+【输入参数】1.最新每股净资产（BPS） 2.近5年PB历史中位数 3.近3年平均ROE 4.行业平均股权资本成本（8.5%） 5.预期永续增长率g（2%）
+
+【核心计算逻辑（PB-ROE修正模型）】
+- 合理PB = (ROE - g) / (资本成本 - g)
+- 估值下限 = max(历史5年PB的10%分位数, 理论合理PB×0.9)
+- 估值上限 = min(历史5年PB的50%分位数, 理论合理PB×1.1)
+- 目标股价下限 = BPS×估值下限；上限 = BPS×估值上限
+- 当前PB低于历史10%分位数且破净（PB<1）→ 深度价值区间
+
+【输出】理论合理PB / 合理股价区间 / 是否低估 / 核心风险（对ADT敏感，ADT环比下滑超15%需下调ROE重算）
+
+---
+
+## 类型二：重资本自营型券商 —— 调整后PB + 市场敏感性测试
+
+【角色】你是一名擅长风险调整的券商估值专家。重点剔除市场波动对净资产的干扰。
+
+【输入参数】1.账面每股净资产 2.权益类浮盈（扣递延所得税） 3.固收类浮盈 4.沪深300点位与权益自营仓位 5.历史3年调整后PB中枢
+
+【核心计算逻辑（三步调整法）】
+- 调整后BPS = 账面BPS - 权益类浮盈×85% - 固收类浮盈×100%
+- 基准 = 调整后BPS × 历史调整PB中枢；悲观（沪深300 -15%）：重算调整后BPS_Pess × 中枢×0.95；乐观（+10%）：调整后BPS_Opt × 中枢×1.05
+- 加权目标价 = 基准×50% + 悲观×25% + 乐观×25%
+
+【输出】账面PB / 调整后PB中枢 / 调整后每股净资产 / 压力区间 / 加权目标价 / 核心风险（十年国债上行超50BP需重算）
+
+---
+
+## 类型三：精品投行/财富管理型 —— PE（主）+ RIM（辅）
+
+【角色】你是一名聚焦轻资产高壁垒企业的估值分析师。
+
+【输入参数】1.EPS及未来3年EPS复合增长率CAGR 2.可比海外精品投行PE（20-25倍） 3.当前BPS 4.权益资本成本（9.5%） 5.未来3年每股剩余收益RI_t
+
+【核心计算逻辑】
+- 模型A（PE）：合理PE = 行业PE中位数16 × (该券商ROE/行业ROE) × 成长系数(CAGR>20%→1.1；10-20%→1.0；<10%→0.9)；PE法目标价 = EPS×合理PE
+- 模型B（RIM）：内在价值 = BPS + ΣRI_t/(1+r)^t + 终值(RI_3×(1+3%)/(r-3%)折现)
+- 最终加权 = PE法×60% + RIM×40%
+
+【输出】合理PE / PE法目标价 / RIM法内在价值 / 最终加权合理股价（±5%误差带）/ 核心假设（基金销售市占率变化需调g）
+
+---
+
+## 类型四：综合航母均衡型 —— SOTP 分部加总
+
+【角色】你是一名大型综合金融机构估值专家。
+
+【输入参数】各分部净利润/净资产：R_credit&E_credit（经纪信用）、E_IB（投行）、E_AM（资管财富）、R_principal（自营）、E_other&R_other（其他）、D_corp（集团净债务）
+
+【核心计算逻辑（四步加总）】
+- 乘数：经纪信用 PB×1.1；投行 PE×16.5；资管 PE×22.5；自营 P/NAV×1.0；其他 ×1.0
+- 集团合理市值 = (V_credit+V_IB+V_AM+V_principal+V_other) - D_corp
+- 每股合理股价 = 集团合理市值 / 总股本
+
+【输出】各分部价值占比 / 集团合理总市值 / 扣除净债务后每股合理股价（乘数±5%区间）/ 交叉验证（SOTP价对应整体PB vs 当前PB，捕捉Alpha）/ 核心风险（IPO/再融资收紧需降V_IB乘数至12倍）
+
+~~~
+
+---
+
+## `prompts\daily-review-system.md`  ·  79 行
+
+~~~md
+你是「Stock Analyzer」工作台的每日复盘分析师。工作台的代码已经把当日原始数据抓全、算好，并以 JSON 形式放在用户消息里交给你。你的工作不是复述数字，而是**把这堆数字读懂、讲透、写成一篇给人看的复盘**。
+
+## 一、事实边界（最高优先级）
+
+- 用户消息里的 JSON 是**唯一事实来源**。里面的数值是代码从真实行情接口计算出来的，你必须原样引用，**不得改写、不得四舍五入到不同口径、不得自行推算 JSON 里没有的数字**。
+- JSON 里值为 `null`、字段不存在、`status` 不是 `ok`，或出现在 `missing` 清单里的项，一律视为**暂无数据**。自然带过即可（例如「龙虎榜盘后数据尚未发布，晚间补录」「这项暂无数据，先不下结论」）。**不要为缺失项编造数值、不要列一张缺失清单表格、不要因为缺数据就拒绝输出整篇报告**。
+- 严禁凭记忆补充 A 股行情、个股名称、游资席位、机构买卖、政策消息。JSON 里没有的，就是没有。
+- 新闻只作为**催化线索**，标题带时间就写时间；没有对应新闻就说「暂无可核验的消息催化」，不要把题材想当然地归因到某个政策或事件。
+
+## 二、怎么写：清晰的标题骨架 + 灵动排版（不要模板腔）
+
+- 输出**纯 Markdown**，直接给正文，不要写「以下是我的复盘」这类开场白，不要包在 ```markdown 代码块里。
+- **必须使用 `###` 三级标题把全文切成清晰段落**，方便快速定位。请按下面这个骨架组织（顺序固定，但每段详略由当日信息量决定；某维度数据缺失就在该段写「暂无」，不要硬凑空段、也不要删掉标题）：
+
+  1. `### 一句话总结` —— 2~4 句话给出当日整体结论（市场状态、情绪位置、最值得盯的一条主线或风险）。
+  2. `### 情绪周期与市况` —— 涨跌家数、涨停/跌停、最高板、昨日涨停股今日表现（红盘率、大面股）合起来说明情绪在升温还是退潮、处在什么位置。
+  3. `### 题材结构与归因` —— 当天活跃题材怎么分布、主线是否清晰；**本段必须紧跟下面这张表**（见第四节强制表格 1）。
+  4. `### 资金与龙虎榜` —— 板块涨跌与资金流是否同向，机构与游资痕迹（龙虎榜已有数据时）；盘后未发布就写一句「晚间补录后再看席位」。
+  5. `### 边际变化与风险扩散` —— 和前 3~5 个交易日对照序列比，是加速、减速还是刚拐头；亏钱效应出现在哪一档（高位连板 / 昨日涨停 / 低位补涨），是局部还是扩散。
+  6. `### 昨日判断对照` —— `history.baselines` / `history.verdicts` 里有前几日留下的判断基准和今日同口径值，挑有价值的 1~3 条做对照；被证伪就直说「这个判断今天没兑现」，不要事后找补。若没有历史对照数据，本段写「暂无历史判断可对照」。
+  7. `### 明日观察计划` —— 写**观察对象和观察信号**，用「如果…说明…」的条件句；**本段必须紧跟下面这张表**（见第四节强制表格 2）。
+
+- 标题之间用自然语言自由展开，**同一件事只说一次**：禁止在开头总结一遍、中间表格再来一遍、结尾又重复一遍。后文引用前文结论时一句话带过。
+- 不要写「一、二、三…十一」这种编号章节，也不要写「四段式」「事实/判断/验证/失效」这类结构标签；用 `###` 标题即可。
+- 段落内可自由使用加粗、列表、引用块、分隔线、表格；表格只在确实需要横向对比时用（题材归因、观察池就是这种场景）。
+
+## 三、怎么写：说人话、要有归因
+
+- 面向一个懂炒股但不看研报的人。禁止出现这些黑话：`有效对照点`、`前后半段均值`、`阈值±10%`、`五层漏斗`、`C1-C8`、`V1-V8`、`四象限中和`、`四段式`、`确认清单`、`否决清单`、`O1-O5`、`L1-L5`、`资金投票质量分级`。
+- JSON 里 `direction` 之类的枚举值要翻成日常话：`扩散` → 「比前三天明显放大」，`收缩` → 「比前三天缩了」，`持平` → 「和前三天差不多」；`ok:false` 或对照不足 → 「前几日样本不够，这一项先不下判断」。
+- 不要用「或然」「均值回归」「结构性分化」这类空话套话，也不要写「我觉得」「可能」「大概」「果然」「正如预期」「不出所料」。
+- **归因是这篇报告的价值**：把盘面表现和当天新闻标题、板块资金方向、主力净额放在一起看，找出最可能的一条或两条驱动链，写清楚「因为看到 A 和 B，所以更可能是 C」，并说明把握有多大；数据互相矛盾就直接把矛盾摆出来，不要硬圆。
+- 长度控制在 1000～2000 字。宁可把三件事写透，不要罗列二十个数字。
+
+## 四、强制输出两张核心表格（必出，不可省略）
+
+这两张表是用户快速提取「核心标的」与「验证条件」的关键，必须出现；若 JSON 对应字段为空，写一行「暂无」即可，不要删表。
+
+**表格 1 ·【热点题材归因卡片】——放在 `### 题材结构与归因` 段末尾**
+⚠️ 强制要求：在表格正上方**必须单独输出这一行文字作为表格标题**（用加粗或作为小标题均可，但文字必须一字不差）：
+> **【热点题材归因卡片】**
+不要把「【热点题材归因卡片】」这几个字当成只是给你看的说明——它必须出现在最终报告里、紧贴在表格上方，否则用户无法快速定位这张表。
+列顺序固定为（**必须 5 列，不可省略任何一列**）：`题材名称 | 盘面表现 | 核心催化 | 阶段评级 | 次日验证逻辑`
+- 题材名称：JSON 里 `topics.cards[].name` 的题材 / 板块名。
+- 盘面表现：涨停家数、涨跌幅、资金投票质量等可量化事实（原样引用 `topics.cards[].limitUpCount` / `changePct` 等，不四舍五入）。
+- 核心催化：**直接引用 JSON 里 `topics.cards[].catalyst` 字段的原文字**，不要改写、不要缩写、不要自己重新归纳。该字段已由代码按规则生成——有新闻则给新闻标题，无新闻则给 `纯游资接力（最高X板）` / `纯资金驱动（净流入X亿）` / `资金与游资共振（净流入X亿/最高X板）` 这类资金连板归因。**严禁输出「暂无可核验催化」「无」「缺失」「暂无」等占位词**；catalyst 字段里不会出现这些词，你照抄即可。
+- 阶段评级：沿用引擎给出的 **S / A / B / C** 字母（S 主线共振、A 局部投机、B 轮动补涨、C 诱多陷阱），不要写中文评级。
+- 次日验证逻辑（LLM 推演，赋权给你）：**必须根据该题材本行「盘面表现」+「核心催化」，推演出明天盘中需要验证的一个具体、可观察的动作或数据条件**，填入本列（字数控制在 30 字以内）。验证条件必须是盘口中能直接看到的信号，例如「明日看华策影视能否走出2连板，且板块出现第2只涨停跟随」「明日看汽车零部能否出现3板跟随股，若高度打不开视为一日游」。严禁使用模糊主观判断（如「关注持续性」「观察资金态度」「若走强则…」这类不算）。字数超限或含糊即视为不合格。
+
+**表格 2 ·【明日核心观察池】——放在 `### 明日观察计划` 段末尾**
+⚠️ 强制要求：在表格正上方**必须单独输出这一行文字作为表格标题**（用加粗或作为小标题均可，但文字必须一字不差）：
+> **【明日核心观察池】**
+同样，这几个字必须出现在最终报告里、紧贴在表格上方。
+列顺序固定为：`股票名称 | 入选原因 | 评级 | 明日观察什么 | 放弃跟踪的信号`
+- 股票名称：JSON 里已有的候选 / 题材代表股名称（仅作观察标的罗列，不构成推荐）。
+- 入选原因：它代表哪条题材 / 板块逻辑。
+- 评级：沿用引擎给出的 **S / A / B / C** 字母。
+- 明日观察什么：具体观察信号（如「能否出现第二只跟随涨停」）。
+- 放弃跟踪的信号：明确的失效条件（如「若最高板断板，则放弃该题材；若放量跌破 5 日线，则移出观察」）。
+- 兜底：若 `computed.engine.candidates` 里**所有**标的 `trackable` 都是 `false`（引擎认为都不可跟踪），不要简单写一行「暂无」。改为从 JSON 的 `activity.topAmount`（强势股样本，已含 `name` / `code` / `industry` / `chgPct`）或板块 `sectors.top` 中取 **1~3 只当日最值得看的题材代表股**填入「股票名称」列，并在「入选原因」写清它代表哪条题材/板块逻辑、「明日观察什么」写该题材的接力信号、「放弃跟踪的信号」写该题材的失效条件。**这些名字必须全部来自 JSON，不得凭空编造**。评级沿用该题材在 `topics.cards` 里的 S/A/B/C 字母。
+
+两张表都用标准 Markdown 表格语法（首行表头、第二行 `|---|` 分隔、之后每行一档）。
+
+## 五、合规红线（违反即作废）
+
+- **不给任何操作指令**：不出现买入、卖出、加仓、减仓、建仓、清仓、仓位、目标价、止盈、止损、抄底、打板、推荐、可关注个股代码清单。观察池里可以出现 JSON 里已有的板块/题材/代表股名称，但**不构成个股推荐**。
+- 不写「适合布局」「风险可控」「可以参与」「值得关注」这类变相建议。
+- 评级口径只用「低估 / 合理 / 高估」，不用「增持 / 减持 / 偏高 / 卖出」。
+- A 股语义：涨用红、跌用绿。正文里描述方向时直接说「上涨 / 下跌 / 走强 / 走弱」，不要用「由下跌转为相反的反向」这类绕弯表达。
+- 全文是**盘后观察记录，不是投资建议**。这句话在结尾用一行小字注明即可，不要反复强调。
+
+## 六、龙虎榜特别说明
+
+龙虎榜是**盘后延迟发布**的数据。当 `dragonTiger.available` 为 `false` 或 `stage` 为 `formal` 时，在 `### 资金与龙虎榜` 段写一句「龙虎榜盘后数据尚未发布，晚间补录后再看资金席位」即可，**不要判为数据缺失、不要写接口故障、不要猜席位和资金性质**。当 `stage` 为 `complete` 且龙虎榜有数据时，把它自然融入该段，说明上榜家数、净买额方向、机构买卖提及对比能说明什么；`institutionBuyMentions` / `institutionSellMentions` 是「解读文本的关键词计数」，不是席位穿透核验，措辞要留有余地。
+
+## 七、数据来源标注
+
+关键数字后面用括号带出来源与数据时间即可（JSON 的 `sources` 里有 `source` / `asOf`），例如 `（涨停跌停模块，数据日 2026-11-10）`。**不要每个数字都标**，一段里第一次出现该来源标一次就够。不要在文末堆一长串来源列表。
+
+~~~
+
+---
+
+## `prompts\event-triage-system.md`  ·  52 行
+
+~~~md
+你是 A 股事件驱动的定性分析器。任务是判断一条财经快讯**是否构成一个会导致股价变动的"外生事件"**，并给出严重度评分。
+
+## 最重要的判别：因 vs 果
+
+- **"因"（外生事件）**：发生在市场之外的客观事实，会**导致**股价变动。
+  例：央行宣布降准、某地区爆发武装冲突、公司发布业绩预告暴增、行业出台集采政策、公司被立案调查、海外实施出口禁令。
+- **"果"（行情描述）**：只是**记录**股价/指数/资金已经发生的变动，本身不会导致任何事。
+  例："A股四大指数集体高开"、"存储板块涨幅居前"、"北向资金净流入50亿"、"个股涨停"。
+  → **这类必须判为 market_recap，isEvent=false。用股价变动去预测股价变动是循环论证，毫无意义。**
+
+## 事件类型（type）
+
+| type | 含义 | 说明 |
+|---|---|---|
+| `macro_policy` | 宏观政策 | 货币（降准/降息/加息）、财政、产业监管、税费 |
+| `geo_disaster` | 地缘与灾难 | 战争、武装冲突、制裁、疫情、自然灾害、重大安全事故 |
+| `industry_supply` | 行业供需 | 涨价/降价、禁运、停产减产、产能、集采、技术突破 |
+| `company_event` | 公司事件 | 业绩预告/快报、并购重组、增减持、回购、诉讼、立案、退市 |
+| `research_opinion` | 研究观点 | 券商研报、评级、目标价、策略观点（**不是事实，只是观点**） |
+| `market_recap` | 行情描述 | 涨跌/资金流/涨停等记录（**是果不是因**） |
+| `none` | 非事件 | 无关紧要的信息 |
+
+## 严重度五维（每项 0-3 分，整数）
+
+- `scope` 范围：3=全球/全国；2=全行业；1=细分行业；0=单公司
+- `persistence` 持续性：3=永久性/结构性改变；2=持续数年；1=一年以内；0=一次性
+- `intensity` 强度：3=颠覆性；2=重大；1=中等；0=轻微
+- `surprise` 意外度：3=完全突发、毫无预期；2=部分超预期；1=大致符合预期；0=完全预期/例行
+- `authority` 权威性：3=党中央/国务院/央行/证监会；2=部委；1=交易所/行业协会；0=公司/券商/媒体
+
+**锚定校准（必须对照）**：
+- 顶格锚（scope3+persistence3+intensity3）：全面战争、全球大流行疫情、系统性金融危机。
+- 只有与上述量级可比的才配得上最高分。**券商的一句策略观点，无论写得多好，intensity 最多 1、authority 最多 0。**
+- **常规货币政策操作（用户校准，20260907e）**：国内降准/降息/加息、LPR 调整、美联储议息降息/加息等，属于**市场预期内、高度可预期的例行政策**——政策信号往往提前放风、市场已充分定价，意外度很低。此类事件：`surprise` 最多 1（超预期大幅度才可 2）、`intensity` 最多 1（超预期大力度才 2）、`persistence` 通常 0-1。因此常规降准降息/美联储降息**通常应为轻微（minor），最多中度（moderate），绝不可能是重大（major）**——它们与战争/疫情/金融危机不在一个量级。
+- 例外：只有**完全出人意料的非常规货币政策动作**（如意外大幅降息 100bp、开启全新救助工具应对危机）才可给 surprise=2~3，但最终分级仍受规则层硬上限约束。
+
+## 输出格式
+
+对每条输入，输出 JSON 数组，每个元素：
+```json
+{"id": "<输入的id>", "isEvent": true/false, "type": "...", "direction": "up|down|neutral",
+ "scope":0-3,"persistence":0-3,"intensity":0-3,"surprise":0-3,"authority":0-3,
+ "confidence":0-1,"sectors":["行业名"],"reason":"一句话理由"}
+```
+
+规则：
+1. 不确定时 `isEvent=false`。宁可漏判，不可误判（突发事件是极小概率事件，误报代价远高于漏报）。
+2. `research_opinion` 的 intensity 不得大于 1，authority 不得大于 0。
+3. **日常流动性管理不算事件**（用户校准，20260907f）：LPR 报价、逆回购/逆回购利率、日常公开市场操作（MLF 续作等）是央行每日例行的流动性调剂，**isEvent=false，直接不认**——它们连轻微事件都不是。
+4. **常规货币政策操作**（降准/降息/加息/美联储议息）的 surprise 不得大于 1、intensity 不得大于 1（超预期大力度才 2），通常轻微、最多中度、绝不重大。
+5. 只输出 JSON，不要任何解释文字。
+
+~~~
+
+---
+
+## `prompts\valuation-system.md`  ·  81 行
+
+~~~md
+你是专注 A 股上市公司的估值分析师，运行在「Stock Analyzer」工作台环境中。该工作台已为你内置以下能力，请按优先级调用，不要凭空编造：
+① 年报数据库：工作台会在用户消息中自动注入【本地财报数据】块（来自年报数据库三张表：利润表近 8 期营收/净利/扣非 + 现金流量表近 8 期经营现金流/销售收现 + 资产负债表最新期关键科目〔总资产/负债/净资产/货币资金/应收/存货/商誉等〕+ 同比边际 + 年报原文节选）。这是历史财务的权威来源。若用户消息中没有该块，说明数据库暂未覆盖该标的。
+② 最新财报解读：用户消息可能注入【最新财报解读】块（工作台财报解读模块已联网检索过的最新报告期核心业绩与驱动分析）。该块数据**已检索过一次，直接引用即可，严禁对同批数据重复上网搜索**。
+③ 东方财富妙想金融数据 + 上网搜索：仅用于补足上述注入块未覆盖的数据（实时行情、可比公司估值、宏观利率、近期事件）。
+
+你的任务：在信息可得前提下，对任意一家 A 股上市公司给出"内在价值区间 + 当前贵贱判断 + 安全边际 + 主要风险"。
+
+## 一、适用边界
+- 适用：A 股主板 / 创业板 / 科创板 / 北交所中，有连续经营、有可识别盈利或营收模式的绝大多数公司。
+- 需特别处理的（必须显式标注，不套用通用模板）：纯金融（银行/券商/保险）、强周期资源品、未盈利 Biotech、REITs、ST/*ST 及退市风险股、单一项目型地产公司。
+- 若数据严重不足或公司处于重大不确定性中，直接说"当前无法可靠估值"，不要硬编。
+
+## 二、数据获取规范（强制分层取数，按序取用，禁止跳层重复联网；所有数字标注来源+日期）
+- **第一层·年报数据库**（【本地财报数据】块）：历史财务（营收/净利润/扣非/经营现金流/销售收现/资产负债表科目/商誉）**一律以本块为准**，来源标注"年报数据库"。本块已覆盖的数据**禁止再上网搜索同项数据**。
+- **第二层·财报解读**（【最新财报解读】块）：最新报告期的核心业绩、披露日期、业绩驱动。直接引用，来源标注"财报解读"；**禁止对同批数据重复上网搜索**。
+- **第三层·妙想金融数据/上网搜索**：仅补足前两层未覆盖的数据——当前行情（股价/市值/PE/PB）、可比公司估值分位、宏观利率、近 6 个月重大事件，标注抓取时间（精确到日）。
+- **最新报告期铁律**：估值必须以最新已披露报告期（资产负债/现金流科目以注入块标注的最新报告期为准）为基准；注入块未提供某项数据时，明确写"注入块未提供该项"，再用搜索补抓——**禁止用旧年份/旧报告期数据冒充最新数据**，禁止凭记忆填数。
+- 数据冲突处理：年报数据库（权威财务）优先于新闻口径与搜索结果；行情以搜索到的实时数据为准并标注时间；若年报数据库与搜索结果矛盾，以年报数据库为准并在结论中提示。
+
+## 二·补充、与工作台规则估值模型交叉验证（若用户消息含【工作台规则估值模型计算结果】块）
+- 该块由工作台内置确定性规则引擎计算（PE估值带 / DCF / DDM / P/EV 等按公司类型加权），是你的重要参考基准。
+- 你的估值方向与区间与它**基本一致** → 在【当前判断】中明确写出"与工作台规则模型结论一致"，增强置信度。
+- 存在**矛盾** → 必须在正文中解释差异原因（方法选择 / 参数假设 / 数据口径 / 市场情绪），给出你更认可的一方及理由；**不得直接照抄规则模型数字，也不得无视矛盾**。
+- 消息中无该块（规则模型暂无该标的结果）→ 按正常流程独立估值，不要提及规则模型。
+
+## 三、估值方法决策树（按公司类型选主方法 + 辅方法交叉验证；历史数据取自年报数据库，实时参数取自上网搜索）
+1. 成熟稳定盈利、现金流可预测 → 主业 DCF（FCFF）为主，PE/PB/PS 历史分位为辅。
+2. 高成长（营收/利润 CAGR>20%）→ PEG（合理 PEG 0.8-1.2 为锚）+ PS 分位，DCF 做敏感性。
+3. 重资产 / 周期股 → PB（结合 ROE 与重置成本）+ 正常化盈利 PE，禁用高点的 TTM PE。
+4. 金融 → PB + ROE（PB≈ROE/要求回报）、股息率、不良/拨备质量。
+5. 净利率波动大 / 资本开支重 → EV/EBITDA、EV/EBIT。
+6. 亏损 / 未盈利（科技、Biotech）→ PS + 市研率 + 管线/订单确定性折溢价，明确"估值区间极宽"。
+
+## 四、七步执行流程
+Step 1 生意定性：行业空间、竞争格局、护城河（品牌/技术/网络/成本/牌照）、商业模式（量价、周转率、杠杆）。
+Step 2 财务质量校验（排雷，数据取自年报数据库）：先排雷再估值，雷未排清则结论降级。
+Step 3 选方法：按决策树定主+辅方法，说明为何选用。
+Step 4 算内在价值：给出基准情景 + 乐观/悲观情景的区间，而非单点。关键假设（WACC、永续增速、净利率、折现率）全部写明，参数尽量来自年报数据库与上网搜索的真实值。
+Step 5 交叉验证：至少两种方法结果互相印证；偏差>30% 必须解释。
+Step 6 给结论：当前价相对内在价值，判断 低估 / 合理 / 高估，并给安全边际（如"低于 X 有 20% 安全边际"）。
+Step 7 A股特异修正：见第六节，量化折现或溢价。
+
+## 五、财务排雷清单（任一项命中必须 highlight；数据以年报数据库为准）
+- 利润与经营现金流长期背离（净现比<0.6 且持续）。
+- 应收账款/存货增速远超营收。
+- 商誉占净资产>30% 或大额减值风险。
+- 大股东高比例质押（>50%）或频繁减持（以上网搜索近 6 个月公告为准）。
+- 关联交易占比异常、其他应收款畸高。
+- 审计非标（保留/否定/无法表示意见）。
+- 业绩靠非经常性损益（政府补助/处置资产）粉饰。
+
+## 六、A股特异修正系数
+- 国企（尤其央企）：治理折价收窄、分红确定性溢价，可给 0~10% 溢价。
+- 强政策行业（新能源/半导体/医药）：政策拐点是首要变量，估值需叠加政策情景（用上网搜索确认最新政策）。
+- 散户主导+高换手：短期情绪溢价常见，长期应回归 DCF，不因题材给永久溢价。
+- 壳价值：注册制下壳价值趋零，小市值亏损股不再默认含壳溢价。
+- 再融资/解禁：大规模解禁前 6 个月，流动性折价计入。
+
+## 七、输出模板（严格遵循，字段需与工作台估值模块对齐）
+【标的】代码 + 名称 + 行业 + 数据截至日期
+【生意定性】一句话 + 护城河评级（强/中/弱）
+【财务排雷】通过 / 命中项（列出，注明来自年报数据库）
+【估值方法】主：… 辅：…
+【内在价值区间】基准 X-Y 元（对应市值 A-B 亿）；乐观 Z / 悲观 W
+【当前判断】低估/合理/高估 + 当前价 P + 较内在价值偏离 ±%（行情来源+时间）
+【安全边际】建议建仓/加仓位、安全边际幅度
+【核心假设】WACC=… 永续 g=… 关键敏感性（参数来源标注）
+【主要风险】3 条
+【结论动作】🟢 可买 / 🟡 观望 / 🔴 回避
+
+【机器可读摘要】（输出模板最末尾固定附，供工作台渲染估值数据卡片；数值全部为数字，不加单位与文字）
+```json
+{"overallRating":"低估|合理|偏高|高估 四选一","currentPrice":数字,"fairValueLow":数字,"fairValueHigh":数字,"fairValueCenter":数字,"methodsUsed":["方法1","方法2"]}
+```
+（fairValueLow/High 为基准情景内在价值区间上下限，单位元；fairValueCenter 为区间中枢；methodsUsed 按主辅顺序列出实际使用的方法名，如"PE估值带""DCF""PB""DDM"）
+
+## 八、诚实原则
+- 所有数字必须可追溯（来源=年报数据库 / 财报解读 / 上网搜索+日期），禁止捏造。
+- 数据不足时主动降级结论，不强行给点。
+- 结论末尾固定附：⚠️ 以上由 AI 基于工作台年报数据库与上网搜索整理，仅供参考，不构成投资建议。
+
+~~~
+
+---
+
+## `routes\aiRoutes.js`  ·  506 行
+
+~~~js
+/**
+ * AI / 妙想 / 行业指数 / 产品图片 路由（20260906 自 server.js 拆出·第一阶段）
+ * ----------------------------------------------------------------------------
+ * 仅做路由搬运：处理器主体与 server.js 原实现逐字一致，输出格式零变化。
+ * 挂载方式：server.js 中 app.use(aiRoutes)（路由内部保留完整 /api 前缀路径）。
+ */
+const express = require('express');
+const path = require('path');
+const fs = require('fs');
+const {
+  analyzeMarketOverview, publicConfig, loadConfig, saveConfig, augmentStock,
+  analyzeAspects, readCache, analyzeCompanyDeep, analyzeValuation,
+  analyzeResearchReports,
+  analyzeAnnouncements, analyzeEarningsReport, analyzeIndustryIndex,
+  readIndustryIndexCache, readEarningsCache,
+} = require('../lib/aiAugment');
+const factStore = require('../lib/factStore');
+const mx = require('../lib/miaoxiang');
+const { getIndustryIndexHistory } = require('../lib/industryIndexHistory');
+const { getSectorMarketCapHistory } = require('../lib/sectorMarketCapHistory');
+const { resolveStockSectorLevels } = require('../lib/stockSectorLevels');
+const { getIndustryProsperity } = require('../lib/industryProsperity');
+const { findPython } = require('../lib/pyRuntime');
+// 20260913d：行业指数运行状态侧车（running/error）与僵死阈值。
+// 直接 require 子模块，不经 aiAugment 门面 —— 门面导出基线（24 键）受 scripts/export-snapshot.js 守卫，不得增删。
+const { readIndustryIndexState, STALE_RUNNING_MS } = require('../lib/ai/market');
+
+const router = express.Router();
+
+// 首页大盘/板块 AI 解读（滚动字幕）
+router.get('/api/ai/market-overview', async (req, res) => {
+  try {
+    const cached = await analyzeMarketOverview({ data: null, force: false, readOnly: true });
+    res.json(cached || { success: false, cached: false });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.post('/api/ai/market-overview', async (req, res) => {
+  try {
+    const { data, force } = req.body || {};
+    const result = await analyzeMarketOverview({ data, force: !!force });
+    // 20261024m：无论本次是「新生成」还是「命中缓存」，只要 success 就 upsert 到「大盘记录」。
+    // 旧逻辑 `cached !== true` 会漏掉「缓存已存在但从未落盘」的情况（用户 16:24 报障：点了 AI 解读
+    // 仍没进大盘记录——正是命中了 16:08 旧缓存而被跳过）。upsert 幂等，同一交易日只更新不重复。
+    if (result && result.success) {
+      try {
+        const dailyReview = require('../lib/dailyMarketReview');
+        const { asOfTradingDate } = require('../lib/cnTradingCalendar');
+        const { localDate } = require('../lib/localDate');
+        const date = result.asOfTradingDate || asOfTradingDate(localDate());
+        const saved = dailyReview.saveMarketReviewNote({ date, data: data || {}, ai: result });
+        if (saved && saved.saved) result.savedToNotes = true;
+      } catch (e) {
+        console.warn('[AI] 写入大盘记录失败:', e && e.message ? e.message : e);
+      }
+    }
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// AI 联网资料补全（需用户自行配置带联网搜索的大模型 API Key）
+router.get('/api/ai/config', (req, res) => {
+  res.json(publicConfig(loadConfig()));
+});
+
+router.post('/api/ai/config', (req, res) => {
+  try {
+    // 20260902d：双模型配置。旧前端只传 model，视为「联网模型」以保持兼容。
+    // 20260903n：新增 volc/baidu 搜索通道凭据（searchMode = builtin|mcp|volc|baidu）。
+    const {
+      provider, apiKey, model, modelWeb, modelLocal, useCustomProtocol, searchMode,
+      volcApiKey, volcModel, baiduApiKey,
+    } = req.body || {};
+    const cfg = saveConfig({
+      provider,
+      apiKey,
+      model,
+      modelWeb: modelWeb || model,
+      modelLocal,
+      useCustomProtocol,
+      searchMode,
+      volcApiKey,
+      volcModel,
+      baiduApiKey,
+    });
+    res.json({ success: true, config: cfg });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.post('/api/ai/augment', async (req, res) => {
+  try {
+    const { symbol, stockName, industry, force } = req.body || {};
+    if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL', message: '缺少股票代码' });
+    const data = await augmentStock({ symbol, stockName, industry, force: !!force });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// AI 联网分析个股亮点 / 雷点（结构化，可自动写入个股笔记）
+router.post('/api/ai/aspects', async (req, res) => {
+  try {
+    const { symbol, stockName, industry, force } = req.body || {};
+    if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL', message: '缺少股票代码' });
+    const data = await analyzeAspects({ symbol, stockName, industry, force: !!force });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 只读缓存接口：打开个股页时自动拉取已存的 AI 补全 / 亮点雷点（不联网、不限 TTL）
+router.get('/api/ai/augment/:symbol', (req, res) => {
+  const symbol = String(req.params.symbol || '').trim();
+  if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL' });
+  const cached = readCache(symbol, '');
+  if (!cached) return res.json({ success: false, cached: false });
+  res.json({ success: true, cached: true, ...cached });
+});
+
+router.get('/api/ai/aspects/:symbol', (req, res) => {
+  const symbol = String(req.params.symbol || '').trim();
+  if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL' });
+  const cached = readCache(symbol, '_aspects');
+  if (!cached) return res.json({ success: false, cached: false });
+  res.json({ success: true, cached: true, ...cached });
+});
+
+// 公司深度分析（CFA 统一框架 · 20260914f）：合并原「公司综合介绍/供应链与成本/主要产品&客户」三模块为单一分析
+// 输出七段：①一句话定位与投资摘要 ②基本面画像 ③供应链与成本 ④客户与竞争 ⑤跨模块联动 ⑥风险提示 ⑦来源/缺失说明
+router.post('/api/ai/company-deep', async (req, res) => {
+  try {
+    const { symbol, stockName, industry, force, companyName, companyType } = req.body || {};
+    if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL', message: '缺少股票代码' });
+    const data = await analyzeCompanyDeep({ symbol, stockName, industry, force: !!force, companyName, companyType });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+// 估值大模型（提示词驱动，读取 prompts/valuation-system.md）：AI 联网估值
+router.post('/api/ai/valuation', async (req, res) => {
+  try {
+    const { symbol, stockName, industry, force, companyName } = req.body || {};
+    if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL', message: '缺少股票代码' });
+    const data = await analyzeValuation({ symbol, stockName, industry, force: !!force, companyName });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+// 20260908：个股专属估值模型（确定性计算，无 LLM 参与）。
+// 20260909l：闸门从硬编码 601318 改为 hasDedicatedValuation 动态判定（平安/圣湘/海天/士兰/华安/长江/麦捷/电气风电/券商）；
+// 本端点同步计算实现仍仅 601318 平安——其余专属股结果统一走 /api/ai/valuation/:symbol 的 analyzeValuation 专属分支。
+router.get('/api/valuation/model/:symbol', async (req, res) => {
+  try {
+    const symbol = String(req.params.symbol || '').trim().replace(/^(sh|sz|bj)/i, '');
+    const { hasDedicatedValuation } = require('../lib/ai/valuation');
+    if (!hasDedicatedValuation(symbol)) {
+      return res.json({ ok: false, error: 'NO_MODEL', message: `该标的暂无专属估值模型` });
+    }
+    if (symbol !== '601318') {
+      return res.json({ ok: true, dedicated: true, message: '该标的拥有专属确定性估值模型，结果请走 /api/ai/valuation/:symbol 获取' });
+    }
+    const paModel = require('../lib/valuation/pingAn601318.js');
+    const cfg = paModel.loadInputs();
+    if (!cfg) return res.json({ ok: false, error: 'NO_INPUTS', message: '缺少输入配置 data/valuation/601318.json' });
+    // 现价跟随实时行情（唯一随时间变化的输入；其余为财报锁死值）
+    // 20261001a：原 require('../lib/quoteService') 是死引用（该模块不存在），实时价从未生效过；
+    // 改走 lib/stockData.getQuote（与 lib/ai/valuation.js 同源），getQuote 为 async 需 await。
+    try {
+      const { getQuote } = require('../lib/stockData');
+      if (typeof getQuote === 'function') {
+        const q = await getQuote('sh601318');
+        const px = q && (q.price != null ? q.price : (q.latest && q.latest.price));
+        if (px) cfg.inputs.P = Object.assign({}, cfg.inputs.P, { value: px, source: '实时行情' });
+      }
+    } catch (e) { /* 取不到实时价则用配置文件中的收盘价 */ }
+    res.json(paModel.compute(cfg));
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// 券商分类 + 估值（确定性：分类见 lib/brokerClassification，估值见 lib/brokerValuation）
+router.post('/api/broker/classify', (req, res) => {
+  try {
+    const { classify } = require('../lib/brokerClassification');
+    const { metrics } = req.body || {};
+    if (!metrics) return res.status(400).json({ ok: false, error: 'NO_METRICS', message: '缺少 metrics（6 核心指标）' });
+    res.json(classify(metrics));
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+router.post('/api/broker/valuation', (req, res) => {
+  try {
+    const { classifyAndValue } = require('../lib/brokerValuation');
+    const { metrics, valuationInputs } = req.body || {};
+    if (!metrics) return res.status(400).json({ ok: false, error: 'NO_METRICS', message: '缺少 metrics（6 核心指标）' });
+    res.json(classifyAndValue(metrics, valuationInputs || {}));
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+router.get('/api/ai/valuation/:symbol', async (req, res) => {
+  try {
+    const symbol = String(req.params.symbol || '').trim();
+    if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL', message: '缺少股票代码' });
+    const bare = symbol.replace(/^(sh|sz|bj)/i, '');
+    // 20260909l：专属确定性估值标的（601318/圣湘/海天/士兰/华安/长江/麦捷/电气风电/券商）一律优先实时计算——
+    // 根因修复：旧顺序「先缓存后专属」会让专属模型上线前遗留的 AI 自由发挥旧缓存被命中
+    // （电气风电 688660：20260909h 上线 DCAVM 时未删 2026-09-06 旧缓存，打开页面下卡显示旧 AI 文本
+    // 区间 3.00~5.20，与上卡 DCAVM 确定性 5.39~9.62 不一致）。专属股打开页面即确定性计算
+    // （无 LLM、不消耗额度），模型失败时也不回落旧 AI 文本——返回 cached:false，前端保持规则版结论。
+    const { hasDedicatedValuation } = require('../lib/ai/valuation');
+    if (hasDedicatedValuation(bare)) {
+      try {
+        const r = await analyzeValuation({ symbol: bare });
+        if (r && r.dedicated) return res.json(r);
+      } catch (e) { /* 失败 → 下方 cached:false，绝不回落旧 AI 文本缓存 */ }
+      return res.json({ success: false, cached: false, dedicated: true });
+    }
+    // 20260906：非专属股 GET 纯只读——仅返回有效缓存（v4 版本+TTL 匹配），绝不自动联网重算。
+    // 打开个股不消耗额度；无有效缓存时前端保持规则版结论，用户点「✨ AI 估值」（force=true）才重算。
+    const { readValuationCache } = require('../lib/aiAugment');
+    const cached = readValuationCache(symbol);
+    if (cached) return res.json({ success: true, ...cached, cached: true });
+    res.json({ success: false, cached: false });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+// 公司深度分析：GET 纯只读（仅返回有效缓存，不自动联网）；用户点「✨ AI 联网获取」才 POST 重算
+router.get('/api/ai/company-deep/:symbol', (req, res) => {
+  const symbol = String(req.params.symbol || '').trim();
+  if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL' });
+  const cached = readCache(symbol, '_companyDeep');
+  if (!cached) return res.json({ success: false, cached: false });
+  res.json({ success: true, cached: true, ...cached });
+});
+// 产品图片本地服务（仅允许白名单扩展名，防目录穿越）
+const PRODUCT_IMG_DIR = path.join(__dirname, '..', 'data', 'ai_cache', 'img');
+
+// 研报 · AI 联网总结（近一年券商研报观点与评级）
+router.post('/api/ai/research', async (req, res) => {
+  try {
+    const { symbol, stockName, industry, force } = req.body || {};
+    if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL', message: '缺少股票代码' });
+    const data = await analyzeResearchReports({ symbol, stockName, industry, force: !!force });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+router.get('/api/ai/research/:symbol', (req, res) => {
+  const symbol = String(req.params.symbol || '').trim();
+  if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL' });
+  const cached = readCache(symbol, '_research');
+  if (!cached) return res.json({ success: false, cached: false });
+  res.json({ success: true, cached: true, ...cached });
+});
+// 公告 · AI 联网总结（近一年增持/减持/回购/高管/立案/诉讼）
+router.post('/api/ai/announcements', async (req, res) => {
+  try {
+    const { symbol, stockName, industry, force } = req.body || {};
+    if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL', message: '缺少股票代码' });
+    const data = await analyzeAnnouncements({ symbol, stockName, industry, force: !!force });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+router.get('/api/ai/announcements/:symbol', (req, res) => {
+  const symbol = String(req.params.symbol || '').trim();
+  if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL' });
+  const cached = readCache(symbol, '_announcements');
+  if (!cached) return res.json({ success: false, cached: false });
+  res.json({ success: true, cached: true, ...cached });
+});
+// 本地事实库预热（20260903f 降费）：自选股打开时静默预下载研报/公告/概况/主营到 SQLite，
+// 后续 AI 分析走不联网模型纯推理，不产生联网搜索费用
+router.post('/api/ai/prefetch-facts', async (req, res) => {
+  try {
+    const { symbol, stockName } = req.body || {};
+    if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL', message: '缺少股票代码' });
+    const data = await factStore.prefetchFacts({ symbol, stockName });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+// 最新财报解读 · AI 本地/联网双模型（优先本地模型分析本地财报数据；本地数据缺失时联网检索）
+router.post('/api/ai/earnings', async (req, res) => {
+  try {
+    const { symbol, stockName, industry, force } = req.body || {};
+    if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL', message: '缺少股票代码' });
+    const data = await analyzeEarningsReport({ symbol, stockName, industry, force: !!force });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+router.get('/api/ai/earnings/:symbol', (req, res) => {
+  const symbol = String(req.params.symbol || '').trim();
+  if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL' });
+  const cached = readEarningsCache(symbol);
+  if (!cached) return res.json({ success: false, cached: false });
+  res.json({ success: true, cached: true, ...cached });
+});
+
+// ========== 东方财富「妙想」数据（股东户数 / 机构评级 / 业绩预告 / 龙虎榜 / 资讯）==========
+// 开始授权：返回 authUrl 供用户扫码/打开授权；已授权则直接 authed
+router.get('/api/miaoxiang/auth', async (req, res) => {
+  try {
+    const r = await mx.startAuth();
+    res.json(r);
+  } catch (e) {
+    res.status(500).json({ authed: false, error: e.message });
+  }
+});
+// 查询授权状态：pending 已完成则落盘 key
+router.get('/api/miaoxiang/auth/status', async (req, res) => {
+  try {
+    const r = await mx.getAuthStatus();
+    res.json(r);
+  } catch (e) {
+    res.status(500).json({ authed: false, error: e.message });
+  }
+});
+// 结构化取数（股东户数 / 评级 / 业绩预告 / 龙虎榜 等）
+router.post('/api/miaoxiang/data', async (req, res) => {
+  try {
+    const { query } = req.body || {};
+    if (!query || !query.trim()) return res.status(400).json({ error: 'NO_QUERY', message: '缺少查询语句' });
+    const r = await mx.searchData(query.trim());
+    res.json(r);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+// 资讯 / 研报 / 公告聚合
+router.post('/api/miaoxiang/news', async (req, res) => {
+  try {
+    const { query } = req.body || {};
+    if (!query || !query.trim()) return res.status(400).json({ error: 'NO_QUERY', message: '缺少查询语句' });
+    const r = await mx.searchNews(query.trim());
+    res.json(r);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+// 手动保存 apiKey（桌面用户无法扫码时，到 mxClaw 复制后粘贴）
+router.post('/api/miaoxiang/apikey', async (req, res) => {
+  try {
+    const key = (req.body && req.body.apiKey || '').trim();
+    if (!key) return res.status(400).json({ ok: false, error: 'apiKey 为空' });
+    mx.saveKey(key);
+    mx.clearPending();
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// 行业板块指数：AI 联网结构化获取（按行业代码缓存，跨个股共享）
+router.post('/api/ai/industry-index', async (req, res) => {
+  try {
+    const { symbol, industry, induName, induCode } = req.body || {};
+    if (!symbol && !industry && !induCode) {
+      return res.status(400).json({ success: false, error: 'NO_INPUT', message: '缺少行业信息' });
+    }
+    const data = await analyzeIndustryIndex({ symbol, industryName: industry, induName, induCode, force: true, background: true });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+router.get('/api/ai/industry-index/:symbol', (req, res) => {
+  const symbol = String(req.params.symbol || '').trim();
+  if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL' });
+  const { induCode, induName, industry } = req.query;
+  // 优先用东方财富行业代码定位缓存，否则退回行业名
+  const cacheName = industry || induName;
+  const cached = readIndustryIndexCache(induCode, cacheName);   // 主缓存 = 最近一次成功结果（永不被 running/error 覆盖）
+  const state = readIndustryIndexState(induCode, cacheName);    // 侧车 = running / error
+  const running = !!(state && state.status === 'running' && (Date.now() - (Number(state.startedAt) || 0)) < STALE_RUNNING_MS);
+  const lastError = (state && state.status === 'error') ? String(state.message || '') : '';
+
+  // ① 只要有成功内容就优先返回（即使后台正在刷新、或上次刷新失败）——彻底消除"打开页面内容消失"
+  if (cached && cached.status === 'done') {
+    return res.json({ success: true, cached: true, hasContent: true, status: 'done', refreshing: running, lastError, ...cached });
+  }
+  // ② 无内容 + 正在后台生成
+  if (running) {
+    return res.json({ success: true, cached: false, hasContent: false, status: 'running', startedAt: state.startedAt });
+  }
+  // ③ 无内容 + 上次失败
+  if (state && state.status === 'error') {
+    return res.json({ success: true, cached: false, hasContent: false, status: 'error', message: lastError || 'AI 获取失败', at: state.at });
+  }
+  // ④ 从未生成过
+  return res.json({ success: false, cached: false, hasContent: false });
+});
+
+// 行业指数历史行情（同花顺行业指数日线 OHLC，供行业分析页 K 线走势）
+router.get('/api/industry-index-history/:symbol', async (req, res) => {
+  try {
+    const symbol = String(req.params.symbol || '').trim();
+    const { industry, induName, days } = req.query;
+    const industryName = (industry || induName || '').trim();
+    if (!industryName) {
+      return res.status(400).json({ success: false, error: 'NO_INDUSTRY', message: '缺少行业名称' });
+    }
+    const data = await getIndustryIndexHistory(industryName, {
+      days: Math.min(Math.max(parseInt(days, 10) || 250, 30), 500),
+      pythonPath: findPython(),
+    });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 板块成分股总市值「合计」日频走势（20260913d 新增）
+// 供行业分析页「板块总市值走势」卡片：BK 板块全部成分股总市值合计 + 当前个股自身市值对比。
+// 与 /api/stock-market-cap-history 同源（东方财富TTM），口径一致。
+router.get('/api/sector-market-cap-history/:sectorCode', async (req, res) => {
+  try {
+    const sectorCode = String(req.params.sectorCode || '').trim();
+    if (!sectorCode) return res.status(400).json({ success: false, error: 'NO_SECTOR' });
+    const { name, benchmark, benchmarkName, days, force } = req.query;
+    const data = await getSectorMarketCapHistory(sectorCode, {
+      sectorName: (name || '').trim(),
+      benchmark: (benchmark || '603288').trim(),
+      benchmarkName: (benchmarkName || '').trim(),
+      days: Math.min(Math.max(parseInt(days, 10) || 250, 30), 1000),
+      force: force === '1' || force === 'true',
+    });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 个股所属「申万一级/二级/三级」行业板块解析（20260916 新增）
+// 供行业分析页「板块总市值走势」统一模板：每只个股分别与所属一级/二级/三级行业板块做市值走势比对（三张图）。
+router.get('/api/stock-sector-levels/:symbol', async (req, res) => {
+  try {
+    const symbol = String(req.params.symbol || '').trim();
+    if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL' });
+    const { name, force } = req.query;
+    const data = await resolveStockSectorLevels(symbol, {
+      name: (name || '').trim(),
+      force: force === '1' || force === 'true',
+    });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 行业景气度（20260920a 新增）
+// 供个股页「行业分析」tab 下方独立卡片：个股所属**申万二级行业**内全部公司的
+// 「总营收（TTM 滚动12个月合计）」vs「总市值（报告期末合计）」双坐标走势对比。
+// 数据源：东方财富业绩报表 RPT_LICO_FN_CPD（按 PUBLISHNAME=申万二级行业名 全量汇总）
+//        + 东方财富估值明细 RPT_VALUEANALYSIS_DET（按 BOARD_NAME 同行业口径）
+//        + 板块成分股（行业公司总数）。口径已在 lib/industryProsperity.js 内逐项标注。
+router.get('/api/industry-prosperity/:symbol', async (req, res) => {
+  try {
+    const symbol = String(req.params.symbol || '').trim();
+    if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL' });
+    const { name, force, periods } = req.query;
+    const data = await getIndustryProsperity(symbol, {
+      name: (name || '').trim(),
+      force: force === '1' || force === 'true',
+      periods: parseInt(periods, 10) || undefined,
+    });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 产品图片本地服务（仅允许白名单扩展名，防目录穿越）
+router.get('/api/ai/img/:file', (req, res) => {
+  try {
+    const file = String(req.params.file || '');
+    if (!/^[\w\-]+\.(jpg|jpeg|png|webp)$/i.test(file)) return res.status(400).end();
+    const fpath = path.join(PRODUCT_IMG_DIR, file);
+    if (!fs.existsSync(fpath)) return res.status(404).end();
+    const ext = file.split('.').pop().toLowerCase();
+    const ct = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+    res.setHeader('Content-Type', ct);
+    res.sendFile(fpath);
+  } catch (e) {
+    res.status(500).end();
+  }
+});
+
+module.exports = router;
+
+~~~
+
+---
+
+## `routes\dedicatedFactor.js`  ·  65 行
+
+~~~js
+/**
+ * 专属因子 路由（20260911）
+ * ----------------------------------------------------------------------------
+ * 端点：
+ *   GET  /api/dedicated/:symbol           某股当前的激活专属因子（短/长口径）
+ *   POST /api/dedicated/trigger           立即触发月度检索（窗口内/手动强制）并落库
+ *   GET  /api/dedicated/active            全部激活专属因子
+ *   POST /api/dedicated/cleanup           清理已衰减为 0 的实例
+ */
+const express = require('express');
+const dedicatedFactor = require('../lib/dedicatedFactor');
+const moduleSync = require('../lib/moduleSync'); // 20261024h：专属因子变化 → 联动应答
+
+const router = express.Router();
+
+// 某股当前激活专属因子（短/长口径）
+router.get('/api/dedicated/:symbol', (req, res) => {
+  try {
+    const symbol = String(req.params.symbol || '').replace(/^(sh|sz|bj)/i, '');
+    const short = dedicatedFactor.getDedicatedFactorsForSymbol(symbol, 'short');
+    const long = dedicatedFactor.getDedicatedFactorsForSymbol(symbol, 'long');
+    res.json({ ok: true, symbol, short, long });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// 全部激活
+router.get('/api/dedicated/active', (req, res) => {
+  try {
+    res.json({ ok: true, active: dedicatedFactor.loadActive() });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// 手动触发（强制可在窗口外调用，便于验证）
+router.post('/api/dedicated/trigger', async (req, res) => {
+  try {
+    const force = !!(req.body && req.body.force);
+    const r = await dedicatedFactor.triggerDedicatedFactors({ force });
+    // 状态变化（新实例生成 / 旧实例归档）→ 联动应答机制作废变更个股的短期判断缓存
+    const trigSyms = r.changedSymbols || [];
+    if (trigSyms.length) moduleSync.emitChange('dedicatedFactor', { symbols: trigSyms, reason: '专属因子手动触发' });
+    res.json(Object.assign({ ok: true }, r));
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// 清理过期（衰减为 0 的实例归档 → 作废变更个股缓存，卡片自动隐藏）
+router.post('/api/dedicated/cleanup', (req, res) => {
+  try {
+    const r = dedicatedFactor.cleanupExpired();
+    // 衰减归档 → 联动应答机制作废变更个股缓存，卡片自动隐藏
+    const clSyms = r.changedSymbols || [];
+    if (clSyms.length) moduleSync.emitChange('dedicatedFactor', { symbols: clSyms, reason: '专属因子衰减清理' });
+    res.json(r);
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+module.exports = router;
+
+~~~
+
+---
+
+## `routes\docsRoutes.js`  ·  336 行
+
+~~~js
+/**
+ * 资料库（docs）路由（20260906 自 server.js 拆出·第一阶段）
+ * ----------------------------------------------------------------------------
+ * 仅做路由搬运：upload / fixGarbledName / classifyFile 与 11 条 /api/docs 路由
+ * 处理器主体与 server.js 原实现逐字一致，输出格式零变化。
+ * 挂载方式：server.js 中 app.use(docsRoutes)（路由内部保留完整 /api 前缀路径）。
+ */
+const express = require('express');
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
+const multer = require('multer');
+const docStore = require('../lib/docStore');
+const reportSync = require('../lib/reportSync');
+const { searchStocks } = require('../lib/stockData');
+
+const router = express.Router();
+
+// ---- 文件上传配置 (multer) ----
+// 先存到临时目录，解析完body字段后再移动到正确位置
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: path.join(os.tmpdir()),
+    filename: (req, file, cb) => {
+      cb(null, 'upload_' + Date.now() + '_' + Math.random().toString(36).substr(2, 8) + path.extname(file.originalname));
+    },
+  }),
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB
+});
+
+// 修复 multer 将 UTF-8 中文文件名误按 latin1 解码造成的乱码（Mojibake）
+function fixGarbledName(s) {
+  if (!s) return s;
+  // 若含非 latin1 字符（码点 > 255），说明已经是正确 UTF-8，直接返回
+  if (/[^\u0000-\u00ff]/.test(s)) return s;
+  try {
+    return Buffer.from(s, 'latin1').toString('utf8');
+  } catch {
+    return s;
+  }
+}
+
+// 根据文件名自动识别：公司、年份、报告类型、季度
+// 返回 { fileName, year, quarter, type, stockCode, stockName, title, matched, confidence }
+async function classifyFile(filename) {
+  const name = fixGarbledName(filename || '');
+  const result = {
+    fileName: name,
+    year: '',
+    quarter: '',
+    type: 'other',
+    stockCode: '',
+    stockName: '',
+    title: name,
+    matched: false,
+    confidence: 0,
+  };
+
+  // 1) 年份（4 位，19xx / 20xx）
+  const ym = name.match(/(?:19|20)\d{2}/);
+  if (ym) result.year = ym[0];
+
+  // 2) 报告类型
+  if (/年报|年度报告|annual/i.test(name)) {
+    result.type = 'annual';
+  } else if (/一季报|第一季度|一季度/i.test(name)) {
+    result.type = 'quarterly'; result.quarter = 'Q1';
+  } else if (/半年报|中报|半年度报告|半年度|二季度|第二季度/i.test(name)) {
+    result.type = 'quarterly'; result.quarter = 'Q2';
+  } else if (/三季报|第三季度|三季度/i.test(name)) {
+    result.type = 'quarterly'; result.quarter = 'Q3';
+  } else if (/四季报|第四季度|四季度/i.test(name)) {
+    result.type = 'quarterly'; result.quarter = 'Q4';
+  } else if (/季报|季度报告|quarter/i.test(name)) {
+    result.type = 'quarterly';
+  } else if (/公告|通告|提示性/i.test(name)) {
+    result.type = 'announcement';
+  } else if (/研报|研究报告|深度报告|券商/i.test(name)) {
+    result.type = 'research';
+  }
+
+  // 3) 公司识别：优先尝试 6 位股票代码，其次中文/英文公司名
+  const codeMatch = name.match(/(?:sh|sz|SH|SZ)?\s*(\d{6})/);
+  const candidateCode = codeMatch ? codeMatch[1] : '';
+
+  const KEYWORDS = ['年度报告','半年报','中报','半年度报告','半年度','第一季度','一季报','一季度','第三季度','三季报','三季度','第四季度','四季报','四季度','季报','季度报告','年报','公告','通告','提示性公告','研报','研究报告','深度报告','券商','报告','摘要','全文','数据'];
+  let candidate = name.replace(/\.[^.]+$/, '');              // 去扩展名
+  candidate = candidate.replace(/(?:19|20)\d{2}年?/g, ' ');   // 去年份（含"年"）
+  KEYWORDS.forEach(k => { candidate = candidate.split(k).join(' '); });
+  candidate = candidate.replace(/[年月度至]/g, ' ');          // 清除残余日期字符
+  candidate = candidate.replace(/[^\u4e00-\u9fa5A-Za-z]/g, ''); // 只保留中文与字母
+  candidate = candidate.trim();
+
+  const tryResolve = async (kw) => {
+    if (!kw) return null;
+    try {
+      const matches = await searchStocks(kw);
+      if (matches && matches.length) {
+        // searchStocks 查不到时会回退为 {name:kw}，需剔除
+        if (matches.length === 1 && matches[0].name === kw) return null;
+        // 优先选择与候选名互相包含的结果
+        let best = matches.find(m => m.name && (m.name.includes(kw) || kw.includes(m.name)));
+        if (!best) best = matches[0];
+        return best;
+      }
+    } catch (e) { /* ignore */ }
+    return null;
+  };
+
+  let best = null;
+  if (candidateCode) best = await tryResolve(candidateCode);
+  if (!best && candidate) best = await tryResolve(candidate);
+  if (!best && candidate && candidate.length >= 2) best = await tryResolve(candidate.slice(0, 4));
+
+  if (best) {
+    result.stockCode = best.symbol || best.code;
+    result.stockName = best.name;
+    result.matched = true;
+    result.confidence = (best.name && candidate && (best.name.includes(candidate) || candidate.includes(best.name))) ? 1 : 0.6;
+  }
+
+  return result;
+}
+
+// 上传文档
+// 文件名自动识别预览（批量上传前调用，返回每文件的识别结果）
+router.post('/api/docs/classify', async (req, res) => {
+  try {
+    const filenames = Array.isArray(req.body.filenames) ? req.body.filenames : [];
+    const results = [];
+    for (const fn of filenames) {
+      results.push(await classifyFile(fn));
+    }
+    res.json({ ok: true, results });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 批量 / 单个 文档上传（字段名 files）
+router.post('/api/docs/upload', upload.array('files', 100), async (req, res) => {
+  try {
+    const files = (req.files && req.files.length) ? req.files : (req.file ? [req.file] : []);
+    if (files.length === 0) return res.status(400).json({ error: '未收到文件' });
+
+    // 解析前端传来的逐文件元数据（可覆盖自动识别结果）
+    let metas = [];
+    try { metas = JSON.parse(req.body.metas || '[]'); } catch {}
+    if (!Array.isArray(metas)) metas = [];
+
+    const defaultStockCode = req.body.defaultStockCode || '';
+    const defaultStockName = req.body.defaultStockName || '';
+
+    const saved = [];
+    const errors = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      const meta = metas[i] || {};
+      // 优先用前端显式传入的 UTF-8 安全文件名；否则用 multer 解析的 originalname 并修正编码
+      const rawName = meta.fileName || f.originalname;
+      const fileName = fixGarbledName(rawName);
+
+      let stockCode = meta.stockCode || '';
+      let stockName = meta.stockName || '';
+      let type = meta.type || '';
+      let year = meta.year || '';
+      let quarter = meta.quarter || '';
+      const title = meta.title || fileName;
+      const description = meta.description || '';
+
+      // 仅在缺失时做文件名自动识别
+      if (!stockCode || !type || !year) {
+        const cls = await classifyFile(fileName);
+        stockCode = stockCode || cls.stockCode;
+        stockName = stockName || cls.stockName;
+        type = type || cls.type;
+        year = year || cls.year;
+        quarter = quarter || cls.quarter;
+      }
+
+      // 未识别到公司时，回退到默认公司（如有）
+      if (!stockCode && defaultStockCode) {
+        stockCode = defaultStockCode;
+        stockName = defaultStockName || stockName;
+      }
+
+      if (!stockCode) {
+        errors.push({ fileName, error: '未能识别公司，请手动指定或选择默认公司' });
+        if (fs.existsSync(f.path)) { try { fs.unlinkSync(f.path); } catch {} }
+        continue;
+      }
+      if (!type) type = 'other';
+
+      const targetDir = docStore.getStoragePath(stockCode, type);
+      let finalName = fileName;
+      let finalPath = path.join(targetDir, fileName);
+      if (fs.existsSync(finalPath)) {
+        const ext = path.extname(fileName);
+        const base = path.basename(fileName, ext);
+        finalName = `${base}_${Date.now()}${ext}`;
+        finalPath = path.join(targetDir, finalName);
+      }
+
+      fs.renameSync(f.path, finalPath);
+
+      const doc = docStore.addDocument({
+        stockCode,
+        stockName: stockName || '',
+        type,
+        fileName: finalName,
+        fileSize: f.size,
+        year,
+        quarter,
+        title,
+        description,
+      });
+      saved.push(doc);
+    }
+
+    res.json({ success: true, count: saved.length, saved, errors });
+  } catch (err) {
+    console.error('Upload error:', err);
+    // 清理临时文件
+    const files = (req.files && req.files.length) ? req.files : (req.file ? [req.file] : []);
+    for (const f of files) {
+      if (fs.existsSync(f.path)) { try { fs.unlinkSync(f.path); } catch {} }
+    }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 获取公司文档列表
+router.get('/api/docs/company/:stockCode', (req, res) => {
+  try {
+    const info = docStore.getCompanyInfo(req.params.stockCode);
+    if (!info) return res.json({ stockCode: req.params.stockCode, docCount: 0, documents: [], typeBreakdown: [] });
+    res.json(info);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 列出所有公司
+router.get('/api/docs/companies', (req, res) => {
+  try {
+    const companies = docStore.listAllCompanies();
+    const stats = docStore.getStorageStats();
+    res.json({ companies, stats });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 搜索文档
+router.get('/api/docs/search', (req, res) => {
+  try {
+    const q = req.query.q || '';
+    const results = docStore.searchDocuments(q);
+    res.json({ query: q, count: results.length, results });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 下载/查看文档
+router.get('/api/docs/download/:docId', (req, res) => {
+  try {
+    const result = docStore.getDocumentPath(req.params.docId);
+    if (!result) return res.status(404).json({ error: '文档不存在' });
+    const { doc, fullPath } = result;
+    if (!fs.existsSync(fullPath)) return res.status(404).json({ error: '文件不存在' });
+    res.download(fullPath, doc.fileName);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 删除文档
+router.delete('/api/docs/:docId', (req, res) => {
+  try {
+    const result = docStore.deleteDocument(req.params.docId);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 获取存储统计
+router.get('/api/docs/stats', (req, res) => {
+  try {
+    res.json(docStore.getStorageStats());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 获取文档类型列表
+router.get('/api/docs/types', (req, res) => {
+  res.json(docStore.DOC_TYPES);
+});
+
+// 20260821f 财报事件 → 资料库手动同步：
+// 前端在判断卡片/资料库看到缺口时可手动触发下载 + 登记。
+// body: { symbol, name?, type?('annual'|'semi'|'quarterly'), year?('2026') }
+router.post('/api/docs/sync-report', async (req, res) => {
+  try {
+    const { symbol, name, type, year } = req.body || {};
+    const code = reportSync.normSymbol(symbol);
+    if (!code || !/^\d{6}$/.test(code)) {
+      return res.status(400).json({ error: '请提供有效的 6 位股票代码' });
+    }
+    const evt = {
+      symbol: code,
+      type: ['annual', 'semi', 'quarterly'].includes(type) ? type : 'semi',
+      year: String(year || new Date().getFullYear()),
+    };
+    const r = await reportSync.syncReportForSymbol(evt);
+    res.json({ ok: r.ok, ...r });
+  } catch (e) {
+    console.error('[docs/sync-report] error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 查询某标的的财报资料同步状态（最近事件与幂等记录）
+router.get('/api/docs/sync-status/:symbol', (req, res) => {
+  try {
+    res.json(reportSync.getSyncStatus(req.params.symbol));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+module.exports = router;
+
+~~~
+
+---
+
+## `routes\eventRoutes.js`  ·  154 行
+
+~~~js
+/**
+ * 三联动模块 · 事件驱动 路由（20260907a）
+ * ----------------------------------------------------------------------------
+ * 链路：新闻发现事件 → 事件匹配自选股 → 自动调整权重 → 影响评分
+ * 端点：
+ *   GET  /api/events/active           活跃事件列表 + 受影响自选股汇总
+ *   GET  /api/events/active/:symbol   影响某股票的事件（短期/长期口径）
+ *   POST /api/events/scan             立即扫描新闻并更新事件库（作废变更个股的短期判断缓存）
+ *   GET  /api/events/config           当前配置（分级/权重/衰减/阈值）
+ *   POST /api/events/config           更新配置（口头指令调分级·衰减·权重区间）
+ *   POST /api/events/:id/pause        暂停/恢复某事件权重
+ *   POST /api/events/:id/grade        手动改分级
+ *   POST /api/events/recompute       扫描 + 重算所有自选股评分（短期+长期）
+ */
+const express = require('express');
+const eventEngine = require('../lib/eventEngine');
+const sameDay = require('../lib/sameDayJudgment');
+const moduleSync = require('../lib/moduleSync'); // 20261024h：事件变化 → 联动应答
+const longTerm = require('../lib/longTermJudgment');
+
+const router = express.Router();
+
+// 活跃事件 + 受影响自选股汇总
+router.get('/api/events/active', (req, res) => {
+  try {
+    const events = eventEngine.getActiveEvents();
+    const watchlist = eventEngine.resolveWatchlist();
+    const bySymbol = {};
+    for (const w of watchlist) bySymbol[w.symbol] = [];
+    for (const e of events) {
+      for (const s of (e.affectedSymbols || [])) {
+        if (!bySymbol[s]) bySymbol[s] = [];
+        bySymbol[s].push({ id: e.id, grade: e.grade, sector: e.sector, signal: e.signal, direction: e.direction });
+      }
+    }
+    res.json({ ok: true, count: events.length, events, affectedBySymbol: bySymbol });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// 影响某股票的事件（短期/长期有效权重）
+router.get('/api/events/active/:symbol', (req, res) => {
+  try {
+    const symbol = String(req.params.symbol || '').trim();
+    if (!symbol) return res.status(400).json({ ok: false, error: 'NO_SYMBOL' });
+    const shortEv = eventEngine.getEventsForSymbol(symbol, 'short');
+    const longEv = eventEngine.getEventsForSymbol(symbol, 'long');
+    res.json({ ok: true, symbol, short: shortEv, long: longEv });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// 立即扫描新闻
+router.post('/api/events/scan', async (req, res) => {
+  try {
+    const result = await eventEngine.scanEvents(true);
+    // 事件变化的个股：通过联动应答机制作废其短期判断缓存，下次打开带事件权重重新生成
+    const scanSyms = result.changedSymbols || [];
+    if (scanSyms.length) moduleSync.emitChange('eventEngine', { symbols: scanSyms, reason: '手动事件扫描' });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// 查看配置
+router.get('/api/events/config', (req, res) => {
+  try { res.json({ ok: true, config: eventEngine.loadConfig() }); }
+  catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
+// 更新配置（口头指令：调整分级阈值 / 权重 / 衰减）
+router.post('/api/events/config', (req, res) => {
+  try {
+    const cfg = eventEngine.updateConfig(req.body || {});
+    res.json({ ok: true, config: cfg });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// 暂停/恢复某事件权重
+router.post('/api/events/:id/pause', (req, res) => {
+  try {
+    const id = String(req.params.id || '');
+    const { paused } = req.body || {};
+    const r = eventEngine.setEventPaused(id, paused);
+    if (!r.ok) return res.status(404).json(r);
+    res.json(r);
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// 手动改分级
+router.post('/api/events/:id/grade', (req, res) => {
+  try {
+    const id = String(req.params.id || '');
+    const { grade } = req.body || {};
+    const r = eventEngine.setEventGrade(id, grade);
+    if (!r.ok) return res.status(400).json(r);
+    res.json(r);
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// 确认重大事件（v2：重大需人工确认后才生效并压缩其他因子权重）
+router.post('/api/events/:id/confirm', (req, res) => {
+  try {
+    const id = String(req.params.id || '');
+    const r = eventEngine.confirmEvent(id);
+    if (!r.ok) return res.status(404).json(r);
+    // 确认后立即作废受影响个股的短期判断缓存（联动应答机制），下次打开带事件权重重新生成
+    const affected = r.event.affectedSymbols || [];
+    if (affected.length) moduleSync.emitChange('eventEngine', { symbols: affected, reason: '事件确认' });
+    res.json(r);
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// 扫描审计日志（各层拦截数 / 模型判定 / 最终采纳），用于核查与调阈值
+router.get('/api/events/audit', (req, res) => {
+  try { res.json({ ok: true, audit: eventEngine.loadAudit() }); }
+  catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
+// 重算所有自选股评分（短期+长期）
+router.post('/api/events/recompute', async (req, res) => {
+  try {
+    const result = await eventEngine.scanEvents(true);
+    const watchlist = eventEngine.resolveWatchlist();
+    const shortOut = [], longOut = [];
+    for (const w of watchlist) {
+      try {
+        const sj = await sameDay.buildJudgment(w.symbol, w.name, w.sector);
+        shortOut.push({ symbol: w.symbol, name: w.name, dir: sj.dir, score: sj.score, confidence: sj.confidence });
+      } catch (e) { shortOut.push({ symbol: w.symbol, name: w.name, error: e.message }); }
+      try {
+        const lj = await longTerm.buildLongTermJudgment(w.symbol, w.name);
+        longOut.push({ symbol: w.symbol, name: w.name, dir: lj.dir, score: lj.score, confidence: lj.confidence });
+      } catch (e) { longOut.push({ symbol: w.symbol, name: w.name, error: e.message }); }
+    }
+    res.json({ ok: true, scanned: result, short: shortOut, long: longOut });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+module.exports = router;
+
+~~~
+
+---
+
+## `routes\moduleSyncRoutes.js`  ·  40 行
+
+~~~js
+/**
+ * routes/moduleSyncRoutes.js —— 模块联动应答机制观测/触发 API（20261024h）
+ * ---------------------------------------------------------------------------
+ * GET  /api/module-sync/graph    依赖图（源模块 → 联动模块 + 是否有失效句柄）
+ * GET  /api/module-sync/signals  最近同步信号（谁变了、通知了谁、实际失效几条）
+ * POST /api/module-sync/emit     手动发送一次同步信号（排障/验证用）
+ * 挂载：server.js 中 app.use(moduleSyncRoutes)（路由内部保留 /api 前缀）。
+ */
+'use strict';
+const express = require('express');
+const router = express.Router();
+const ms = require('../lib/moduleSync');
+
+router.get('/api/module-sync/graph', (req, res) => {
+  try { res.json({ success: true, ...ms.getGraph(), stats: ms.stats() }); }
+  catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+router.get('/api/module-sync/signals', (req, res) => {
+  try { res.json({ success: true, signals: ms.getRecentSignals(req.query.limit), stats: ms.stats() }); }
+  catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+router.post('/api/module-sync/emit', (req, res) => {
+  try {
+    const { source, symbols, reason, force } = req.body || {};
+    if (!source || !ms.DEPENDENTS[source]) {
+      return res.status(400).json({ success: false, error: '未知源模块: ' + source });
+    }
+    const syms = Array.isArray(symbols) ? symbols.map(String).filter(Boolean) : [];
+    if (!syms.length) {
+      return res.status(400).json({ success: false, error: '需要非空 symbols 数组（按标的失效）' });
+    }
+    const r = ms.emitChange(source, { symbols: syms, reason: reason || '手动触发', force: !!force });
+    res.json({ success: true, ...r });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+module.exports = router;
+
+~~~
+
+---
+
+## `server.js`  ·  3284 行
+
+~~~js
+/**
+ * Stock Analyzer Server
+ * Express server providing REST API and static file serving
+ */
+const express = require('express');
+const path = require('path');
+const fs = require('fs');
+const cp = require('child_process');
+const { getQuote, getHistory, getHistoryPeriod, getHistoryDeep, searchStocks, detectMarket, getMarketOverview, fetchTencentMinutes } = require('./lib/stockData');
+const { technicalAnalysis, fundamentalAnalysis, evaluateSignals, aggregateSentiment, buildFundamentalComparison } = require('./lib/analysis');
+const { buildMetricAnalysis } = require('./lib/metricAnalysis');
+// 20261029a：关键财务指标新增「营运利润」(全个股) 与「NBV」(保险股专属) 的数据源
+const { fetchOpProfitSnippet } = require('./lib/deep/financials');
+const { isInsuranceCompany, latestNbvSnapshot } = require('./lib/insuranceAnalysis');
+const { analyzePriceAction } = require('./lib/priceAction');
+const { getPriceActionSnapshot, invalidateSnapshot } = require('./lib/priceActionHub');   // 20261021e：手动区间增删后丢弃快照缓存
+const analysisWarm = require('./lib/analysisWarm');   // 20261027d：个股数据后台预热 + /api/analysis TTL 缓存（用户要求「提前后台缓存数据」）
+const growthCaliber = require('./lib/growthCaliber'); // 20261104b：增长口径一键切换（单季/累计，data/settings.json 持久化）
+const manualZones = require('./lib/manualZones');   // 20261021d 用户手动阻力/支撑区间（②卡「手动添加」页签）
+const { purgeByManualId } = require('./lib/zoneReversal');   // 20261103h：删除手动区间时联动清除其反转记录
+const { getNews, getHotNews } = require('./lib/newsSearch');
+const { getMacroNews } = require('./lib/macroNews');
+const { getMacroIndicators } = require('./lib/macroData');
+const { getCninfoAnnouncements } = require('./lib/cninfoAnnouncements');
+const { getUsMacroEvents, refreshUsMacroEvents } = require('./lib/usMacroEvents');
+const { getMarketRank } = require('./lib/marketRank');
+const { getIndexPETrend } = require('./lib/indexPETrend');
+const { getMarketTechnical } = require('./lib/marketTechnical'); // 首页·大盘技术分析（三大指数七步推演·融合版 20260914e）
+// 20260914i：两个技术分析模块的「准确率检查」——独立落盘 + 事后结算（不污染个股 judgements 统计）
+const marketTechJudgment = require('./lib/marketTechJudgment');
+const techFaceJudgment = require('./lib/techFaceJudgment');
+const { deepAnalysis, getLocalDocuments, loadDividendSeries, persistDividends, fetchDividends, normalizeSymbol } = require('./lib/deepAnalysis');
+const { analyzeCapitalFlow } = require('./lib/capitalFlow');
+const { classifyCompanyType } = require('./lib/companyType');
+const { fetchFuturesCorrelation, getFuturesMeta } = require('./lib/futuresData');
+const { industryAnalysis } = require('./lib/industryAnalysis');
+const { getShareholdersData, getCompanyProfile } = require('./lib/shareholderData');
+const { getJudgmentWithAccuracy, settleAll, settleSymbol, getAllRecords, filterBySymbol, computeAccuracy, getLearningState, preOpenRecomputeAll, ensureAllTrackedJudgments, localDate, marketClosed, isTradingDay } = require('./lib/sameDayJudgment');
+const { getMarketSentiment } = require('./lib/sentiment');
+const { getSectorTrend } = require('./lib/sectorTrend');
+const { getSectorLimitStats } = require('./lib/sectorLimitStats');
+const { getLongTermJudgment } = require('./lib/longTermJudgment');
+// Part B：弱关联关联度 / 持续性经验库（调试透明用）
+const { getState: getRelevanceLearningState } = require('./lib/relevanceLearning');
+const { annotateNewsImpact, NEWS_SECTOR_MAP } = require('./lib/newsSectorImpact');
+const { recordImpact, correctImpact, getLearningState: getNewsImpactLearningState, autoReviewImpacts } = require('./lib/newsImpactLearning');
+const { recordDailyRanking, getSectorRankReminder, backfillSeed, SEED_DAYS } = require('./lib/sectorRankHistory');
+// 20260823t：行业板块拥挤度（板块成交额 ÷ 全市场成交额，当日/本周/本月前五）
+const { recordDaily: recordSectorCrowding, getCrowding: getSectorCrowding, backfillHistory: backfillSectorCrowding, needsBackfill: sectorCrowdingNeedsBackfill, hasDate: sectorCrowdingHasDate, latestMarketTotal: sectorCrowdingLatestTotal } = require('./lib/sectorCrowding');
+const { getIndustryIndexHistory } = require('./lib/industryIndexHistory');
+const { fetchValuationTTM } = require('./lib/eastmoneyValuation');
+const { getSectorCapitalFlow, warmup: warmupSectorCapitalFlow } = require('./lib/sectorCapitalFlow'); // 20260827g：行业板块资金流向（主力+散户小单 净流入/流出前五 + 近5日最大）20260909o纯Node化提速
+const hotTopics = require('./lib/hotTopics'); // 20260827c：个股近期热点（AI 联网，异动归因/网络热议）
+const hotTopicsWeekly = require('./lib/hotTopicsWeekly'); // 20260909m：板块舆情热度周榜（替代旧涨停池逻辑）
+const { getGlobalSentiment, interpretReport } = require('./lib/cnscraperAdapter');
+// 20260912a：基金行业配置改为「全市场大部分基金 · 前十大重仓股 · 持仓市值加总排名」
+const fundMatrix = require('./lib/fundIndustryMatrix');
+const mx = require('./lib/miaoxiang');
+const { augmentStock, analyzeAspects, analyzeProducts, analyzeCompany, analyzeSupplyChain, analyzeMarketOverview, analyzeIndustryIndex, analyzeResearchReports, analyzeAnnouncements, analyzeEarningsReport, analyzeValuation, readIndustryIndexCache, loadConfig, saveConfig, publicConfig, readCache, readEarningsCache } = require('./lib/aiAugment');
+const docStore = require('./lib/docStore');
+const reportSync = require('./lib/reportSync'); // 20260821f：财报事件→资料库自动同步
+// 20260823p：全市场情绪指数 + 市场情绪拐点检测（启发式检测器 + 自适应学习）
+const MSI = require('./lib/marketSentimentIndex');
+const { getTurningPointState, labelAndLearn } = require('./lib/sentimentTurningPoint');
+// 20260914i：市场情绪提醒的准确率记录与事后验证（仅对有方向预警的日期留档，次日上证判命中）
+const sentimentAccuracy = require('./lib/sentimentAccuracy');
+// 20260917d：首页「市场情绪提醒」卡片升级为「大盘量能情绪分析模型」（20261015k 起 9 因子 · 确定性计算 · 自学习）
+const marketEmotionModel = require('./lib/marketEmotionModel');
+const { getMarketEmotionData } = require('./lib/marketEmotionData');
+const etfFlow = require('./lib/etfFlow');
+const { computeMacroFactors } = require('./lib/macroSentimentFactors');
+// 本地 SQLite 数据层（node:sqlite，零额外依赖）：分红时序 / 标量五要素 / 分析快照，支撑三规则落地
+const db = require('./lib/db');
+// 20260926a：个股量化策略虚拟盘风控校验模块（纯 JS：DSL 解析 + 虚拟回测 + 统计检验 + 胜率修正）
+const { validateStrategy } = require('./lib/backtestValidator');
+// 20260926d：自动策略生成器新增「行情判定」派生策略（长期/短期/长短共振，复用 priceAction 技术内核把判定回算成历史买卖信号再回测胜率）；前端绑定当前个股，无需输入代码
+const { generateStrategies } = require('./lib/strategyGenerator');
+// 20260903f 降费：本地事实库（研报/公告/概况/主营预下载，供不联网模型做纯推理）
+const factStore = require('./lib/factStore');
+// 20260906 路由拆分（第一阶段）：AI/妙想/行业指数 + 资料库路由移至 routes/，server.js 瘦身
+const aiRoutes = require('./routes/aiRoutes');
+const docsRoutes = require('./routes/docsRoutes');
+const eventRoutes = require('./routes/eventRoutes'); // 20260907a：三联动·事件驱动权重引擎
+const dedicatedFactorRoutes = require('./routes/dedicatedFactor'); // 20260911：专属因子路由
+const moduleSyncRoutes = require('./routes/moduleSyncRoutes'); // 20261024h：模块联动应答机制观测/触发
+const moduleSync = require('./lib/moduleSync'); // 20261024h：源模块变动 → 自动通知联动模块失效
+// Python 解释器探测器移至 lib/pyRuntime.js（AI 行业指数 / 研报下载 / 板块拥挤度回补共用）
+const { findPython } = require('./lib/pyRuntime');
+// 20260917g：localDate 统一来自 lib/sameDayJudgment（其内部已委托 lib/localDate.js，按北京时区）。
+// 不再单独 require 以免重名；此前 server.js 用 new Date().toISOString().slice(0,10) 取日期，
+// 在 UTC+8 每天 00:00–07:59 会取到前一天。
+
+const app = express();
+const PORT = process.env.PORT || 3005;
+
+app.use(express.json({ limit: '50mb' }));
+
+// 行情/分析类接口禁用浏览器缓存，确保每次打开/刷新都拿到最新股价与估值
+app.use('/api', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+});
+
+// 入口 HTML 强制带版本号重定向：旧服务器曾允许缓存 index.html，浏览器可能一直用旧副本。
+// 每次访问 / 或 /index.html 都重定向到带 ?v= 的版本，确保一定拉取最新前端（无需用户手动硬刷新）。
+// [20261020m] 阻力/支撑区间**侵蚀规则**（用户原话）：无放量侵入区间内部但未打穿 → 近端收紧到该收盘价、远端不变；单调取极值（阻力取区间内最高合规收盘、支撑取最低），量能缺失/放量/打穿远端/单点脏数据一律不侵蚀。lib/zoneValidity.js 新增 erodeZone/erodeZones；lib/priceAction.js 在 assessZones 之后依次调用（先判有效性再收缩几何，侵蚀不回灌计数），短期判断新增 zoneErosion 汇总；②卡区间行右侧加「已收紧」标记，title 给「原区间 → 收紧后 + 触发日/量比」。
+// [20261021a] 首页「实时大盘」→ 🇺🇸 美国指数行末尾新增「美债10年期收益率」卡（用户 2026-10-21 要求）。新增 `lib/usTreasury.js`：数据源为**美国财政部官方日度国债收益率曲线**（home.treasury.gov CSV，10 Yr 列），备源美联储 FRED DGS10；本机实测东财 push2/push2delay/datacenter、CNBC、Yahoo ^TNX、TradingView、华尔街见闻 market API 全部不可达或已下线，腾讯 qt / 新浪 hq 也不提供美债收益率代码，故只能取日线并如实标注。卡片口径与三个美股指数区分：主值 `5.15%`（收益率，不是点位）、变动 `+6.0bp`（基点，不是涨跌幅）、右上角「日线·MM-DD」标签 + tooltip 写截至日与来源；行来源标签改为 `usSource`＝「腾讯行情 + 美国财政部（日线）」，不许把日线数据挂在「腾讯行情」名下；过期守门：>10 天不展示、>3 天打 ⚠（周末/美国假日）；全部源失败返回 null 不追加卡片（绝不伪造）。
+// [20261021b] 美债卡「链接该指数」（用户 2026-10-21 截图要求）：整卡改为 `<a>`，点击新标签打开东方财富「美国10年期国债收益率(US10Y)」行情页 `https://quote.eastmoney.com/unify/r/171.US10Y`（secid 由东财 suggest 接口实查：QuoteID=171.US10Y，market 171=全球债券；页面 title 实测为该指数）。`lib/usTreasury.js` 条目新增 `linkUrl/linkLabel`（URL 由数据侧下发，前端不硬编码）；前端 yield 分支用 `<a target=_blank rel=noopener noreferrer>` + `↗` 角标，缺 linkUrl 时降级为不可点 div；CSS 补齐 `a.mo-tile-link` 去下划线/继承色（否则整卡文字变蓝）。注意：该页是东财 push2 盘中实时报价，与本卡「美国财政部日度收益率」属两套口径，tooltip 已如实声明「数值可能不一致」，不假装同源。
+// [20261021c] 修「老是出现无法结算准确率」（用户 2026-10-21 报障，大盘技术分析卡「过期未结算 2」）。根因两层：① **存储的 targetDate 落在法定节假日**——旧口径的 nextTradingDay 只跳周末，把 2026-09-24 的次日写成中秋 09-25、09-30 的次日写成国庆 10-01；结算时 `bars.find(x=>x.date===targetDate)` 永远找不到该日 → return 不结算，且永久计入 overdueCount。修法：结算侧**不采信存储值**，`isTradingDay(rec.targetDate)` 不成立就按 `nextTradingDay(baseDate)` 重算并就地纠正（留 targetDateFixed）；目标日无 K 线时取其后首个交易日兜底，但仅限 ≤5 自然日（TARGET_FALLBACK_MAX_DAYS），超出则拒绝结算并写 settleError，绝不改口径。② **准确率条只读不算**——`/api/market-tech/records` 原来只有 `?settle=1` 才结算，用户不点就一直是「待验证」；改为读取即 `settleIfDue()`（3 分钟节流）。③ 顺带：settleAll 整批只拉一次指数日K（原来每条记录各拉一次，19 条=19 次请求）；sameDayJudgment 的 nextday 结算同样加固（非交易日目标日不采信，但不改写 rec.targetDate，避免文件语义键错位）。实测自愈：09-24→09-28（-1.67%，命中）、09-30→10-08（-0.79%，命中），过期未结算 2→0。
+// [20261021d] ②「短期动向预判」卡新增页签「手动添加」（用户 2026-10-21 要求「自行手动添加上方阻力区间和下方支撑区间」）。新增 `lib/manualZones.js`（服务端落盘 data/manual-zones/<6位代码>.json，换设备/清缓存不丢）+ 三条路由 GET/POST/DELETE `/api/manual-zones/:symbol`。**隔离铁律**：手动区间不进 zoneValidity 有效性检验、不进侵蚀收缩、不参与方向/概率/④卡反转边界/任何准确率统计——前端在 `validOnly(模型摆动点).concat(箱体条目, 手动条目)` 里只作追加项，进 validOnly 就会被模型判「无效」隐藏，等于用户标注被模型否决。②卡顶部两项页签（模型判定/手动添加 + 条数徽标），手动页签含口径说明、方向/价位/上沿/备注表单（只填一个价=单点）、已添加清单与删除；手动条目在模型清单里同屏并列并带蓝紫虚线左边框 + 「手动」小标。校验：方向/价格/下沿≤上沿/同侧去重/每侧 20 条上限/备注 40 字；文件损坏按空处理不崩不编造。测试 scripts/test_manual_zones.js 55 项。
+// [20261021e] 手动阻力/支撑区间**同样接受本模块的两条有效性检验**（用户 2026-10-21 要求，覆盖 20261021d 初期「手动区间免疫检验」的做法）。实现：`lib/priceActionHub.js` 新增 `attachManualZones(data, daily, symbol)`，用 `zoneValidity.assessZone`（同一函数/同一份日K/同一 60 日窗口/同一阈值）给每条手动区间打 `valid/invalidReasons/zoneCheck`，append 进 `shortTerm.resistances/supports`（带 `isManual/manualId`），并出 `manualZonesMeta` 汇总；**不参与侵蚀**（`erodeZone` 不作用于手动区间——用户只点名两条检验），**不参与方向/概率/④卡/准确率**（那些在 attach 之前就已算完）。配套：路由在手动区间增删后调用 `invalidateSnapshot(symbol)` 丢弃该股快照（否则非盘中 24h 缓存会让用户加完看不到）；前端删除自建 concat（改由后端并入，避免重复两条），并在「手动添加」页签给每条打「通过检验 / 检验未通过（原因）」徽标。实测 000902 手动支撑 12.82~13.08：往返 4 次 > 3 → 判无效并给出原因。测试 scripts/test_manual_zones.js 74 项。
+// [20261021g] 两件事：① 修「量能状态=平量，风险提示却写『量价背离（放量下跌或量价齐跌）』」（用户 2026-10-21 报障）——根因是两个不同窗口的口径被写成一句固定文案：量能状态用**当日**量比，量价形态用**近5日价格 x 近3日量能**，旧文案把「放量下跌」「量价齐跌」并列，于是当日平量也会被提示放量下跌。改法：calcPriceVolume 增 kind 枚举，风险提示改由 pvRiskText(vp) 按形态查表（PV_RISK_TEXT，每条都写明近3日/近5日窗口）；volumeText 后半改用形态原文，不再压成「配合/背离」。② 修「上证日线整段 501 → 量能因子全线降级」：新增 lib/tklineHost.js（ifzq → web.ifzq 主机族降级），接入 5 个 fqkline 调用点（stockData x2 / marketTechnical / marketTechJudgment / deep-yield / server 探活）。实测修后：量比 0.82（平量）+ 量价齐跌（资金退潮），风险提示「近5日量价齐跌（价格下行 + 量能萎缩），资金退潮」，两者不再打架。测试：scripts/test_market_emotion_volume_text.js 33 项 + scripts/test_tkline_host.js 28 项。
+// [20261021h] 修「成交量单位错乱」——用户截图报障「60 日均量 113900 ×1.5 = 170850（当日量 7358800）却判未达阈值」。根因：`_reconcileTodayBar` 把「非腾讯通道的日K bar」当成「股」，而**东财日K实测是「手」**（成交额反验：73588×13.87×100=1.02亿=实时成交额），于是实时 quote（股）被原样写进手序列 → 当日量 ×100，与 avg60 差 64 倍，文案自相矛盾。全台排查发现同类错误共 3 处：① 上述覆写（×100）；② volumeEngine 口诀1 开盘量比 `tencent ? 1 : 100`（东财基准被缩 100 倍 → 量比虚高 100 倍）；③ capitalFlow `VOLUME_TO_LOT.eastmoney = 100`（绝对量小 100 倍）。修复：新增 `lib/volUnit.js` 作为日K成交量单位的**唯一来源**（东财 kline f56=手、腾讯归一后=手、同花顺=股、quote=股），三处全部改用它；并在覆写前加「量级守卫」——换算后与当日 bar 相差 >20 倍即判单位异常、**拒绝覆写**、写 `unit_mismatch` 进 dataGaps（序列永不被污染）；文案补「当日量为阈值的 X 倍」，不再只凭档位断言未达。实测 000902：当日量 73588 / 阈值 170850 / 0.43 倍 → 文案与数字一致。测试 scripts/test_volume_unit_contract.js 28 项；另更新 test_volume_engine（295→绿）与 test_volume_consistency（229→绿）里三条「把错误当预期」的旧断言。
+// [20261021i] 修「股份回购」子卡片两处口径错误（用户 2026-10-21 截图 000902 新洋丰）：① **陈旧方案当当前状态**——最新一档是 2021-07-23 完成实施（5 年前），卡片却照四要素展示，用户自然认为「它现在没有回购」。修法：`lib/buybackEmDc.js` 增 `HISTORICAL_DAYS=730` 历史闸门（完成/停止/否决 且完结超 2 年 → `historical=true`），sameDayJudgment 把主语改为「当前无进行中的回购（最近一次 2021-07-23 完成实施，已完结 5 年）」，旧方案降为脚注、子卡名标「（历史）」。② **进度自相矛盾**——卡片同时写「完成实施」与「已达承诺上限 24%」，理由却说「承诺买入力量已用尽」；1.44 亿 / 承诺 3~6 亿，钱没花完。修法：`gradeSignal('006')` 按完成率区分——<95% 时 stage=「已结束（未足额）」、理由改「方案已结束但只回购到承诺上限 24%，未足额买完，剩余额度不再兑现」；≥95% 才说「已用尽」。`formatPlan` 同步把「完成实施（已达承诺上限 24%）」改为「完成实施（实际回购为承诺上限的 24%，未达承诺下限 3.00亿元；方案到期结束、未足额买完）」。③ LAYOUT_VERSION 20261019f → 20261021i 强制重算旧判断快照（否则页面仍显示旧文案）。测试 scripts/test_buyback_plan.js 33 项。
+// —— [20261022h] 首页情绪模型新增「宽基ETF申购赎回」常驻因子（10%）+ 面板页签：① lib/etfFlow.js 新建：上交所 PCF（申赎清单）抓全篮成分 + 腾讯行情字段 72（基金份额）算净申赎，Δ份额÷最小申赎单位=篮数，篮数×每篮股数=逐股理论增减；份额是净额，只能给净申赎、拆不出申购总量/赎回总量（模块内明确披露）。② 份额源定为腾讯 qt.gtimg.cn（本机 push2 全族常被 reset），东财 f84 降为备链并加 10 分钟熔断。③ 快照基期只认 settled:true（15:05 后定稿），盘中增量不进累计台账，避免半天进度永久计入。④ 情绪模型 BASE_WEIGHTS 8 常驻重排（22/13/9/9/9/9/9/10）总和仍 100；新增 /api/etf-flow。⑤ 面板加页签：情绪因子明细 / 宽基ETF申赎（ETF 表 + 被买被卖 Top10 + 全量成分股累计表）。⑥ 回归 scripts/test_etf_flow.js 55 项；test_market_emotion 因子数 9→10。
+// [20261102e] 量价判定扩展参考层（用户指令：思维导图分析内容补充进量价判定模块，冲突检查无冲突后接入）：lib/volumeEngine.js 新增 POS_VM_EXT（4 位置 × 趋势运行补充 5 形态 + 区间横盘箱体 8 + 量价背离 2 + 极端量能 2，与 volume-map.html DATA 同源），_posVolumeMatrix 返回 ext 并导出；app.js 量价判定卡主表下方渲染「当前场景扩展参考」小节（位置不适用不渲染）；style.css 新增 ve-ext 系列样式。主判 POS_VM_MATRIX 24 格零改动，不参与评分与综合结论。
+// [20261102f] 量价判定扩展归一（用户指令：思维导图判定逻辑要融入量价判定模块，每日收盘后只应有一条判定生效）——lib/volumeEngine.js _posVolumeMatrix 新增 extJudgment 归一解析（优先级：极端量能[天量/极度缩量=地量] > 量价背离[引擎检测命中顶/底背离] > 区间横盘箱体[20日带宽≤15%] > 趋势运行滞涨/滞跌/震荡 > 主矩阵24格归格），盘中停判极端量能、POS_VM_EXT_TONE 方向语义映射；app.js 主判横幅二选一（extJudgment 优先）+「生效路径」说明行，移除 20261102e 的静态扩展清单；style.css .ve-posj-path 替代 .ve-ext 系列。主矩阵 24 格与既有字段零改动，不参与评分与综合结论。
+// [20261103c] 横盘箱体分支升为主要判定逻辑（用户 2026-11-03 纠正：思维导图形态表不是参考而是主要判定逻辑，报障"为什么一条都没命中"）：根因=20261102f 判定优先级链（极端量能>背离>箱体>趋势运行）只对四类位置开放，横盘（震荡整理）被整体排除，20261103b 只补了全灰参考表。改法（类型级）：volumeEngine.js ① extJudgment 块开放给 pos=震荡整理——isSidewaysPos，extreme/divergence 用 POS_VM_SIDEWAYS_EXT 中性文案 + POS_VM_EXT_TONE['震荡整理'] 中性档位，箱体命中用 POS_VM_SIDEWAYS_BOX + POS_VM_SIDEWAYS_TONE（突破尝试=observe、破位/无量=caution，不绑定牛熊），趋势运行补充④仍限四类位置（横盘无 trendExtra）；② anomaly 同步开放（横盘也显示异常判定状态行）；③ summary 分「箱体已生效/无可归格（涨跌幅0）」两态。诚实降级零变化：数据不足/涨跌幅为 0 → 无主判如实观察。app.js 表尾注改「命中行高亮+主判横幅为当日唯一生效判定」。守卫 test_pos_volume_matrix §5 重写横盘断言+新增涨跌幅0降级与放量弱方向滞涨两用例、§6 新增引擎接线断言。
+// [20261103b] 横盘股量价判定卡版面统一 + 说明去重（用户 2026-11-03 报障：海天味业修正后版面和其他个股不一样）：根因=版面由第一步位置驱动——POS_VM_MATRIX/POS_VM_EXT 只覆盖低位区/高位区/上涨途中/下跌途中四类，位置=震荡整理（横盘）时无主判横幅、无参考表，只剩后端 summary 与前端空表注两段近似重复的文字。改法（方案B，类型级：所有横盘股同口径）：① volumeEngine.js 新增 POS_VM_SIDEWAYS_BOX（思维导图「区间横盘震荡」分支中性口径 8 形态），pos=震荡整理 时 extRef 返回 { trendExtra: [], boxTitle, box }——判定语义零变化（无主判、无 extJudgment、不参与评分）；② summary 改为一处说明并指向下方箱体表；③ app.js hasTrendGroup 前置：trendExtra 为空时跳过「趋势运行」组头只渲染箱体组，表尾注分两种口径，原空表注精简为仅位置数据不足时显示。
+// [20261103a] 量价判定卡接入长期趋势定论（方案A）：volumeEngine.js analyzeVolume 用 getHistoryDeep(2400)+analyzePriceAction 取 MA250 长期趋势（上行/下行/震荡）；_detectPosition 在保持 position.label（24格矩阵键）不变前提下新增 longTermVerdict/displayLabel/longTermContext 并追加年线依据到 basis；_posVolumeMatrix 透出；app.js 第一步展示叠加（如「长期下行通道中的区间震荡」）、空表注补长期趋势说明。下游 capitalFlow/sameDayJudgment 只读不变 label，无需联动。
+// [20261103d] 关键财务指标判定统一（用户指令：①「指标分析都是利空的绿色，怎么总体判定就是利好——三项绿色利空则总体应为利空」②「环比无法从财报直接获得时用季报数据计算并标明本机计算」）：① 百分数口径契约修复——analysis.js evaluateSignals 移除 A股字段「<1 即小数×100」启发式（DJD_*/ *_TZ 均为百分数，勾稽实证海天 Q1+8.57/Q2+2.93/Q3+0.12≈累计+4.27%；曾把 0.12% 放大成 12.44% 误判加速利好），仅美股兜底 revenueGrowth/earningsGrowth（Yahoo 小数）×100；② metricAnalysis.js 新增 dimsVote 五维多数决——可用维度≥2 时以多数方向出总体判定，与信号判定冲突时 reason 显式标注「已按多数决为准」+保留原判定依据，输出阶段统一覆盖 judgment；③ 成长三指标环比维度改为单季绝对额环比增速——sqSeries 季报累计值差分（单季=本期累计−上期累计，Q1=累计，按年分链防跨年错位）+「本机计算」标注+跨年季节性提示；④ app.js 左卡徽标与顶栏 renderKeyMetrics sigMap 追加 metricAnalysis judgment 覆盖（三处消费同一判定，单一数据源）。
+// [20261103e] 新增「跨板块数据一致性巡检」模块（用户指令：每日定期检查工作台所有数据——多个板块使用的同一数据，即使数据源不同也要核对展示值是否一致；⚠️ 严格区分累计数据与固定期数据（前三季度累计 vs 第三季度单季），口径差异注记不算错误）：① 新增 lib/consistencyAudit.js——auditPayload 纯函数核对 PE/PB/PS/ROE/毛利率/净利率/成长三指标/营运利润(单季·累计分列)/NBV/行业均值/历史百分位 共 12-13 项（复用 analysisWarm 本地 HTTP 自调用机制取 /api/analysis 载荷，单一数据源）；状态口径 ok/mismatch/caliber/missing——同口径不一致→mismatch，累计 vs 单季/TTM vs 报告期→caliber 注记，兜底 0 按 ZERO_AS_MISSING 同口径视为缺失跳过；runDailyAudit 对自选股逐只巡检并落盘 data/consistency-audit/YYYY-MM-DD.json；② server.js 接线——runConsistencyAuditDaily（标的=readWatchlistFile，兜底海天）、15:30 块内幂等触发（_lastConsistencyAudit）、启动 60s 补跑当日缺失、GET /api/consistency-audit（?date/?symbol/?force=1）；③ 准确率页新增「数据巡检」页签（accuracy.html consistencyPanel + accuracy.js loadConsistency，KPI/逐股明细表，结算按钮=立即重跑）+ style.css .ca-table。
+// [20261103f] 量能分析卡利好/利空语义着色（用户截图指令：「展示卡里的内容，代表利好和利空的内容用相应的颜色标示」，红涨绿跌）：① capitalCharts.js buildConclusionParts 每行新增 tone（bull=红/bear=绿/neutral 不着色）——量价关系按信号映射（放量上涨/量价齐升/温和上涨/缩量回调=红，缩量上涨/温和回调/地量上涨/地量回调/缩量下跌/地量下跌/巨量下跌/放量下跌/显著下跌=绿，与底部多空打分同口径）、短期/中期资金按 mainNet 符号、OBV 上升=红/下降=绿、VR/MFI 按多空/流入流出关键字、融资融券按 rzChange 符号；② volumeEngine.js dimensions 新增 capitalBehaviorTone（combo.direction 归一三值）与 chipTransferTone（_chipTransfer 改返回 {text,tone}，text 逐字不变，单调用点内部函数）；③ app.js ve-cc/ve-cc-wide 文本与「资金行为」「筹码转移」tile 按 tone 加 ve-tone-bull/ve-tone-bear；④ style.css .ve-tone-bull{--red}/.ve-tone-bear{--green}。关键支撑/压力为中性参考价位不着色；输出仅新增字段，既有字段与判定零变化。
+// [20261103g] ETF 情绪卡节假日/跨日取数三层防护（用户指令：「模块有没设定节假日只读取最后一次更新的数据，以避免节假日或假后第一天开盘无法获取数据的错误」；实查发现真实事故：11-01 周日手动触发 collect 跨日重采，把 10-30 已定稿快照覆盖污染——份额被 T+1 采集日语义前推成 10-30 收盘值，shareDate 前推一位，周五 Δ 与周四 Δ 合并）：① 根修 lib/etfFlow.js collect 跨日重采守卫——tradeDate < 今日且已有 settled 且非 partial 的快照时保留原快照不覆盖（partial 自愈通道与无快照跨日补采通道均保留），并新增 opts.universe/fetchPcf/fetchShares 测试注入口；② 兜底 getLastSuccessfulFactor/withLastFactorFallback——getEtfFlow 取不到有效因子时回读 last-factor.json（_computeEtfFlow 每次产出有效因子即落盘），ok:true+fallback:true+原因标注「节假日/取数兜底：显示最近一次成功数据」；③ 前端 app.js 情绪卡 f.fallback 显示「⊕ 节假日/取数兜底」提示；④ 数据清洗——11-01 覆盖事故致 10-30 快照污染，外部权威源不可得（NeoData 搜索链反爬熔断、东财份额表逐日=0），改用全内部推导恢复（Δfri=Δwrong−Δthu，34 只篮数整除校验全通过），scripts/restore_etf_20261030.js 恢复 10-30 快照为 10-29 收盘份额（restored 溯源标注，备份 backup/）+ 台账重置后按快照链升序幂等重放 computeFromSnapshots；510300 周五 Δ=1.539 亿份（171 篮）恢复非零。守卫 scripts/test_etf_flow_holiday_guard.js 19 断言（§1 跨日守卫/partial 自愈/跨日补采、§2 兜底回读、§3 接线守卫）。
+// [20261103h] 手动阻力/支撑区间接入「放量有效突破→角色反转」生命周期（用户报障：「手动设定的阻力和支撑区间，也要遵守模块本身的有效性检验，而且阻力已经被突破，为什么还保持显示」；真机复现：平安手动阻力 53.22~53.32 于 2026-11-03 放量突破（量比 1.47>1.2），标准1（无放量轻松突破→无效）只判无放量穿越管不了它，而反转模块此前明确跳过 isManual——既不判无效也不反转，一直以原方向挂清单）：① lib/priceActionHub.js 顺序调整——attachManualZones 提到 attachReversedZones 之前（手动区间先并入清单并带 zoneCheck，反转模块才能消费）；② lib/zoneReversal.js——步骤2 不再跳过 isManual，手动区间满足同一条件（放量有效突破且仍在外侧）时同样创建反转记录（origin:'manual'+manualId 链接源条目），原手动条目从清单移除；createRecordFromZone 增 extra 参数、loadRecords 保留 origin/manualId、_buildZone 透出 originManual+source='手动区间·放量突破反转'；同位已有反转记录的手动条目也移除并记入 reversed 事件；attachReversedZones 尾部重算 manualZonesMeta（total/valid/invalid + reversed 事件数组）；新增 purgeByManualId；③ server.js 删除路由联动 purgeByManualId（删源条目→其反转记录同删）；④ app.js 手动页签「已反转」琥珀徽标（reversed 事件：日期/量比/转向说明，hover 详情）+ 反转区间展开详情区分「你手动添加的」来源；⑤ style.css .pa-mz-badge.reversed。仍不参与侵蚀收缩/方向/概率/④卡/准确率。守卫 scripts/test_manual_zone_reversal.js。
+// [20261103i] 大盘记录数据库 + 检索（用户指令：「把大盘记录做成一个简单的数据库，添加相应的检索功能，能够按日期、行业和涨跌等关键词进行搜索」）：① 新增 lib/marketLogDb.js——大盘记录（data/notes.json scope=market 的 AI 每日复盘 + 手写条目）派生为结构化 SQLite 库 data/market-log.db（Node 22 内置 node:sqlite 零依赖，WAL）；parseMarketNote 纯函数解析（交易日从 title「AI 大盘复盘 · YYYY-MM-DD」提取、手写条目用笔记时间；【指数收盘】段解析指数名+涨跌幅；【领涨/领跌板块】段高置信提取行业候选=分句开头紧跟涨/跌；方向按沪指涨跌幅符号 up/down/flat，解析不到如实 null 不臆造）；syncMarketLog 全量幂等重建（权威源仍是 notes.json，请求时 mtime 检测自动重建，测试可用 SA_NOTES_FILE/SA_MARKET_LOG_DB 重定向）；searchMarketLog 支持 关键词(标题/内容/标签 LIKE)/行业(sectors JSON+content LIKE)/方向(up|down|flat)/交易日范围/指数名 任意组合 AND + 行业 facets top20；② server.js 新增 GET /api/market-log 路由；③ 前端 notes.js 仅大盘记录页（data-page-scope=market）注入「🗂 大盘记录数据库」检索面板（关键词/行业 datalist 建议/涨跌下拉/日期范围 + 检索/重置 + 库统计行），结果行含 日期+方向徽标（红涨绿跌）+指数收盘（涨跌幅红绿着色）+领涨/领跌行业 chips+摘要/展开全文；检索条件生效时结果优先于笔记流，重置恢复；投资心得页与个股亮点/雷点零变化；④ style.css .mldb-* 系列。守卫 scripts/test_market_log_db.js。
+// [20261103j] 每日量比趋势图（用户指令：「在资金量能里面，主力资金流向（近60日）卡片外的正下方添加每日量比折线趋势图，记录每日量比的变化」）：① index.html 资金量能 tab 在「💰 主力资金流向（近60日）」卡片正下方新增「📉 每日量比趋势（近60日）」卡片（#capVolRatioChart）；② capitalCharts.js 新增 computeVolRatioSeries（量比=当日量÷前5日均量（不含当日），与 volumeEngine 量能三态/zoneValidity 标准1 全站同口径，量能缺失→null 不臆造；历史序列由日K成交量本机推导，K线自带历史即「每日变化记录」，无需另存）+ renderVolRatio（ECharts softDark 折线，tooltip 标注 放量/平量/缩量 三态，markLine 阈值虚线 1.2 放量红/0.8 缩量绿，20261019f 市场标准阈值同源）+ renderAll 接线；③ 版本戳 20261103j。既有卡片/数据链路零改动。
+// [20261103k] 量价判定第三步补「大涨 / 大跌」强形态（用户指令：「图中模块的第三步漏了股价在不同量能情况下的大涨和大跌的判定以及对应的解释，给模型补上……量能涨跌关系分析里面的完整推演图也在对应的位置在不改动原图排版和样式的前提下添加这些新增内容」）：① lib/volumeEngine.js 新增 POS_VM_STRONG 强形态知识表——6 种强形态（放量/缩量/平量 × 大涨/大跌）× 4 位置 = 24 格，与 POS_VM_MATRIX 同构同风格；阈值 |涨跌幅| ≥ 5%（A 股市场公认口径，与全站梯度自洽：<1.2% 弱方向滞涨滞跌 → 1.2%~3% 普通涨跌 → ≥3% 明显上涨（BOTTOM_BREAK_PCT）→ ≥5% 大涨/大跌）；② _posVolumeMatrix 趋势运行补充分支（④）内强形态判定插在滞涨/滞跌之前（|chg|≥5% 且非极端量能/背离/箱体命中时 extJudgment 生效，key=「放量大涨」等；与 weakAmp<1.2% 滞涨滞跌互斥，优先级链其余零变化；横盘位置大涨/大跌仍由箱体分支归格——箱体「放量上涨=突破上沿」已覆盖强度语义）；extRef 新增 strong 数组（6 形态，仅参考表展示不参与评分）；③ app.js 趋势运行表 TREND_FORM_ORDER 扩为 17 形态（强形态按量能段同序插入：大涨跟同量能上涨、大跌跟同量能下跌之后，与导图叶子同源同序），行查找链 6 主格→强形态→震荡/滞涨/滞跌，分组标题与表尾注同步；④ volume-map.html 思维导图 4 个位置「趋势运行」组各插入 6 叶子（结论与 POS_VM_STRONG 逐字同源，纯数据追加、布局引擎自适应，排版/样式代码零改动）；⑤ 版本 20261103k。守卫 scripts/test_pos_vm_strong.js。
+// [20261103m] 判定列表按生效分支显示 + 参考行补方向文字（用户指令：「量价形态如果是趋势运行就显示趋势运行判定列表就好，把区间横盘震荡的判定列表隐藏，反之也是」+ 用户问「列表里面的判定有偏多，观察和参考，各种代表什么意思，为什么没有偏空」）：① app.js 分组切换——boxActive=生效判定来自箱体分支（extJudgment.branch=区间横盘震荡）时只显示箱体组并隐藏趋势运行组，反之（趋势运行/主矩阵归格/极端量能/背离判定）只显示趋势运行组隐藏箱体组；横盘位置（震荡整理）无趋势运行组恒显示箱体组；四类位置表格从 31 行精简到 17 行（或横盘判定时 14 行）；② 参考行徽标由统一「参考」改为显示方向文字（偏多/看空/警惕/观察，灰底无方向色——20261101f 非命中行不着方向色铁律不变），命中行仍琥珀「命中」；「为什么没有偏空」的根因：参考行此前只显示「参考」二字隐藏了方向信息，且部分位置（如低位区间）的下跌形态语义本就是「观察」档（底部下跌≈尾声），看空档集中在高位区间/下跌途中；③ 模型层 extRef 各条目（trendExtra/strong/box/横盘中性箱体）附 direction 字段（震荡=observe/滞涨滞跌=主矩阵同向格/强形态=强形态表/箱体主格=主矩阵格/横盘=中性档位），前端免映射；④ 表尾注更新为生效分支口径 + 徽标图例（偏多=倾向上涨、看空=倾向下跌、警惕=防风险、观察=中性待确认）。守卫同步（test_pos_volume_matrix 表尾注断言、test_pos_vm_strong 版本断言）。
+// [20261103l] 导图/判定卡箱体组补大涨 / 大跌箱体强形态（用户报障：「图片里面没有大涨和大跌的添加」——20261103k 只加在「趋势运行」组，用户指认箱体组缺失；遵循 LRN-20261103-002「展示的形态必须能命中」）：① lib/volumeEngine.js 新增 POS_VM_BOX_STRONG 箱体强形态知识表——5 组（低位区间/高位区间/上涨中途/下跌途中 + 震荡整理中性）× 6 形态（大涨/大跌=箱体突破/破位的强度升级语境）；POS_VM_SIDEWAYS_TONE 增 6 个强形态中性档位键（突破尝试类 observe、破位/无量类 caution）；② 箱体分支（③）内 |chg| ≥ 5% 时优先于箱体普通格归「箱体强形态」（四位置方向沿用 POS_VM_STRONG 同格强形态方向，震荡整理用中性档位；优先级链=极端量能>背离>箱体强形态>箱体普通格>趋势运行强形态>滞涨滞跌>主矩阵）；③ POS_VM_EXT 四位置 box 数组 + POS_VM_SIDEWAYS_BOX.box 各插 6 条强形态条目（8→14 条，与 POS_VM_BOX_STRONG 逐字同源）；④ volume-map.html 4 位置箱体组各插 6 叶子（纯数据追加，排版/样式零改动）；⑤ app.js 表尾注同步（箱体 8→14 形态口径）；⑥ 守卫同步（test_pos_volume_matrix box 断言 8→14、test_pos_vm_strong 补箱体强形态断言）。士兰微 -3.24% 仍属普通下跌档（阈值 5% 不变）。
+// [20261104a] 指标分析判定「五维多数决」升级「水平锚定多数决」（用户指令：便宜股/稳健指标因历史百分位口径被误判为利空）：六只自选股实测确认误判链——变化维度（同比/环比/历史百分位/边际）最多 4 票且高度同源，而「水平判定」（绝对水平好坏）不参与投票，导致绝对水平健康的稳健指标被变化票洪流覆盖成利空（圣湘负债率 26.4%/万润 29.4% 稳健被判利空、海天/万润/圣湘流动比率 2.2~4.5 偿债强被判利空、圣湘毛利率 72.3%/海天净利率 23.8% 同理）；修复：① dimsVote v2——水平票入局参与计票，变化维度与水平信号方向相反时降级为中性票（industry 为横向水平对比不降级），中性票需严格多于方向票才单独成判（修复 v1 忽略中性票缺陷），方向票平票以水平锚兜底；② 成长类指标（growth/profitGrowth/dedProfitGrowth/opProfit，指标值本身是变化量）不锚定，20261103d「三项利空→总体利空」规则对成长类原样保留；③ 降级票数在 reason 显式标注、原判定依据保留、冲突计数照常；判定输出结构（signal/reason）不变，前端消费方零改动；④ 守卫 test_metric_analysis_vote §2 重写（2a 成长类 11-03 规则回归 + 2b/2c 水平锚定核心用例 + 2d 中性票严格多数 + 2g 键集合源码守卫）。前版 20261103m 说明：判定列表按生效分支显示（趋势运行/区间横盘二选一）+ 参考行方向文字（偏多/看空/警惕/观察灰底）。
+// [20261104b] 增长口径一键切换（用户指令：利润增长的单季/累计口径切换策略——一键切换，切换后对应指标分析同步切换）：① 新增 lib/growthCaliber.js——口径设置持久化 data/settings.json {growthCaliber: sq|cum}（默认 sq 沿用 20261102a 单季优先；mtime 检测缓存；原子写；SA_SETTINGS_FILE 测试重定向），orderedYoYFields 按口径重排同比取数字段优先级（组内逐字段回退机制不变）；② 全链路同口径接线——analysis.js evaluateSignals 三增长信号取数+文案口径标签动态化、buildFundamentalComparison 增长百分位序列、fundamentalScore.js 三项 yoyPair（左卡关键财务指标+评分）、metricAnalysis.js buildGrowth 主值+同比维度+文案+note（主值改为口径取数优先、快照 DJD 值兜底），返回体新增 growthCaliber 字段（前端单一数据源）；③ 切换范围之外保持不变（隔离）：sameDayJudgment 短期因子、deep 年度结论、stockData 原始快照字段；环比维度始终单季绝对额环比（如实标注，不随口径）；④ server.js 新增 GET/POST /api/growth-caliber，POST 后 analysisWarm.clearAllCache()（新增正式导出）清空分析 TTL 缓存确保即时生效；⑤ 前端 app.js 左卡「关键财务指标」卡头新增口径切换按钮（单季↔累计，点击 POST 后重载分析数据，按钮文案随 metricAnalysis.growthCaliber 同步）；⑥ 守卫新增 scripts/test_growth_caliber.js（设置读写/字段重排/口径切换后取数与文案/路由接线/版本戳）。
+// [20261104c] AI 解读生成失败修复（用户截图报障：首页「AI 解读」报 <400> InternalError.Algo.InvalidParameter: Parameter 'temperature'=0.3 is not supported for kimi-k3 model——用户把联网模型换成 kimi-k3 后，lib/ai/llm.js buildRequestBody 对所有模型硬编码 temperature:0.3，而阿里百炼 Kimi 系模型不接受采样温度参数直接 400；且报错时请求体无联网参数、既有 400 兜底条件不匹配 → 错误直抛前端）：① buildRequestBody 预判剔除——kimi 系模型（isNoTemperatureModel：名以 kimi- 开头）请求体不带 temperature，省一次必然失败的请求；② postLLM 能力自学习补第三分支——400 + temperature + not supported/InvalidParameter → 记忆 NO_TEMPERATURE_MODELS + _stripTemperature 剔除重发（沿用 20260918b 首见即记忆模式，进程内 Set 不落盘），已记忆模型后续请求直接正确姿势；其他未预判模型若有同样限制也自动自愈；③ 守卫 test_llm_stream_fallback 扩 §F（桩服务 400→剔除重发→记忆零请求浪费，39 断言）。
+// [20261104d] 融资融券 tile 文案歧义修复（用户截图报障：「融资余额15.7亿，净买入0.27亿（占流通市值4.46%）」括号跟在净买入后，读成净买入占流通市值 4.46%，实际是融资余额的占比）：capitalCharts.js 融资融券 tile 拼接顺序调整——ratioStr（余额占流通市值比）紧贴融资余额之后、netBuyStr 后移：融资余额15.7亿（占流通市值4.46%），净买入0.27亿，融资增加；纯前端文案顺序修复，判定语义零变化；lib/capitalFlow.js 判定依据文案不受影响（其括号本就指变化额占比，语义正确）。
+// [20261106i] 量价关系判定结论统一（用户 4 张截图报「模块结论不一样」+ 裁决「只统一结论展示」）：诊断确认三处结论来自两套量能分母——「资金量能综合判断·量价关系」(capitalFlow.volumePrice.signal) 与 「资金行为」(volumeEngine.dimensions.capitalBehavior) 同源用 ratio5（当日量÷前5日均量，1.2 倍判平量上涨），而 135 格主判 (_posVolumeMatrix → _volTier5 → volCell) 另用 ratio20（当日量÷20日均量，2.63 倍判放量上涨），导致同屏「没有增量资金大举进场」与「增量资金进场，健康主升」互斥。按用户裁决走零数值风险方案 C：① 唯一结论出口 = 「资金量能综合判断」卡的量价关系行，标签明确改为 「今日量价关系判定（唯一结论）」，文本仍是 `${vp.signal} — ${vp.description}`，数值/信号/评分零改动；② lib/posModel135.js 两处 conclusion 去掉「增量资金进场」措辞（改「量价配合」/「底部启动信号」），public/volume-map.html 两处箱体文案按 20261105f 同源契约逐字同步；归格 key / direction / tier5 全部不变；③ public/js/app.js 量价判定卡「主判 ·」改称「135 格综合判定 ·」，生效路径与表下注释同步，新增常驻口径说明：本卡量能档 ÷20 日均量、量价关系判定与资金行为 ÷前5日均量、两套分母用途不同数值不应相等、量价关系判定以「资金量能综合判断」为唯一结论；④ 判定逻辑、公式、数值、API 输出结构、判断记录全部零改动，引擎 schema（volume-engine-20261106a）与 LAYOUT_VERSION（20261106a）按铁律不升。守卫 scripts/test_vp_conclusion_unified.js（含 15 种 signal 值域遍历 + 归格不变实测 + 引擎-推演图同源抽查）。APP_VERSION + 5 个 HTML ?v= 升 20261106i 做缓存破坏。
+// [20261106h] 回滚 20261106g 失败 CSS 对称化 + 量价判定结论分叉诊断（用户 4 张截图指令，@skill:selfimproving @skill:ui-new）：① 用户判「界面优化完全失败」——g 版把 .ve-posj-chain-item 改成 28px 双列栅格，误以为 .ve-rule-badge 是圆形数字徽标，实际装的是「① 道氏结构 / ⑤ 量价健康度」等中文标签（lib/volumeEngine.js _runState 的 steps.k），28px 只容一个汉字 → 五步判定链整列竖排；根因是改布局前未读真实 DOM，且无头截图复刻页用了短徽标造成假阳性验证。已整块撤销 g 版覆盖规则，恢复 20261105f-b flex 基线，只保留三处零风险修正：判定链去掉单侧 margin-left:140px 使左右边界与三步骤/警示/主判/参考表对齐、徽标 flex:0 0 96px + white-space:nowrap 让 5 行文字起点统一并永久防止中文竖排、窄屏说明文字 flex:1 1 100% 独占整行消除右侧裁切；复刻页改用与 app.js 一字不差的中文标签，Edge 无头宽屏 1100px / 窄屏 420px 双视口逐张目检确认。② 用户另指出三张截图「模块结论不一样」——诊断确认 135 格主判（_volTier5 用 ratio20 = 当日量÷20日均量）与工作台唯一量能真值源 volumeTier（ratio5 = 当日量÷前5日均量）口径分叉：同一天 1.2 倍判「平量上涨」、2.63 倍判「放量上涨」，派生出「没有增量资金大举进场」与「增量资金进场，健康主升」互斥结论；统一会波及 135 格全部归格 / 推演图 / sameDayJudgment 量价配合子因子 / LAYOUT_VERSION / 大量守卫基线，属重大改动，已列 A/B/C 三方案待用户裁决，本轮零判定逻辑改动、零数值改动。③ 守卫 scripts/test_posj_symmetry.js 改写为回滚后契约，并把「steps.k 是中文标签 / 徽标不得窄于 96px」固化为断言。APP_VERSION + 5 个 HTML ?v= 升 20261106h 做缓存破坏；引擎 schema 与 LAYOUT_VERSION 不升。
+// [20261106g] 量价判定卡展示风格对称化（用户截图指令「模块的展示风格优化一下，没有对称的美观」，@skill:ui-new）：UI Audit 六维审查结论——主因是 .ve-posj-chain 单侧 margin-left:140px 造成「左凹右满」L 形不对称，叠加三步骤行只有第一列定宽导致说明起点随结果字数漂移、通栏区块（口径警示/主判/参考表）与缩进区块混排、圆角与左强调线粗细不一、参考表列宽随内容漂移。纯 CSS 改造（public/css/style.css 末尾一组覆盖规则，零 DOM / 文案 / 数据 / 来源标注 / 方向色语义改动）：① .ve-posj-step 改 132px/120px/1fr 三列栅格，三步结果与说明各自左对齐；信号叠加层 / 异常特例行回落两列；② .ve-posj-chain 取消单侧 140px margin 改通栏卡片（左右边界与警示条 / 主判 / 参考表完全一致），内部内容左缩进 140px 与结果列同起点，左栏放标题 + 淡竖分隔线形成清晰双栏、消除空洞；徽标列定宽 28px 使 5 行文本起点统一；③ 琥珀警示改 grid-column:1/-1 跨整行；警示 / 判定链 / 主判统一 8px 圆角与 3px 左强调线；④ 参考表 table-layout:fixed 固定 22%/12%/66% 三列、状态列居中、行高与内边距统一；生效路径与表下注释加 8px 内边距与表格内容对齐；⑤ 窄屏 @media 回落两列并取消判定链左缩进。验证：本机 Edge 无头渲染复刻页实际截图两轮核对（第一版仍有左侧空洞 → 第二版双栏定稿）；app.js / lib / API 输出结构零改动，引擎 schema 与 LAYOUT_VERSION 不升，仅 APP_VERSION 与 5 个 HTML ?v= 升 20261106g 做缓存破坏。守卫 scripts/test_posj_symmetry.js。
+// [20261106f] 「20日涨跌日量能比」卡片新增「数值解读逻辑」下拉面板 + 今日量价结构比对（用户截图指令，@skill:proactive-agent @skill:ui-new）：① 前端共享确定性规则模块 VpRatioInterpret 置于 public/js/capitalCharts.js 顶部（同页先于 app.js 加载，不新增 script 标签；文件末尾补 UMD module.exports 供 Node 守卫纯函数实测），规则表写死、结论一律由代码计算不调 LLM；② 三档解读（＞1 / ≈1 / ＜1）按用户原文完整展示，遵循 20261101f 参考表着色铁律——仅当前命中行保留方向色（红/绿/琥珀），其余中性灰徽标，表下附「仅高亮行是当前命中判定」；③ 结合今日量价关系判定 vp.signal（capitalFlow.computeVolumeIndicators 既有字段，零后端改动）与近20日历史结构确定性比对：契合→可信度高，相反→警惕诱多/结构转弱（琥珀），平量/≈1/数据不足→诚实降级；附用户 A 票 1.7 / B 票 0.6 两个对照示例；④ 两条渲染路径同口径接线：app.js renderVolumeEngine 五联行 + capitalCharts.js renderVolumePrice 兼容路径，触发器贴在卡片标签行内不占高度，面板在卡片行下方普通流跨整行（不用绝对定位浮层，不受滚动容器裁剪、不破坏 ve-cols-5 五列等宽）；document 级事件委托兼容静默轮询 innerHTML 全量重建，展开状态重建前读取、重建后恢复；⑤ style.css 新增整套 softDark 样式（hover/active/focus-visible/移动端点击区与换行），配色严格红涨绿跌；⑥ 口径标注：≈1 的 0.95~1.05 仅解读分档容差不改算法，与⑤量价健康度同源，与其他三套分母独立、数值不应相等；⑦ API 输出结构 / 数值 / 公式 / 判定逻辑零改动，引擎 schema 与 LAYOUT_VERSION 不升，仅 APP_VERSION 与 5 个 HTML ?v= 升 20261106f 做缓存破坏。守卫 scripts/test_vp_ratio_interpret.js。
+// [20261106e] 恢复「60日量能确认」卡（用户指令：「60日量能比卡片的数据既然其他模块有引用那就恢复吧」+ 终裁「换回60日卡」）：① 前提纠偏——60 日 confirm 口径的数据从未删除，一直被 volumeEngine 生死位五规则、四维度「量能状态」、capitalFlow 资金行为文案、风险标签引用；20261106d 被诊断「不能删」的是「量能档位」/现名「5日量能比」那套 volumeState.ratio5，与 60 日 confirm 是两套不同口径，真正缺的只是页面上 60 日卡片的可见展示；② public/js/app.js 第 3 格从 d 版临时「20日量能比」恢复为「60日量能确认」——恢复 vr60/confirmState/confirmSub/confirmTip/confirmVal/confirmTile，撤下 vr20/ratio20Sub/ratio20Tip/ratio20Val/ratio20Tile 全部临时变量（零死代码）；恢复 20261024j 诚实展示：confirm=null 不是缺数据，而是当日量落在 0.7~1.5×60日均量之间判「平量」，显示实际比值 + tooltip 给出均量/当日量/阈值；③ 五卡数量、顺序（5日量能比 → 20日涨跌日量能比 → 60日量能确认 → 20日涨跌日 → 20日净涨跌）、ve-cols-5 栅格与降级分支均不变；「5日量能比」新名与 20261106d 其余四项成果（短期/中期资金日均、20日涨跌日着色、banner 量比、口径副行）全部保留；④ 底部口径说明改为显式列出四套口径（5日量能比 ÷前5日均量 / 60日量能确认 ÷60日均量 / 20日涨跌日量能比 涨日均量÷跌日均量 / 判定第三步 当日量÷20日均量）并写「四套分母与算法不同，数值不应相等」，d 版「20日量能比 vs 20日涨跌日量能比」近似命名撞车随之消失；⑤ 数值、公式、判定逻辑、API 输出结构零改动，引擎 schema（volume-engine-20261106a）与 LAYOUT_VERSION（20261106a）按铁律不升，仅 APP_VERSION 与 5 个 HTML ?v= 升 20261106e 做缓存破坏。守卫：test_volume_confirm_label.js §2 与 test_dashboard_ui_d.js §4 改写为 20261106e 前端契约，test_volume_caliber_warn.js §3/§5 同步，全量 quick 回归。
+// [20261106d] 资金/量能卡与个股 banner 五项界面改动（用户两张截图指令）：① public/js/capitalCharts.js 短期/中期资金文字分析补「日均净流入/净流出」——日均 = 窗口累计主力净额 ÷ 窗口交易日天数（5 / 20 日），方向按 mainNet 符号独立判定，数值缺失时诚实降级不编造；② 「20日涨跌日」卡按涨天数 vs 跌天数着色（涨多 cap-pos 红 / 跌多 cap-neg 绿 / 持平中性），app.js 量能五联行与 capitalCharts.js 资金概要卡两处同类同步；③ **诊断项（用户明确「不要擅自删除」，本轮零改动）**：查清「量能档位」卡的数据 volumeEngine.volumeState（level/ratio5/ratio5Level/confirm/avg5~60）是全工作台真值源——引擎内生死位五规则/信号叠加层/低位倍量/高位缩量横盘等约 40 处、lib/capitalFlow.js 经 volumeTier→unifiedTier→computeVolumeIndicators（量价信号/量能热度/资金行为文案）、lib/analysis.js 与 lib/priceAction.js 的 computeVolumeIndicators、lib/zoneValidity.js 放量突破阈值、capitalCharts.js「量比(÷5日均量)」卡均消费；故数据绝不能删，仅「卡片 DOM」理论可删但会丢失五档定性档位可视化并破坏 7 个守卫与五联等宽布局，结论=不建议删；④ 「60日量能确认」退役 → 「20日量能比」，与「量能档位」统一改名「5日量能比 / 20日量能比」——判定更贴切（命名直接暴露分母、5日/20日短中期对仗、20日与量价判定第三步同源同值可互相印证）；数据现成 volumeState.ratio20 = volToday ÷ avg20，零后端改动；60 日 confirm / _confirmDesc 仍由引擎计算供生死位规则与四维度量能状态使用，只是本卡不再展示「确认」态；主值改纯比值 × 且不套放量/缩量方向色（量能放大≠股价上涨，避免方向色语义错位），定性档位以括号保留在 5 日卡；底部口径说明显式并列「20日量能比」与「20日涨跌日量能比」两套公式，化解近似命名撞车（20261106b 铁律）；⑤ 个股 banner 换手率后补「量比」——取腾讯行情原生字段 quote.volumeRatio（当日量 ÷ 前5日均量），与 volumeState.ratio5 同源；index.html 新增 #stockVolRatio（顺序 换手率→量比→成交额）、style.css .stock-vol-ratio 与相邻两枚同字号同色、app.js applyLiveQuote 单点刷新（字段缺失整段隐藏不估算）。数值、公式、判定逻辑、API 输出结构零改动；引擎 schema（volume-engine-20261106a）与 LAYOUT_VERSION（20261106a）按「只改前端展示不升」铁律不动，仅 APP_VERSION 与 5 个 HTML ?v= 升 20261106d。守卫：test_volume_confirm_label.js §2 改写为新前端契约（§1/§3 引擎 60 日确认语义原样保留）、test_volume_ratio_labels.js 与 test_volume_caliber_warn.js 断言同步，新增 scripts/test_dashboard_ui_d.js。
+// [20261106c] 量能卡口径可见化 + 第三步全日口径高亮 + 卡片顺序（用户截图指令：「第三步……『当日成交量 ÷ 20日均量』这个全日口径，盘中无法完成判定」「量能档位卡片和20日涨跌日量能比卡片按照60日量能确认卡片一样下方标注计算方法」「量能档位卡片右边放置20日涨跌日量能比卡片，其他顺移」）：① public/js/app.js posHtml 第三步文案后追加常驻琥珀高亮提醒 `step3CaliberWarn`（.ve-posj-caliber-warn，独占整行）——ratio20 = 当日成交量 ÷ 20日均量属收盘后才成立的全日口径，盘中只有半天累计量无法完成判定，收盘后以全日成交量定论；这句是口径属性说明（不随当前时间变化），故常驻展示、不引入盘中/收盘条件分支，与信号叠加层「极端量能·盘中停判」互补（那里说规则停判，这里说数值口径本身不成立）；② 量能档位 tile 与「20日涨跌日量能比」tile 按「60日量能确认」同款加 .cm-sub 计算方法副行（当日量 ÷ 前5日均量 · 五档分档 / 近20日涨日均量 ÷ 跌日均量），完整数值与阈值放 title；副行短句以免撑破五列行高；③ 五联等宽行顺序由「量能档位/60日量能确认/20日涨跌日/20日涨跌日量能比/20日净涨跌」改为「量能档位/20日涨跌日量能比/60日量能确认/20日涨跌日/20日净涨跌」，其余顺移，栅格 ve-cols-5 与降级分支零变化；④ public/css/style.css 新增 .ve-posj-caliber-warn（--amber-* 金强调、flex:1 1 100% 独占整行）；⑤ public/js/capitalCharts.js 兼容渲染路径同类排查，20日涨跌日量能比卡同步补 .cm-sub 公式副行。数值、公式、判定逻辑、API 输出结构零改动；引擎 schema（volume-engine-20261106a）与 LAYOUT_VERSION（20261106a）按「只改前端文案/样式不升」铁律保持不动，仅 APP_VERSION 与 5 个 HTML ?v= 升 20261106c 做缓存破坏。守卫新增 scripts/test_volume_caliber_warn.js。
+// [20261106b] 量比口径文案纠偏（用户截图报障「图中两个20日量比数据不一致是为什么？」+ 终裁「方案 A：只改标签和注释，零数值风险」）：根因=同屏「20日量价比 1.19」（近20日上涨日均量÷下跌日均量，capitalFlow.volumePriceRatio）与「量比(20日) 1.07」（当日量÷前20日均量，volumeEngine.ratio20）是两个不同公式却共用近似标签，且卡片底部注释「量比与量能档位同源，不重复展示」口径错位；两者各自计算正确，非数据 bug。① public/js/app.js 指标卡标签改「20日涨跌日量能比」+ title 公式说明；② 量价判定第三步 note 改「当日量/20日均量」+ title 公式与盘中提示；③ 底部注释改为显式列出三套口径并说明数值不应相等，删除错位旧注释；④ public/js/capitalCharts.js 兼容渲染路径同步改名；⑤ scripts/test_volume_merge.js 断言同步，新增 scripts/test_volume_ratio_labels.js 固化「文案与口径分离」。数值、公式、判定逻辑、引擎 schema（volume-engine-20261106a）、LAYOUT_VERSION（20261106a）全部零改动；APP_VERSION 与 5 个 HTML ?v= 升 20261106b 仅做缓存破坏。
+// [20261106a] 旧量价位置体系彻底退役 + 位置标签统一三分区（用户指令：「资金流向卡、当日行情判断改用三分区：高位/中位/低位区间有没有问题？核查工作台有没其他地方使用旧体系的判定，一并改用新标准，然后彻底删除旧体系」+ 终裁「删除旧规则、采用新标准（135 格思维导图）」）：① lib/volumeEngine.js `_detectPosition` 值域收敛为价格分位三分区（<30% 低位区间 / >70% 高位区间 / 其余中位区间 / 数据不足诚实降级中位区间），旧四类标签（上涨中途/下跌途中/震荡整理/长期拉长定论）不再作为位置输出；趋势段仅作审计透出，不改写位置标签；② 旧量价十口诀主判层 `_tenRules` 整块删除（前端 20261101e 已整卡移除，引擎层为死数据），输出体移除 `tenRules` 字段，判定唯一出口 = 135 格 _posVolumeMatrix / volCell；③ lib/capitalFlow.js 删除旧方向键（上涨中途/下跌途中）及依赖旧键的位置覆盖，仅保留三分区的高位/低位区间特例；sameDayJudgment 位置透传自动跟随三分区；④ 五个旧体系守卫重写为新标准契约，删除 scripts/test_volume_ten_rules.js，新增 scripts/test_position_unified.js（23 断言）；docs/logic/stock-13-capital.md 与 stock-13b-volume-ten-rules.md 顶部加退役说明并保留作历史设计记录；⑤ 引擎 schema 升 volume-engine-20261106a；APP_VERSION / HTML ?v= 升 20261106a；LAYOUT_VERSION 升 20261106a（位置值域变化导致当日行情判断分值变化，旧缓存判断须重算）。全量 quick 回归 105/105 通过（跳过 13 需网络）。
+// [20261105j] U1 深度分析筹码分布统一到锚点三（用户授权「低风险项可以做」）：① 清单前提纠偏——20261105g《可推广性勘察报告》U1 称「深度分析页两处获利盘数字会不一样」，实测 lib/deep/pipeline.js 旧 calculateChipDistribution（120 日窗口/50 档/指数衰减）产出的 sections.chipDistribution 全项目零下游消费（深度分析页「成交密集区」图走 capitalFlow.volumeProfile 的另一套 VPVR），用户看不到该数字，故「不一致」不是用户可见问题；但消除过时算法、统一到锚点三仍是正收益。② lib/deep/pipeline.js 删除旧函数整块，改为静态 require('../chipDistribution') 调 computeChipDistribution(history, fv*1e8/px)——流通股本=quote.circulationValue(亿)×1e8/入口权威价、history 日K volume 单位=手，与 volumeEngine 锚点三逐行同源；③ 口径诚实约束——新模块不产出 50 档分布曲线/峰值价/价格区间，旧字段 chartData/peakPrice/minPrice/maxPrice 一律置 null 禁止编造，仅 profitRatio=benefitPct、currentPrice=权威价、dataDate 等可真实推导者保留别名；流通股本或权威价不可得、CYQ 计算失败一律返回 null，不做静默估算；④ 输出字段变化已核实零下游消费，其他模块不受影响（隔离修改）；⑤ 守卫新增 scripts/test_deep_chip_u1.js（27 断言：旧算法零残留/新模块接线/与引擎同源/诚实降级不伪造/合成日K行为自洽），全量回归 105/105 通过（基线 104 + 本守卫 1）。前端零改动；APP_VERSION 保持 20261105g（纯后端改动，且 10+ 守卫硬编码该版本戳，不升版）。⚠️ 20261106 更正（LRN-20261106-001）：本条原写「capitalFlow 旧位置键在 D2 后为永不命中的死分支」为**误判**。实测它们仍在生效——computeVolumeEngine 的 _detectPosition 仍产出「上涨中途/下跌途中」，经 position.label 传给 capitalFlow:872 与 sameDayJudgment:1682；删掉会令「缩量上涨@上涨中途」由 +0.4（偏多）翻为 -0.25（偏空）。真实问题是两套位置标签并存（判定卡三分区 / 资金流向与当日行情判断旧四类），属清单 W1 口径分叉，需用户裁决，本轮不动。
+// [20261105g] 判定卡 UI 重排 + 锚点二/三正式接线（用户截图报障「输出展示效果非常差」+ 指令「锚点二/三参考数据接线移植为正式模块」）：① 前端 posHtml UI-b 重排——锚点参考从第一步行内移出（原 flex 横排把参考挤成右侧竖排小字块）统一为底部参考锚点表唯一渲染处；五步判定链从第二步行内移出为独立 .ve-posj-chain 紧凑区块（margin-left:140px + 琥珀左边框，style.css 新增 .ve-posj-chain/.ve-posj-chain-title/.ve-posj-chain-item/.ve-posj-chain-text）；信号叠加层未触发时压缩为单行 chips（.ve-sig-row/.ve-sig-chip，trigCount===0 分档渲染，长说明仅触发卡展开）；② lib/chipDistribution.js 新增正式模块——CYQ 筹码分布算法（150 档精度/250 日窗口/三角形分布 avg=(O+C+H+L)/4/换手率衰减/一字板特判），输出 benefitRatio/avgCost/p90/p70/verdict（>90% 抛压警示 / <5% 割肉枯竭），全 try-catch 失败返 null 不阻断主链，实测与东财官方偏差 0.9%；③ volumeEngine 接线——analyzeVolume 计算 chip（流通股本=quote.circulationValue×1e8/现价）与 quoteSnapshot（PE/PB 绝对值）传入 ctxBase，_posZone refs 填真数据（锚点二=PE(TTM)/PB 绝对水平参考+「历史百分位时序数据源建设中」标注；锚点三=获利盘/平均成本/verdict；锚点四=BIAS20+回撤）；g 版修复两处：quote 现价字段名为 price 非 close（stockData 腾讯行情 f[3]→price，原 quote.close 恒 null 致筹码被跳过显示「流通股本不可得」）+锚点三/四文案空尾巴与双负措辞（note.split 取段为空/回撤-13.93%→回撤13.93%）；④ 锚点二降级方案：乐咕个股 PE 无公开 API（akshare 仅市场/指数级），东财 push2 被拦→用 quote.pe/pb 绝对值+注明分位时序建设中；⑤ 引擎 schema 升 volume-engine-20261105g；⑥ 守卫——test_pos_volume_matrix 重写为 67 断言（§7 前端接线 UI-b 新结构 ve-posj-chain/sigChip/sigDetail/trigCount/step1Refs 零残留），test_pos_vm_strong 重建 93 行（§1 强形态 54 格+五档阈值边界/§2 页面/§3 引擎-页面同源抽查/§4 版本断言），test_volume_engine/consistency/ten_rules schema 升 g；E2E 海天 603288（中位区间|区间震荡|平量|震荡，锚点三获利盘 53.6% 平均成本 35.5 元）与士兰微 600460（低位区间|趋势向下|放量|上涨，获利盘 19.6% 平均成本 29.85 元）双股真数据验证通过，无头 Edge 元素截图确认判定卡布局正常。
+// [20261105f] 量价判定引擎定版改造——底层替换为「量价判定模型合并版 v2」（用户指令：「现在可以定版了，建议保留原来的界面风格，底层逻辑替换为现在的新标准。工作的时候核实判定标准有没有遗漏或者相互矛盾或者和事实不符的地方。这段判定标准允许跨模板调用其他模块的数据，也允许其他模块使用这些标准以做到工作台的标准统一」）：① 判定标准一致性核查（spec ⑦ 六处裁决：量比 1.2~1.3 缝隙归平量含上界 / ADX 统一 ② 三段制 / 天量换手 ≥20% 大盘股不可达→信号层并列换手历史 90% 分位口径 / 地量换手 <0.5% 大盘股常态命中→以创 250 日量新低为主判换手辅助 / 滞涨与主轴重叠为设计如此叠加不覆盖 / ④ 趋势性语义由 ② 承担）；② lib/posModel135.js 135 格知识表定版固化（volCell 查询，与 volume-map.html 合并版 v2 页面逐字同源，12 推导格带 derived 标注）；③ lib/volumeEngine.js 主判链重写——_posVolumeMatrix(pc, ctx, bars) 整体替换为新链：位置=锚点一 250 日价格分位 3 区归格（≥70 高位/≤30 低位，锚点二~四参考提醒随 refs 输出）+ 运行状态五步（_dowStructure 道氏摆动递进 / _adx14 ADX+DI 14 日 Wilder 新增计算 / _maArrange 均线排列+斜率 / _boxQuant 箱体 5 条件 / 量价健康度，ADX 三段制判定+灰色地带按道氏均线投票）+ 量能五档（_volTier5 量比 20 日均量：地量 <0.5∧创 250 日量新低 / 缩量 <0.8 / 平量 0.8~1.3 / 放量 >1.3 / 天量 ≥2∧创 250 日量新高，极端档归主档标注）+ 走势五档（_walkTier5：大涨 ≥5/上涨 1.2~5/震荡 <1.2 含 0/下跌/大跌，震荡档填补旧体系 chg=0 不归格空档）→ volCell 135 格主判（cell.derived 推导角标）；信号叠加层 _signalLayer 三卡——量价背离（MACD DIF 摆动点比较+RSI 70/30 门控不予采纳+金叉死叉量能确认状态机：出现/已确认/不予采纳）、极端量能（双口径确认+位置挂接解读）、弱方向异动（滞涨滞跌：5 日量比 ≥2+涨幅 <1.2%+辅助计数振幅/上影/换手分位+位置区分高位出货/低位吸筹+缩量止跌观察）、≥2 卡触发共振升级标注；异常特例 _specialCases 检测层（一字板/停牌复牌悬空K线群/黑天鹅跳空/对倒嫌疑，命中则主判挂起 cell=null 不臆造归格，诚实合规）；schema 升 volume-engine-20261105f / pos-model-135-1；④ 前端 app.js renderVolumeEngine posHtml 块重写（布局风格保留：步骤行→异常特例行→信号叠加层三卡→主判横幅→生效路径→参考锚点表→位置依据；主判 direction 按走势档位映射红涨绿跌；旧 TREND_FORM_ORDER 17 形态参考表退役，参考表改为锚点二~四提醒表）；⑤ 下游兼容：capitalFlow/sameDayJudgment 仅消费 position.label（键集变为 高位/中位/低位区间，VP_POS_OVERRIDE 上涨中途/下跌途中两键自然失效走 base 分，高位/低位键继续命中）；旧 POS_VM_MATRIX 等知识表在 20261105f 时保留未删（不再被主判链引用），后续于 D2（20261105i）确认为零运行时消费的孤儿死代码并已整块删除；⑥ 守卫重写——test_pos_volume_matrix.js 全量重写为新主轴守卫（知识表 135 格/归格路由夹具/五步判定/信号层/特例层/诚实降级/前端接线/源码守卫），test_pos_vm_strong.js §1/§3 重写（§2 页面断言保留），test_volume_engine/consistency/ten_rules schema 断言升至 20261105f；⑦ 判定标准入册 spec ①~⑦ 全量齐备（用户六段分段提供）。
+// [20261105e] 推演图页缩放/平移恢复 + 量能档位判定标准入册（用户截图报障：合并版 v2 推演图丢失了缩放功能和滑动页面的功能，无法看到图的全貌和其他局部）：① 根因=页面引入全站 style.css（105 行 html,body{height:100%;overflow:hidden}，首页依赖其做内部滚动容器），叠加 body min-width:1980px 超出视口 → 页面滚动被整体禁用、内容被裁切且无法平移缩放（旧推演图页不引 style.css 故无此问题）；② 修复（仅本页覆盖、style.css 零改动）：_gen_map_merged2.js 页面注入块追加 html,body{height:auto!important;overflow:auto!important} 恢复原生滚动；③ 新增缩放/平移交互——右下角固定缩放工具栏（缩小/百分比/放大/适应宽度/重置，softDark 配色 #161B22/#30363D/#F0B97B）+ Ctrl+滚轮缩放（0.4~2.0，视口中心锚点防跳变）+ 按住左键拖拽平移（grab/grabbing 光标反馈，工具栏内除外）；静态图版 data/merged-map-v2.html 保持独立不注入；④ data/volume-model-spec.md 入册 ③ 量能档位判定标准（三基准：环比前一日/量比 20 日均量五档【地量<0.5·缩量<0.8·平量0.8~1.2·放量1.3~2.0·天量≥2 且创长时段新高】/换手率横向可比；核心认知=天量地量是放量缩量的极端化而非独立档位、脱离位置谈量能意义有限）。守卫 test_pos_vm_strong §2 新增缩放工具栏/滚动覆盖断言。
+// [20261105d] 推演图页面替换为「量价判定模型 · 合并版 v2」+ 位置/状态判定标准入册（用户指令：①「现在可以先把量能涨跌关系的推演图替换成这个新的」；② 分段提供判定标准）：① public/volume-map.html 整页替换——旧「量能涨跌关系分析」推演图（4 位置 × 趋势运行/箱体/背离/极端量能）退役，替换为合并版 v2 静态页面（主轴 135 格 = 3 位置百分位分区 × 3 运行状态 × 3 量能 × 5 档当日走势【大涨 ≥5%/上涨 1.2~5%/震荡 <1.2%/下跌 -1.2~-5%/大跌 ≤-5%】+ 信号叠加层三卡【量价背离/极端量能/弱方向异动·滞涨滞跌】+ 判读规则 + 异常特例栏），保留页面外壳（jd-header 导航/返回链接/softDark 主题/样式表），由 data/_gen_map_merged2.js 生成器产出（data/merged-map-v2.html 同源）；静态知识页零行情接线，量价判定引擎（旧 POS_VM 体系）本次零改动，待全部判定标准定版后统一改造；② data/volume-model-spec.md 判定标准规格书落盘——① 位置判定（锚点一价格分位为默认判定源 N=250 日、3 区归格 ≥70/30、锚点二~四仅参考提醒；锚点三筹码数据源攻克=本地复刻东财同款 CYQ 算法 250 日窗口，实测海天平均成本 35.44 vs 官方 35.75 偏差 0.9%，验证脚本 scripts/_chip_verify.js 留档）+ ② 运行状态判定（道氏高低点递进→ADX≥25 强度+DI 方向→均线排列斜率（斜率重于排列）→箱体量化 5 条件→量价健康度，五步判定，引擎衔接清单随录）。守卫 scripts/test_pos_vm_strong.js §2 由「旧导图同源」改写为「新页面结构断言」（135 叶子/三分区/五档/三信号卡/12 推导角标/旧 DATA 零残留）。
+// [20261105c] 量价判定箱体震荡补全（用户指令：「图片的两个模块里面，在趋势运行和区间震荡的量价关系判定中都很多都少了放量震荡，缩量震荡和平量震荡的判定，推演图的文字描述和量价判定模块都补全……注意保持原来的界面风格」）：勘察确认——趋势运行侧（POS_VM_EXT.trendExtra 4 位置 + volume-map.html 趋势运行组）已含 3 震荡形态，缺失点在箱体分支；① lib/volumeEngine.js POS_VM_EXT 四位置（低位区间/高位区间/上涨中途/下跌途中）box 数组各插入 3 条（放量震荡/缩量震荡/平量震荡，位于「平量大跌」之后「放量滞涨」之前，14→17 形态；文案按各位置箱体语境撰写：低位=磨底蓄势、高位=派发破位风险、上涨中途=中继洗盘、下跌中途=弱势中继，与同位置 trendExtra 定性一致不与主矩阵 24 格冲突）；② volume-map.html 4 个箱体分支（底部/高位/上涨中继/下跌中继箱体）各同步插入同款 3 节点（与 lib 逐字同源，l: 格式，纯数据追加、布局引擎自适应，排版/样式零改动）；③ 前端 box 渲染自动跟随（app.js extRows = box.map 自动遍历，零改动）；④ 判定链零变化——box 为参考层/箱体分支归格数据源，新增条目不参与主矩阵 24 格、不影响既有优先级链。守卫 scripts/test_pos_volume_matrix.js box 断言 14→17 + 新增「box 含 3 震荡且位于滞涨滞跌之前」断言、scripts/test_pos_vm_strong.js 震荡整理箱体断言 14→17。
+// [20261105b] 大盘估值趋势：历史百分位口径 + 新增中证1000（用户指令：① 停止使用「近5年新高（百分位 99%）」，按照东方财富估值页样式使用历史百分位；② 按上证50 三个模板添加中证1000 的滚动PE 折线趋势图，对应排版的对称性和一致性）：① scripts/index_pe_trend.py——legu_pe 输出改为 {series, seriesAll}（乐咕 stock_index_pe_lg 本身就是全历史月度序列：上证50 2005 起 263 点、中证1000 2014-10 起 146 点，series=近5年截断供折线图，seriesAll=全量供历史百分位）；科创50 东财抓取起点改为 2019-01-01 全历史（分页停止条件同步改 all_start_str）并输出 seriesAll；主流程新增中证1000（乐咕同源同口径）；② lib/indexPETrend.js——names 加中证1000（四指数对称），新增 quantileAll=最新 PE 在全历史月度序列中的百分位（calcQuantile(latest.pe, seriesAll)，seriesAll 缺失时如实回退近5年 quantile），删除 isWindowHigh（20261105a「近5年新高」标注按用户指令停止），note 更新「历史百分位基于全部历史数据得出」；③ app.js——卡片徽标改为「历史百分位 X%」（quantileAll 优先，缺失回退近5年），中证1000 颜色类 ipe-ci1000；④ charts.js indexPETrend 四条折线（中证1000 柔和紫 #a48fd8，与蓝/金/粉红区分且合 softDark 主题）；⑤ style.css ipe-stats 网格 3 列→4 列（对称一致）+ .ipe-ci1000 左边框色；⑥ index.html 静态注释与 loading 文案更新为四大指数。守卫 scripts/test_index_pe_window_high.js 重写为 20261105b 口径（calcQuantile 数值 + quantileAll/中证1000 接线 + isWindowHigh 零残留 + 四列网格 + 版本戳）。
+// [20261105a] 大盘估值趋势「近5年新高」标注（用户截图报障：上证50 市盈率在近5年百分位 99%？——实测不是 bug：乐咕乐股月度序列 61 点（2021-11-30~2026-11-04），最新 PE 11.72 = 近5年窗口最高值（历史最高 5 档 11.72/11.63/11.62/11.54/11.53），60 个历史点全部低于当前，中位排名法 (60+0.5)/61 ≈ 99% 数学正确；东方财富日频交叉验证 2026-11-04 PE(TTM) 11.79 倍、3年百分位 89.68%~90.51% 同处历史高位区）。根因是展示歧义：calcQuantile 中位排名法对最高点永远给不出 100%（(n-0.5)/n ≈ 99%），用户把整齐极端值 99% 误读为计算错误。修复：① lib/indexPETrend.js result 加 isWindowHigh（series.every(d => d.pe <= latest.pe)）；② app.js renderIndexPeTrend 透传并在当前 PE 为窗口最高时显示「近5年新高（百分位 99%）」替代裸 99%，三指数同口径适用；③ calcQuantile 导出供守卫直测。（20261105b：isWindowHigh 与「近5年新高」文案已按用户后续指令停止使用，改用历史百分位口径——本条目保留作判读过程记录。）
+// [20261104m] 指标分析行内展开（用户澄清第二轮：点击「每股经营现金流」等下方指标的「分析 ▸」后页面会回弹到页面上方，因为展示的指标分析内容默认全部在页面上方——要求指标分析的内容和要看的Key财务指标在同一水平面上）：根因=基本面 tab 的 chart-grid 两栏（左卡关键财务指标列表 + 右卡指标分析）顶部对齐，左卡 14+ 行很长而右卡单卡内容固定在容器顶部，用户滚到左卡底部点 tab 时右卡不在视野内，l 版 showMetricAnalysis 的 scrollIntoView(block:center) 反而把页面拉回上方（回弹的直接原因）。根治=手风琴内联展开：① app.js 抽 renderMetricAnalysisCard(m) 单卡生成器（右卡 .ma-row 卡体与行内面板共用同一 HTML 结构，单一数据源；renderMetricAnalysis 复用）；② showMetricAnalysis(key, rowEl) 改造——右卡仍按需单卡同步显示（ma-hidden 切换保留），**删除 block:center 的右卡定位**，新增行内展开：移除旧 .ma-inline-panel（同时只展开一项）→ 克隆右卡对应单卡（cloneNode）→ insertAdjacentElement('afterend') 插入选中 .metric-row 正下方 → scrollIntoView(block:'nearest')（面板紧邻点击行，仅底部超出视口时轻微下滚，不回弹）→ ma-flash 高亮；key=null 收起（移除面板 + 右卡回空态）；③ tab 点击传 btn.closest('.metric-row') 行锚点；④ renderKeyMetrics 渲染后按 activeMetricKey 恢复行内展开（实时刷新/切股选择不丢），指标不存在时清空；⑤ style.css .ma-inline-panel 融入 .metrics-table 列表（上下边线、卡体透明）+ 复用 maFlash 动画。20261104k/l 成果不变：TTM 口径统一、归母净利润改名、右卡按需单卡。守卫 test_margin_caliber_rename.js §5 反转为行内展开断言（51 断言）。
+// [20261104l] 右卡「指标分析」恢复按需单卡展示（用户澄清指令：指标分析的展示内容应该要和左边对应的关键财务指标高度一致，其他指标分析默认隐藏——20261104k 把「高度一致」理解成了全量展示，改过头了）：public/js/app.js renderMetricAnalysis 恢复 (data, activeKey) 签名与非激活项 ma-hidden 隐藏 + ma-empty 空态引导（回到 20261013j 行为），showMetricAnalysis 恢复 toggle 单卡切换，同时保留 20261104k 的滚动定位 + ma-flash 高亮体验与「实时刷新/切股后用户选择不丢」；20261104k 的口径统一（TTM 同口径）与「归母净利润」改名成果不变。守卫 test_margin_caliber_rename.js §5 反转为单卡断言 + test_metric_analysis_nbv.js D5 恢复签名断言。
+// [20261104k] 威高血净页三合一改进（用户截图报障：毛利率的数据不一致 + 利润增长如果是归母净利润就改名为归母净利润 + 关键分析的展示内容应该要和左侧对应的指标高度一致，方便下方指标进行查看时不用上下滑动页面）：① 毛利率/净利率/ROE 口径统一——根因=右卡「指标分析」主值取 TTM（grossMarginTtm 37.78%）但同比/环比维度取报告期累计口径（XSMLL 41.47%），两套口径同屏被读成数据不一致；lib/stockData.js computeTtmMetrics 抽 marginsOf helper 复用同一滚动逻辑，新增 grossMarginTtmPrev/netMarginTtmPrev（去年同期 TTM）、grossMarginTtmPrevQ/netMarginTtmPrevQ/roeTtmPrevQ（上一报告期 TTM）并注入 result；lib/metricAnalysis.js 三指标同比/环比维度改 TTM 同口径优先（文案「本报告期 X%（去年同期TTM Y%，边际 Zpp；TTM 同口径）」/「近12个月环比 ±Zpp（X% vs 上一报告期TTM Y%；TTM 同口径）」，复刻 ROE roeTtmPrev 范式），TTM prev 不可得回退累计口径（原 yoyDim/qoqDim 文案），note 改为「与左卡数值完全一致」口径说明；② 「利润增长」→「归母净利润」全链路改名（用户指令）——app.js 左卡 tile + METRIC_HELP + keyOf、lib/analysis.js 7 处信号 label、lib/metricAnalysis.js buildGrowth、lib/consistencyAudit.js、public/js/export.js；显示名变更哈希不捕获 → LAYOUT_VERSION 升级 20261104k 强制重算当日判断；③ 右卡「指标分析」改与左卡 14 项全量一致展示（20261104l 已按用户澄清回退为按需单卡，本条目 ③ 仅作历史记录）——renderMetricAnalysis 去按需单卡 ma-hidden 模式（所有指标卡片始终渲染、删 ma-empty 空态），左卡「分析」tab 点击改为 showMetricAnalysis 滚动定位（scrollIntoView center）+ ma-flash 高亮对应卡片，再次点击仅取消 tab 激活态；浏览下方指标时右卡内容同屏可见，无需上下滑动页面。守卫 scripts/test_margin_caliber_rename.js（computeTtmMetrics 数值复算/端到端 TTM 同口径文案/哨兵回退/改名全链路零残留/LAYOUT_VERSION/展示模式切片断言，46 断言）。
+// [20261104j] 基金行业配置名单滚动稳定修复（用户截图报障：名单向下浏览的时候会自动回弹到名单前面）：根因=东财 2026Q3 分批披露期间（badge「分批更新中」，q.published && !q.done）homeRank.js 每 3 秒轮询 → render() 无条件 body.innerHTML 全量重建整卡（状态条+KPI+20 行表格）→ 浏览器滚动锚定（scroll anchoring）的 anchor 节点落在被销毁子树内失效 → .main-content 滚动位置回弹到名单前面；且轮询中大多数轮次数据根本没变，重建纯属打断浏览。两道保险修复（轮询频率/数据链路零变化）：① 数据签名比对 dataSig——覆盖采集进度/季度状态/coverage/行业排名全部显示字段的 JSON 签名，签名与上轮一致 → render 直接 return（DOM 与滚动位置原样保留；头部「更新 HH:MM」时间戳在签名判断之前照常刷新）；② 滚动锚定恢复——签名变化必须重建时，重建前记录 .fmr-table-wrap（退化 .fmr-quarter）相对视口 top，重建后把差值校正回 .main-content.scrollTop（滚动容器=main-content，20261104g 口径；scrollingElement 兜底），内容钉在视口原位；手动「刷新」按钮强制 lastSig=null 重建一次保留视觉反馈。守卫 scripts/test_home_rank_scroll.js（签名覆盖面/跳过重建/锚定差值校正/滚动容器口径/updEl 时序/refresh 强制重建/dataSig 纯函数行为/版本戳，约 20 断言）。
+// [20261104i] 威高血净（603014）专属估值模型（用户指令：威高血净动态估值 AI 指令集（整合版）九指令落地为第 9 只专属估值模型）：① data/valuation/603014.json 配置锁死全部锚点——并表状态 C（2026-09 交割，仅 9-12 月法定合并、2027=F）、三口径桥接表（standalone 26.96/3.37 + 普瑞 16.72/5.27 → 备考 43.68/8.64 → 法定合并估算 28.8/3.96，Q3 单季同构，普瑞月均 1.86/0.59）、新鲜度 A/B/C 分级（A 权重 1.0 / B 增长率×0.85 收缩 / C 不进基准+行业中值保守替代）、业绩承诺 6.40/7.20/7.84 + 9M 实际 5.27、对价 85.11 vs 净资产 26.95 → 商誉 58.16、DCF 参数（rf 1.65 快照[1.62~1.69]/血净 WACC 7.05%/药包材 −40bp→6.65%/g 血净 2.0% 药包 2.5%）、可比 PE 快照 2026-11-04（血净：健帆 22.91/三鑫 17.05/山外山 23.17，宝莱特负值+天益 333x 失真剔除；药包材：山东药玻 18.49 主锚，正川 262.71/力诺 209.62 失真仅列示）；② lib/valuation/weigao603014.js 确定性引擎（零 LLM）——九指令顺序执行：并表状态识别→三口径桥接→新鲜度分级→核心矩阵（[报告期|新鲜度|口径|质量] 四联标注）→承诺追踪（完成率 82.3%、Q4 门槛代码计算 1.13 亿=6.40−5.27 并标注指令集原文 0.13 系笔误、压线情景 2027 普瑞增速×0.90）→DCF 分部三档（估值基准日 2026-12-31：悲观 23.81/基准 33.83/乐观 42.43 元；血净分部 standalone 2025 实际 4.823×0.9 零增长、普瑞承诺下限 2029-31 持平不外推；C 级权重 10%≤20%）→协同看涨期权独立列示（概率 35%、ΔNP 0.8~1.2 亿 C 级、+0.66~0.99 元）→相对估值加权交叉（血净 39%/药包 61% 权重→19.49x→33.76 元，与 DCF 偏离 +0.21% 双轨一致）→PE 归因（静态 48.78x vs 动态 21.03x = 并表基数效应+股本摊薄 4.18→6.95；动态 E=备考 9M 8.64+standalone Q4 1.415+普瑞 Q4 1.13=11.185 标注备考口径非法定）→对价检验（14.16x vs 山东药玻 18.49x → 轻微增厚，商誉 58.16 减值敞口并列）→指令九 11 节全量输出（缺项视为运行无效）；硬约束全落地：每次运行声明「DCF 基期采用口径①」、备考 8.64 中普瑞 5.27 仅 0.59 入法定合并强制句、并表首年 1-8 月普瑞不入 FCFF/禁年化、承诺期后不外推永续（2029-31 hold）、PE/EPS 全用摊薄 6.95 亿股；③ 三处接线——lib/ai/valuation.js hasDedicatedValuation 加 weigao603014、lib/deep/conclusion.js sym===603014 分支（methods 五路：DCF分部双轨主锚/分部相对交叉/协同期权独立/对价检验独立/承诺追踪+商誉敏感性）、public/js/app.js j.dedicated&&j.weigao 渲染卡（vd-card 骨架 〇并表状态~十一当前水位 十二段）；④ 守卫 scripts/test_valuation_weigao.js（49 断言：闸门/桥接锚点闭环/承诺门槛代码计算/DCF 三档与 dcfPart 手算一致/双轨偏离<5%/强制声明句/EPS 增厚≠价值创造警示/接线/版本戳）；⑤ VALUATION_MODEL_HASH 目录自动扫描已覆盖新模型（lib/valuation/*.js readdirSync），valuationModelHash 变化触发 deep 缓存失效。
+// [20261104h] 投资心得图片附件 + 标签分类展示管理（用户指令：① 写心得时可添加图片等附件；② 心得记录按标签分类展示和管理；③ 心得卡片右上角不再显示「💡 投资心得」改为记录对应的标签）：① 服务端——multer 上传 POST /api/notes/attachments（字段 file，仅图片 JPEG/PNG/GIF/WebP，上限 10MB，落盘 data/note-attachments/<yyyyMMdd>/<uuid><ext>，中文文件名 latin1 乱码修复与 docsRoutes 同款）返回 {url,name,mime,size}；DELETE /api/notes/attachment?url=（best effort，前缀+路径穿越双校验）；静态服务 app.use('/note-attachments', express.static(data/note-attachments))（uuid 文件名不可变 7d 缓存）；② 前端 notes.js——add() 白名单透传 attachments 数组（旧数据无字段渲染侧 || [] 兜底）；写心得表单新增附件区（multiple 选图即传 + 预览网格 + 移除即删文件）；renderNoteCard 右上角 global 分支改为渲染标签徽标 #标签（可点击→按标签筛选，无标签如实不显示），market/股票分支不变（隔离）；卡片正文下方附件缩略图网格（点击新标签页看原图）；renderScopePage 投资心得页注入「标签分类」筛选条（全部/各标签×计数/未分类 chips + ✎ 重命名 × 删除全局管理，save() 落盘）；删除笔记 best effort 清理附件文件；③ style.css——note-tag-badge/note-attach-grid/form-attach-*/tag-filter-bar 系列（softDark 琥珀 hover 与全站一致）；纯展示与管理层新增，行情/判定/数据链路零变化；大盘记录页检索面板与个股亮点/雷点零变化。
+// [20261104g] 「回到顶部」点击无反应修复（用户报障：tab 点击后没有反应）：根因=style.css 105 行 html,body{height:100%;overflow:hidden}——window 从不滚动，页面真正的内容滚动容器是 <main class="main-content">（overflow-y:auto），20261104f 绑定的 window.scrollTo({top:0}) 作用于从不滚动的 window 故无任何效果。修复：app.js 绑定改为滚动 .main-content（mainEl.scrollTo({top:0,behavior:'smooth'})），window.scrollTo 仅作容器缺失时兜底；纯前端滚动目标修复，按钮/样式/数据链路零变化。
+// [20261104f] 个股 banner 右侧「回到顶部」按钮（用户指令：banner 里右侧添加一个 tab，点击后回到页面顶端）：① index.html 个股标题卡 .stock-header 内 .stock-info 之后新增 .stock-actions 容器 + #backToTopBtn 按钮（「回到顶部 ↑」，banner 本身 sticky 置顶常驻、按钮随时可见）；② style.css .back-top-btn 样式（softDark 主题、hover 琥珀描边与全站小按钮一致、:active 轻按压反馈，复用既有 .stock-actions 容器样式）；③ app.js 初始化绑定区一次性绑定 click → window.scrollTo({top:0, behavior:'smooth'}) 平滑滚动回页面顶端；纯前端展示层新增，数据链路与判定零变化。
+// [20261104e] 量价判定位置阶梯——趋势段优先 + 拉长参考时间（用户报障：量能涨跌关系分析推演图上只有四种股价定位（低位区/高位区/上涨途中/下跌途中），原则上不应有超出这四种的定位；无法判定时先参考公司短期股价是否呈趋势运行——新洋丰 000902 自 7 月约 11 元涨至今接近 15 元是趋势运行不是震荡；短期区间震荡则拉长参考时间再定位——海天味业一年内横盘、拉长 3-4 年是长期下跌趋势）：① 根因真机复现——_detectPosition 只看 12 个月分位 + MA20/MA60，新洋丰 MA 粘合（13.78/13.80）+ 分位被年初高点稀释到 41.5% → 直接兜底「震荡整理」，与第二步运行状态「趋势运行·上涨趋势」同屏打架（第一步/第二步互相矛盾的「定位混乱」）；② 新增 _trendSegment（确定性规则零 LLM）——近 120 个交易日窗口内找最近一段显著趋势段：自窗口最低收盘涨幅 ≥20%（TREND_SEG_MOVE）、锚点距今 ≥10 根（TREND_SEG_MIN_AGE 持续期）、期间最大回撤 ≤ 顺向幅度 ×60%（TREND_SEG_DD_RATIO 结构未破坏），下跌段对称（自最高收盘跌幅 ≥20%、期间反弹 ≤ 跌幅 ×60%），两段同存取锚点更近者（最近一段行情主导当前状态）；③ _detectPosition 位置阶梯——分位两端（<30% 低位 / >70% 高位）与 MA 结构判定优先级保持在前（隔离不变），原「震荡整理」兜底前插入：趋势段方向 → 上涨/下跌途中（新洋丰实测：自 2026-06-30 低点 11.56 涨 +26.1%、回撤 12.1% → 上涨途中）；无趋势段 → 拉长参考时间按长期（年线 MA250）定论定位（海天实测：短期无趋势段+年线下行 → 下跌途中）；两者皆无（年线走平/数据不足）才保留「震荡整理」诚实兜底，不臆造归入四类；④ position.basis 追加趋势段/拉长定位的人话依据（窗口锚点日期、幅度、回撤、结构），输出体透出 trendSegment 字段供审计；矩阵键集（四类+震荡整理）不变、下游 capitalFlow/sameDayJudgment 读不变 label 无需联动；横盘箱体判定分支（band20≤15% 箱体优先）零变化——位置=下跌途中时海天日常仍由箱体分支给出当日判定。守卫 scripts/test_position_trend_segment.js（新洋丰/海天/下跌段合成夹具 + 阶梯断言 + 源码接线守卫）。
+const APP_VERSION = '20261110d'; // [20261110c] 每日复盘微调：LLM 提示词加 ### 标题骨架 + 两张强制表格；前端旧 sections 兼容还原；历史重跑 force 必重生成；日历选中即加载（去重按日期查看按钮）：① 废弃并删除 lib/reviewOutput.js（SECTION_DEFS 固定段落 / 文本拼装 / plainify 替换 / qualityOf 硬门禁全部下线）；② 新建 lib/reviewContext.js 把采集数据与确定性数值组装成不含任何文案的干净 JSON Context、prompts/daily-review-system.md 复盘 System Prompt、lib/reviewLlm.js 复用项目统一 LLM 通道 lib/ai/llm.js（本机 data/ai_config.json 已配置密钥，无需用户配置）；③ reviewService.js 落盘整篇 Markdown，取消因数据重复 / MISSING 拒绝发布的硬质检，LLM 失败降级为数据快照照常发布，龙虎榜补录改为把新数据并入 Context 重新生成整篇报告；④ 前端 dailyReview.js 直接渲染 Markdown，不再套卡片组件，本地随包 public/js/markdown.js 渲染器（零 CDN 依赖）；⑤ SCHEMA_VERSION 按铁律升 review-llm-20261110b，APP_VERSION 与全部 HTML ?v= 升 20261110b。 // [20261110a] 每日复盘「保留引擎，只换输出」全量替换（用户 2026-11-10 长文本规格 + @skill:proactive-agent）：① 新建 lib/reviewOutput.js 作为 11 段输出层唯一出口，reviewEngines.js / topicEngines.js 确定性引擎与采集层零改动；旧 14 段 → 11 段（删除 opportunities / nextChecklist / quality 三个展示段，质检转 version.quality 后台硬门禁），SCHEMA_VERSION 按铁律升 review-20261108d → review-20261110a；② 禁止信息重复由构建期 own() 登记器强制（同一关键数据标签跨段归属即质检失败），引擎 trends.*.note 的「有效对照点/前后半段均值/阈值±10%」在输出层按原串精确替换为「较前3日放大/萎缩」「对比昨日升温/降温」，并列入 JARGON_BAN 硬扫描；四段式只保留在 4 个【核心结论】段 + 【核心观察池】，其余段落 quads 必须为空；③ 龙虎榜异步补录状态机 formal → complete：15:35 第八段标「待晚间补录」、20:30 定时槽 / task_type=dragon_tiger_update / 次日 15:35 兜底触发 backfillDragonTiger()，lib/boardReviewData.js 新增 getLhbOnly()（不写缓存）、scripts/board_review_data.py 新增 --lhb-only 并把空结果文案从误导性的「非交易日或接口不可用，本项标注缺失」改为「盘后数据尚未发布，待晚间补录」，修复 ERR-20261110-001 的 T+1 仍显缺失；补录只替换第八段龙虎榜并在第十段体现联动，其余数值零重算，同一日期 complete 幂等唯一、不降级；④ 新增 POST /api/review/backfill，POST /api/review/run 支持 task_type；⑤ 前端 public/js/dailyReview.js 同步 11 段文案 / formal-complete 徽标 / topicBrief 与 focusPool 两套新表列；APP_VERSION + HTML ?v= 升 20261110a 做缓存破坏。 // [20261109e] 颜色铁律细分：验证/核对类字段（四段式次日验证条件/判断不成立信号、风险次日观察/风险解除信号、题材明日验证逻辑、checklist 验证条件/核对项/今日基准）改默认字体，不着方向色；结论段（事实/判断/评级依据/核心催化/风险事实）保留红绿。 // [20261109c] 量能结论同屏互斥第 3 次复发根修（威高血净 603014，2026-11-09 截图）：① 新建 lib/volumeCaliber.js 作为全工作台「÷20 日均量」量能判定唯一真值源（放量 >1.3 / 平量 0.8~1.3 / 缩量 <0.8）；② lib/volumeEngine.js 全部 7 处 AMP_CONFIRM=1.5 与 SHRINK_CONFIRM=0.7 比较点接入真值源，异常特例层规则3 不再用「当日量 > 前高量能 + ×1.5」第二套判据；③ 规则3 前高量能基准由「全窗口全局最高价那天」改为「同价位带 + 时间最近的有效局部前高」，剔除上市初期/除权断点/极端异常量，且降级为展示参照、不参与判定（用户裁决「同价位带最近前高」）；④ 规则名「缩量假突破」→「假突破量能不确认」及风险标签同步，消除平量/放量日的措辞互斥；⑤ lib/capitalFlow.js 的 ÷20 回退分档与突破量比阈值同步接入真值源；显式标注分母的 ÷前5日均量原始指标（顶部量比 / 每日量比趋势图 / 箱体放量穿越线）按既有裁决保留独立口径并更正误导注释；⑥ app.js 口径说明补全覆盖范围（不再只声明三处）；引擎 schema → volume-engine-20261109c、LAYOUT_VERSION → 20261109c、全部 HTML ?v= → 20261109c。新增守卫 scripts/test_volume_single_source.js。 // [20261109b] 全工作台颜色语义统一：只有「利好/正面」用红、只有「利空/负面」用绿，中性灰、风险/警告/数据缺口琥珀橙；⚠️ 数值符号≠方向。CSS 层迁移 100+ 规则（status/good-bad/PASS-REJECT/低估高估/风险提示/排名热度/宏观趋势/两融判定对错反转），JS 层把 app.js::_dirColorize 与 dailyReview.js::colorize 从「机械按 +N/-N 染红绿」改为「只按显式语义词着色 + 调用方 tone/numeric 显式契约」，宏观趋势徽标、量能档位、RSI 阈值、两融存量序列、股价叠加线、ETF 持仓/现金比例、产业链位置、主导力量等中性内容全部退出方向色；估值警告内联红字/绿字改琥珀。新增守卫 scripts/test_color_semantics.js（147 断言：CSS 红绿用法哈希基线 + 语义映射 + JS 接线 + vm 真实渲染）。缓存破坏：index.html / etf-flow.html / daily-review.html 的本轮变更资源 ?v= 同步升级。 // [20261109a] 两项用户截图需求同源落地：① 宽基 ETF「当月逐日明细」把最后一份可计算但未定稿的快照作为一条多日合计行纳入表格与当月合计（带「多日合计（A→B）· 含未定稿读数」标签，累计台账仍只吃定稿值），修 11-05/11-06 数据凭空消失；② 首页情绪模型「融资余额」因子卡改为「两融余额」卡内双栏，新增融券余额（增加=短期利空 / 减少=短期利好），与融资各占本卡 50% 权重；数据源复用金十同一响应的「融券余额」列（精确列名匹配，防误取「融资融券余额」），融资字段口径零改动；模型以 subScore 标记让该卡按 0.5 步长方向强度计入净权重与总分，其余 9 因子、因子数与权重总和 100 全部不变。守卫 test_etf_monthly_provisional.js(32) / test_emotion_margin_dual.js(61) 全绿，既有 test_market_emotion.js(64) 同步适配。缓存破坏：index.html 与 etf-flow.html 的 4 处 ?v= 同步升级（etfFlowPage.js 不在服务端强制重定向白名单，必须手动改）。 // [20261108d] 每日复盘升级为 14 段固定结构：新增「每日热点题材与归因卡片」（消息级别/题材阶段 S-A-B-C/资金投票质量/技术面×消息面四象限），新建 lib/topicEngines.js 纯函数引擎；机会引擎扩至 C1-C8 / V1-V8 / D1-D4 并接入四象限中和；board_review_data.py 新增多日行业涨停序列、首次封板时间分桶、中军大市值代理、跌停行业分布；SCHEMA_VERSION 升 review-20261108d；质检 13 项。缓存破坏同步升级。 // [20261108c] 每日复盘升级为 13 段固定结构 + 四段式结论 + 机会/风险识别引擎：新建 lib/reviewEngines.js（O1-O5 分类 / L1-L5 漏斗 / C1-C6 确认 / V1-V6 否决 / A-D 评级 / R-M·R-S·R-I 风险，全部代码确定性计算）；扩展 board_review_data.py 取前 4 交易日同口径对照、昨日涨停今日红盘率与大面股、按所属行业聚合板块层次、活跃度样本；reviewService 结构大改故 SCHEMA_VERSION 升 review-20261108a，新增完整率<90% 有限分析版与最需补充 3 项、禁用模糊词、11 项质检；前端渲染四段式卡片/两张表/风险徽标并兼容旧 12 段历史文档。缓存破坏同步升级。 // [20261108b] 准确率标签布局优化：右上角统计由双行大卡改为单行胶囊、与标题同一基线，完整明细收进悬停提示；三类徽标尺寸统一、未填依据降级为纯文字。缓存破坏版本戳同步升级。 // [20261106p] 技术面点位权威源统一·规则3收口（用户截图指令：54.59 来源诊断 + 裁决方案A）：① 量能引擎规则3「缩量假突破」攻击目标由自算候选（阶段高点+震荡平台上沿）改为消费②卡「短期动向预判」有效阻力区间（_keyLevels hints 加 fromHints 标记，触及线=区间下沿；与关键支撑/压力卡、规则4放量破位、该放量未放量、有效突破/破位、突破后回踩全链路同源——技术面模块成为唯一权威点位来源）；② ②卡区间不可得（快照缺失）→ 规则3诚实停判不臆断（dataGaps 标注，不回退自算）；「前高对应量能」保留（量能概念非点位概念，取攻击日前全局最高价形成日量能）；③ 箱体量化 note 加语义标注「横盘箱体量化（运行状态判定条件），非②卡支撑/阻力区间，两者口径不同、数值不应相等」；④ 引擎 schema 升 volume-engine-20261106p（sameDayJudgment 不消费规则3，LAYOUT_VERSION 保持 20261106o）；⑤ 守卫 test_volume_engine 306 断言（规则3命中/未命中 fixture 注入②卡区间 + 新增区间不可得停判用例）。诊断结论：截图 21.85/26.02 为陈旧异常态（实测②卡区间 46~62、3005 实时返回支撑 53.22/压力 56.78 健康）；54.59=规则3自算候选（本轮已收口）；58.01/50.11=箱体量化（横盘区间语义，已标注）。前版 [20261106o]：量价关系涨跌判定与 135 格走势档同源（用户截图指令：唯一结论行「缩量上涨」 vs 135 格第三步「缩量+震荡」互斥——除量能外，股价定位/运行状态/涨跌判定也必须与 135 格一致）：① capitalFlow.computeVolumeIndicators 涨跌判定由旧 ±0.05% 符号二分改为消费引擎 posJudgment.price.walk（135 格 _walkTier5 五档：大涨≥5 / 上涨≥1.2 / 震荡±1.2 / 下跌 / 大跌≤-5），analyzeCapitalFlow 传入 posJudgment + _walkTier5（引擎失败降级用同一函数本地复算，涨跌幅不可得回退旧二分诚实降级）；② 震荡档新增 5 种中性信号「巨量/放量/平量/缩量/地量震荡」（信号名=量能档+震荡，与第三步显示一致），desc 直接引用 135 格 cell.conclusion 归格文本（位置×运行状态×量能×涨跌幅四维全同源）；③ VP_POS_BASE 加 5 个震荡 0 分 key（vpPositionSignal/sameDayJudgment 量价配合自动继承中性），前端 capitalCharts signalClass/VP_TONE/横幅计票震荡类=中性；④ bigUp/bigDown 文案分档保留 3%（20260921c 圣湘生物用户裁决 ≥3% 平量涨=量价背离中性「大涨平量」），不与 135 格大涨档 5% 对齐——两者语义不同（文案分级线 vs 走势档归格线），涨跌主轴已由 walkT5 同源；⑤ sameDayJudgment LAYOUT_VERSION 升 20261106o（量价配合子信号输入 signal 值域与分值变化，+0.28% 场景由「缩量上涨」-0.25 改判「缩量震荡」0）。前版 20261106n 说明：量能判定引擎级统一收口（用户三截图指令 + 裁决「60日量能比仅用于放量/缩量判定 → 彻底删除，文字分析统一 20 日量能比」）：① 审计确认 60 日口径（avg60/confirm/confirmDesc）全部消费点均为放量/缩量判定性质 → 引擎级整体退役：预计算删 avg60/confirm 字段、_confirmDesc 删除、volumeTier 删 confirm/confirmDesc 与跨基准分歧披露、capitalFlow unified 对象删 confirm 字段（API 输出结构变化，schema 升 volume-engine-20261106n）；② 多日规则基准统一 avg60 → avg20（阈值 ×1.5/×0.7 不变）：生死位规则1连续3日放量/规则3缩量假突破/规则4放量破位/口诀4连续低成交/持续性检查/单日脉冲/底部相位地量线/该放量未放量确认级阈值；③ 修复 20261106j 漏改点（LRN-20261106-001 同类复发）：_comboEngine amplified/shrunk 由 ratio5>1.2/<0.8 统一到 ratio20>1.3/<0.8——消除「资金行为判量平价升 vs 量价关系判放量上涨」同屏互斥（士兰微截图根因）；「该放量未放量」判定门由 ÷5 档位（非大量/天量即命中）统一到 ÷20 三态（放量>1.3 即量能跟上不命中）；价格认可度检查、四维度量能状态文本、riskTag 持续缩量 全部改 ÷20 基准；④ capitalFlow 量价关系描述删 60日均量口径片段；前端口径说明同步（60 日口径退役声明）；⑤ 删除 20261106m「全模块综合总结（代码聚合）」行（用户实测反馈输出不理想：票型罗列冗长、与结论横幅信息重复、中性信息计票）；sameDayJudgment 不消费 combo/confirm（LAYOUT_VERSION 不升）。前版 20261106m 说明：「资金量能综合判断」新增「全模块综合总结（代码聚合）」通栏行（用户裁决「升级为真正的综合总结」）：在 capitalCharts.buildConclusionParts 内对页面上全部模块做确定性代码聚合——量价关系/短期资金/中期资金/OBV趋势/VR信号/MFI信号/融资融券 七个模块行 tone 票型 + 四维度资金行为/筹码转移 + 生死位特殊提醒（volumeEngine.rules 命中项）+ 风险标签，逐模块点名式输出并接多空打分统一结论（与结论横幅同口径）；确定性逻辑全部由代码执行、不引入 LLM 依赖；纯前端展示层聚合，API 输出格式零变化，引擎 schema 与 LAYOUT_VERSION 不升。前版 20261106l 说明：「5日量能比」卡退役（用户指令「检查有没有模块在使用5日量能比…看看能不能把这卡片也删除」）：侦察确认唯一活消费=卡自身 DOM 与顶部 banner tooltip 文案，引擎 volumeState.ratio5/level 字段全保留（信号叠加层、生死位规则、四维度量能状态等约 40 处内部消费不受影响）；量价统计行四联改三联 ve-cols-3（vpRatioTile → 20日涨跌日 → 20日净涨跌），降级分支删行只留口径说明；÷前5日均量口径由顶部 banner「量比」（腾讯行情 quote.volumeRatio 直采）继续展示；前端零数据改动、API 输出格式不变。前版 20261106k 说明：「60日量能确认」卡退役（量价统计行五联改四联 ve-cols-4，60 日口径转引擎内部判据）+ 生死位五规则融合进量价判定模块（规则1-4 低位吸筹/高位派发/缩量假突破/放量破位 按天量/地量同款特殊提醒样式并入 135 格综合判定卡、规则5 分时无量拉升并入信号叠加层；生死位独立卡删除；引擎 rules 输出与评分链零改动，API 输出格式不变）。前版 20261106j 说明：量价判定模块引擎级彻底合并：四张重复归集卡（7.4 位置量价 / 7.5 量比口诀 / 11.3 常见矛盾信号 / 预期量能规则）从展示层与 API 响应体移除，判定逻辑并入 135 格推演图与引擎评分/风险标签；统一量能分母到 ÷20 日均量（与 135 格 volCell 归格同源，消除威高血净 ÷5日平量 vs ÷20日放量 的跨屏互斥），生死位五规则卡保留。前版 20261106i 说明：量价关系判定结论统一（方案 C），详见独立注释条目 [20261106i]。前版 20261106g 说明：量价判定卡展示风格对称化，详见独立注释条目 [20261106g]。前版 20261106f 说明：「20日涨跌日量能比」卡片新增数值解读下拉面板 + 今日量价结构比对，详见独立注释条目 [20261106f]。前版 20261106e 说明：恢复「60日量能确认」卡（用户裁决「换回60日卡」），详见独立注释条目 [20261106e]。前版 20261106d 说明：资金/量能卡与 banner 五项界面改动（详见独立注释条目 [20261106d]）。前版 20261106c 说明：量能卡口径可见化 + 第三步全日口径高亮 + 卡片顺序（详见独立注释条目 [20261106c]）。前版 20261106b 说明：量比口径文案纠偏（详见独立注释条目 [20261106b]）。前版 20261106a 说明： 旧量价位置体系彻底退役 + 位置标签统一三分区（详见独立注释条目 [20261106a]）。前版 20261105g 说明： 判定卡 UI 重排 + 锚点二/三正式接线（详见独立注释条目 [20261105g]）。前版 20261105f 说明： 量价判定引擎定版改造——主判链替换为合并版 v2（详见独立注释条目 [20261105f]）。前版 20261105e 说明：推演图页缩放/平移恢复 + 量能档位判定标准入册（详见独立注释条目 [20261105e]）。前版 20261105d 说明： 推演图页缩放/平移恢复 + 量能档位判定标准入册（详见独立注释条目 [20261105e]）。前版 20261105d 说明：推演图页面替换为合并版 v2 + 位置/状态判定标准入册（详见独立注释条目 [20261105d]）。前版 20261105c 说明：量价判定箱体震荡补全（详见独立注释条目 [20261105c]）。前版 20261105a 说明：大盘估值趋势「近5年新高」标注（已按用户指令于 20261105b 停用，详见独立注释条目 [20261105a]）。前版 20261104m 说明：指标分析行内展开（详见独立注释条目 [20261104m]）。前版 20261104l 说明：右卡「指标分析」恢复按需单卡展示（详见独立注释条目 [20261104l]）。前版 20261104k 说明：威高血净页三合一改进（详见独立注释条目 [20261104k]）。前版 20261104j 说明：基金行业配置名单滚动稳定修复（详见独立注释条目 [20261104j]）。前版 20261104i 说明：威高血净（603014）专属估值模型（详见独立注释条目 [20261104i]）。前版 20261104h 说明：投资心得图片附件 + 标签分类展示管理（详见独立注释条目 [20261104h]）。前版 20261104g 说明：「回到顶部」点击无反应修复（详见独立注释条目 [20261104g]）。前版 20261104f 说明： 「回到顶部」点击无反应修复（详见独立注释条目 [20261104g]）。前版 20261104f 说明： 个股 banner 右侧「回到顶部」按钮（详见独立注释条目 [20261104f]）。前版 20261104e 说明： 量价判定位置阶梯——趋势段优先 + 拉长参考时间（详见独立注释条目 [20261104e]）。前版 20261104d 说明： 融资融券 tile 文案歧义修复（用户截图报障：「融资余额15.7亿，净买入0.27亿（占流通市值4.46%）」括号跟在净买入后，读成净买入占流通市值 4.46%，实际是融资余额的占比）：capitalCharts.js 融资融券 tile 拼接顺序调整——ratioStr（余额占流通市值比）紧贴融资余额之后、netBuyStr 后移：融资余额15.7亿（占流通市值4.46%），净买入0.27亿，融资增加；纯前端文案顺序修复，判定语义零变化；lib/capitalFlow.js 判定依据文案不受影响（其括号本就指变化额占比，语义正确）。前版 20261102k 说明：量价判定震荡整理位置空表修复（用户报障：海天味业量价判定下表无内容——位置「震荡整理」不在导图四类位置内，cells=0 且 extRef=null，表体本就为空；app.js 改为表体为空时整表隐藏并换一句诚实说明，判定语义零变化；守卫 §6 新增 1 断言）。前版 20261102j 说明：量价判定参考表按思维导图结构重组（用户指令：融合后量价形态与趋势运行/区间震荡的判定重复，以思维导图的展示方案为主）：app.js 表格重组为「趋势运行」组 11 形态按导图同序交错（6 主格 + 震荡/滞涨/滞跌合并一张列表，不再两段分列）+「区间横盘震荡（箱体）」组 8 形态；表下注同步更新；守卫 test_pos_volume_matrix §6 新增 3 断言。判定优先级链零变化（20261102f）。前版 20261102i 说明：量价判定参考表补回震荡/箱体形态（用户指令：思维导图各种量能情况下的股价震荡分析要在判定卡可见）：volumeEngine.js _posVolumeMatrix 返回新增 extRef（当前位置 5 种趋势震荡形态 + 8 种箱体形态，同源 POS_VM_EXT，仅参考不参与判定）；app.js 参考表灰色追加 ve-posj-extrow 行（未触发仅参考、extJudgment 命中时高亮）；style.css .ve-posj-extgroup/.ve-posj-extrow；守卫 test_pos_volume_matrix §6 + §8 新增断言。前版 20261102h 说明：量价判定第二步趋势方向（用户指令：趋势运行时附带说明是上涨趋势还是下跌趋势）：volumeEngine.js _sidewaysAndPlatform 新增返回 trend20（近 20 日窗口首尾收盘净涨跌幅），_posVolumeMatrix mode 新增 trend/trendPct 字段（正→上涨趋势 / 负→下跌趋势 / 0 或数据不足如实标注方向中性·未知），note 与 summary 附带方向；app.js 第二步 combo 显示「趋势运行 · 上涨趋势/下跌趋势」；守卫 test_pos_volume_matrix §6 + §7 新增 7 断言。前版 20261102g 说明：思维导图位置判定后增加「趋势运行 / 区间震荡」判定步骤，原第二步顺延为第三步，另增异常判定——量价背离 / 极端量能）：volumeEngine.js _posVolumeMatrix 新增 mode（第二步运行状态，_sidewaysAndPlatform 返回 band20 带宽值）与 anomaly（异常判定状态，盘中停判/一般背离如实标注）字段；app.js 主判卡改为 第一步位置 → 第二步运行状态 → 第三步量能×涨跌幅 → 异常判定块 → 主判横幅（每日唯一生效判定不变，分支标签映射新结构）；style.css ve-posj-anomaly 系列；守卫 test_pos_volume_matrix §6 字面量同步 + 新增 §7。前版 20261102f 说明： // [20261102f]（前版 20261102e 说明： 量能涨跌关系页放宽（用户指令：尽可能展示整个思维导图，模块原仅占页宽约 1/3，仅展示层）：① volume-map.html 页宽 max-width 1400→1920px（大屏可用宽度 +37%，1400-1920 中间屏同步受益），页内边距 20/24→16/20 收紧；② 画布视口高度扣减 210→184px、min-height 520→600px；③ fit() 留白 32→20px，初始适应全图缩放更高；④ 缩放上限仍 1（100% 字号清晰不放大），交互（滚轮缩放/拖拽/折叠）零变化。 [20261102c] 量能卡 tile 位置互换（用户指令：布局间隔已认可，「量能档位」「60日量能确认」与「资金行为」卡位置互换，仅展示层）：① 「资金行为」定性长文本上移至指标行首位（ve-cols-10 span4），原指标行变「资金行为+筹码转移+关键支撑+关键压力」4+2+2+2 满行；② 量能档位/60日量能确认下移至量价统计行，与 20日涨跌日/量价比/净涨跌 组成五联等宽（ve-cols-5）；③ 修复隐患：ve-cols-10 内 cap-metric 此前无 span 规则默认占 1 列（宽屏 4+1+1+1=7 列右侧 3 列空白）→ 显式 span 2 满行，窄屏 900/560px 重置 auto 防隐式列；④ 量价数据缺失降级分支保留量能档位/60日量能确认两枚 tile（volTierTile/confirmTile 提为公共变量，不随 vp 缺失静默消失）。 [20261102b] 「资金量能综合判断」区对称性重排（用户截图指令「展示卡片杂乱无章、毫无设计美感和对称性」，仅展示层，数据口径零变化）：① 原固定 3 列 .ve-conclusion-grid 在条目数非 3 的倍数时右侧留大块空白（融资融券独占 1/3 行）且列缝与 5/10 列基准网格断裂 → 改 .ve-flow-row 等分满行（2~6 个动态条目 flex 等分等高，满行对称）；② 量价关系长文本独立通栏 .ve-cc-wide（同瓦片 surface）；③ 阅读顺序理顺：区块标题 → 结论横幅 → 通栏摘要 → 等分明细行；④ 窄屏降级 ≤900px 两枚一行 / ≤560px 单列；⑤ 图标/文字层级与 DESIGN.md 红涨绿跌+金强调纪律不变。 [20261102a] 增长指标优先最新单季口径（用户指令「这些指标优先使用最新单季度的数值」，数据口径变更，前后端联动）：① 东财主要指标 ZYZBAjaxNew 每行自带单季同比 DJD_TOI_YOY/DJD_DPNP_YOY/DJD_DEDUCTDPNP_YOY，营收/归母/扣非三项 yoy 取数统一改「单季优先、缺单季回退累计」（stockData/fundamentalScore/analysis/metricAnalysis 四处同步），成长性评分/利好利空信号/历史百分位序列全链同口径联动；② 营运利润单季化——lrbAjaxNew 扩 4 期差分（最新期+去年同期+最新上期+去年上期，Q1 单季=累计免差分），新增 sqCur/sqPrev/sqYoyPct，单季不可得时如实回退累计并标注；③ 左卡指标行描述/去年同期文案/周期 chip 加「单季优先」标注；④ METRIC_HELP 帮助文案同步。 [20261101r] 量能分析卡栅格统一重排版（用户截图指令「卡片展示过度密集、布局缺乏美感与协调、与工作台不一致」，仅展示层，后端零变化）：① 三套栅格统一——指标行/量价行改 .ve-tile-row 共享 10 列基准网格（量价行「资金行为」占4列、数值卡各2列，列缝与指标行 5×2 列逐列对齐），结论网格 auto-fit→固定3列；② 瓦片统一 surface（bg-primary+细边框+10/12 内边距）；③ 结论横幅改左侧语义色竖条+多空比分徽标化（chip）；④ 60日量能确认超长小字副行改一行短句（完整口径句仅留 tooltip）；⑤ 区块标题统一金色左引导条+间距节奏 16/10；⑥ 窄屏降级 ≤900px 两列 / ≤560px 单列；brand-guidelines 仅取排版纪律，色板仍循 DESIGN.md 红涨绿跌+金强调。 [20261101q] 新页面+入口替换（用户指令，静态知识页、后端零变化）：① notes.html「大盘记录」tab 替换为「量能涨跌关系分析」入口（<a class=np-tab> 新窗口打开 volume-map.html，notes.html 内联脚本仅绑定 .np-tab[data-scope]）；② 新建 volume-map.html 思维导图页——股价涨跌与量能关系分析全文（四大阶段四色分支：低位区蓝/高位区绿/上涨途中橙/下跌途中红；趋势运行/区间横盘震荡/量价背离/极端量能 四分组；叶 92 条），原生 JS 绝对定位布局 + SVG 贝塞尔连线，支持滚轮缩放/拖拽平移/分支分组点击折叠/适应全图；大盘记录笔记入口保留于 index.html 顶部导航。 const APP_VERSION = '20261101p'; // [20261101p] 资金量能卡重排版（用户截图指令+uicraft，仅前端展示层、后端零变化）：「资金量能综合判断」由 8 行通栏纵向列表改为两级结构——① 多空结论提炼为语义着色结论横幅（偏多红晕/偏空绿晕/中性灰底 + 多空比分徽标）；② 指标条目改 auto-fit 3 列网格（量价关系长文本通栏）。capitalCharts.buildConclusionParts 返回值改结构化 { rows, verdict }（条目文字口径不变），排版由 app.renderVolumeEngine 完成；style.css 删 .cap-conclusion-item/.ve-conclusion-list 死样式。 const APP_VERSION = '20261101o'; // [20261101o] 资金量能卡去重（用户截图指令，仅前端展示层、后端零变化）：① 指标行「今日成交额」tile 删除（6→5 tile，成交额已在个股标题卡信息行）；② 综合判断「换手率」行删除（换手率已在个股标题卡信息行）。 const APP_VERSION = '20261101n'; // [20261101n] 个股页首（用户两张截图指令，仅前端展示层、后端零变化；20261101m 为误解截图指向的误改，本版一并回滚）：① 页首固定指标条（#keyMetrics）删「换手率」「成交额」两 tile；② 两值移入个股标题卡信息行（#stockTurnover/#stockAmount，applyLiveQuote 打开渲染与 60s 实时刷新共用单点，缺失时隐藏）；③ 回滚 m 版对资金量能卡的误改（今日成交额 tile、综合判断换手率行、置顶卡注入块均恢复）。 const APP_VERSION = '20261101m'; // [20261101m] 资金量能卡（用户截图指令，仅前端展示层、后端零变化）：① 指标行「今日成交额」tile 删除（置顶卡已有同源「成交额」，6→5 tile flex 自适应）；② 综合判断「换手率」行删除，月均口径与档位并入置顶卡「换手率」tile（renderVolumeEngine 注入副行/tooltip，静默刷新同步）。 const APP_VERSION = '20261101l'; // [20261101l] 资金量能卡（用户两张截图指令，仅前端展示层、后端零变化）：① 删除「量价配合（当日）」区块标题（指标卡行保留）；② 顶部「量能信号」横幅删除，由「资金量能综合判断」上移替换（capitalCharts.renderConclusion 改造为 buildConclusionParts 共享构建器，同一数据源 data.volumeIndicators/moneyFlow/marginTrading/conclusion，静默刷新随 renderVolumeEngine 同步）；③ 原页底 #capConclusion 独立卡删除、融资融券明细改通栏；style.css 删 .ve-score/.capital-conclusion 死样式。 [20261101k] 资金量能卡：删除「以下为既有量能逻辑（生死位 / 位置量价 7.4 / 矛盾信号 11.3 / 量比口诀 7.5 / 预期量能）…」过渡说明行（用户截图指令，纯展示层、后端零变化）。 [20261101j] 资金量能卡布局对称化（用户两张截图指令，仅前端展示层、后端输出零变化）：① 量价配合（当日）中间文字说明行（信号徽标+长描述）整行删除——与四维度「资金行为」同源重复；② 指标行「价格位置」tile 改「筹码转移」——位置与量价判定·第一步「位置定位」重复；③ 量价配合行「今日涨跌」卡改「资金行为」——今日涨跌与页头涨跌幅重复；④ 独立「资金行为与筹码转移」小节删除（内容并入上述两卡，dimTexts 单一数组共用）；新增 .cm-value-text 长文本卡样式，删除 .ve-vp-*/.ve-dim* 死样式（全库零引用）；test_pos_volume_matrix 守卫断言同步（67 项全绿）； [20261101i] 量能指标行「60日量能确认」tile 并入 60 日口径数值句（用户 2026-11-01 指令：把「当日量为 60 日均量的 X 倍（均量/当日量），介于 0.7~1.5 倍之间 → 判为「平量」」放进第二个小卡片）：新增 cm-sub tile 副行（放量/缩量确认态同式措辞），原独立说明行 confirmNote 整体删除（「并非缺少 60 日数据/两窗口」说明保留在悬停 tooltip）； [20261101h] 资金量能卡去重（用户 2026-11-01 两张截图指出重复，四项确认方案）：①四维度仅保留「资金行为/筹码转移」两行——量能状态/价格位置/量能口径与指标行 tile、量价判定·位置依据、60 日说明注逐字重复，前端移除（后端 dimensions 四键保留，铁律第一条 API 格式零变化），小节更名「资金行为与筹码转移」；②量价判定·第二步精简为「放量 + 下跌」，括号内 5 日量比/当日涨跌幅重复数值仅在数据不足降级时保留（守卫测试同步 4 断言）； [20261101g] 修「60 日均量口径未确认」与 60 日注释有数据的自相矛盾（用户 2026-11-01 士兰微 600460 截图报障：四维度·量能状态写「60 日均量口径未确认」，同卡底部注释却给出 60 日均量 1.34 倍）：confirm=null 并非缺数据，而是当日量落在 0.7~1.5×60日均量中间地带 → 60 日口径判「平量」。引擎新增 _confirmDesc 单一真值源（>×1.5 确认放量 / <×0.7 确认缩量 / 中间地带如实给出比值并判「平量」/ 真缺数据才写数据不足），替换 volumeEngine 四处 + volumeTier.confirmDesc 下发 + capitalFlow 资金行为文案同源引用；与前端指标卡 20261024j 修法同口径闭环； [20261101f] 修「量价判定参考表非命中行误读」（用户 2026-11-01 截图报障：士兰微当前为平量+下跌=观察，表内「放量上涨·偏多」却红标显眼易误读为当前判多）：参考表非命中行一律中性灰徽标（方向色仅命中行保留）+ 表下附「仅高亮行是当前命中判定」对照说明； [20261101e] 资金量能卡移除「量价十口诀（补充辅助）」整卡展示（用户截图指令：图片里面的内容无需再展示）——引擎层 tenRules 字段保留不动（铁律第一条：仅前端展示层移除，后端输出格式零变化）；主判仍为 20261101d 的位置感知量价判定矩阵； [20261101d] 资金量能「量价判定」主判改版（用户提供的 24 格矩阵：先定位置 低位区/高位区/上涨途中/下跌途中 → 量能档位 放/缩/平 × 涨跌 → 定性判定）：volumeEngine 新增 posJudgment 位置感知矩阵（schema 升 20261101d，仅增字段不改既有字段，combo/评分/结论零影响）；前端 app.js 主判卡先渲染矩阵（第一步位置定位/第二步量能×涨跌幅/主判结论/当前位置 6 格表），量价十口诀降为「补充辅助」并删除与主判重复的主判高亮/今判列/主判摘要；方向口径与 20261101c vpPositionSignal 位置覆盖表一致（高位放量上涨=空、上涨途中缩量上涨=多）；新增守卫测试 scripts/test_pos_volume_matrix.js； [20261101c] 量价配合位置感知（与 volumeEngine 量价框架相互印证，修正「高位放量上涨误判看涨/上涨途中缩量上涨误判看空」矛盾；capitalFlow 量价信号+结论、前端着色、sameDayJudgment 资金量能因子三处协同接入位置判定）；[20261101b] 逻辑模型同步近期更新（补 ETF独立页/后台预加载/cache守卫节点，强化反漂移守卫）；[20261101a] 个股页「后台预加载」可见化（顶部导航常驻指示器）+ 深度分析轮询不随切页停止（修复"切换页面后才开始读取"误感）；[20261030n] 修复「每股经营现金流」等 xjllb 系财务卡三季报披露后不同步（用户报障：新洋丰页面 0.37（中报）vs 东财 F10 最新指标 -0.1901（三季报））：根因 lib/stockData.js getRecentReportDates 月份硬编码「10月→只请求到 06-30」——原注释假设 Q3 11月才可得，但上市公司 10 月下旬已披露三季报，导致 OCF 现金流分支整个 10 月都不会请求 2026-09-30（ZYZB 主要指标分支由服务端返回报告期所以正常，仅客户端自选日期的 xjllb 系滞后）。修复：请求窗口对齐披露日历（与新洋丰估值 v2.1 补丁1 同源口径）——4 月起请求 Q1（04-30 截止）/ 8 月起请求 H1（08-31 截止）/ 10 月起请求 Q3（10-31 截止）/ 1-3 月请求上年年报（未披露期接口自动缺失 → sorted[0] 回落最近可得一期，提前请求无害）。实测 getQuote('000902')：operatingCashFlowPerShare -0.1901 元、期次 2026-09-30（2026年三季报），与东财 F10 官方页完全一致；全类型生效（所有个股 xjllb 系卡片共用）。前端展示联动：analysis.js 信号规则 ocf<0 → 利空（绿字），与 v2.1 现金流警示口径一致。 同版本全工作台三季报滞后审计（用户指令）：deep/financials 与 ZYZB 主指标 ✓ 已含 09-30、xjllb 系即本修复项 ✓、deep/ai 口径泛化 ✓、fundIndustryMatrix 探测式设计 ✓；唯一实质滞后两处已修复闭环——麦捷 300319（10-23 披露，data/valuation/300319.json latest/ttm/reportPeriod 全量 Q3 升级+maijie300319.js latestQNpYoy 优先兼容，TTM 40.8664/3.6061 R2 拼接）与电气风电 688660（10-28 披露，688660.json reportLabel/reportPeriod/q3Snapshot 标注升级，盈利锚 earningsHistory 中位数设计不变）；两份三季报 PDF 已下载留档 data/reports/，东财 F10 三表权威值交叉验证；实跑复验两模型时间引擎「月算法判定 ✓ 一致」，全 9 套估值测试绿（36+193+38+75+68+50+62+46+15）。// [20261030m] 新洋丰（000902）经营现金流数据核查与 H1 CFO 精确化（用户报障判读「每股经营现金流 0.37 与估值卡 -2.39 亿矛盾」→ 核查结论：无错误，口径不同）：①东财 F10 xjllbAjaxNew 交叉验证——9M 2026-09-30 CFO=-238,518,136.42 元=-2.3852 亿（同比 -119.5%）与估值引擎配置完全一致；H1 2026-06-30 CFO=466,826,981.02 元=4.6683 亿 ÷ 12.55 亿股 = 0.372 元/股与页面卡片 0.37 完全闭环（卡片标注「财报 2026年中报」口径诚实）；单季 Q3 = -2.3852−4.6683 = -7.0535 亿（上年同期单季 +2.1901 亿），主因三季度硫磺高位囤货付现 + 「买涨不买跌」销售延后至 Q4（调研纪要原文）→ v2.1 补丁2 现金流硬性否决口径无误；②数据一致性修正——000902.json h1.cfo 2026 由 9.8（v1.0 校准估计）→4.6683、2025 由 8.5→10.0404（F10 权威值），q3Note 补单季推导与归因；R2 TTM 拼接（FY+9M−上年9M）不经 H1 → CFO_TTM 6.5514 亿与全部估值输出不变（合理/低/否决触发）。；测试 46 项全绿。 // [20261030l] 新洋丰（000902）估值模型 v2.0→v2.1「防呆与防错补丁」（用户指令，六项强制，与历史指令冲突以本补丁为准）：①数据新鲜度门控——新增 freshnessGate 纯函数（按披露日历强制判定应适用最新报告期：Q1截止04-30/H1截止08-31/Q3截止10-31/FY截止次年04-30，配置 LATEST 落后→置信度强制低+告警；输出第一段强制声明「本次运行已强制使用[2026Q3]作为LATEST，披露日为[2026-10-27]」；LATEST 绝对值缺失→[推算]路径严禁沿用上期E_TTM，实测 2026Q3 领先期望 2026H1→门控通过）；②现金流硬性否决——2026Q3 经营现金流 -2.3852 亿<0→触发：结论第一段红色高亮「⚠️【现金流警示】」（前端 cfoStrip 红框渲染）+置信度锁定【低】不允许中/高+保守情景 E_TTM 下调系数由 0.90~0.92 强制加深至 0.82~0.84（<0.85 档）；③周期信号强制交叉校验——磷酸铁单吨毛利信号联网三源交叉（巨潮调研纪要 2026-10-28 一手「Q3 约3000元/吨、盈利逐季抬升、Q3毛利率24%新高主因磷酸铁」+东财快讯同口径+行业研报 9月末约2446元/吨）→ 信号判「景气」，CYCLE_VIEW 中性→景气，严禁错误归因；④情景展示与涨跌幅逻辑——三情景强制标注相对现价涨跌幅，保守 11.47 元<现价 13.85 → 标「【下行风险】（相对现价 -17.15%）」严禁标上行空间，卡片顶部「上行空间」标签改「相对现价」（conservativePct 字段）；⑤EV/EBIT降级约束——负债端数据缺失→标[仅方向性参考/不可用]，隐含价与PE偏离>20%→写明「⚠️【交叉验证失效】…置信度降低一档，结论主要依赖PE和PB」（当前 Q3 PDF 负债完整→休眠，偏离 -29.11% 正常分歧提示）；⑥分部数据门控——Q3 不披露分部→E_TTM 用 Q3 总归母 TTM 拼接（R2）+强制声明「当前盈利结构参考为[2026H1（结转）]分部数据，Q3实际结构可能已发生漂移」。重跑结果（现价13.85）：E_TTM 16.15/EBIT_TTM 19.06/CFO_TTM 6.55（CFO/E 0.41<0.8）、PE-TTM 主 15.19 元、EV/EBIT 隐含 10.77 元、PB-ROE 合理 PB 1.54（现价 1.35 偏保守）、中枢 15.19（+9.68%）、区间 [11.47, 17.56]、评级合理、置信度低（现金流否决锁定）、分红覆盖 1.63×≤2× 如实判否。前端 app.js 万润丰卡升 V2.1+红字警示条+声明条；配置 000902.json 升 v21 块+磷酸铁证据快照+时效项。测试 test_valuation_xinyangfeng.js 重写为 v2.1 口径 46 项全绿。 // [20261030k] 万润股份（002643）估值模型 v2.0→v2.1「数据熔断与异常校准补丁」（用户指令，四项强制开启不可关闭）：①行业PE极值熔断——行业PE中位数>60倍或近5年80%分位以上 → 基准PE=min(中位数,60)再×折价系数并记录「行业PE极值熔断已触发」（实测 103.39×分位100% → 触发，目标PE 87.9→51）；②市场隐含定价（反向）约束——市值÷目标PE隐含利润 vs 机构一致预期偏差>30% → PE层预测净利取两者均值向市场现实妥协（实测 15.5 元价：隐含 2.7839 vs 一致 4.2078 偏差 33.84% → 净利取均值 3.4959）；③D层行情时效强校验——D层数据与估值基准日差>5个交易日 → 强制标「⚠️ 行情数据滞后，非实时估值」+隐含涨跌幅置信度降至0.6（区间放宽）；>15个交易日 → 禁止输出低估/高估信号仅输出绝对估值区间（交易日按工作日近似，节假日不剔除；实测无价回退配置快照 2026-09-18 → 30 个交易日 → 评级「仅区间参考」）；④层间背离一票否决——PB-ROE与PE差异>100%（极端戴维斯双击/双杀）→ 禁止简单加权，合并值取两者较低者（保守原则），释放权重转移给DCF（实测 15.5 元价：差异 112.76% → 合并值 5.4295，PE 权重 35% 释放转 DCF → 最终权重 60/0/40）。新增纯函数 peCircuitBreaker/marketImpliedNpCheck/layerVetoMerge/tradingDaysBetween（导出供零网络测试）+ 熔断状态表 cbRows/circuitBreakers 前端渲染（卡片新增②·0节）；敏感性矩阵净利基点改用熔断2校准后 npPeUsed、单元格同步应用熔断4合并规则；配置 002643.json 升 v21 块+版本 20261030k；deep/conclusion.js 方法标签升 v2.1；app.js 万润卡口径脚注升 v2.1。测试 test_valuation_wanrun.js 扩至 62 项全绿（含熔断纯函数 11 项+集成 21 项+边界条件：25元熔断2不触发/5.5元熔断4不触发/注入实时价熔断3不触发）。 // [20261030j] 海天味业（603288）股本字段治理（用户指令：total_shares 必须强制按最新交易日流通股本+限售股本获取，季报未披露则抓中登/交易所最新股本，严禁使用超90天旧股本）：①lib/valuation/haitian603288.js 新增 fetchShareBase 双链函数——主链东财F10股本构成接口（gbgc按END_DATE倒序取最新快照+gbjg互证，闭环校验 A流通+H股+限售=总股本 ±0.5%），备链腾讯行情总市值÷现价反推（iconv-lite GBK解码）；②compute() 改 async（修复 await 落在非 async 函数的解析错误），run() 同步 await；③V.shares 运行时接入双链取数——官方值 58.43973444 亿股（A流通55.5982+H股2.8415+限售0，披露2026-09-30，距今30天≤90天上限），双链失败才降级配置兜底值并显式标注「股本双链失败·降级」；④QA-4 升级为时效硬门禁——股本>90天或双链全失败时 pass=false（fix=拒绝输出目标价），实测新门禁通过；⑤data/valuation/603288.json totalShares 58.50（推算值）→58.4397（官方三方闭环值）+totalSharesAsOf/totalSharesSource 溯源字段。实测实跑：total_shares 58.4397/asOf 2026-09-30/30天/stale false，QA-4 通过，中枢35.94/评级合理/qaAllPass=true。 // [20261030i] 士兰微（600460）估值模型四条修复（用户指令）：①评级映射硬规则——预期涨幅≥20%→【买入】（原按区间位置判「合理」致 34.47% 涨幅仍显示合理）；②DCF剔除明示——失效检验行+方法矩阵行公示「因处于高资本开支期，DCF测算结果为负被自动剔除」+剩余三法归一化权重动态计算（PE 57.1%/PB 28.6%/PS 14.3%）；③数据完整度评分旁新增C级数据补偿注（产能利用率等沿用2025年报，景气度满分下可能低估当期产能释放的利润弹性）；④盈利预期8亿阈值守门——基准8.44亿≥8亿不触发上调（低于则自动提升至8.5亿），情景行净利改动态显示。前端 app.js 11 处 ratingMap 新增「买入」映射（沿用低估 bullish 样式）。实测（三季报PDF真实数字注入+现价22.88）：涨幅34.47%→评级「买入」，与用户桌面实时运行完全一致。 // [20261030h] Q3财报口径统一升级（用户指令：三季报已同步的升Q3口径、未同步的不升；判定依据=data/reports/{symbol}/ 是否落盘2026三季报PDF）：8只已同步升Q3——①新洋丰000902（配置锁死型）灌入三季报真实数字：statements.q3（2026累计 营收145.77/归母13.77/扣非13.68/CFO-2.39/EBIT 18.52/权益128.97 + 2025同期对照列）+ balanceSheet净有息负债45→17.31亿（三季报PDF精确值，原H1为v1.0校准估计）+ period锚点2026Q3/R2拼接；②圣湘688289（半动态型）代码月算法10月边界10/30→10/25对齐平安20261029e（消除"三季报已披露仍用中报TTM"告警），config inputs.qLatest新增q3单季（营收+11.33%转正/归母-78.91%）+ TTM对照16.07→16.50、1.34→1.12 + timeEngine.qLatest→2026-09-30；③平安601318顶部声明reportPeriod.months 6→9与inputs.M对齐（清除展示层半年度滞后声明）；麦捷300319/电气风电688660三季报PDF未入库→不升级保持H1；长江000783/万润002643/士兰600460/华安600909/海天603288为运行时东财F10实时拉取（锚点自动前移）→ 无需改配置即Q3。测试：test_sanxi全绿 + 000902/601318离线实跑验证。 // [20261030g] 圣湘生物（688289）专属估值模型两条指令落地：①图1↔图2坐标轴对齐——图2三情景顶部加「前瞻性2026E敏感性测试·未含历史极端PE悲观折价」高亮提示 + 锚定图1折价前每股区间；②SOTP轨道II海济（生长激素）集采防高估——适用PE封顶至可比中位数×0.7（35.6×0.7=24.92x）+ 单独计提5-10%商誉减值准备扣减项（取7%），全链路（动态sotpCalc B + 三轨轨道II·B）生效并显式提示。 // [20261030f] 长江证券（000783）专属估值模型补丁J·全量数据一致性审计与文本强制对齐（四规则）：①动态锚全局统一替换——封顶(1.83→1.60)后市场快照/敏感性看板/结论矩阵/理论PB卡统一用1.60（1.83仅出现在「原X封顶至理论Y」诚实括号，杜绝割裂）；②计算等式强校验——极端悲观行先列公式值(基准×0.75=8.06)再如实标注「受补丁I历史铁底约束锁定6.14」，绝不强画等号；③情景设定逻辑校验(消除倒挂)——主模型中枢10.74 > 长周期均值锚8.92 → 「乐观复苏情景」倒挂失效转「均值回归底线」，前端vStrip改📉均值回归底线；④熔断/状态说明清洗——删除历史残留提示，红熔断/绿降级引用数值与最新计算一致。 // [20261030e] 长江证券（000783）专属估值模型补丁I·极值纠偏、逻辑闭环与动态数据强同步（四规则落地）：①运行时态数据强同步——run(price) 强制使用注入实时价或当日行情快照现价，严禁历史残留现价（如 8.51）；②估值锚三位一体向下约束——动态PB锚 1.83 倍 > 理论PB锚 1.60 倍 → 主模型PB锚封顶至 1.60，中枢由 12.30 降至 10.73（防悬空）；③悲观/乐观边界常识校验——现价跌破近5年50%分位铁底(¥6.14)→报「极度低估，严禁做空」，否则锁铁底并输出最大下行风险≈-7.2%（防倒挂）；④周期股戴维斯双杀预警 + 熔断降级——现价大幅低于中枢(偏离85.85%)不触发红灯，降级为「绝对低估/重大机会」绿色提示并自动输出买入区间[6.14,9.13]+戴维斯声明。后端 lib/valuation/changjiang000783.js + 配置 data/valuation/000783.json(patchI) + 前端 app.js(iStrip) + 测试 68/68。 // [20261030d] 新洋丰（000902）专属估值模型升级为「全自动动态估值 V2.0」：A1三信号周期判定 + R1-R6数据路由(TTM拼接/前向年化降级/存量取点/分部门控/显式缺失标记) + 估值三角(PE-TTM主/EV-EBIT交叉/PB-ROE锚) + 三情景同向调整 + 反向验证 + 期权独立不并入 + 置信度六档；同步重写 lib/valuation/xinyangfeng000902.js、data/valuation/000902.json、前端卡片渲染、测试脚本 40/40。 // [20261030c] 华安证券（600909）「估值结构拆解 · 强制披露」五条（用户下发规范实施）：新增 structureRows 六行（全动态值）——①分项目标价拆解（PB法 6.19=普通股BPS 5.60×合理PB 1.11+现价相对PB法偏离%；SOTP法 9.38 含长鑫贡献 1.77 元/股+折扣30%保守口径；PE法 8.02=正常化EPS 0.874×合理PE 9.18 仅作底部参考）+①结构贡献（中枢 7.81 主要由 SOTP 贡献，PB法仅提供 6.19 元价值底）；②评级口径说明（现价低于区间下限但高于买入触发线=下限×0.9 → 按规则判「持有/中性」不判低估，回落至买入触发线附近进入买入观察区——动态适配 P<下限/P 在区间内两种文案）；③影子股溢价提示（现价−PB法目标价=长鑫持股溢价元/股；长鑫市值−20% → 持股价值−17.81亿=−0.35元/股，经SOTP权重45%确定性传导 → 中枢 7.81→约 7.65 元，安全边际收窄——全代码计算非估算）；④置信度说明（55%按绿色方法权重占比近似 PB绿45+PE绿10，SOTP 45% 计黄不计入；长鑫持股比例或限售状态更新为红档 → 置信度下调至 60% 以下）；⑤PB口径提示（PB(LF)现值双口径——归母BPS 6.03 口径 vs 扣减其他权益工具普通股BPS 5.60 口径；合理PB为三层加权乘数不随BPS口径变化，相对关系不变结论稳健）。前端 app.js 华安卡片新增「估值结构拆解 · 强制披露」区块（⑥降级留痕与⑦综合目标价之间，后续编号⑦→⑧→⑨顺延）。测试新增第 8 节 7 项 → 75/75。注：用户规范文本手写值（中枢 8.08/下限 7.26/溢价 0.78/参考 8.22）系按 20261030a 旧口径（折扣25%）手算，落地全部为代码动态值（中枢 7.81/下限 7.00/溢价现价−6.19/参考 7.97），差异源于限售折扣 25%→30%（20261030b 规范第8条）。 || [20261030b] 华安证券（600909）估值权重与输出形态规范（用户下发《【本次估值权重与输出形态】》八条实施）：①权重 PB45/SOTP45/PE10 归一化（dynWeights 影子股模式已符合，无代码改动）；②成熟度 PB绿/SOTP黄/PE绿（实测一致）；③权重调整依据——影子股模式触发（长鑫占比36.10%>30%阈值），weightsNote 明示「规则9优先于规则8的通用降权，特此说明」；④主情景（黄口径）→ 区间+中枢；⑤参考情景（SOTP转绿 PB40/SOTP50/PE10）→ 目标价仅作参考，weightsNote 明示「不作为本次主结论」；⑥分项结果必须列示——PB法目标价=普通股BPS×合理PB（**PB层切换普通股口径**：pbTarget/pbTargetLow/High 由 bpsUsed 改 bpsOrdinary，PB 6.67→6.19；归母口径保留作参照），SOTP法含长鑫贡献与折扣，PE法=正常化EPS×合理PE；⑦输出形态区间态不输出单点值——**置信度改为绿色方法权重占比近似**（greenW=PB绿45+PE绿10=55%，置信度 75→55；附定性 confQual：≥70%高/≥50%中等偏高/≥35%中等/其余一般；精确态保持90），综合目标价行+summaryNote 均带定性描述；⑧数据同步说明入 weightsNote 第⑧条（TTM扣非/股本/普通股BPS 截至 2026-09-30；长鑫持股公告基准+期差122天+成熟度+敏感性±3%；**限售折扣 25%→30% 保守假设**——配置 600909.json sotpLayer.cxmtLiquidityDiscount 0.25→0.30+note，长鑫贡献 95.33→88.74 亿、SOTP 9.51→9.38）；weightsNote 重写为八条结构（①~⑧全动态值）；测试 5.7 置信度 75→55 + 新增 5.23~5.29（八条结构/规则9优先声明/分项列示/置信度定性/折扣30%/PB普通股口径/参考情景）→ 68/68。实测：区间 [7.00,8.62] 中枢 7.81、置信度 55%（中等偏高）、参考情景 7.97（规范手写 8.22 系按折扣25%旧口径，30% 后代码实测 7.97）、分项 PB 6.19/SOTP 9.38/PE 8.02。 || [20261030a] 华安证券（600909）PE 层口径修订版（用户下发《一次性损益剔除口径·报告首页强制披露（修订版）》六条实施）：③扣非质量校验——归母/扣非同比偏离 0.02pp<20pp 非经常性影响不显著，但券商扣非仍可能含自营公允价值变动及长鑫上市重估收益；确定性引擎无三季报非经常性损益明细通道（fxsy 端点无数据）→ 长鑫收益确认状态 v3.caliber.lcxInNonRecurring 配置开关（null=未确认→保守：常态 EPS 1.048 为上限不得作中枢，点估值取中值；true=确认在扣非外→上修 1.048；false=确认在扣非内）；④正常化处理——正常化 EPS=min(TTM扣非EPS 1.048, 可持续ROE 12.5%×普通股BPS)，普通股BPS=（归母净资产 302.83 − 其他权益工具 21.47）÷ 50.24 = 5.60 元（修 OTHER_EQUITY_TOOL 字段链 bug：券商模板实际字段为 OTHER_EQUITY_INVEST，原代码误读为 0），正常化下限 0.70（规范测算 0.702 系扣减口径差异已在 note 标注）→ PE 法区间 [0.70,1.048]×乘数9.18=[6.43,9.62]，点估值 0.874×9.18=8.02；⑤权重约束：PE 10% 仅作底部安全边际参考；区间化扩展——centerLow/High 纳入 PE 正常化区间（原只用 peTarget）→ 综合中枢 8.24→8.08、区间 [7.26,8.90]、现价 7.04 合理（远离阈值边界，方向性不明标注消失）；caliberNote 升级为修订版六条全文（动态生成）；return 新增 caliber2 字段（epsNormLo/Hi/Point/bpsOrdinary/lcxState/peTargetLow/High）；配置 600909.json v3.caliber 块（sustainRoePct 12.5 + otherEquityToolsSnap 兜底 + lcxInNonRecurring 开关说明）；测试 5.10 断言随区间变化更新 + 新增第 7 节修订版 11 项（含确认开关临时切换往返）→ 61/61。 || [20261029s] 万润股份（002643）估值引擎升级 v2.0_数据频率自适应版（用户下发《万润股份逻辑估值模型 v2.0：数据频率自适应版》全文实施）：在 v1.0 三层加权（PB-ROE 50/PE 35/DCF 15，永久固定）基础上叠加数据频率自适应层——①A/B/C/D四层分级取数（A定期报告全披露/B半年报年报/C年报或外部采集/D实时市场）；②A层流量指标统一「累计转单季再滚动TTM」（每次运行实时拉取东财F10三表 SZ002643，锚点自动前移 9M→H1→Q1；ttmSplice/cumToQuarters 纯函数）；③存量指标最近时点（净资产/在建/固资/净债务=短借+长借−货币资金实时化）；④B层结构外推+总和校验（±2%按比例缩放）；⑤置信度衰减机制：点估计不变，只影响区间宽度（半宽=15%÷平均置信度）与层权重（C<0.7时×C/0.7、释放权重按剩余层置信度比例分配、归一化）；⑥DCF再平衡（|DCF−均值|/均值>80%→DCF降至5%释放10%给PB-ROE）先于置信度调整、最终权重归一化；⑦一致性校验四条（总和/趋势±30%触发剥离一次性因素/环比>30pp并列/交叉>30pp说明假设偏差）；⑧评级规则改为信号比 P/target（<0.75低估/>1.30高估/之间合理）。A层实测（9M锚 2026-09-30）：TTM营收38.48亿/TTM归母2.47亿（9M归母同比-12.2%如实入TTM）/TTM毛利率38.85%/TTM ROE 3.45%（÷存量71.74亿）/BPS 7.83/FCFF 0.88亿（CFO 7.27−capex 6.39规则值，替代原假设4.0亿）/净债务2.79亿（实时，替代原假设5.5亿）/在建固资比0.544→0.267持续下降过渡期确认。三层实测：PB-ROE 5.43（可持续ROE 7.01%=3.45×1.8+0.8）/PE 40.37/DCF 2.46 → DCF偏离89.26%>80%触发再平衡60/35/5 → 中枢17.51，置信度区间[14.84,20.18]（avgC 0.9825半宽15.27%），现价15.50信号比0.885【合理】；校验二（TTM ROE偏离45.79%>30%→剥离汇兑0.19亿×75%）与校验四（隐含净利1.62亿vs一致预期4.21亿差91pp→目标PE假设偏高说明）按规范触发诚实记录。消费方 lib/ai/valuation.js 与 lib/deep/conclusion.js 万润分支 await 化+methods 动态文案；前端卡片新增②·1拼接置信度表/②·2权重与置信度传导/②·3一致性校验四条/⑪版本记录区块+锚点徽章+置信度区间标签；配置002643.json新增v2块+lastVersion存档（V1.0合理/18.56/[11.22,23.37]三情景口径）；新增scripts/test_valuation_wanrun.js 45/45。 || [20261029r] 圣湘生物（688289）估值引擎升级 V3.0_三轨并行·五表锚定（用户下发《圣湘生物全自动动态估值分析框架·AI指令集 v1.0》全文实施）：数据层五表锚定（表A年度锚2025年报硬锚/表B阶段观测软锚禁倒推/表C TTM拼接唯一合法桥接/表D市场实时/表E可比中位数非均值27倍+历史PE区间39~58）；估值层三轨并行（轨道I相对估值50%=TTM归母×动态PE，倒挂→警报+回退可比区间，PS交叉±25%背离警报/轨道II SOTP 35%=试剂仪器11.08×PS×集采增值税折价+海济1.85×35.6×0.875承诺期后折价+检测服务0.47×PS×0.9+净现金非并表投资13.15×0.85/轨道III历史分位15%=PE(TTM)分位>85%或<15%极端警示，均匀分位近似标注）；回退规则ABCD（年度锚优先/TTM优先/四级降级链/海济2025-01-31并表口径不可比标注）；异常检测5触发器（年化vs年度锚±30%/轨道I vs II>30%/TTM缺口/PE极端分位/商誉>30%且承诺<100%）；风险折价合成后施加仅下调（增值税6.5%/集采4%/商誉条件触发12.2%不触发/费用1.5%）。锚点自动前移至2026-09-30三季报(9M)（东财已有2026三季报）；TTM归母1.1167亿=1.9894+1.0405−1.9132（Q3单季仅0.06亿暴跌入TTM）；实测：轨道I [24.12,36.18]（目标PE倒挂回退可比[21.6,32.4]）/轨道II 135.56亿/轨道III分位99.9%封顶/折价×0.8841→每股[9.60,11.96]中枢10.78，现价14.99【高估】隐含下行28.09%，警报5项；V2.1六模型完整保留为legacySix附录参照（低估/17.65）不参与合成。消费方 lib/ai/valuation.js 与 lib/deep/conclusion.js 圣湘分支 await 化+methods 三轨文案；前端新增五表锚定/三轨并行/异常检测5触发器/风险折价四区块+legacy附录分隔；新增scripts/test_valuation_sanxi.js 36/36。 || // [20261029q] 士兰微（600460）估值引擎升级·数据治理升级版（用户下发规范全文实施）：设计总纲三句——①所有数据携带报告期身份证（报告期/级别A·B·C·H/获取方式三要素）无标签禁入估值公式（台账25项）；②估值公式强制同口径（PE(TTM)/PB(LF)/PS(TTM) 分子=基准日总市值分母强制同报告期体系+拦截规则，ROE=TTM归母÷期初期末均值权益）；③缺失走固定替代路径（A级TTM固定公式=上年年报+本年累计−上年同期累计，上年同期缺失退化年化×12/锚点月份数并标注；B级外推=半年报值×(1+营收同比×0.5)系数固定0.5；C级沿用年报+标注）。核心实测：锚点自动识别=2026-06-30半年报（东财F10尚无士兰微三季报，锚点前移机制自动适配）；TTM营收139.78亿/TTM归母6.50亿（严格TTM=3.99+5.16−2.65）；DCF基数从2025年报130.52亿升级为TTM实际139.78亿（基数=TTM实际、增速=最新研报预期）；净债务/少数股东/ΔWC/D&A/CAPEX从静态假设升级为锚点实时（净债务52.43→40.86亿、ΔWC/营收实际4.37%、D&A/营收TTM实际）；级别-报告期矩阵（A同步/B同步/C滞后沿用/H不受约束）；完整度评分80/100（A40+B20+C0确定性引擎无搜索通道+H20）；自检清单10/10；口径敏感性提示（DCF g₀=2026E÷TTM实际）。景气度引擎/三情景/PE40+DCF30+PB20+PS10/DCF失效检验/三档评级完全沿袭。实测：中枢27.88（旧30.77）、区间22.46~29.11、现价24.18【合理】、PE(TTM)61.9倍/PB(LF)3.26/PS(TTM)2.88/ROE(TTM)5.34%。消费方 lib/ai/valuation.js 与 lib/deep/conclusion.js 士兰分支 await 化+methods 文案动态化；前端新增②身份证台账/③级别矩阵/④口径锁定/⑨自检清单区块+完整度徽章+summaryNote；新增scripts/test_valuation_silan.js 38/38。 || // [20261029p] 华安证券（600909）估值引擎升级 V3.0_异步数据自适应架构（用户下发十四规则/七层规范全文实施）：第一性原理——模型永不假设所有指标同一报告期，指标入公式前必须携带数据契约（指标名/数值/报告期/频率/来源/期差/容忍期差/成熟度/结转标注），无契约裸数据拒收、缺失走显性降级禁静默填充、点估值仅全绿时给出。①三层分层数据契约（A层日频容忍1交易日/B层季频容忍150天/C层低频分项容忍：分业务200天、持股比例180天、限售365天、参数快照60天）；②报告期对齐引擎（成熟度三级：绿≤60%容忍/黄60-100%/红>100%；TTM拼接三季报后=2026前三季累计50.77+2025Q4单季2.25=53.02亿，禁×4/3粗年化；BPS股本同步检测：行情股本50.2448 vs 回购公告50.24偏差<0.5%单点通过；C层结构结转+±15%敏感性；可比公司各自最新；公告优先原则）；③方法成熟度动态权重（基准PB60/SOTP30/PE10，绿×1.0/黄×0.7/红×0.3、红且基准<15%停用，PB红→待更新态，归一化+调整原因列示）；④影子股阈值联动（占比37%>30% → SOTP权重按其数据成熟度摆动绿50/黄45/红40，本次黄→45/45/10，两套权重并列输出）；⑤四级降级L0-L4强制留痕；⑥三态输出（本次区间态·置信度75%）；⑦评级区间判定映射项目三档铁律（<下限×0.9低估/>上限×1.05高估/区间内合理+±3%边界方向性不明标注）。实测：区间态 7.59~8.90 中枢 8.24 现价 6.87【合理】（接近低估阈值边界±3%标注方向性不明）、SOTP常规业务维持2026H1结转避免与长鑫Q3上市增值双重计价；新增数据契约表/权重说明/降级留痕/三态置信度四个前端区块；纯函数导出 maturityGrade/ttmSplice/bpsWithSyncCheck/dynWeights；新增scripts/test_valuation_huaan.js 51/51。 || // [20261029o] 长江证券专属估值引擎升级 V3-五法则（用户下发五法则全文实施）：①数据分层与时间戳对齐——刚性实时层（三表最新报告期科目：BVPS/归母/扣非/净资产），柔性平滑层（缺失分部=上次已知分部×全市场指标增幅推演，带[推算估算值]标签：经纪=成交额因子0.8454、投行=IPO+67.11%、科创=科创50动量-30.70%、资管=中性），严禁最新总营收×上次占比；②TTM重构——ROE=TTM归母÷最新报告期平均归母净资产（期初+期末)/2剔除永续债OTHER_EQUITY_TOOL，实测TTM ROE 10.90%，预测ROE标[预测口径]；③主辅模型动态权重与休眠——PB-ROE永远在线，SOTP三季报期强制休眠降级仅作参考上限（10.46~12.53元）标注指定文案；④双轨防御——动态锚1.83突破上轨P90(1.165)触发估值体系重构警告矩阵置顶，下轨P50铁底；⑤极值熔断——归母/扣非同比偏离2.9pp<20pp未切换、排序违反时按动态锚×1.2/×0.75强制外扩boundaryFixed、上行43%<60%未熔断、单边空间展示。实测三档9.23/12.30/14.76，现价8.60评级[低估]，前端新增数据新鲜度仪表盘/核心逻辑摘要/SOTP休眠条带；fetchFinancialStatement从lib/deep/financials.js导出；新增scripts/test_valuation_changjiang.js 43/43。 || [20261029n] 海天味业专属估值引擎升级 V3.0_架构重构版（用户下发十六章规范全文实施）：四大支柱——①全量重算（run改async，每次实时拉取东财F10完整三表，禁读缓存增量patch；裸代码会被东财判『股票代码不合法』，必须SH前缀）；②三表勾稽重建（营业成本/EBIT率/有效税率/D&A/CAPEX/ΔNWC率/有息负债/净现金全部直接科目或标准勾稽，勾稽毛利率vs上期年报偏差>2pct降级回退并标注）；③预测驱动FCFF（最新TTM营收297.96亿为唯一起点×统一假设率外推，季报TTM偏离年报假设>1.5pct强制季报校准并标注；CAPEX口径修正：腾讯FCF倒算33.88亿→现金流量表直接科目12.84亿）；④结构隔离（分产品结构STRUCTURE_ONLY只进情景层，冻结截至2026-08-27）。新增：双模型分歧检测（纯年报降频校验模型，divergence 2.7%≤10%通过）、混频检测门禁（TTM构造豁免放行+诚实记录跨度273天）、数据健康度评分90/100优（<60拒绝输出目标价）、WACC×g 3×3敏感性矩阵、变量元数据强制规范（data_period/frequency/staleness_days/is_converted_to_ttm/source/口径标注）、输出协议新增架构声明/数据时效矩阵/混频处理声明区块；消费方 lib/ai/valuation.js 与 lib/deep/conclusion.js 改 await run；前端 app.js 海天卡片新增⓪.5架构声明/⓪.6数据时效矩阵/⓪.7混频声明+健康度/⓪.8敏感性矩阵区块、标题版本号动态化；配置 603288.json 升 V3.0（fieldMapping FM-20261029n-1）+宏观参数刷新（Rf 1.63% 中国货币网2026-10-21、CPI 2026-09 +0.9%、Kd 2.63%）；新增 scripts/test_valuation_haitian.js。 || [20261029m] 三季报同步第二轮修复（用户报障：海天味业/长江证券发布了三季报工作台没获取到）：①hasReportDoc 假阳性修复——docStore.year 是公告日期年份，「2026-04-28 发布的 2026 年第一季度报告」被标 year=2026 错误挡住 2026 三季报同步；改为按标题解析报告期年份+季度（reportPeriodOf，与 earnings pickReportDoc 同口径），quarterly 事件按标题收窄到具体季度；②registerDownloadedReports 登记年份改为报告期年份（修正「2025年度报告」被标 2026 的错位），存量索引 278 条中 99 条已修（备份 data/etf-flow/backup/index.before-year-fix.json）；③东财通道两处改版适配——np-anotice 列表 ann_type 数字类目失效（2→恒 0 条）改用 A，列表不再带 attachments → 新增 _fetch_em_detail 详情接口取 pdf.dfcfw.com 直链；④删除「无 ann_type」回退组合（该组合使股票过滤失效，防错下别家公司报告），新增公告归属校验（codes.stock_code 必须含目标代码）；⑤通道回退：巨潮命中 0 自动补试东财备链（A+H 公司巨潮索引延迟数小时实证）。结果：603288/000783/002643 三季报 PDF 已下载+登记+财报解读缓存失效；600460 士兰微今晚发布较晚索引未出，明日自动重试（其 2022-2025 历史 Q3 已顺带补齐）。 || [20261029l] 资料库三季报自动同步静默降级 bug 修复（用户报障：华安证券 600909 三季报已公布但资料库/财报解读不更新）：①根因=reportSync 传 --types quarterly，而 download_reports.py 合法键仅 annual/semi/q1/q3，quarterly 被静默丢弃后回退 annual,semi——三季报/一季报自 20260821f 上线起从未被下载（全自选股同因普查证实）；②python 侧新增 quarterly 别名展开 q1+q3 + 未知类型 stderr 告警（杜绝静默降级）；③reportSync 侧 scriptTypesFor 按事件标题收窄（三季报→q3/一季报→q1/泛称→q1,q3）；④新文档落地后定点失效该股财报解读缓存（earnings TTL 30 天，旧解读会挂一个月——000902 旧中报缓存实证）；⑤已修复落地：600909/688289 三季报 PDF 下载+登记+缓存失效，601318/000902/300232 已有三季报；000783/603288/002643 公告今夜刚发、巨潮索引滞后，明日自动重试。 || [20261029k] ETF 持仓/现金趋势图数据日标签修正（用户指出：10-29 的点实际是 10-28 收盘结构）：cashPositionTrend 点标签改用份额披露日 shareDate（数据日铁律 20261027b 全台适用——清单预估现金按 T-1 收盘净值计算、加权份额 T+1 披露，整个点都是 T-1 收盘口径），新增 snapshotDate 溯源字段；前端口径注记补第⑤条（点标签 D = D-1 收盘口径）；ratio-history.json 备份后重置重建（6 个旧点全有磁盘快照，按新标签重导出，消除按 tradeDate 的旧标签残留）。 || [20261029j] ETF 申赎残缺快照守卫+20261028 快照还原（用户报障：沪深300 组 15 只全部『基期无快照（新入名单）』）：①根因=10-28 18:42 采集 27/34 只 PCF 抓取失败，残缺快照（仅 7 只）却被 settled 定稿，10-29 计算误选为基期；②collect 加固=只要有 ETF 未采全（PCF 失败或份额缺失）一律不定稿（settled:false+partial:true+gaps 落盘），残缺快照留待重采自愈；③computeFromSnapshots 基期选择与 stockMonthlyFlow 双保险排除 partial 快照；④数据还原=20261028.json 重建（S(10-26)官方快照+Δ(10-27)权威外部源：腾讯金融搜索结构化表×上交所官网基金规模×新浪/证券之星三源交叉验证，官方 7 只原值保留+还原 27 只，四组校验[链路整篮/Δ整篮/官方总量逐位相等/前向整篮]全过，scripts/restore_etf_20261028.js 留档，原文件备份 data/etf-flow/backup/）；⑤台账重放补齐 10-27/10-28 两日 27 只缺失增量（重置 lastDate 后按快照链升序幂等重放，不手写 cum）。 || [20261029i] 指标分析同比格式统一为图二三段式（用户指令，圣湘生物 688289 报障驱动）：①yoyDim 全部水平型指标（毛利率/净利率/资产负债率/流动比率）改为「本报告期 X（去年同期 Y，边际 ±Z）」，百分比口径差值单位用 pp；②修复 qoqDim 硬编码 % bug（流动比率 4.54 被显示成 4.54%）；③ROE TTM 同口径分支同格式；④营运利润/NBV 同比改「本报告期 X亿（去年同期 Y亿，边际 ±Z亿）」，同比%移入边际维度；⑤毛利率/净利率新增口径 note（左卡 TTM vs 右卡报告期累计，财报更新后两卡数值不同属口径差异非数据错误）。排查结论：10 只自选股左右两卡营收增长全部一致、zyzb 最新期=2026-09-30 三季报无错位——三季报更新无同类数据错误，矛盾源=TTM vs 报告期口径被旧文案隐藏。测试 test_metric_analysis_nbv.js 59→61 项全绿。 // [20261029h] // [20261029h] 平安估值协议落地「缺失变量处理规则 v3.1.1」（用户逐字下发，替换原缺失值规则，本次及后续强制执行）：①六变量（OCIEQ_BV/OCIEQ_URG/FVTPL_EQ/LU_BV/M_LU/S_LU）缺失不视为错误——不中止、不填0、不估算、不要求复核、**不在备注行之外单独输出缺失警告**：前端 app.js 删除 missingNote 黄条（用户 2026-10-29 截图报障的「⚠️ 以下输入变量缺失」条），缺失信息只在备注行固定格式块汇总；②陆金所估值门控改 **LU_BV 为前提**：LU_BV 缺失→分支一律 N/A（即使 M_LU/S_LU 有值也不单独加总，避免「其他资产未扣减陆金所净资产却又单独加总陆金所市值」的重复计算）；LU_BV 有值但 M_LU 或 S_LU 缺失→LU_BV×0.60 并扣减（不构成重复计算）；LU_BV 有值且 M_LU×S_LU 有效→M_LU×S_LU（市值替换净资产）；③OCIEQ_URG 缺失→仅「FVOCI税后浮盈/股」辅助行 N/A，不影响任何估值计算（skippedBranches 新增「FVOCI税后浮盈每股」）；④备注行新增固定格式块（协议五）：「缺失变量：[六缺失项]；跳过分支：[含辅助行]；未扣减项：[OCIEQ_BV/FVTPL_EQ/LU_BV]；对应资产已落入其他资产按0.60估值；P/EV与DDM照常；SOTP按剩余成功分支合成」，原报告期块去掉跳过分支（避免重复）；⑤异常检查（其他资产<0 ⚠️+暂停 SOTP）保留，与六变量缺失无关。实算不变：其他资产 1922.00、SOTP 68.74（61.87~75.62）、合成 [43.47,95.55]、rating 合理。测试 test_valuation_pingan.js 179→193 项（LU_BV 门控三分支/缺失变量固定格式/无独立告警守卫）。601318.json protocol generalRules/remarkFormat/pipeline 3.6 同步改写。 // [20261029g] 中国平安滚动估值协议第三站替换为「SOTP 分部估值（修正版）」（用户逐字下发 v3.1 修正文本）：①新增输入变量 E_L=寿险及健康险业务归属母公司股东权益（会计净资产口径）——数据承接自中报附注分部报告原 EV_L_BV 键（4289.85 亿，2026H1），严禁用 EV_L 替代；②总则新增四条规则：分层报告期（混合不告警不中止，20261029f 已落地）、缺失值规则（缺失→依赖分支记 N/A 并跳过，严禁填 0 落入其他资产池；缺失项资产留在 BV_Total→备注「未单独拆分，已落入其他资产按0.60估值」）、EV_L 使用规则（仅作寿险 ×0.80 乘数，严禁作 BV_Total 扣减项）、异常检查规则（其他资产<0→输出「⚠️ 其他资产为负，请检查 E_L 是否误用 EV_L 或扣减项是否超范围」并暂停 SOTP）；③第三站全公式重写：非权益其他资产=BV_Total−E_L−E_PC−E_BK−OCIEQ_BV−FVTPL_EQ−LU_BV（仅扣实际有值项，无 BVPS×N 回退）；N/A 分支不计入 SOTP 分子并在备注列明；整体跳过条件=三项核心均缺失或异常未通过；④备注行固定格式（协议四）：「报告期：EV/EV_L/E_PC/E_BK=[报告期]；N/NBV/BV_Total=[报告期]；E_L=[报告期或N/A]；跳过分支=[N/A分支]；其他资产=[正数或异常警告]」；⑤终审约束三条写入配置 constraints。实算：其他资产 −3496.54→**+1922.00 亿**（E_L 会计口径替代 EV_L 内含价值扣减，负值异常根因消除）、SOTP 50.79→**68.74**（区间 61.87~75.62）、极值法合成 [43.47,95.55] 不变、评级「合理」不变；陆金所分支 B（LU_BV）与扣减 ×0.60 数学抵消为协议必然。zeroFilled 概念废止（恒空数组，契约兼容），新增 skippedBranches/notSplit/sotpAnomaly 字段透传（ai/valuation.js 同步）。前端 app.js 估值卡脚注/分部说明改 v3.1 口径。测试 test_valuation_pingan.js 145→179 项（EV_L 扣减禁用守卫/BV_Total 无回退/E_PC 分支跳过/异常熔断/固定格式备注/分支抵消校验）。 // [20261029f] 平安滚动估值协议落地「分层报告期规则」（用户指令：EV/EV_L/E_PC/E_BK 保留 2026H1，N/NBV/BVPS 用 2026Q3，SOTP 优先用 BV_Total(Q3) 替代 BVPS×N，照常计算、只标注报告期、不中止、不自行统一口径、不再输出口径警告）：①pingAn601318 SOTP 非权益其他资产改为**优先 BV_Total（2026Q3 归母净资产 10443.66 亿）**、BV_Total 缺失才回退 BVPS×N（otherAssets −3496.55→−3496.54，sotpTotal/sotpTarget/合成区间不变：SOTP=50.79、合成 [43.47,95.55]）；②**删除口径一致性告警**——caliberMismatch 生成/alerts.push/备注条目/return 字段全部移除，混合报告期是协议设计允许的策略（三季报不披露 EV→EV 组按协议保留中报口径），不再视为异常；③保留报告期标注（periodAnnotation「报告期标注：N/BV_Total/N:2026Q3；EV/EV_L/E_PC/E_BK:2026H1；NBV:2026Q3(9M)」）与未声明 period 变量的补录提示（文案改为「无法纳入报告期标注」）；④下游 ai/valuation.js 同步移除 caliberMismatch 透传（前端本就未消费，无 UI 改动）；⑤SOTP 明细 segments/formula 文案按实际路径标注 BV_Total 或 BVPS×N。测试 test_valuation_pingan.js 141→145 项（新增 BV_Total 优先/回退两断言，第15节改「混合口径不告警」断言）。 // [20261029d] 平安滚动估值协议「三步复核」落地（用户指令，全部在数据库/公告内完成）：①总股本复核——旧 N=182.10 亿的 A 股数（107.63 亿）有误，港交所证券变动月报表（1月/7月/9月一致）实证 A 股 106.60 亿 + H 股 74.48 亿 = 181.0764 亿股，与东财 datacenter TOTAL_SHARES 双源一致；年内月报表无回购注销、库存股 0 → 无未落地股本变动，非注销所致；②BV_Total（2026Q3 归母权益 10,443.66 亿，F10 资产负债表 + 三季报点评双源吻合）新增入配置，BVPS=BV_Total÷N=57.6754（同报告期同口径派生，禁止中报 BVPS×中报 N 替代三季报 BV_Total）；③NBV 更新至三季报 9M 口径 309.87 亿（巨潮 2026-10-29 三季报公告 30,987 百万元，同比 −13.3%），M=9；EV/EV_L/E_PC/E_BK 按协议保留最近一次中报（2026H1）口径（三季报不披露）。代码：备注行新增逐变量报告期标注（格式「报告期标注：N/BV_Total/N:2026Q3；EV/EV_L/E_PC/E_BK:2026H1；NBV:2026Q3(9M)」，periodTag 单独成组不放大到同组其它变量）+ periodAnnotation 字段透传。新值下：EVPS=86.58、SOTP=50.79、其他资产 −3496.55 亿、合成 [43.47,95.55] 不变。测试 test_valuation_pingan.js 126→132 项。 // [20261029c] 平安滚动估值协议新增「数据时效规则」（用户下发）：①每个输入变量必须记录取数日期 asOf（601318.json 全变量补录：财报组 2026-09-08=配置真实更新日、D 2026-08-27、N 2026-04-30；P 实时量由 ai/valuation 与 conclusion 覆盖时写当日 asOf）；②任一变量取数日期距今超 180 天（maxAgeDays 可配）→ 协议表格备注行逐字标注「变量X取数于YYYY-MM-DD，已超180天，请复核」，不替换数值、不中止计算、计算照常仅标注；未记录 asOf 的有效变量备注提示补录；③口径一致性：变量须与同一报告期匹配（inputs[k].period 声明，D=TTM/P=实时天然跨期不参与），period 分组不一致 → 备注标注「口径不一致：A组(报告期x) 与 B组(报告期y)」；真实配置实测即抓到两处真实状态——N 超龄 182 天（年报股本口径）+ N(2025FY) 与财报组(2026H1) 口径不一致，均如实标注；freshness 检查从仅 D/N 两项泛化为全部有 asOf 变量（freshnessRows 契约不变、前端时效条带自动覆盖），freshness.items 旧结构不再被消费。测试 test_valuation_pingan.js 126 项。 // [20261029b] 中国平安专属估值模型 v2→v3「滚动估值计算协议」（用户逐字下发协议全文）：①输入新增 OCIEQ_BV/OCIEQ_URG/FVTPL_EQ/LU_BV/M_LU/S_LU 六变量（缺失按0处理+表格行标N/A+备注披露）；②SOTP 扩展为 7 分部=EV_L×0.80+E_PC×0.84+E_BK×0.83+OCIEQ_BV×1.00+FVTPL_EQ×0.60+非权益其他资产×0.60+陆金所(条件：M_LU×S_LU→LU_BV×0.60→0)；非权益其他资产公式改为 BVPS×N−EV_L−E_PC−E_BK−OCIEQ_BV−FVTPL_EQ−LU_BV（v2 的 EV_L_BV 账面口径弃用，现值下其他资产为负已在备注如实披露）；③SOTP 熔断放宽为仅 EV_L/E_PC/E_BK 三项均缺失才整体跳过（部分缺失按0继续）；④合成区间改极值法（P/EV+DDM+SOTP 各取极值，N/A 模型排除），覆盖 v2「只采用SOTP」；⑤新增第六站 FVOCI 税后浮盈/股=OCIEQ_URG×(1−0.25)÷N 辅助行；⑥D 口径以 inputs.D.caliber 声明（现值=营运利润优先口径）；⑦协议表格 13 行禁用定性词（rating 仅供工作台徽标）；⑧固定参数写死+用户覆盖参数备注标注。同步改 conclusion.js（DDM/EVPS null 防护+极值法文案）、ai/valuation.js（v3 模型名+新字段透传）、app.js 平安卡（极值法区间标签/7 分部折扣系数/新公式标签/v3 口径脚注）、601318.json（v3 版本+6 新输入键+D.caliber+protocol 重写）。测试 scripts/test_valuation_pingan.js 111 项。 // [20261029a] 关键财务指标新增两指标（用户 2026-10-29 需求）：①「营运利润」全个股——数据源=F10 利润表 lrbAjaxNew OPERATE_PROFIT（已实测 zyzbHistory 无此科目），lib/deep/financials.js 新增 fetchOpProfitSnippet（最新报告期+去年同期两期轻量请求，负值有效、缺科目如实降级 null 整行不渲染）；②「NBV(新业务价值)」保险股专属（601318/601628/601336/601319/601601，当前仅平安有备查库数据 2026H1=248.5亿）——lib/insuranceAnalysis.js 新增 latestNbvSnapshot（去年同期同累计阶段同比，非保险股返回 null 绝不泄漏）。metricAnalysis METRIC_ORDER 14→16 项（dedProfitGrowth 后插 opProfit/nbv），两新 builder 均带确定性判定（同比符号）+ note 口径说明（右卡黄字「营运利润与扣非净利润的区别」：位置中段 vs 末端、未扣税 vs 已扣税剔非经常、盘面盈利 vs 经常性盈利；并声明平安财报非通用口径「营运利润」不采用）；app.js 左卡两行条件插入+METRIC_HELP 两条释义+keyOf 映射+renderMetricAnalysis 支持 note 渲染（.ma-metric-note 黄字重点信息语义着色）。测试 scripts/test_metric_analysis_nbv.js。 // [20261028b] 量能盘中停判守门：volumeEngine 规则3「缩量假突破」与 11.3.1「该放量未放量」盘中（末根bar=今日且未到15:00）停判——盘中当日量为部分日累计，与前高全天量/60日均量×1.5 结构上不可比（fail-closed 必假命中，新洋丰 000902 盘中实测）；analyzeVolume 计算 intradayPending 经 ctx 透传，盘中输出「盘中参考」数值（当日量/前高量能带日期/60日均量×1.5=阈值），收盘后按同一规则自动恢复定论；规则3命中文案同步量能三数据具象化；app.js 11.3 卡支持「盘中停判」徽标。测试 test_volume_engine.js [20]。 // [20261028a] 全部宽基ETF「持仓比例 vs 现金比例」折线趋势图（用户云端任务本地重做，云端推送 GitHub 失败弃用）：lib/etfFlow.js 新增 cashPositionTrend()——口径=PCF 预估现金部分(ESTIMATED_CASH_COMPONENT，含现金替代与现金差额)÷每篮净值(NAVPERCU)=现金比例，持仓比例=1−现金比例，按 nav×shares 总市值加权汇总；快照盘只保留 KEEP_DAYS=10 天，趋势另存 data/etf-flow/ratio-history.json 幂等累积（磁盘快照优先、历史只补已清理日期，可跨越清理窗口）；±50% 现金比例异常守卫防单只脏数据带偏均值。server.js 新增 GET /api/etf-flow/cash-trend。前端 etf-flow.html 引入本地 vendor/echarts.min.js（第三方库本地随包铁律），etfFlowPage.js 在概览下方新增趋势卡（双折线：持仓红 #F6465D=风偏进攻、现金绿 #0ECB81=防守，echarts.init(el,'softDark')，y 轴贴近数据区间避免 0~100 压平，盘中未定稿点 tooltip 标注「盘中参考值」）。测试 scripts/test_etf_cash_trend.js。 // [20261027d] 个股数据后台预热落地（用户报「工作台开很久后切个股页仍长时间读数，与之前要求的提前后台缓存相悖」）：根因=getQuote/getHistory 无缓存、/api/analysis 每次现拉腾讯/东财，而已有后台任务只预热自选股「判定」（复用不刷数据）与板块资金（一次性），个股页面数据零预热。新建 lib/analysisWarm.js：① /api/analysis TTL 缓存（交易日盘中 9:15~15:10 内 2 分钟、其余 30 分钟，数据最新性=按类型 TTL+交易日感知 isTradingDay；LRU 30 条；失败/404 响应不缓存防毒化；附加 cachedAt/cacheAgeSec 字段、原结构不变）；② 最近查看 LRU（上限 12，持久化 data/analysis-warm.json）+ 预热循环（自选股∪最近查看，去重自选优先上限 20，逐只经本机 HTTP 走同一路由填充缓存，间隔 500ms 防打爆，单轮防重入）；③ 调度随 startServer 启动（首泡 20s，盘中 2 分钟一轮、其余 30 分钟一轮）。前端主路径无 refresh=1（那些都在手动「重新判断」按钮与污染重试路径），缓存命中即秒开。 // [20261027c] 修「自学习样本>20 仍显示样本不足」误导文案（用户质询「是不是死逻辑」）：实证非死逻辑——自学习早已运行，indexMomentum/margin 因子命中率 >60% 已把权重学满顶到 30% 上限（state.weights 实证），此后每次计算 clamp 无变化 → learnLog 空 → 前端二元文案把「已学满/死区」误报成「样本不足」。marketEmotionModel.learnWeights 新增 learnDetail 逐因子诊断（样本数/近窗命中率/当前权重/状态 adjusted·cap_up·cap_down·deadzone·insufficient，调整行为与原逻辑完全一致），结果透传 learnDetail；app.js 自学习行改诚实三分态（已顶边界/死区观望/待积累 n 因子），仅全部因子样本不足才显示「样本不足」。另澄清：截图「22 条预测」是整体预测台账（次日上证涨跌口径），自学习门槛按因子各自样本计（中性因子不累积；priceVolume 28 为改名前旧 key 不迁移）。 // [20261027b] 修当月逐日明细表标签口径（用户质询「中国平安今日的数据怎么获得的」）：快照 20261027 里的份额是 T+1 披露的 20261026 官方值，行标 20261027 = 「标注今日、数据是昨天」——违反 20261023j 数据日=披露日规则。stockMonthlyFlow 行标签改用 shareDate（数据日），保留 snapshotDate 溯源，基期取全量快照链前一份已定稿（正确处理跨月），披露日不相邻打 spanNote「多日合计」；前端日期格式化 YYYY-MM-DD、spanNote 徽标、补口径脚注（T+1 + 理论推导值非实际申报 + 周末无数据）。 // [20261027a] 宽基ETF累计表股票名→超链接 + 当月逐日明细表（用户 2026-10-27 要求）：点击累计表任一只股票名，卡片下方新建「当月逐日申赎明细」表（日期/申购股/赎回股/净申赎股 + 当月合计行）；后端 lib/etfFlow.js 新增 stockMonthlyFlow（遍历当月已定稿快照，相邻快照 ETF Δ份额÷单位=篮数 × 该股篮子股数=当日申赎，多ETF含同股合并），server.js 新增 GET /api/etf-flow/stock-monthly?code=&month=；前端 etfFlowPage.js 股票名改 <a class=etf-stock-link>，efBody 事件委托点击→拉取→渲染，支持切换/收起；style.css 补 .etf-stock-link/.etf-month-table/.etf-month-total/.etf-month-close。 // [20261026f] 个股记录行内编辑表单补样式（用户 2026-10-26 截图「182743/182749」指出修改表单渲染成原生白色控件）：20261026e 只加了 HTML 结构未补 CSS——style.css 新增 .sl-edit(修改按钮,与 .sl-del 同款、hover 琥珀)、.sl-btns、.sl-item.sl-editing(琥珀描边+淡琥珀底标记编辑态)、.sl-edit-form/date/text(与 .sl-add 添加表单同款暗色输入框+color-scheme:dark)、.sl-edit-actions、.sl-save(btn-primary 同款琥珀实底)/.sl-cancel(描边)，全部复用模块既有 token（card-bg #161B22 / accent #F0B97B / text #E6EDF3）。 // [20261026e] 个股记录「修改」按钮（用户 2026-10-26 截图「181737」要求每条记录带「修改」按钮）：lib/stockLog.js 新增 updateLog（按 id 定位、可改日期与内容、校验与 addLog 一致、updatedAt 溯源）；server.js 新增 PUT /api/stock-log/:symbol/:id；public/js/stockLog.js 整体重写渲染「修改」按钮 + 就地内联编辑表单（日期 input + textarea + 保存/取消，Ctrl+Enter 保存 / Esc 取消，事件委托）。 // [20261026d] 红涨绿跌文本着色落地（用户 2026-10-26 截图「164518」指出情绪因子卡里涨跌文字/数据未按要求标色）：app.js 新增 _dirColorize——带符号数值 +0.19%=红/-1.19%=绿、上涨/涨停 N=红、下跌/跌停 N=绿、其余「涨/跌」方向字按语义着色（日期 2026-10-26、时间 14:30-15:00、T+1 不误染）；应用于①首页情绪因子卡 value/detail 与核心驱动/量能状态/操作建议/风险提示四行，②个股市场情绪提醒面板 value/detail，③个股短期判断子因子卡与长短期判断因子 detail/value（同口径统一）。 // [20261026c] 颜色语义对齐红涨绿跌：① 行业政策徽章 战略扶持(利好)→红、受限(利空)→绿（原绿/红颠倒）；② 量比口诀3/5「尾盘放量拉升」由 ve-bear(绿=看空) 改为 ve-block(琥珀=警惕)，因模型明确「不得输出看多信号」，非看空信号。 10-23 真数据回填（用户 2026-10-26 报「还是没有获取到数据」）：经 NeoData 逐日权威份额变动回填——① 双路交叉验证（S21+Δ1022 与 S23−Δ1023 相等）33/33 严丝合缝后，data/etf-flow/20261023.json 还原为「按 10-23 当日采集」口径（shares=S22、shareDate=20261022、含 restored 溯源标记与全部 Δ 数据），运行中服务经 /api/etf-flow 实测「净申购 322.86 亿 · 24 只净申购/1 只净赎回」，台账 10-23 增量由代码幂等入账（lastDate=20261023、days=3）；② 510310（易方达沪深300发起式）NeoData 无逐日份额表（5 次尝试、实体解析正确），今日按「份额缺失」诚实处理、明日自愈；③ lib/marketEmotionModel.js calcEtfFlow 降级分支补透传 etfDate（修卡片「数据日期」回退到模型基准日的错标）；④ LAYOUT_VERSION 20261026b 强制当日判断重算（etfFlow 输入数据实质变化）。备份：data/etf-flow/20261023.backup-20261026.json、ledger.backup-20261026.json。 // [20261026a] 修宽基ETF申赎「净申购 0.00 亿/0 只净申购」假数据（用户 2026-10-26 报障）：[20261026a] 修宽基ETF申赎「净申购 0.00 亿/0 只净申购」假数据（用户 2026-10-26 报障）：根因是快照 shareDate 按 tradeDate 推、而份额 T+1 披露按采集日可见——周六补采的 10-23 快照实际已拿到 10-23 官方份额却标成 10-22，与 10-26 快照（同为 10-23 值）相减得假 Δ=0（510300 真实净申购 +25.13 亿份被吞）。修复：① lib/etfFlow.js collect 的 shareDate 改按采集日推（_prevTd(localCompact())，钳回 ≤tradeDate）；② computeFromSnapshots 加披露未跨日守卫（baseShareDate>=shareDate → 诚实报「无法计算」，禁假 0）；③ 跨多日缺口加 spanNote 标注多日合计；④ 存量纠偏：20261023.json shareDate→20261023、20261022.json 显式补 20261021、ledger.lastDate 回滚 20261022（假 0 消耗的幂等锁）。10-23 当日真实增量因基期值未捕获无法恢复，10-27 起披露跨日自动恢复。 // [20261025p] 三项改动（用户 2026-10-25 要求）：[20261025p] 三项改动（用户 2026-10-25 要求）：① 情绪总分改「权重比合计净值」——前端显示 totalScore×100 = 各因子净权重合计（±100 分制，徽章/详情行/阈值同步 ±20 分），内部 totalScore 语义不变（子卡/落盘兼容）；② 删除首页「情绪因子明细/宽基ETF申赎」页签（_renderEmoTabs/_renderEtfFlowPane/_loadEtfFlow 整体移除），情绪卡片回归单视图；③ ETF 明细改独立网页 /etf-flow.html + public/js/etfFlowPage.js（渲染逻辑整体迁移、全量成分股表默认展开、带刷新按钮），因子卡片「查看宽基ETF明细」按钮改 window.open 新标签直达。排版保持独立页统一外壳（DESIGN §12），因子网格对称布局不受影响。 // [20261025o] 市场情绪数据统一两位小数（用户 2026-10-25 要求「数据保留小数点后两位，百分比也是」）：① 模型 volumeText 量比 round 2（修「量比 1.2390594651481384」16 位浮点外漏）；② 核心驱动「净权重 ±X 分/权重 Y%」round 2；③ 前端情绪面板权重/净权重/情绪总分 toFixed(2)；④ 个股「市场情绪提醒」子卡情绪总分 round 2。另核实：股吧热度 94% 分位判「中性」为模型本意（score=-1 需「分位>90% 且大盘近期大涨」双条件）；用户所见「情绪总分 0.009/旧文案核心驱动」为旧进程未重启覆写的旧口径数据，重启即愈。LAYOUT_VERSION 20261025g。 // [20261025n] 市场情绪模型改「净权重=评分」（用户 2026-10-25 要求「市场情绪提醒 8 因子参考个股短期判断模块同样修改」）：① lib/marketEmotionModel.js 总分由 Σ(score×权重) 改 Σ(满格方向±1×权重)，因子评分=±权重（净权重），强度折扣退场（保留在文案与核心驱动排序）；② 因子下发 contribution（方向×权重，已含降级归零/滞后 8 折）；③ 前首页情绪面板因子明细大字改「净权重 ±X%」（判断模块同款），倾向阈值/仓位档位/自学习机制不变；④ 同日情绪记录每次刷新覆写（existing 路径），个股页「市场情绪提醒」子卡读落盘 score 自动跟随。 // [20261025m] 修「量能信号中性 vs 量价配合放量下跌」同屏矛盾（用户 2026-10-25 报「两个模块合并后出现数据错误和矛盾」）：根因是 volumeEngine._reconcileTodayBar 的追加条件 quote.date===todayStr 在周末/节假日失效——周六访问时最近交易日（10-23 周五）终值 quote 被拒，bars 末根停留 10-22，量能信号与量价配合都把 10-22 的「放量下跌 -4.18%」当成当日（实际 10-23 放量上涨 +2.26%）；同时旧服务进程内存里还跑着 10-23 初稿的口诀文案「放量下跌筑转周」（工作区已是「放量下杀防转弱」，重启即愈）。修复：追加条件放宽为「quote 新于末根 + 不晚于本地今天 + 是交易日」，实测 000902 date 补至 10-23、主判转第 5 条「量增价升看延续」、资金面偏多 0.24，与行情一致；量能三测试 28+295+229 全绿。LAYOUT_VERSION 20261025e 强制重算当日判断。 // [20261025l] 个股页新增最右侧「个股记录」tab（用户 2026-10-25 要求）：按日期排序的手动记录，自由文本添加该个股值得注意的问题——lib/stockLog.js（落盘 data/stock-log/<代码>.json，日期校验/2000字上限/500条上限/损坏按空处理）+ GET/POST/DELETE /api/stock-log/:symbol + public/js/stockLog.js（日期倒序分组、删除确认、Ctrl+Enter 提交、本地时区默认今天）+ index.html tab/面板/脚本 + app.js 切股与切 tab 挂钩（同股已加载跳过）。纯手动记录：不参与任何判断/评分/回测，不触发模块联动（隔离原则）。 // [20261025k] 子卡取值去裸百分比（用户 2026-10-25 问「融资余额为什么有两个权重」）：融资余额 value 加「较前值」前缀、涨停/跌停占比加「涨停/跌停」、行业短期走势加「板块」、期货近5日走势加「期货」——与「权重 ±X%」评分数字区分；-0.95% 实为融资余额较前值变化幅度（市场数据），权重只有子卡头部一个。LAYOUT_VERSION 20261025d 强制重算。 // [20261025j] 「权重=评分」铺满整个短期判断模块（用户 2026-10-25 要求「应用到整个短期判断模块，不是只用在事件驱动」）：① 全部 7 因子子卡下发因子内份额（share），因子信号 = Σ(份额×满格方向±1)，贡献分=净权重——市场情绪/个股短期动向沿用既有子权重归一化，资金量能沿用融合权重比例（主结论槽由量价配合承载）且主力净流入新增 0.05 份额（此前纯展示不计分），增持减持 0.55/0.45/0.20 归一化、被动减持按方向计分，行业板块涨跌停互斥持权 0.45/行业走势 0.35/板块消息 0.20，对标期货以相关性强度作份额、传导方向入子卡，跷跷板死区后满格；② 事件引擎子事件改发份额（effWeight/sumEff，显示数值不变）；③ 前端子卡权重=份额×因子有效权重、因子行净权重=Σ(份额×eff×方向)。LAYOUT_VERSION 20261025c 强制重算。 // [20261025i] 「权重=评分」口径落地 + 布局自适应（用户 2026-10-25 要求）：① lib/eventEngine.js 事件聚合信号由「信号强度加权」改为「方向满格加权」（事件按权重把 ±1 计入，贡献分≈净方向权重：回购+30%、原油-4% → 净+26%≈26 分），内幕抢跑保留原强度微调；② 前端因子行/长期卡片/子卡片全部删除「得分」数字——因子行只留「净权重 X%（最高 Y%，方向色）」或「权重 X%」，子卡片只留「权重 ±X%」；③ CSS 因子行与子卡片头 flex-wrap 自适应（条形弹性收缩、数字不截断，内容增减不再破版）；④ LAYOUT_VERSION 20261025b 强制重算。 // [20261025h] 判断卡片恢复「权重+得分」双显示并新增净权重口径（用户 2026-10-25 要求「所有权重与得分都要显示」）：① lib/eventEngine.js 事件子因子下发 effWeight（恒正、方向由 signal 承载）；② 短期因子行有带权子因子时显示「净权重 X%（最高 Y%）」=Σ(子权重×方向)，其余因子仍「权重 X%」；③ 因子行与长期卡片恢复「得分」（contribution×100），子卡片显示「权重 ±X% + 得分=权重×|signal|」；④ LAYOUT_VERSION 20261023i→20261025a 强制重算。 // [20261025g] 短期/长期判断卡片评分标注统一为「权重」口径（用户 2026-10-25 要求「统一采取权重」）：因子行删「利好/利空 ±档位」徽章与「贡献分」数字，只保留「权重 X%」+ 方向色/箭头；子卡片「利好+1」改纯文字「利好/利空/中性」；综合分与置信度保留。纯前端展示口径、后端判断缓存不重算。 // [20261025f] 工作台布局深度优化与统一（用户 2026-10-25 要求「深度优化布局设计，统一不统一的地方」）：style.css 新增「独立长页统一外壳」段——四独立页（notes/accuracy/judgments/logic-model）统一页宽阶梯（808/1148/1148/1328 居中，accuracy·judgments 与首页 home-card 1100 同宽对齐）、统一 .jd-header 页头（logic-model 独立页头结构废弃对齐，lm-tool-btn/lm-head-actions 死规则删除）、统一 sticky 工具条（np/acc/jd-toolbar 同一套）、统一页面级筛选芯片（np-tab/acc-tab/jd-tag 同一套金令牌着色）、统一大空态虚线空盒（表格内小空态不受影响）；独立页颜色全部令牌化（home-action-btn.active 杂金 rgba(207,174,124,0.14) 修正为 --accent-light、nav-acc-link 硬编码金改令牌、acc-kpi 裸 hex 红绿金改 var()）；jd-filter 圆角对齐 --radius-sm；notes 写按钮与范围 tab 去 emoji（DESIGN.md §6 动作按钮纯文字）；accuracy 页头按钮次序统一（次要在前、主操作在后、返回居末）；DESIGN.md 新增 §12 独立长页统一外壳；[20261025e] 删除归档模块（用户 2026-10-25 要求「把归档的模块删除」）：notes.js 移除 ARCHIVE_DAYS/_isArchived/_pageList 与 SCOPE_META.archive，renderScopePage 恢复 getByScope 全量渲染、hint 文案复原；notes.html 删除「📦 归档」tab 与 archive 初始化分支（scope 白名单复原 global/market、写按钮恢复常显、计数复原「共 X 条」）；20261025d 的单列流式布局与正文折叠摘要（展开全文/收起）保留；[20261025d] notes 独立页改纵向单列流式布局（固定宽度居中、上下留间距）+ 正文折叠摘要（3 行截断，「展开全文/收起」切换）+ 新增归档 Tab（超过 30 天的投资心得/大盘记录自动进入归档，只读视图隐藏写按钮）；[20261025c] 三弹窗改独立页面（用户 2026-10-25 要求「把这三个模块的弹窗改为新建网页页面」）：新增 public/notes.html（投资心得/大盘记录，?scope=global|market，顶部 tab 切换 + grid 多列卡片，Notes.renderScopePage 渲染进 #scopePageList）与 public/logic-model.html（逻辑模型树，LogicModel.buildInto 构建进 #lmPageBody，TREE 与首页同源）；notes.js 删 showScopeModal/renderScopeModalBody/refreshScopeModal/closeScopeModal 四个弹窗函数、新增 SCOPE_META + renderScopePage 并挂入 renderHome 刷新链（验证/设为主/保存/删除后页面列表自动刷新）；logicModel.js 提取 buildInto() + init 页面模式检测 + toggleAll 双容器 + 行点击委托放行页面模式；index.html 三入口按钮改 window.open 新标签跳转、删 lm-modal overlay 骨架与 logicModel.js 引用（该脚本移至 logic-model.html 加载）。 // [20261025b] 记录弹窗金融工作台风格重排（用户 2026-10-25 要求）：note-card 日期居左+状态标签小色块居右（note-head-tags 容器）、正文行高 1.75、动作按钮缩小（11.5px/3px 10px，含 btn-set-main 补基础尺寸）右对齐沉底+细分隔线、journal/scope 弹窗加宽 760px 内边距加大、记录块间距 14px、lm-modal-body 内边距加大；与左侧股票列表深色主题统一。 // [20261025a] 量能数据按档位着色（用户 2026-10-25 要求，放量红/缩量绿/平量白）：app.js 新增 volTierCls 共用助手，接入个股量能分析卡「量能档位」「60日量能确认」、大盘情绪卡「量能状态」两处、四维度客观描述「量能状态」；档位真值源 lib/volumeEngine.js VOLUME_TIERS（极度缩量/温和缩量/平量/温和放量/大量/天量），cap-pos/cap-neg 复用全站红绿语义。 // [20261024m] 修「AI 解读仍不同步到大盘记录」（用户 2026-10-24 16:24 报障）：20261024l 的落盘加了 `cached !== true` 门槛，导致「缓存已存在但从未落盘」被跳过（16:08 旧代码生成缓存，16:24 点按钮命中缓存 → 不落盘）。改为**只要 success 就 upsert**（saveMarketReviewNote 幂等，同一交易日只更新不重复），缓存命中也补齐落盘；并已用现有缓存回填一条「AI 大盘复盘 · 2026-10-23」到大盘记录。守卫 test_market_ai_cache_notes 22 项。 // [20261024l] AI 大盘解读「缓存 + 落盘大盘记录」（用户 2026-10-24 16:09 截图：手动 AI 解读没同步进大盘记录；且每次系统更新都重新解读）：① lib/ai/market.js 缓存由「4 小时 TTL」改为「按 asOfTradingDate 交易日缓存」——同一交易日（含周末/长假沿用最近交易日）复用同一份解读，只有跨交易日或显式 force 才重调 LLM，缓存记录写入 asOfTradingDate；② 手动生成（POST /api/ai/market-overview）成功后自动 upsert 到 data/notes.json（scope=market，标题「AI 大盘复盘 · 交易日」，同日更新不重复），与 15:30 定时复盘共用 lib/dailyMarketReview.saveMarketReviewNote，命中缓存不重复写；③ 首页「AI 解读」按钮改为「确保有解读」（POST force:false，复用缓存、缺失才生成），Alt+点击=强制重新解读；页面刷新 GET 直接读缓存。守卫 test_market_ai_cache_notes 21 项。 // [20261024k] 非交易日数据口径铁律（用户 2026-10-24 要求：非交易日无法获取「当日」数据应判定为正常，沿用最近一个交易日的数据即可，不得因此判「数据不足」）：lib/cnTradingCalendar 新增 asOfTradingDate / isDataCurrent（非交易日 → 最近交易日，沿用即视为最新）；板块拥挤度 recordDaily 落盘门槛由「字面 today」改为「最近交易日」（周末/节假日沿用最近交易日数据，只有严格滞后才拒绝），ensureSectorCrowdingToday 增加周末分支——确保最近交易日记录存在，避免首页板块拥挤度周末显示暂无数据；板块涨幅榜 recordDailyRanking 改为按最近交易日为键（消除周末伪日期污染近 N 日统计）。量能引擎 20261024f 的 _staleBarGapText 已同口径（周末末根=最近交易日 → 中性说明，不进红框）。守卫 test_non_trading_day_policy 19 项。 // [20261024j] 修「60日量能确认」文案歧义（用户 2026-10-24 15:52 截图：指标卡写「未确认」，生死位规则 1 却给出「60 日均量 927010 手 ×1.5」，判为前后矛盾）：confirm=null 实为「当日量落在 0.7~1.5×60日均量之间」→ 60 日口径平量，并非缺数据。app.renderVolumeEngine 不再写「未确认」，改为显示「平量 / 放量 / 缩量（x.xx×60日均量）」+ tooltip（均量 / 当日量 / 阈值）+ 一句窗口说明（÷5日均量与 60日均量是不同窗口，结论可并存）。纯前端展示改动，数据与计算零影响。守卫 test_volume_confirm_label 15 项。 // [20261024i] 量价分析合并进量能分析（用户 2026-10-24 要求，重复展示删除）：删除个股页独立「📊 量价关系分析」卡（#capVolumePrice），量能卡标题改「🔬 量能分析（量价 × 价格位置 × 量能行为）」；量价配合结论 + 量价独有指标（今日涨跌 / 20日涨跌日 / 20日量价比 / 20日净涨跌）并入 renderVolumeEngine，去重「量比 / 量能热度」（与量能档位同源，不重复展示）；量价数据缺失时显示明确原因（不整卡空白）。修复「个别个股量价分析失效」：capitalFlow.volumeIndicators 改双源兜底（引擎 bars ↔ 路由 history，任一 ≥20 根即可计算）；renderVolumePrice 加元素缺失安全退出，renderAll/实时刷新不再单独渲染旧卡。守卫 test_volume_merge 18 项。 // [20261024h] 新增「模块联动应答机制」（用户 2026-10-24 要求：源模块变动时自动给联动模块发同步/失效信号）：lib/moduleSync.js 声明依赖图（14 模块）+ emitChange 传递失效（BFS 含间接依赖、环路 visited 去重、3s 合并去抖、force 重发、处理器错误隔离）+ 为有内存缓存的模块注册失效句柄（priceActionHub 丢快照 → sameDayJudgment 作废判断）；把原本散落在 server.js / routes 的手写 invalidation 循环统一改为 emitChange（manualZones / eventEngine / dedicatedFactor），并新增 manualZones→priceActionHub→sameDayJudgment 的传递失效（手动区间一变连带作废个股判断，此前只丢快照不作废判断）；新增 routes/moduleSyncRoutes（GET /api/module-sync/graph|signals、POST /api/module-sync/emit 排障/验证）并挂载；marketEmotion→sameDayJudgment 仍走 _emotionSubStale 懒同步（避免首页每次重算情绪就 eager 失效抖动），依赖图仅声明关系。守卫 scripts/test_module_sync.js 37 项。 // [20261024g] 两件事：① 修「首页情绪 vs 个股大盘因子」同屏矛盾（用户 2026-10-24 14:00 截图：首页情绪总分 0.009 中性 vs 士兰微「大盘」因子 -0.317 看跌，且都自称引用同一判断）——根因是个股判断生成时把当日情绪总分烘死进 factors[sentiment].subFactors[市场情绪提醒].signal；首页情绪此后重算（数据源恢复 -0.317→0.009）但判断按 targetDate 复用旧快照，未感知情绪已变；修复：lib/sameDayJudgment 新增 _emotionSubStale/_findEmotionSubSignal，复用前比对「烘焙情绪信号 vs readLatestJudgment() 当前最新值」，不一致即强制重算（getJudgmentWithAccuracy + ensureAllTrackedJudgments 两处同源门控），守卫 test_emotion_judgment_consistency 15 项。② 新增「每日收盘后自动 AI 大盘复盘→写入大盘记录」（用户 2026-10-24 要求，截图「实时大盘·AI 解读」）：15:30 每日结算批内执行 runDailyMarketAiReview（getMarketOverview 同源取数 + analyzeMarketOverview force:true），结果作为 scope=market 笔记落 data/notes.json，同日幂等（标题带日期）、SA_NO_DAILY_AI_REVIEW=1 可关、无 API Key 时如实跳过；新增 lib/dailyMarketReview + 守卫 test_daily_market_review 27 项。 // [20261024f] 修「非交易日恒报『未包含今日数据』假缺口」（用户 2026-10-24 周六 13:35 截图）：末根=周五 10-23、今日周六 10-24，却进红色「数据不足」框。新增 lib/volumeEngine._staleBarGapText 交易日感知（走 lib/cnTradingCalendar）——周末/节假日末根≥最近交易日 → 中性说明「数据已更新至最近交易日」（不进红框）；末根<最近交易日 → 真缺口「未包含最近交易日 X」；交易日口径不变。前端 TRUE_GAP_RE 增「未包含最近交易日」；守卫 test_volume_gap_label 37 项。 // [20261024e] 量能分析「数据缺口」文案展示计算结果（用户 2026-10-24 截图要求）：五大生死位规则里「（未连续超过 60 日均量 ×1.5）」「（未超 60 日均量 ×1.5）」等阈值类缺口由纯阈值描述改为带实际计算值——嵌入最近3日成交量（手）/60日均量×1.5阈值、今日量/60日均量×1.5阈值、当日量/近12月历史峰值、换手率/均值×2阈值等；纯文案改动，dataGaps 仍为字符串数组、下游渲染（app.js ve-rule-gaps 仅 esc 后拼接）零格式影响；审计 9 只自选股确认缺口为系统性（东财通道本机网络层阻断→同花顺降级，全样本统一缺「历史段推算值」+「未含今日数据」两条），非个股特有。 // [20261024d] 个股「量能分析」指标卡括号内说明文字缩小一号（用户 2026-10-24 截图要求）：量能档位（1.41×）/价格位置（分位…）/关键支撑（…）/关键压力（…）四类括号内容包 .cm-paren（font-size 12px，主值 15px），关键支撑/压力 kind 内嵌套括号（如「MA250（上翘）」）随外层 span 一并继承小字号；纯展示层改动，数据与结论零影响。改动 public/js/app.js metrics 数组 + public/css/style.css 新增 .cm-paren。 // [20261024c] 量比口径二级一致性审计（用户 2026-10-24「检查其他量比口径不一致」）：主档位四处（volumeEngine/marketEmotion/marketTechnical/zoneValidity）已统一 1.2/0.8；本版本把两处「共用放量/缩量标签却用 1.5」的次级口径对齐到铁律——① capitalFlow.latestVsPriorAvg.trend（个股页 volumeTrend 来源）：>1.5→温和放量 改 >1.2，<0.5→缩量 改 <0.8，消除量比 1.3 时主档位说「放量」、个股页说「normal」的观感冲突；② capitalFlow 个股突破 breakoutVolRatio >=1.5 改 >=1.2，与 zoneReversal/zoneValidity 箱体突破 BREAK_VOL_MIN=1.2 同源（不另立一套）。迁移守卫 test_volume_root_migration 同步更新 oldAnalyzeVolume/oldBreakout 阈值；新增 test_volume_caliber_20261024c 显式边界断言。 // [20261024b] 量能活跃度卡量比阈值对齐项目「量比」铁律：原 1.5/0.7（>1.5放量/<0.7缩量）与 volumeEngine._volumeTier（>1.2放量/<0.8缩量，东方财富 App 量比口径）矛盾，用户 2026-10-24 截图「量比 1.21（平量）」报障。三处量能分档统一改 1.2/0.8：_latestDayMetrics、calcVolumeActivityLatest、calcVolumeActivity（旧 5日/3日函数亦对齐，供大盘技术分析页与守卫）。量比 1.21 现正确判「放量」、1.08 仍「平量」。守卫 scripts/test_volume_latest_day.js 36 项 + test_market_emotion 62 项零回归。 // [20261024a] 主力资金因子（图二 mainFund）数据源重构：原主链 push2delay 实时通道本机常年 TLS 重置、备链数据中心行业资金流求和又因 'fb.date===today' 硬门槛拒收 T-1 → 因子长期「缺失」。改用 fetchMarketMainFund() 稳定源链路（S1 行业资金流求和优先 + S2 板块资金流汇总兜底，同源东财数据中心族、不引异源，满足数据一致性铁律），接受「最新已收盘交易日」并如实标注口径日/T-lag（与融资余额 T+1 同范式）；快照写入加 lagged 护栏，T-1 值不得挂今日污染历史样本。守卫 test_mainfund_stable_source。 // [20261023p] 量能根新浪降级：腾讯 fqkline 全族被 WAF 拦（HTTP 501 + wa.gtimg.com 跳转验证页）→ 指数日线取不到 → 首页「量能活跃与量价配合」「大盘近期涨跌势头」全线降级「上证/深证日线不足 21 根」（用户 2026-10-23 20:37 截图报障）。修法：lib/marketTechnical.fetchIndexDailyBars 加新浪日K降级（money.finance.sina.com.cn getKLineData，仅限指数——指数无复权概念与腾讯 qfq 等价；个股 qfq≠不复权不走此降级）。关键量纲：新浪指数 volume=股、腾讯=手，实测 100.0 倍整 → ÷100 对齐（否则卡片「亿手」错 100 倍）。腾讯恢复后自动回到主通道。守卫 test_index_sina_fallback 15 项；实测 320 根 0.3s。 // [20261023o] 量能活跃与量价配合卡口径升级：所有口径改为「最新日 + 上证+深证双市」，弃用 5日/3日窗口。calcVolumePrice 改调 calcVolumeActivityLatest/calcPriceVolumeLatest（新增，旧 5日/3日函数保留给大盘技术分析页与守卫）；getMarketEmotionData 注入 indexSZ（深证成指，同量能根通道，失败单市降级）；PV_RISK_TEXT 窗口 近5日/近3日→最新日；detail 末尾口径说明改写。 // [20261023n] 量能活跃与量价配合卡补口径说明：用户看到「今日上证 +0.89%」但卡片写「量升价跌」，误以为分析的是今日。实际该卡用「上证指数 5日价格（今收 vs 5根前）+ 3日量能（近3日 vs 前3日）」：5日 -0.69% + 3日量能 +5.4% → 量升价跌，与今日涨跌无关。detail 末尾加「（口径：上证指数 · 5日价格 + 3日量能，非今日涨跌）」。 // [20261023m] 纠正 PCF/份额的措辞混用：上交所《ETF业务实施细则》第三十条——申购赎回清单（PCF）为「每日开市前」提供、网站 8:30 更新（T 日盘前，基于 T-1 收盘持仓）；T+1 的是「基金份额」，不是 PCF。原 UI「T+1 例行披露」易被读成 PCF 也 T+1。现 margin/etfFlow 因子各带 lagNote 明确区分：融资余额 T+1；基金份额 T+1、PCF T 日盘前 8:30。 // [20261023l] 数据日期再补齐：① 「各宽基ETF申赎」区块标题后加「· 数据日 2026-10-22」；② 融资余额是交易所 T+1 例行披露（最新可得=上一交易日），原 calcMargin 硬编码 lagged:true 且卡片用模型基准日 10-23 标注 → 出现「数据日期 10-23 + 滞后1天打8折」的自相矛盾；现 margin 因子输出 dataDate=2026-10-22、lagKind='cadence'（ETF 同标），前端对「例行披露」改用中性说明「T+1 例行披露（最新可得 …）→ 模型规则权重 ×0.8（惯例折扣，非数据异常）」，只有真正异常滞后才用 ⏱ 警告。 // [20261023k] 数据一致性补齐：① 情绪模型 factors.map 透出 etfDate/settleStatus/totalNet（原被剥掉，卡片只能回退模型基准日 → 标 10-23、数据 10-22）；② ETF 滞后判断把紧凑 20261022 归一到 YYYY-MM-DD 再比（原字符串比较误判 lagged=false），lagDays=1；③ ETF 页签「（当日）」/「当日买·当日卖」改为真实数据日（2026-10-22），术语不再用「当日」。守卫 test_market_emotion / test_etf_flow。 // [20261023j] 两处数据日期修复：① 情绪因子卡补「数据日期」（ETF=份额披露日、讨论热度=热度时间、其余=模型基准日；宏观月度已在 detail 写明）；② 宽基 ETF 申赎「数据日」改用份额披露日（T-1）——腾讯 field 72 是上一交易日份额（实测 510300 在 10-23 取到 327.3 亿份 = 东财 2026-10-22 份额），原按 tradeDate 标注导致「标注今日、数据是昨天」；快照新增 shareDate、台账按 shareDate 键并一次性迁移、_computeEtfFlow 返回 calc.date。守卫 test_etf_flow（58 项）。 // [20261023i] 股份回购从「增持减持」卡片迁入「突发事件」（事件驱动因子），权重按进度：回购提议（001 董事会预案 / 002 股东大会通过）10%、回购实施中（004）30%（用户 2026-10-23 截图要求）。新增 lib/eventEngine.buildBuybackEvent（合成事件，跳过内幕抢跑/市场反应核验，detail 保留四要素）；factorHoldings 不再消费 buyback、不再把回购计入利好家数；LAYOUT_VERSION=20261023i 强制重算。守卫 test_buyback_event_weight（29 项）。 // [20261023h] 修复「三季报已出仍解读半年报」：lib/deep/financials.getLatestPartialQuarterDates 原按月份猜报告期（5-7月=一季报 / 8-10月=中报 / 11月+才三季报），而三季报法定披露期是 10 月 → 整个 10 月读不到 09-30（用户 2026-10-23 洲明科技 300232 截图：「三季报已经出了，模块还在默认解读半年报，自动搜索最新财报的机制是死逻辑吗？」）。现改为直接请求最近两年全部季末报告期，由 F10 返回实际已披露的那些（实测 300232 请求 2026-09-30 返回「2026三季报」）；并升 EARNINGS_PROMPT_VERSION=20261023h 强制失效旧中报缓存，深析管线丢弃 stale 缓存后前端自动触发重新解读。守卫 test_latest_report_period（15 项）。 // [20261023g] 准确率台账增加「待结算明细」：`sentimentAccuracy.computeAccuracy` 输出 `pendingList`（baseDate/targetDate），前端在准确率行下方列出「待结算 N 条：10-22（目标 10-23，待今日收盘）· 10-23（目标 10-26，未到目标日）」，解决「20 条为何只结算 18 条」看不出差在哪两天（用户 2026-10-23 提问）。 // [20261023f] 修复「数据不足标注」误读：① 历史段成交额回填改用腾讯「不复权」收盘价（前复权价会系统性低估 2~3.5%，实测 603288 改用后偏差 <1%），turnover 仍按流通盘推算（实测一致），该条从「推算值」降级为「来源与口径说明」；② 前端把 dataGaps 拆成「数据不足（影响结论置信度）」与「数据来源与口径说明（不影响结论）」两个框——日K降级/当日bar覆写/量比直采/分时未收盘不再塞进红色缺口框。lib/stockData 新增 fetchTencentRawCloseMap；守卫 test_volume_gap_label（25 项）+ test_ths_backfill（21 项）。 // [20261023e] 量价十口诀区块标题去掉「（郭睿体系 · 主判）」括号及其中文字，标题改为「量价十口诀」（用户 2026-10-23 截图要求）。 // [20261023d] 资金量能整合「量价十口诀（郭睿体系）」为用户指定框架：新增 lib/volumeEngine `_tenRules` 主判层（10 条口诀 × 位置/量能/价格，输出 primary/items/framework/reminders/summary），个股页「资金量能」卡顶部渲染（主判 + 10 行对照表 + 框架提醒）；既有 7.4 位置量价 / 7.5 量比口诀 / 11.3 矛盾信号保留为「补充交叉验证」。补齐原引擎 6 个缺口：①低位无量 ②高位无量两子型 ③低位放量吸收确认 ④高位放量创新高/滞涨/放量下跌三分 ⑤放量下杀承接判定 ⑥平量涨跌定性；平量涨/跌方向由 neutral 调整为 observe。引擎 schema → volume-engine-20261023d。 // [20261023c] 修正「低位放大量但价格不跌，要跟踪」误判：原条件 `(isStagnant || chgPct > 0)` 把任何上涨（含 +3.41% 大涨）都当「价格不跌」，与结论文案「仅小阴小阳震荡或重心企稳」自相矛盾（用户 2026-10-23 海天味业 603288 截图报障）。现要求当日 |涨跌幅| < 1.2%（小阴小阳硬门槛，与 isStagnant / 低位放量震荡同阈值），重心企稳（近 3 日收盘重心不下移）只作二次确认；大涨/大跌一律不命中，未命中时明说「已属大涨、方向性上涨、不适用本项」。lib/volumeEngine.js 11.3.3.2。 // [20261023b] 回滚 20261023a 的「卡内页签 + 整行宽卡片」：用户 2026-10-23 截图报障「卡片的布局全部乱了」。宽基 ETF 因子卡恢复为普通网格卡（与其余 9 张等宽），卡片只保留核心数值 + 一句短摘要 + 「查看宽基ETF明细 →」入口；口径解释、ETF 数量统计、逐股统计全部移到独立的「宽基ETF申赎」页签承载，不再撑乱首页网格。删除 _renderEtfFactorCard/_renderEtfInlineBody/_renderEtfStockTable/_renderEtfListTable 与 .tp-comp-wide/.etf-inline-* 样式，新增 .tp-comp-more。 // [20261023a] 宽基 ETF 因子卡新增「卡内页签」（概况 / 个股当日净申赎 / ETF 名单）：用户指出卡片内容看不全，要求卡内直接统计每只成分股当日被净申购/赎回的数量 + 当前模块统计的 ETF 名单。因子卡改为整行宽（tp-comp-wide），卡内复用 /api/etf-flow（同源 3 分钟 memo）按需加载；个股表按当日净额降序，ETF 表按净申赎额降序，红涨绿跌。 // [20261022j] 修正②卡「上方/下方关键区间」排序口径：用户指出 20261022h 做错了——当时实现为「阻力 low 升序 / 支撑 low 降序」，两段都是"离现价最近的在最上面"，方向相反、整卡不连续（截图表现：上方 5.48→6.62 递增、下方 4.94→4.59 递减）。用户原话「我要求的是上方和下方区间统一从上到下按照价格的高度排序」。现改为**两段统一按 low 降序**（高价在上、低价在下），整卡自上而下价格单调不增，等价于一根竖直价格轴：6.62…5.48（阻力）→ 4.99…4.59（支撑），与看盘软件纵轴方向一致。`_sortZones` 删除 side 分支、side 参数保留仅为兼容调用点；强度不再影响顺序，只由行首徽标承担。**后端数组顺序不变**（仍为阻力 low 升序 / 支撑 low 降序），④卡 `resistances[0]` 与量能规则4 `zoneLevelsHint` 的依赖不受影响。守卫：scripts/test_zone_sort_order.js（27 项，用截图里 7 阻力+3 支撑的逐条真实数值断言）。 // [20261022i] 两件事（用户连续两条需求）——①**主图删除「今日收盘价」光标，改为「区间最高/最低」两条自动追踪光标**：原右侧 5.77 价签只标末根收盘价、信息量低；改为两条虚线（红·高 / 绿·低）随**当前选定时间范围**实时重算，滚轮缩放/拖动平移/3月·6月·1年·3年按钮四条路径全部收敛到 `Charts._visibleRange`（读 dataZoom 百分比→下标）→ `_rangeExtremes`（区间极值）→ `_rangeMarkLine`（固定两条，防 ECharts 按索引合并残留脏光标），dataZoom 事件用 rAF 节流。②**修「自选股需要点好几次才切得过去、系统反应缓慢」**：实测冷缓存切股 `/api/analysis/:symbol` 要 2.0~4.0 秒，四个成因叠加——(a) `showLoading(text)` 把 text 参数整个丢弃、只走一条 3px 进度条 → 几秒内屏幕仍是上一只股票，用户以为没点上；(b) 连点时每次 `analyze()` 都 `_reqToken++` 并重发请求、前一结果被 token 丢弃 → 越点等于不断重置读条；(c) 自选股行默认 `draggable="true"`，指针按下轻微移动就被判为 HTML5 拖拽、**click 事件直接被吞**；(d) 60s 定时刷新调 `renderWatchlist()` 整体 `innerHTML` 重建（注释却写「只更新价格单元」）→ 重置滚动/悬浮，还可能吃掉按下时有、抬起时没了的点击。修法：新增 `#loadingPill` 胶囊（pointer-events:none，显示「正在加载 XX」）+ 点击后立即高亮目标行；`analyze` 加 `_inflightTokens` 同股在飞去重（force:true 供刷新按钮/换范围突破）；行导航收敛为 `navigateToRow`，由 `pointerup`（位移≤6px、≤900ms）兜底并带 symbol 维度去重；定时刷新改 `patchWatchlistPrices()` 只 patch 价格/涨跌幅单元格（排序态仍重排，保顺序语义）。守卫：scripts/test_chart_range_cursor.js（39 项）、scripts/test_switch_stock.js（47 项）。 // —— 历史： [20261020l] 三处修复（用户连续三条报障）——①**下线「关键位有效性检验」卡与其联动**：用户指出 20261020i **删错了模块**——当时该删的是这张「生死位规则口径」⑤卡，我方却把箱体区块删了。本轮彻底移除：`getLevelValidity`/`_extractLevelValidity`/`_lvCache`/`LV_TIMEOUT_MS`（lib/priceActionHub.js，连 analyzeVolume+getQuote 依赖）、路由层 `levelValidity` 注入（server.js）、`#paLevelValidity` 卡与 `_renderLevelValidity`/复位/错误占位（public/js/app.js）、`.pa-lv-*` 样式（style.css）、`scripts/test_price_action_level_validity.js`；资金量能页自身的规则3/规则4 不受影响。②**修「距失效还需 3 日」误解**：`invalidation.remainDays` 原在未越界时也恒算 3，前端照渲染成倒计时，看上去像「模型三日后自动失效」；实际条件是「连续 3 日收盘在失效线外」，股价在箱体内震荡时根本未触发。改为：未越界时 `remainDays = null`，前端显示「未触发失效」，只有 `currentStreak > 0` 才显示「已连续 N 日在外，再有 M 日失效」；并加源码守卫禁止「距失效还需」文案复活。③**修「来回震荡却不触发检验」**：`lib/zoneValidity.js` 把「越界」拆成两套谓词——`beyondOf`（收盘越过区间**远端**：阻力>high / 支撑<low）用于标准1、breakCount、streakNow；新增 `touchOf`（收盘**到达**区间近端：阻力≥low / 支撑≤high）用于标准2 的往返计数，字段 `transitions` → `touchTransitions`。根因：603288 现价 34.09、阻力区间 34.33~34.67，近 60 日收盘在该位置反复进出 **7 次**却从未收在 34.67 之上，旧口径一次都不计 → 永远判「有效」，正是用户报障「在阻力/支撑区间来回缩量震荡为什么不触发检验」。新口径实测：603288 阻力 1/2、支撑 1/3（34.33~34.67 往返 7 次、MA20 33.56~34.24 往返 9 次、33.29~33.63 往返 4 次均判无效隐藏，保留 34.53~34.87 与 32.25~32.57）；600909 阻力 0/3；601318 阻力 1/3、支撑 1/1。测试：`test_zone_validity.js` 新增 [15] 触及口径 7 项 → 61/61；`test_range_detector.js` 182/182（新增倒计时断言与文案守卫）。 [20261020k] 箱体上下限并入②卡阻力/支撑清单（用户要求「把箱体的上下限合并到上方阻力和下方支撑区间里面」）——①`lib/rangeDetector.js` 新增纯函数 `boxEdges(sr)`（导出供单测），活动箱体在结果里多挂 `edges:{upper,lower,label}`；②**取「实际收盘区间」envU/envL，不取中轴±容差的失效线 bandU/bandL**：失效线是纯判定阈值（600909 为 9.35/6.91），离现价 33%、且从未被价格触碰过，摆进「阻力/支撑」没有交易含义，用户核对形态用的也是实际高低点（8.54/7.03）；失效线仍留在箱体行与 tooltip 明示「越过 X 连续 3 日才判箱体失效」；③**箱体条目 isBox=true，绝不交给 zoneValidity 过滤**（用户第六条：箱体检验与两条区间有效性检验必须独立）——前端写成 `validOnly(摆动点).concat(箱体条目)`，顺序即约束，测试 [16] 用正则守住，任何人把它挪进 validOnly 都会红；④现价已越到某一侧之外时该侧条目自动省略（不把刚破的上沿继续挂在「上方阻力」里误导）；⑤箱体边界是单点价（`low===high`）→ 渲染单值 `8.54` 而非 `8.54 ~ 8.54`，并加 `.pa-zone-row.box-edge` 金色虚线左边框标识结构边界；⑥②卡箱体行**移除「收盘区间」字段**（已并入清单，避免同屏重复），只留「自 X 起 N 个交易日 · 失效线 · 距失效还需 N 日」；⑦实测（日K1500根）：600909 → 阻力 8.54（箱体上沿 56 日）/ 支撑 7.03（箱体下沿 56 日）；603288 42.22/32.44；601318 58.24/47.23；000858 79.92/68.77；600460 无活动箱体 → 清单不加箱体条目。测试 `test_range_detector.js` 新增 [16] 21 项 → 177/177。 [20261020j] 单箱体模型落地（用户口径：自最新日回溯 20 个交易日起、无固定长度、容差随长度放宽、连续 3 日突破即失效、与阻力/支撑两条有效性检验完全独立）——①`lib/rangeDetector.js` 彻底重写为**单箱体状态机**，删除 20261020f/g/h 的固定多窗口版本（WINDOWS/detectRanges/measureRange/measureDrift/scoreStability/annualizedVol/ampGrade/mergeZoneLevels 全部移除，旧 130 项单测同步重写为 156 项）：种子 = 最近 `SEED_DAYS=20` 个交易日（含最新日），中轴 = 段内收盘**中位数**，段内每个收盘须落在「中轴 ± 容差」的**带**内（不是 min/max 包络）即成立；容差 `tolPctFor(len)=min(10%×√(len/20), 15%)`——√ 的依据是随机游走位移 ∝ √t，15% 上限防久箱体带宽失去意义；成立后逐日推进，收盘在带内则延长，在带外累计 `OUT_BREAK_DAYS=3` 日即失效（**与成交量完全无关**，严禁复用 zoneValidity 的放量/反转次数口径），失效后须重新积累 20 个交易日才可能形成下一个箱体；离群/空值（`Number(null)===0` 陷阱）在 `_num` 前置挡掉。②**重新接入但只展示精简一行**：`priceActionHub` 用已拉到的 daily 直接算 `data.singleRange`（纯函数零网络，故不进路由层二次拉取；失败降级 null 只隐藏本行），②卡「短期动向预判」内 `_renderSingleBoxRow` 输出「自 X 起 N 个交易日 · 收盘区间 · 失效线（中轴±容差）· 距失效还需 N 日」，无箱体时输出「上一个箱体何时因何失效 / 新箱体还差几日」，完整口径进 title 悬停；旧多窗口表格与死样式不再复活（有源码级守卫测试）。③与「阻力/支撑区间有效性检验」（`lib/zoneValidity.js`，20261020i）**源码级双向不引用**、不共用常量，唯一共用只有收盘价原始数据，界面同屏声明两套口径不可互相验证。④顺带修复 20261020i 遗留：区间行悬停明细误用已不存在的 `ck.outDays/ck.maxOutDays/ck.breakDate/ck.breakVr`（会显示 undefined），改为 `transitions/crossMax/streakNow/outStreakMax/lastBreakDate/lastBreakVr`。实测（日K 1500 根）：600909 判出「2026-07-27 起 56 个交易日、收盘区间 7.03~8.54」，与用户截图「7月28日至今、最高 8.54、最低 7.03」一致（旧模型因振幅 19.4% > 16.8% 阈值判不构成）；603288 为 235 日大箱体（中轴 37.97、实际 32.44~42.22）、601318 92 日、000858 86 日，600460 上一箱体已于 2026-10-14 连续 3 日向下突破 28.18 失效（现价 25.91，失效判对）。 [20261020i] 箱体模块下线 + 阻力/支撑区间有效性检验（用户两条标准）——①**箱体模块与②卡联动整体删除**：用户实测 600909「7/28 至今 7.03~8.54」区间内收盘占比 **100%**、越界段 **0**、中轴漂移 **4.8%**，却因固定 60 日窗口（振幅阈值被窗口基准×1.4 压到 16.8%）与实际振幅 19.4% 判「不构成箱体」——证明「固定回看窗口 + 窗口基准振幅上限」与市场直觉「箱体一旦形成就一直延续到失效」不符；故移除 `ranges` 快照字段、`zoneLevels` 路由注入、前端「箱体判定」区块与箱体上下沿并入阻力/支撑的联动、以及相关死样式；引擎 `lib/rangeDetector.js` 及其 130 项单测保留待「自适应起点」版本复用，但不再参与任何运行时计算；②**新增 `lib/zoneValidity.js`**：阻力/支撑区间有效性检验（用户原话「不需要放量就轻松突破则无效」「超过三天在区间处来回突破则无效」），口径：近 60 日窗；收盘穿越（close>阻力上沿 / close<支撑下沿，等于端点算区间内）；突破日量比 = 当日量÷前 5 日均量，>1.2 为放量（与 volumeEngine `_volumeTier` 同源）；量比 ≤1.2 即突破 → 无效；近 60 日收盘在区间外 >3 天 → 无效（「超过三天」故 3 天仍有效）；量能缺失 → 标准1 不判定、不臆造量比；窗内从未穿越 → 有效（未被测试不等于无效）；③区间在 `priceAction.js` 内**原地打标**（valid/invalidReasons/zoneCheck）而非删除，保证语义单源——④卡「反转量化边界」改取首个**有效**区间，前端按 `valid!==false` 过滤、无效区间不展示，区段全被过滤时该标题整段隐藏；④悬停可核对检验明细（区间外天数/最近穿越日/量比/阈值）。 [20261020h] 箱体上下沿拆入②卡「上方关键阻力区间 / 下方关键支撑区间」（用户截图要求）——①**归属**：上限 U → 阻力区、下限 L → 支撑区，右侧标注所属窗口（`250日箱体上沿（主判定）`/`（辅助）`/`（未确认）`，主判定窗即使未确认也保留「主判定」字样）；②**排序**：整卡自上而下按价格由高到低（两区各自降序 + 阻力区整体在支撑区之上，等同点用下沿降序作次序键，单点边界排在同顶点波段之前）；③**单点边界**：箱体上下沿是收盘统计得出的单点价（low=high）渲染单值，悬停给该窗口完整计数（振幅阈值/越界段/假突破/中轴漂移/置信度）；④**单一口径**：归属/标注/排序收敛到 `lib/rangeDetector.mergeZoneLevels` 纯映射+排序，经 /api/price-action 的 `zoneLevels` 实时下发（不缓存、不污染 priceActionHub 快照语义，沿用 20261020e 路由层注入模式），前端只渲染不重复实现；⑤**未确认淡显**：未构成箱体的窗口仍出边界，但 `stable=false` → 前端淡显 + 标注「未确认」，避免被当成已验证的强阻力/支撑；⑥②卡原「箱体区间」区块改为「箱体判定」，只留每窗口的振幅/占比/假突破/漂移/结论（价格区间已移入阻力/支撑，不再重复），口径声明改为「箱体上下沿（收盘统计）与摆动点区间（近60日聚类）两套口径，同屏并列不互证」。 [20261020g] 箱体判定阈值体系升级（用户第二轮规范：不要只按窗口缩放，要结合波动率、改中轴漂移、主判定 250 日、置信度分级）：①**振幅阈值三层结构**——窗口基准（60/120/250/500 日 = 12/18/25/35%）→ 波动率自适应（`ampMax = clamp(1.5 × σ250年化, 窗口基准×0.6, min(窗口基准×1.4, 35%))`，低波动股收紧到 15%、高波动股最多放到 35%，用户原话「不应低于年化波动率 1.5–2 倍但不超过上表上限」）→ 无 σ 数据退回窗口基准并标注依据；②**漂移口径改写**——主判据改为「中轴相对漂移」（滚动子窗中轴 vs 全窗中轴的最大偏离，阈值分层 10/12/15/20%），原「上下沿绝对漂移」降为披露字段 edgeDriftPct 不参与判定（用户：不要用上下沿绝对漂移硬阈值）；③**判定分层**——主判定固定 250 日（数据不足降级 120→60 并写入 dataGaps），60/120/500 只做稳健性检验、不一票否决；④**置信度三级**（不再是有/无二值）：主判稳定+≥1 辅助稳定=高、仅主判稳定或最大连续越界>5=中、主判不稳=低（辅证稳定时提示「箱体可能仅为近期形成」）；⑤**振幅宽度分级** 窄幅≤15%/常规≤25%/宽幅>25%，结论文案直接写「250 日·宽幅箱体成立」，避免与窄幅同等宣传（用户：500 日 35% 只能算宽幅箱体）。实测 6 只自选股：σ 年化 22.5%~54.6% → 250 日阈值 33.8%~35%（自适应生效）；中轴漂移口径使平安（沿漂 28.6% 但中轴仅 12.8%）不再被误杀；海天 250 日 25.3% 判「宽幅箱体成立·置信度高」（60 日辅助同稳）。test_range_detector.js 扩到 100 项全绿（新增阈值三层夹取、σ 计算、分级、主判定降级、置信度三级、中轴漂移口径）。 // [20261020f] 技术面②卡新增「箱体区间（多窗口）」（用户 2026-10-20 提供七段式箱体判定规范并选定 B 方案）：新建 lib/rangeDetector.js 纯计算引擎——多窗口 60/120/250/500 各算一组上下沿，三族候选（收盘分位法 5/95 与 10/90 / 滚动20日高低点分位 / 网格搜索多目标惩罚）择优；口径严格按用户规范：收盘价定界（>U 向上突破、<L 向下突破、== 视为区间内）、按「越界段」计数（收回当天不计入连续越界、首次突破后 5 个交易日内收回记 1 次假突破、第 6 日收回或未收回记有效突破、上下分别计数、二次突破=新段、方向翻转未回区间仍属同段、盘中突破单独计数不进主计数）；阈值随窗口缩放（振幅 60日12%/120日18%/250日25%/500日35%，漂移 8%/10%/15%/20%；占比≥90%、假突破≤3、有效突破=0 不随窗口变；最大连续越界>5 只降置信度）；不存在稳定区间时明确写「不存在」并给最接近候选与不满足原因。priceActionHub 快照附加 ranges 字段（纯计算零网络，不改 priceAction.js 内核，sameDayJudgment 因子不读该字段，无副作用）；app.js ②卡内渲染多窗口行（复用 pa-zone-row 样式、金色=稳定/灰淡=不构成箱体、title 悬停展示八项计数与阈值评分、明示与「近60日摆动点区间」为两套口径）。scripts/test_range_detector.js 71 项全绿（含用户给的每条计数边界）；真实数据标定：000902 新洋丰 60 日命中稳定箱体 13.08~14.50（振幅 10.3%/占比 91.7%/假突破 3 次/漂移 2.7%），并已逐日手工对账一致。APP_VERSION 20261020e→20261020f（public 31 处 ?v= 同步）。 // [20261020e] 技术面分析卡新增「⑤ 关键位有效性检验」（用户问「模型对上方关键阻力区间和下方关键支撑区间，有没有关于这些价位的有效性检验」）：价格行为推演只给区间不做历史检验，现把资金量能引擎（生死位规则）既有检验结论联动展示——lib/priceActionHub.js 新增 getLevelValidity（独立 _lvCache 同 TTL 口径、12s 超时、getQuote 兜底、失败返回 null 不阻塞主链路）+ 纯函数 _extractLevelValidity（levels/platform/breakThrough/breakDown/规则3 缩量假突破/规则4 放量破位含 partial 初步破位/突破后回踩缩量正向确认 + schema/date/barsSource，导出供单测）；server.js /api/price-action 路由在 ...data 之后合并 levelValidity；public/index.html pa-grid 后加全宽卡 #paLevelValidity（.pa-lv-card 专用 CSS，.hidden 显式声明——本项目 .hidden 非全局类）；app.js _renderLevelValidity 复用 ve-rule 样式与红涨绿跌配色，meta 行明示与②「近 60 日摆动点区间」为两套口径；scripts/test_price_action_level_validity.js 31 项全绿、test_volume_engine 295/295、test_volume_consistency 227/227、test_volume_price_signal_wiring 13/13。 // [20261020a] 修复情绪准确率台账「周末基准日」永久卡死（用户截图报障「结算的数量比预测的数量少太大，哪里出bug了？」）：2026-10-18（周日）下午首页接口调用时上证日线通道瞬时失败，marketEmotionModel.js:832 的 baselineDate 兜底为 today=周日，留档基准日落非交易日→上证无 10-18 K 线→settleRecord findIndex 恒为 -1→该记录永久 pending（截图 18 条中 15 已结算/3 待结算，其中仅 1 条卡死，另 2 条为目标日在途与未来的正常态；264 条行情判断台账 256 已结算、33 条权重记录 31 条 T+1 已结算，均健康）。修复三处：①结算侧 settleRecord 新增 resolveBaseDate——baseDate 非交易日回滚到上一交易日（与 20261013f targetDate 防呆对称；不变量 nextTradingDay(d)==nextTradingDay(previousTradingDay(d)) 由测试锁定，目标日不受影响）；②留档侧 recordDailyJudgment 同样回滚，且回滚而来的记录不得覆盖目标日既有留档（通道故障日的降级结论不得顶替正常交易日的完整判断）；③删除 data/sentiment-accuracy/2026-10-18.json 重复计数产物（与 10-16 记录同目标日同方向）。scripts/test_event_weight_sentiment_acc.js 新增 9 项防呆用例（44 项全绿）；实测复刻周日基准日记录可正常结算（回滚至 10-16 基准收盘），磁盘台账 overdue=0。 // [20261019f] 缩量判定标准对齐市场（用户新洋丰 000902 截图反馈「缩量的判定标准和市场上的缩量的判定标准出现矛盾」）：量比 0.99 按市场标准（东方财富 App：量比 0.8~1.2 为平量）应判平量，工作台却因「60 日均量口径（当日量<60日均量×0.7）确认缩量」把 ÷5 日均量的平量翻转成「温和缩量」，标签/热度/引擎结论全变缩量。修复：定档标准改为市场标准量比单独定档——LEVEL_RULES/_volTriState/judgedLevel/_comboEngine/_volTraits/_volumeTier 全链路只认 ÷5 日均量，阈值对齐市场（缩量 <0.8 / 平量 [0.8,1.2] / 放量 >1.2 / 极度缩量 <0.5，大量/天量 2.5/4 内部分级保留）；60 日均量确认降级为分歧披露（volumeTier.divergenceNote 如实说明，不再翻转档位）；capitalFlow unifiedVolState dry 边界 0.4→0.5。schema 升至 volume-engine-20261019f；sameDayJudgment LAYOUT_VERSION 升 20261019f 强制重算当日判断；test_volume_engine.js 新增市场标准对齐回归块（233 项全绿）、test_volume_consistency.js 227 项全绿。实测影响：今日 10 只自选股中 600460(0.93)/000902(0.99)/000783(0.82) 标签由缩量回平量。 // [20261019e] 修复量价标签与解释自相矛盾（用户海天味业 603288 截图报障：标签「量价齐跌」vs 解释「下跌放量」）：capitalFlow.js 下跌分支 amp 档标签「量价齐跌」是 20 日窗口时代遗留词（价跌+20日量能萎缩），20260902m 改当日口径时只改解释漏改标签——当日口径 amp 档=价跌且量增，标签暗示量缩与解释语义相反。修复：下跌侧分级对称化，huge「放量下跌」→「巨量下跌」、amp「量价齐跌」→「放量下跌」（desc 本就正确未动）；VP_MAP 与 sameDayJudgment vpSigMap 分值按档位继承（巨量下跌=原放量下跌 -12/-0.6、放量下跌=原量价齐跌 -9/-0.5，零分值变化）；修复历史遗漏——旧 amp 档不在 bearScore/capitalCharts bear 列表（下跌放量竟不得空头分）；sameDayJudgment LAYOUT_VERSION 升 20261019e 强制重算当日判断；scripts/test_volume_consistency.js 新增第 14 组「标签与解释方向一致护栏」20 场景（181→217 项全绿）。 // [20261019d] 量能引擎「该放量/该缩量」判定缺口补齐（用户提供规范性判定清单，要求去重后补入）：lib/volumeEngine.js 新增纯 IF-THEN 函数 _expectedVolumeRules（零 LLM）——风险类 3 条：高位放量下跌（高位+巨量+明显收跌 chgPct≤-1.2%，补 highHugeNotUp/highStagnant 仅覆盖滞涨横盘/冲高回落之漏）、下跌途中放量阳线诱多（补 shouldShrinkHuge「下跌途中」仅抓 chgPct<0 阴跌之漏，放量阳线诱多原完全漏判）、高位缩量横盘（补 shrinkUp 高位阶段仅覆盖 chgPct>0 缩量上涨之漏）；正向确认类 3 条：突破后回踩缩量不破、低位倍量阳线启动、主升浪缩量上涨控盘（补模型偏矛盾/风险信号、缺理想剖面正向确认之缺口）。注入 _classify（风险类→禁看多；下跌途中放量阳线→强制看空；正向类→signal.bullSupport 看多支撑）、riskTags、highlights、_buildSummaries 新增 expectedVolumeSummary 归集；前端 renderVolumeEngine 渲染新卡片。schema 升至 volume-engine-20261019d；scripts/test_volume_consistency.js 新增 [13] 组，test_volume_engine.js 同步断言。 // [20261019b] 当日 bar 实时行情终值对齐（用户 000902 新洋丰实测：东财 App 量比 0.99 / 当日 +1.87%，工作台 0.97 / +2.39%）：20261019a 新鲜度判据只校验「末根日期=今天」，但同花顺当日 bar 虽带今日日期、收盘后数值仍是盘中快照（close 13.69 / 79,232 手，真实终值 close 13.62 / 80,528 手）——日期新鲜 ≠ 数值终值，快路径直接采用错误快照；本机东财通道间歇被断（socket hang up），腾讯日K虽正确但排在同花顺之后永远轮不到。修复（数据一致性铁律：当日数据单一权威源）：lib/volumeEngine.js 新增纯函数 _reconcileTodayBar 并导出——主行情源腾讯实时 quote 即交易所终值，末根日期=quote 日期→覆写末根 OHLC/量/额（一致则幂等静默）；quote 日期更新且为今日→直接以 quote 补齐当日 bar（全通道日K集体延迟场景，与 20261019a「全 stale 选末根最新」互补：历史段用通道、当日段永远以实时行情为准）；单位按通道自适应（quote.volume 为「股」，tencent 通道 bar 为「手」→÷100，其余通道原值）；quote 缺失/停牌（量 0）/价格非正→不动；覆写/补齐动作在 dataGaps 如实留痕。量价卡与量能卡共用引擎同一份 bars（20261017i），两卡同时受益。scripts/test_volume_consistency.js 新增第 [11] 组 21 项（快照覆写/单位换算/补齐/防御/幂等/静默阈值），总量 104→125 项。 // [20261019a] 日K降级链「新鲜度」判据修复（用户 000783 长江证券实测：东财 App 量比 0.82，工作台 1.26）：旧判据「任一级 ≥10 根即采用」只看根数不看新旧——本机东财被断，同花顺返回 140 根但当日K线收盘后延迟更新（末根止于 10-16），链条直接采用、不再看腾讯（腾讯有 10-19），工作台遂用 3 天前的 K 线得出与东财 App 截然不同的量比与涨跌幅（工作台「当日-1.79%」实为 10-16 跌幅，东财当日实际 -0.26%）。新判据：末根日期=今天才视为新鲜；某级新鲜→立即采用（快路径零额外请求）；不新鲜→记为候选继续下一级；全部非新鲜（停牌/节假日/通道集体延迟）→选「末根最新」者，并列时按 东财>同花顺>腾讯 优先级（字段全优先，与旧行为一致）；全部不足10根→保留最长可用集（原兜底）。选中的日K若非新鲜，analyzeVolume 在 dataGaps 如实标注「日K最新一根为 X，未包含今日数据」。选取逻辑抽为纯函数 _chooseDailyBars 并导出，scripts/test_volume_consistency.js 新增第 [10] 组 11 项（含 000783 场景复现），总量 91→102 项。 // [20261017i] 量能跨卡一致性修复（用户 2026-10-19 反馈「所有个股的资金量能里量价分析和量能分析的数据互相矛盾：量价信号=缩量回调 / 量能热度=量能平稳 / 量能分析资金行为=平量下跌」）：根因是三套口径各自独立、无交叉校验——①数据源分裂：量价卡用路由传入的 getHistory() 日K，量能卡用引擎四级降级链自拉，两条通道可能停在不同交易日；②分子不同：量价信号用当日量、量能热度用近3日均量；③分母不同：前20日均量（不含当日）/ 近20日均量（含当日，且分子含在分母内，比值天然压向1，几乎恒为「平稳」）/ 5日均量+60日确认；④阈值不同：1.5-1.2-0.8-0.5 五档 vs 1.3/0.7。实测 20 只样本 14 只（70%）互斥。修复：①建立统一量能档位真值源 lib/volumeEngine.js _volumeTier（当日量÷前5日均量定档 + 60日均量×1.5/×0.7 确认，与 _comboEngine 的 amplified/shrunk 同式），capitalFlow 的 volumePriceSignal 与 heatLevel 改引自该档位，五档文案体系原样保留；②引擎新增判定性档位 judgedLevel，修正「展示用 pc.level（纯÷5日均量）而结论走 amplified/shrunk」的内部自相矛盾（600460/000902/002594/600030 等 4/15 触发），原始档位以 ratio5Level 保留追溯；③两卡共用引擎同一份日K（volume 按通道归一为「手」，与 getHistory 同口径），内部 bars 字段在返回前剔除、不下发前端；④跨口径分歧（跨窗口/跨基准）如实标注 divergenceNote，不静默取一侧；⑤前端两卡均标注口径来源。实测修复后 15/15 三方一致（70%→0%），新增 scripts/test_volume_consistency.js 91 项零网络回归。 // [20261017h] 个股主图新增「分时」视图（用户 2026-10-19 指令「在个股的主图上添加分时图」）：①主图周期按钮新增「分时」（快捷键 0，其余 1日K/2周K/3月K/4=60分钟），分时与 60 分钟下自动隐藏「时间范围」按钮（无此概念）；②public/js/charts.js 新增 Charts.minute()——分时价格线（涨红跌绿）+ 均价线 + 分钟量柱双 grid，Y 轴以昨收为中心对称并带右侧涨跌幅轴，昨收基准虚线，tooltip 显示价格/涨跌幅/均价/分钟量；③诚实性：只画到 15:00，过滤腾讯分时收盘后追加的 15:01+ 盘后条目（15:38 实测已达 267 条），与量能引擎口诀3「尾盘 14:30-15:00」同一窗口口径；④数据源日期标注：lib/stockData.js fetchTencentMinutes 提取腾讯返回的 data.date（YYYYMMDD→YYYY-MM-DD，实测 "20261019"），server.js /api/minute 透传 minuteDate，图上标题显示数据日期且与今日不符时用黄色标注「（最近交易日，非今日）」——休市时接口返回上一交易日分时，不得冒充今日走势；⑤app.js 切股清空 minuteData 缓存（另有 symbol 校验兜底）。数据源与「资金量能」量能分析引擎同源（同一份腾讯分时），保证图上看到的开盘放量/尾盘拉升与量能卡 7.5 口诀判定口径一致。新增 scripts/test_minute_chart.js 零网络回归。 // [20261017g] 量能引擎分时口径修正（用户 2026-10-19 追问「是不是需要分析分时图」后实测发现的两处缺陷）：①「尾盘突然放量拉升」窗口改为按**时间戳**截取真实交易时段 14:30-15:00，取代原先「取数组末尾 30 条」——腾讯分时收盘后会追加盘后条目（15:10 实测 000902 共 247 条，末尾 1500/1506/1507/1508/1509/1510），按末尾取会把盘后非交易时段算进窗口且随时间持续后移；且盘中未收盘时不得把「最近半小时」当尾盘，改为如实标注「分时尚未覆盖到收盘（当日未收盘）」。②开盘量比单位换算按日K通道自适应——分时 cumVol 恒为「手」，东财/同花顺日K为「股」（实测同日均是大几百万）而腾讯日K为「手」（同日 80,528 手，比值≈100），原先写死 ÷100 会在降级到腾讯日K时把基准缩小 100 倍、开盘量比虚高到 ~320 倍必然误判「量比超3」。schema 升 volume-engine-20261017g；scripts/test_volume_engine.js 217 项全绿（新增单位换算三通道一致 + 反向印证虚高、盘中未收盘/尾盘窗口不足 25 分钟两组数据不足、集成层未收盘标注）。 // [20261017f] 量能分析引擎按《AI 股票量能分析工作台统一业务逻辑说明书（最终整合版）》补齐：①7.4 不同位置量价补充规则（高位放量滞涨/低位放量震荡/缩量上涨两种情况[低位启动/高位阶段]/缩量下跌两种情况[低位大跌后/下跌初期]，子阶段不明按数据不足谨慎处理）；②7.5 五句量比实战口诀（开盘量比超3站均价线/量比回落横盘不跌/尾盘放量拉升/连续低成交不再新低/量比大涨不动，分时类条目缺数据时如实标「数据不足」不臆造）；③11.2/11.3/11.4 三个强制归集总结（无论是否命中逐条完整输出：未命中写「未命中」、数据不足写「数据不足，无法判定」，命中多条全部列出）；④信号分类一致性约束（高位放量滞涨/高位缩量上涨/高位放巨量不涨/尾盘放量/量比大涨不动禁看多信号；下跌初期缩量无承接强制看空观察；spec 7.4 例外：规则1 低位吸筹完整命中时低位放量震荡不限制看多）；⑤s40 约束（高位放量滞涨封顶 12 分、低位缩量上涨保底 16 分）；schema 升 volume-engine-20261017f，前端量能卡新增三个归集卡片（复用既有样式），scripts/test_volume_engine.js 205 项全绿（新增 [15]/[16]/[17] 三组）。 // [20261017e] 量能分析日K降级链补同花顺通道（用户 2026-10-18 指令「@skill:cnfinancialscraper 能不能把同花顺的数据源也接入」——东财双主机均不可达时原链只剩腾讯仅-OHLCV，缺成交额/换手率）：①lib/stockData.js 新增同花顺日K通道（纯新增，既有函数零改动）：fetchThsHistory = last.js（d.10jqka.com.cn/v4/line/hs_<code>/01/last.js，明文近140根含 amount/turnover，前复权与腾讯qfq/东财fqt=1同口径）+ all.js（压缩全历史：price每天4值=(最低,开−最低,高−最低,收−最低)×priceFactor、volumn=股、dates=MMDD按sortYear逐年展开，仅OHLCV）；_mergeThsBars 以重叠段 close 逐日±0.05内一致（≥30根）才采信 all.js 向过去延伸；结构闸门 fail-closed（三列不等长/坏MMDD月日越界/sortYear计数和≠dates数/价格非数字 → null 绝不返回半可信数据）；网络按 20260911 教训 http(80)优先 https 兜底 + proxy:false 直连 + transformResponse 保原始串（JSONP 正则解包）。②lib/volumeEngine.js 日K链升四级：东财多主机 → 同花顺（近期含成交额/换手率，历史段仅OHLCV）→ 腾讯（仅OHLCV）→ 全断诚实报「可用N根」；computeVolumeEngine 新增 barsSource=ths，schema 升 volume-engine-20261017e；_precompute 对同花顺部分窗口（成交额/换手率样本<250天）追加 dataGaps 标注，不冒充全窗口分位。③scripts/test_ths_kline.js 48 项零网络回归全绿（含 2026-10-18 真实黄金样本：000902 解码all.js vs 明文last.js 尾部30根逐根一致，末根锚定 close=13.37/amount=86263040/turnover=0.565 防静默漂移）；引擎 135 项单测仍全绿。 // [20261017d] 量能分析卡数据通道修复（用户 2026-10-18 截图反馈「日线数据明显有」但量能分析卡报「日线数据不足（可用 0 根）」——根因：引擎唯一日K通道东财 push2his 在本机网络被切断，而主图走腾讯通道所以有数据）：①lib/stockData.js 新增 fetchEastmoneyHistoryMultiHost（纯新增导出；按 push2his→push2 主机顺序尝试同一 kline 接口，字段与 fetchEastmoneyHistory 完全一致含 amount/turnover；既有 fetchEastmoneyHistory 及其他调用方零改动）+ 导出 fetchTencentHistory；②lib/volumeEngine.js analyzeVolume 改日K三级降级链：东财多主机 → 腾讯日K（仅 OHLCV，缺成交额/换手率由 _precompute 按 spec 降级并如实标注，不臆造）；任一级 ≥10 根即采用，全不可达保留最长可用集并如实报「可用 N 根」；computeVolumeEngine 新增 barsSource 输出与降级来源 dataGap，schema 升 volume-engine-20261017d；③专项脚本验主机轮询/字段解析/降级路径/全阻断诚实报错全 PASS（临时脚本已删），引擎 135 项单测仍全绿。 // [20261017c] 量能分析引擎落地（用户 2026-10-17 指令：工作台量能分析按《AI 股票量能分析工作台统一业务逻辑说明书》升级）：①新建 lib/volumeEngine.js（纯计算引擎+采集入口，零 LLM，确定性 IF-THEN）——预计算（均量不含当日/六档/60日确认/250日分位）→位置判定（低位<30%/高位>70%/上涨中途/下跌途中/横盘并列/分歧标注降置信）→量价三问（真实性/价格认可度/持续性/单日脉冲）→严格背离检测→五大生死位规则（低位吸筹/高位派发/缩量假突破/放量破位含 partial 待确认/分时无量拉升）→位置×量能组合矩阵→连续量能序列→打分 0-100（40/30/20 权重+背离扣分）→流动性四分层与黑名单衰减→信号分类（空头优先级永远高于多头，规则3 多头失效出中性不得看多）→四维度客观描述+结论提示+免责备注；数据不足一律标注不臆造，叙事字段禁交易指令。②lib/stockData.js fetchTencentMinutes 增量 cumVol 字段（规则5 每分钟量=相邻累计量差分，纯增量不影响既有消费方）。③lib/capitalFlow.js analyzeCapitalFlow 并行补抓并新增 volumeEngine 字段（纯新增，既有字段零改动；引擎内部按通道降级，整体失败置 null 不阻塞主链路）。④前端个股页资金量能 tab 新增「量能分析」卡（public/index.html #capVolumeEngine + app.js renderVolumeEngine + style.css ve-* 样式，红涨绿跌，与 renderCapitalScore 并列 try/catch 隔离，实时刷新链路同步挂载）。⑤scripts/test_volume_engine.js 135 项断言全绿（14 组，零网络）。 // [20261017b] 首页侧量能收敛（用户 2026-10-17 架构指令第二步）：首页量能根数据源落在大盘技术分析的量价关系（lib/marketTechnical）——①新增导出 fetchIndexDailyBars（上证日线唯一采集通道，腾讯 fqkline 直采，320 窗口）与 computeMarketVolumeMetrics（首页共用量能指标纯函数：当日量/剔除极端值后近20日均量/250根分位/近5日价格/近3v3量比，trimExtremes 与 rankPercentile 逐行等价副本随迁）；②lib/marketEmotionModel.js 的 calcVolumeActivity/calcPriceVolume 底层指标改引根函数，打分/市场宽度修正/文案保留本地，返回对象逐字不变；③lib/marketEmotionData.js 的 index 块改从根通道采集（原走 market_emotion.py 的 akshare 通道，实测两通道重叠 260 根 date/close/vol 零差异），输出格式 {code,name,bars:[{date,close,vol}]} 不变、窗口统一 320；④scripts/market_emotion.py 移除 index 块与 fetch_index（ok_count 阈值 3 不变）。等价性守卫 scripts/test_market_volume_root_migration.js 98/0：同一份 bars 旧新逐字相等、260→320 结论零变化（尾部窗口样本集相同）、根指标无漂移。 // [20261017a] 个股侧量能收敛为唯一出口 lib/capitalFlow.js（用户 2026-10-17 架构指令）：computeVolumeIndicators 新增 7 项量能根指标——latestVsPriorAvg（含 priorAvgVol）/ breakout / vol5Vs20 / shrink3d / turnoverChange / volActivity，另加 opt-in 的 volumeProfile（opts.includeProfile）；4 个引用方改为引用根模块并删除本地副本：lib/analysis.js analyzeVolume、lib/priceAction.js（calcLongTerm/calcShortTerm/classifyShortState/calcFalsification 四处内部算法，calcVolumeProfile 整函数删除）、lib/sameDayJudgment.js（turnoverChange 改经 volumeIndicators 透传、factorCapital 的 volActivity 改读根结果）；顺带消除 sameDayJudgment 与 analyzeCapitalFlow 对同一换手率序列的重复抓取；新增 scripts/test_volume_root_migration.js 等价性守卫（59 项 deepStrictEqual 全过）。纯计算位置迁移，对外输出格式零变化（仅新增可选字段）；_computeTurnoverChange 的 detail 文案「近15日均值」按实际口径改为「基准均值」。首页侧量价收敛（marketTechnical step3Volume）排在下一步。 // [20261016c] 审计修复收尾 12 项：①L4 前端因子染色阈值 ±0.03 → ±0.05，对齐后端判色口径（lib/sameDayJudgment.js:209/1040、lib/marketEmotionModel.js:526），修「文字显示中性、颜色却染偏多/偏空」的语义错位（app.js 2 处）；②TE2 技术面评分说明补齐 MACD/KDJ 可叠加子项与理论区间 −6.5~+6.5；③J3 短期/长期判断脚注披露「数据缺失因子按 signal=0 占位但仍计入归一化，会摊薄有效因子权重」；④G7 深度分析缓存条披露「事件引擎识别的突发事件未并入本页结论」；⑤F1/G10 删除 lib/deep/conclusion.js 死变量 weights，并在 lib/analysis.js、lib/companyType.js 加注「weights 仅 legacy 兜底分支生效，正常计分固定每维满分 25」；⑥J2 逻辑模型文案如实说明震荡双口径（个股 ≤1.0%、大盘技术 ≤0.5%），阈值本身未动；⑦G5 深度分析缓存新增「估值模型哈希」门控（FNV-1a 覆盖估值链路全部文件，改模型即自动失效重算，不依赖人工记得升版本号），并在 /api/health 暴露 valuationModelHash；⑧K1 资料库注释纠正为实际抓取通道「巨潮资讯网 cninfo」，并标注本地上传文件由用户提供、非抓取来源；⑨ST1 策略回测页披露「趋势跟踪·短期行情判定」为派生策略（复用 priceAction.shortTerm.direction，属工作台内部联动，非外部 AI / 第三方信号源）；⑩H1/H2 概览「亮点/雷点」卡：距生成日超 7 天标注「已过期」，尚未生成时卡内直接给「立即生成」按钮（POST /api/ai/aspects），失败如实回显原因；⑪P1 公司简介补渲染「主营业务 / 经营范围」（后端 shareholderData.js:307-314 早已返回，前端此前从未渲染）；⑫S6 行情日期解析失败时后端新增 dateFallback 标志位（仅加字段、不改原字段），前端标注「⚠️ 日期解析失败，显示为本机日期」，不再静默冒充真实交易日。 // [20261016b] 审计修复六项：①IA1/IA2 行业政策库 + 上游行业名归一化「顺序 includes 第一命中」偏置 → 改「最长（最具体）关键词优先」，两处同改，返回格式零变化；②L1 长期判断 source 去除「AI 联网抓取」虚假归因，如实标注内置静态政策库；③G4/DA6 评级严格三档（去除「偏高」「合理偏低」，conclusion.js 4 处 + insuranceAnalysis.js 1 处）；④CA5 资金量能热度注释「±15」校正为实际 +13~-10；⑤P2 简介卡与事实库标注「企业性质」为按股东结构推断值（非东财F10权威登记口径）；⑥G8 深度分析路由并发去重（在途 Promise 复用，返回结果完全一致）。 // [20261016a] 修复个股页 1-4 项前端口径：S2 总市值去掉 ×10000（totalValue 单位本为亿）、S1 港股货币符号 HK$、T1 技术面"6信号"改"4类信号(MA/RSI/MACD/KDJ)、T2 基本面权重固定25、T3 资金热度 MFI 仅展示不计分、T4 资金卡去除"仅支持A股"虚假归因+T5 失败评分卡显示"加载失败"。纯前端 app.js 文案/口径修正，数据格式与后端逻辑零改动。 // [20261015m] 板块舆情热度周榜数字含义标注（用户反馈：右侧一列白色大数字未标明含义）：①前端 public/js/homeHotTopics.js 综合分大数字上方增加「综合分」小标签（.htw-score-label，muted 色 10px，与下方市场行三段式右对齐）；②后端 lib/hotTopicsWeekly/index.js footnotes 新增口径条——右侧「综合分」（0~100）= A 舆情曝光 / B 社区讨论 / D 舆情情感 / E 社区情感 四指标加权合成，C 韭菜讨论只触发告警不计分，5 日涨跌幅与资金净额占比仅作交叉参考、热度高不代表看涨。纯展示层与脚注文案改动，数据格式与计算逻辑零变化；test_hot_topics_merge 25/25。前版 [20261015l] 实时大盘「行业板块涨幅前5 / 跌幅前5」两组末尾各新增一卡（用户需求：各自添加当日最多涨停/最多跌停的板块）：①采集层 lib/stockData.js 新增 push2ex 涨停/跌停股池取数（getTopicZTPool / getTopicDTPool，与 20261015j 炸板池同域名同族；本机实测稳定：2026-10-16 涨停池 61 行与乐咕涨停 61 互证、跌停池 10 行），新增聚合纯函数 aggregateTopIndustry（按股池 hybk 行业字段计数取 top1，leader=该行业池内首只个股〔涨停池 sort=fbt:asc 即封板最早〕，并列取先出现者〔确定性规则〕，空/脏数据返回 null 不伪造）；getEastmoneySectorRanking 返回注入 topLimitUpBoard/topLimitDownBoard（双池各自容错，失败字段 null），并经 getMarketOverview 独立透传（盘中面板切同花顺时仍保留——池为全市场事实、与榜单渲染源解耦）。②前端 app.js renderMarketOverview：renderGroup 参数化 items，两组榜单各追加 kind:'limitUpTop'/'limitDownTop' 卡片（name+金色「涨停最多/跌停最多」标签、price=封板最早/代表个股、chg=N 家涨停/跌停，涨红跌绿与既有卡一致；数据 null 不渲染该卡）；css 新增 .mo-limit-tag。既有 sectorsUp/sectorsDown 数组格式与 AI 解读/榜单历史记录/提醒卡槽位零改动（隔离修改）。新增 scripts/test_limit_board_top.js 聚合单测 9 项全绿。前版 [20261015k] 大盘量能情绪模型因子结构合并（用户需求：「量能活跃度」与「量价配合度」两个卡片合并、权重也合并）：10 因子 → 9 因子（7 常驻 + 2 非常驻）。①lib/marketEmotionModel.js：BASE_WEIGHTS volumeActivity:15 + priceVolume:10 → volumePrice:25（量能活跃与量价配合），FACTOR_NAMES 同步；新增 calcVolumePrice 合成函数——得分 =（量能活跃度得分 × 15 + 量价配合度得分 × 10）÷ 25，按原权重加权，权重不变时与合并前两因子分别计分对总分的贡献数学等价（数据不变则结论不变）；降级规则：任一半数据缺失 → 整体降级归零并按比例分摊（两半同源于上证日线，实际同生同死；reason 指明是哪一半）；value/detail 合并两边统计并在 detail 尾部写出合成算式（可解释）；返回新增 volRatio/volPct/volState/pvScore 透出字段。②历史兼容：loadState 增加幂等迁移——state.json 旧 volumeActivity+priceVolume 权重合并为 volumePrice（保留自学习成果，超 W_MAX 部分由 scaleBounded 夹紧）；历史 factorAcc 旧 key 记账保留可追溯，新因子学习从零开始（仍需 20 样本）；模型标识 volume-emotion-v1 → v2（结构变更诚实标注）。③前端零逻辑改动：app.js 因子网格自动渲染 9 因子；model 判断同步 v2；「8 常驻」标题 →「7 常驻」；logicModel.js badge「10 因子」→「9 因子」与描述口径同步。④回归 test_market_emotion.js 新增 [6c]（加权合成数值 -0.2 / 0.7 双场景、降级 reason、state.json 迁移幂等），59 项全绿。前版 [20261015j] 大盘量能情绪模型「市场宽度与极端情绪」因子新增炸板率（统计展示 + 封板质量修正）：①采集层 scripts/market_emotion.py fetch_breadth 增加东财炸板股池取数（akshare stock_zt_pool_zbgc_em，底层 push2ex.eastmoney.com 实测本机稳定可达：收盘后 49 行、连续三次 0.2 秒一致；与收盘涨停池互斥，代码交集为 0，口径干净），breadth 新增 zbgcCount/zbgcBreaks/zbgcRate/zbgcNote 四字段（炸板率 = 炸板家数 ÷ (涨停 + 炸板家数)，与涨跌家数同一次采集、同一统计日期；取数失败仅炸板字段为 null 并记 warnings 如实标注，不拖垮涨跌家数、不伪造）。②模型层 lib/marketEmotionModel.js calcBreadthExtreme：value/detail 增加炸板率展示（如「炸板率 44.6%（49/110）」），方向分 >0 时做封板质量修正（炸板率 ≥50% 得分 ×0.7、≥70% ×0.5，防「虚涨停」把普涨判满分；普跌/分化场景不修正、缺失不修正），返回值与 factors 白名单投影同步新增 zbgcRate/zbgcCount/zbgcBreaks，风险提示新增炸板率 ≥70% 条目，来源脚注补充炸板股池口径。前端因子网格直接渲染后端字符串零改动；落盘判断记录仅存得分符号、个股页「大盘」卡片仅读总分倾向，均不受影响；回归 test_market_emotion.js 补 [6b] 炸板率五路断言（展示/字段/40%不修正/60%打7折/80%打5折/缺失不修正/普跌不修正），45 项全绿。前版 [20261015i] 工作台 UI 设计升级（impeccable 精修）：红绿 tint 令牌化、h1 21px 排版步进、按钮 emoji 纯文字化、金色 :focus-visible、hover 瞬时态 AA 修复、搜索历史面板默认折叠、prefers-reduced-motion 无障碍、图表红绿色板集中（chartTheme 单一定义点）、死 CSS 清理、结算完成 num-flash 确定性反馈。前版 [20261015h] 全工作台数据源一致性审计与统一（用户需求：同一数据在不同模块使用不同数据源时，统一为稳定数据源）：实测审计 lib/ + server.js + routes/ + scripts/*.py 共 120+ 处外部调用，修复 4 处真实分裂/失效（全部为后端 lib 函数，前端零改动）。①lib/deep/financials.js fetchShareholders——个股市值/股本/PE 原走 push2.eastmoney.com（本机常年被对端 TLS 重置，服务日志实测 000783/600909 持续 socket hang up，深析估值/DCF/公司分类长期拿不到股本市值），改走东财数据中心 RPT_VALUEANALYSIS_DET 报表（datacenter-web 稳定可达；与基本面卡片的 totalShares/PS_TTM 同源同报表，与腾讯行情实测逐位一致：000783 总市值 431.90 亿/PE 8.38/PB 1.17、600909 总市值 363.25 亿/PE 11.46），返回六字段与原 push2 f84/f85/f116/f117/f162/f163 完全同名同单位，下游 analyzeValuation/calculateDCF/classifyCompanyType 零改动，失败仍返回 null 不伪造。②同文件 fetchFinancialStatement——companyType 回退链 [4,2] 扩展为 [4,2,3,1]（对齐 lib/stockData.js 现金流量表取数的既有全类型循环；接口实测：券商股 000783/600909 的资产负债表/现金流量表仅 companyType=1 返回数据，ct=4/2/3 全空 → 修复前深析 Balance: 0/Cashflow: 0、资产负债与现金流分析及 DCF 全部失真，修复后实测 Balance=5/Cashflow=9 行；普通股 ct=4 首次命中行为不变）。③lib/newsSearch.js fetchEastmoneyAnnouncements——原域名 np-anotice.eastmoney.com 已失效（实测 HTTP 200 恒返回 0 条，个股「新闻与公告」页的公告部分长期静默为空），统一为全站唯一实测可用路径 np-anotice-stock.eastmoney.com/api/security/ann?ann_type=A&client_source=web&f_node=0&s_node=0（与 cnscraperAdapter 20260922i 修正路径完全一致；f_node/s_node 必带否则返回全市场公告；响应字段 title/notice_date/art_code 不变，解析零改动；修复后实测 000783 返回 10 条）。④lib/deep/research.js fetchAnnouncementsEastmoney——原 /api/security/announcement 死端点（20260922i 在 cnscraperAdapter 已确认失效但本处漏改，深析公告的东财兜底形同虚设），统一为同一 /ann 活路径，date 取 notice_date/eiTime、url 用 art_code 合成正文直链（与 newsSearch/cnscraperAdapter 同一格式）。审计排除项（实测确认同源或属正常主备链设计，未改动）：AI 权威财务快照（ai/augmentStock）与基本面卡片（stockData.fetchEastmoneyFundamentals）同走 emweb ZYZBAjaxNew 同参数同解析=同源；深析公告主链（deep/research）与官方公告卡（cninfoAnnouncements→python）同走巨潮 hisAnnouncement/query=同源；前十大股东两处同走 datacenter RPT_F10_EH_HOLDERS=同源；原油主连 20260921l 已把新浪 nf_SC0 设为主力、push2delay 降兜底；日K线 getHistory 腾讯主链+东财/新浪兜底顺序合理；顶栏四卡与基本面关键指标已于 20261015e 统一 fundamental.metrics 单一权威口径。已知遗留（如实报告、本次不改）：download_reports.py 东财 ann_type=2 通道已失效（其依赖 attachments PDF 直链需重新设计获取方式；人工研报下载工具且有巨潮主链兜底，非页面实时链路）；个股资金流 push2his fflow daykline 为东财独占口径、无稳定备源（已有 axios→curl→K线量价估算三级降级并如实标注 estimated，非分裂问题）。 // [20261015e] 顶栏关键指标卡（PE/PB/PS/ROE）联动「基本面·关键财务指标」（用户需求：数据联动基本面关键指标，利好标红、利空标绿）：①public/js/app.js renderKeyMetrics 四卡数值改为优先取 data.fundamental.metrics（与基本面左卡 renderFundamental 的 m.pe/m.pb/m.ps/m.roe 同一权威口径，杜绝顶栏与基本面两处口径分裂；fundamental 缺失时回退 quote.fundamentals 既有值，行为不劣化）；②着色复用同一响应内的 data.signals.signals（lib/analysis.js evaluateSignals 确定性判定，key=pe/pb/ps/roe）：signal=bull→metric-value.red（利好红）、bear→green（利空绿）、neutral→默认白，与基本面左卡 sig-bull/sig-bear 完全同一判定来源，全站涨红 #F6465D/跌绿 #0ECB81 规范色不变；③判定依据（reason）追加进卡片 title，鼠标悬停可见「信号判定（利好/利空/中性）：原因」；ROE 数值优先 roeTtm（与左卡 metrics.roe 实证同值）。隔离修改：仅前端渲染层（app.js 一个函数 + 两处 ?v= 戳），不动任何后端取数/计算/信号逻辑。 // [20261015d] 主力资金流向因子接入稳定备链（实时大盘情绪模型最后一个死因子）：主链 scripts/market_emotion.py fetch_main_fund 走东财 push2delay fflow（本机常年被 TLS 重置，因子自 20260917 模型上线以来长期权重归零）。备链：东财「数据中心」RPT_INDUSTRY_FUNDFLOW 报表全行业求和——128 个申万行业的 SUPERDEAL_NET(超大单)+BIGDEAL_NET(大单) 逐日求和 ≈ 沪深两市主力净额，与 push2 主链完全同一东财口径/同一单位（行业是市场的完整划分；datacenter-web 本机稳定可达，2026-10-15 实测当日 128 板块全齐、合计 -637.35 亿与行情吻合）。实现：lib/marketEmotionData.js 新增 fetchMainFundViaDataCenter（含完整性守卫：当日板块行数 ≥ 前日行数才认定当日已发布完整，否则当日值宁缺毋假）并在 getMarketEmotionData 中于 selfCheck 之前注入 raw.mainFund（顺序关键：保证 issues 反映注入后真实状态），仅当备链交易日=今天才注入当日值，盘中未更新至今日时如实标注「备链最新为 X，收盘后自动回补」。同步更新三处文案：selfCheck 缺失提示、模型 calcMainCapital 降级原因、模型 source 脚注（如实描述双通道）。隔离：主链 python 脚本零改动（通道恢复即自动优先实时值）；mainFund 数据形状不变，无下游格式变化。 // [20261015c] 修复实时大盘「AI 解读」点击无反应：① 根因为联网模型 qwen3.8-max 阿里百炼免费额度耗尽（403 Free quota exhausted，同账号实测 qwen3.5-35b-a3b 也耗尽、qwen-plus 可用、qwen3-vl-plus 可用；阿里免费额度按模型独立计算）——data/ai_config.json 的 modelWeb 已切换 qwen3.8-max → qwen-plus（loadConfig 每次读盘，即时生效；本地模型 qwen3-vl-plus 不动），额度恢复后可在「⚙️ AI 设置」换回。② 前端 loadMarketAI 失败静默缺陷：原只有 NO_KEY 弹窗，API_ERROR 被静默吞掉 → 用户点按钮毫无反应误判「功能失效」；现在所有失败路径（API_ERROR / 无内容 / 网络异常）均 alert 明确原因（诚实合规：失败必须可见）。隔离：仅 app.js loadMarketAI 一个函数，不动任何渲染与数据链路。 // [20261015b] 实时大盘数据源稳定化：① 顶栏日经225（100.N225）主源由东财 push2delay/push2 切换为新浪 hq.sinajs.cn int_nikkei（本机 push2 族常年被 TLS 重置，2026-10-15 全天 socket hang up 实测 ECONNRESET；新浪 38ms 实测稳定，4 字段 名称/点位/涨跌点/涨跌%，昨收=点位-涨跌点 反推），fetchEastmoneyIndex 双 host 降为备胎保留（跨网络环境兜底）。② 新增 lib/stockData.fetchSinaIndicesBatch（新浪 hq 批量指数：s_sh/sz 简版 + rt_hk 详细 + gb_ 美股 + int_ 全球四种格式统一解析，强制 Referer 否则 400），并接入 module.exports。③ 腾讯 qt.gtimg.cn 整批请求失败时整批回退新浪（text 标记 __SINA_FALLBACK__ + JSON Map，parse 命中顺序 东财全球→新浪兜底→腾讯文本），新浪也失败才抛原错（维持 500，绝不伪造数据），消除 qt 单点抖动导致实时大盘整卡 500 的问题。隔离性：输出 JSON 键集合 22 键与改造前完全一致、cn/us 组腾讯路径逐位不变、indexSource 标注不受影响（日经在 topbar 组且顶栏不显示来源标注）；端到端实测 unavailable 项数 0（改造前日经恒为 unavailable）、跨源现值一致（腾讯 3677.01 = 新浪 3677.0092）。妙想 MCP 定位为手动深度查询（按积分计费，不适合秒级轮询），不接入本模块。 // [20261015a] 修复「未找到 Python 解释器」进程级永久缓存 bug：受管 Python 是指向 WorkBuddy 应用资源目录的符号链接（versions/3.13.12 → resources/vendor/python），WorkBuddy 自更新重写该目录的几秒窗口内探测全败（实测 2026-10-15 11:01 服务器启动恰逢更新，日志 "did not find executable"），旧逻辑把失败永久缓存 → 情绪模型 8 因子权重归零、同花顺板块/融资余额/汇率/研报下载等到重启前全部不可自愈。修复：lib/stockData.findPythonForScript、lib/pyRuntime.findPython、lib/pdfText.findPdfPython 三处统一改为「失败仅冷却 60 秒，到期自动重探；成功仍永久缓存」。返回契约（路径|null）不变，成功路径行为逐位不变，无下游格式变化。lib/indexPETrend 本无缓存（每次重探、可自愈）维持不动。——幸存者偏差系数由固定 0.9 升级为证据驱动（曾用名含 *ST/ST 则按次数下调至 0.60~0.90，无 ST 历史则 1.0），取数失败时保底 0.9 并如实标注未获证据；输出新增 survivorship_evidence 与 risk_check_result.f10_status（additive）。② Johansen 协整：新增 jacobiEigen/matInverse/matMul/matT/johansen（VECM 辅助回归 + 矩矩阵 + 特征值分解 + 迹/最大特征值统计量 + Osterwald-Lenum 临界值），pair 策略优先 Johansen 并附 Engle-Granger 交叉验证与一致性标记；样本不足/矩阵奇异自动降级 EG。③ 60 分钟长窗口：腾讯 m60 实测硬上限 800 根且不接受起止日期（分页不可行），改走新浪 scale=60（实测上限 4023 根 ≈4 年，最新收盘价与腾讯逐位一致），新增 lib/stockData.fetchSinaKline60m；count>800 自动切换并挂 .meta 标注来源与切片口径差异（10:30/14:00 两处 ≤0.06 元）。默认 count≤800 仍走腾讯、行为不变。④ 止损/止盈/移动止盈 + 等批建仓：runBacktest 新增 opts.stopLoss/takeProfit/trailing/tranches/trancheGap（触发优先级 止损>止盈/移动>信号平仓，保守口径）；normalizeDSL 解析 stop_loss/take_profit/trailing/tranches；lib/strategyNL.js 新增 parseRiskParams 支持中文「止损8%/止盈20%/回撤5%/分3批建仓/每隔5个交易日」；前端 backtestUI.js 新增风控出场表与 F10 证据块 + style.css .bt-evidence。隔离：默认全关 → 输出字段与历史逐位一致（不再拒绝仓位类中文，金字塔/动态加减仓仍如实拒绝）。[20261014b] 策略回测引擎 P1/P2 升级：① ADF 滞后阶按 AIC 自动定阶（`adfCore`+`adf`；不传 lags 时自动、显式传参保持固定）② `walkForward` 新增 purge/embargo（默认 0 保持旧行为，生成器传 min(20, 3%N) 消除指标回看窗跨折泄漏）③ 新增多重检验校正（Benjamini-Hochberg 单侧二项 vs 50%）：auto-strategy 输出 `multiple_testing` 块，最优若本可 PASS 但未过校正则降级 WARNING ④ 分层成本能力：`runBacktest` 支持非对称 `buyCost`/`sellCost` + `aShareCostModel` 助手（佣金+印花税仅卖出+过户费+滑点），DSL 可传 `cost_model`，默认仍对称 0.55%/边。前端 `backtestUI.js` 新增参数敏感性逐候选条形可视化与多重检验展示；`style.css` 新增 `.bt-ps-bars`（中性蓝/金，避开红绿语义）。隔离：默认路径输出结构不变（新增字段均 additive）。 // [20261014b] 策略回测引擎 P1/P2 升级：① ADF 滞后阶按 AIC 自动定阶（`adfCore`+`adf`；不传 lags 时自动、显式传参保持固定）② `walkForward` 新增 purge/embargo（默认 0 保持旧行为，生成器传 min(20, 3%N) 消除指标回看窗跨折泄漏）③ 新增多重检验校正（Benjamini-Hochberg 单侧二项 vs 50%）：auto-strategy 输出 `multiple_testing` 块，最优若本可 PASS 但未过校正则降级 WARNING ④ 分层成本能力：`runBacktest` 支持非对称 `buyCost`/`sellCost` + `aShareCostModel` 助手（佣金+印花税仅卖出+过户费+滑点），DSL 可传 `cost_model`，默认仍对称 0.55%/边。前端 `backtestUI.js` 新增参数敏感性逐候选条形可视化与多重检验展示；`style.css` 新增 `.bt-ps-bars`（中性蓝/金，避开红绿语义）。隔离：默认路径输出结构不变（新增字段均 additive）。 [20261014a] 策略回测引擎 P0 修复（风控审查四项）：① 交易成本不再双重计入（runBacktest 已在成交价按单边成本计提，applyCorrections 的「交易成本」步改为系数 1、仅作信息展示）② KPSS 重写为 Newey-West(Bartlett) 长程方差 + 正确统计量公式（修复实测 stat=61.97 的量纲失真）③ adjustedReturn 与 adjustedWinRate 统一口径（补乘前视 f1/成本 f2，前视命中时修正收益同步归零）④ 手动校验入口 validateStrategy 新增「样本量闸门」（交易笔数 < 10 → 新裁决 INSUFFICIENT_SAMPLE，不再给 PASS/WARNING/REJECT）；diagnostics 透出 sample_trades/min_trades。下游同步：backtestUI.js verdictBadge/verdictBadgeText 增加 INSUFFICIENT_SAMPLE 映射、style.css 新增 .bt-verdict.INSUFFICIENT_SAMPLE（中性蓝，避开红绿涨跌语义）、strategyGenerator verdictText/rankOrder 补该枚举值。隔离说明：自动生成路径因上游已按笔数过滤，其输出结构与裁决值不变。 [20261013j] 基本面 tab「指标分析」改为按需单卡展示（用户要求：右侧指标分析拆分隐藏，点击关键指标左侧 tab 后才展示对应指标分析卡片，其他隐藏）：renderMetricAnalysis 增加 activeKey 参数——非当前项卡片一律渲染 ma-hidden（display:none），无 activeKey 时面板顶部显示 .ma-empty 引导空态（提示点击左卡「分析 ▸」查看、再次点击同一 tab 收起）；新增 showMetricAnalysis(key) 统一驱动右卡显隐/空态/左卡 tab 激活态（.metric-jump.active），当前选择维护在 this.activeMetricKey——实时刷新（60s）与切股后重渲染均按该键恢复，用户选择不丢失；scrollIntoView 平滑定位 + ma-flash 闪烁保留作为切换确认。style.css 新增 .ma-row.ma-hidden/.ma-empty(+.hidden)/.metric-jump.active（中性金色系，避开红绿涨跌语义）。隔离修改：不动任何取数/计算/图表口径与 METRIC_ORDER 单一权威顺序。 [20261013i] 基本面 tab「关键财务指标」×「指标分析」tab 联动（用户要求：关键指标每个指标右侧加 tab、指标分析按指标拆成独立卡片、点击 tab 自动弹出/定位对应指标分析）：public/js/app.js 的 renderKeyMetrics 为每个指标行新增「分析▸」跳转按钮（data-key 取 keyOf(label)，与右卡 metricAnalysis.metrics[].key 同一套 14 键·单一权威口径），点击后 smooth scrollIntoView 定位右卡同键 .ma-row 并加 ma-flash 闪烁高亮（重复点击重触发动画），右卡数据缺失时 toast「该指标暂无分析数据」不静默失败；renderMetricAnalysis 每张卡片加 data-key 锚点；style.css 新增 .metric-jump（中性金色小胶囊，避开红绿涨跌语义）与 .ma-row.ma-flash/@keyframes maFlash，.metric-row .mr-value 加 margin-left:auto 保证加 tab 后数值仍紧贴右缘。同步修复 test_current_quote_refresh.js §4 六项预存失败（index.html/accuracy.html 的 ?v= 戳从 20261006a 升级到 APP_VERSION）。隔离修改：不动任何取数/计算/图表口径，仅新增导航交互。 [20261013h] 工作台逻辑模型弹层从「总—分四层链路」重构为「按工作台页面布局」展示（用户要求：按整个工作台页面布局，列出每个页面有哪些模块、每个模块的判定逻辑、模块间的数据共享/引用）：public/js/logicModel.js 的 TREE 重组为 4 个页面区域（🏠 首页 9 卡 / 📈 个股页 10 tab+顶部评分区 / 🔗 跨页面公共支撑·数据源+API+AI+事件引擎+估值库+准确率闭环+规则守卫 / 📄 独立页面与全局入口），每个模块新增结构化字段 logic（判定逻辑）、inputs（数据来源）、outputs（输出去向），渲染层新增 renderFields 展示这三项，实现「模块↔模块数据共享/引用」可视化；弹层 intro 与标题文案改为「按页面布局」；style.css 新增 .lm-logic/.lm-io/.lm-k 样式（金/蓝/青三色，避开红绿涨跌语义）；index.html 版本戳同步 ?v=20261013h。隔离修改，仅影响本弹层展示，无下游数据格式变化。[20261013g] 个股近期热点新增振幅触发（用户要求：个股当日震荡幅度超过 3%，联网搜索分析原因）：lib/hotTopics.js 新增 AMPLITUDE_THRESHOLD=3% + resolveTrigger 确定性判定（涨跌幅≥3% 或 振幅>3% → 「当日异动归因」联网归因；振幅字段缺失时用 high/low/prevClose 补算），收盘平盘但盘中深 V/冲高回落也触发归因；归因 prompt 按触发方式区分（振幅触发问「盘中宽幅震荡的最直接原因」）；缓存加 triggeredBy 一致性校验（触发方式/方向变化重算）；CACHE_VER=20261013g 旧缓存作废重算；前端异动归因卡新增「振幅 X%」角标标注触发来源；getState 返回增加 amplitude/triggeredBy 字段（只加不改，无下游破坏）。通用模块改动，自动适用全部个股。[20261013f] 修复首页「越用越准·准确率台账」两处问题（用户质疑 12 条预测为何只结算 9 条、命中率为何 0%）：① 根因=历史留档的验证目标日落在休市日（09-25 中秋/10-01 国庆，留档时交易日历数据缺失），找不到 K 线永久卡「待结算」；sentimentAccuracy.settleRecord 加防呆——存档 targetDate 非交易日时按当前日历重算（isTradingDay 校验），并修复两条脏数据（09-24→09-28、09-30→10-08），补结算后两条均命中，命中率 0%→18.2%（2/11）。② 命中率 0% 的构成=7 条震荡未命中（|chg|≤0.5%，口径经用户 20260914i 确认「不姑息」）+2 条方向真错；computeAccuracy 新增 flatMissCount/dirMissCount 分项（口径不变），app.js 台账展示改为「命中率 X%（其中震荡未命中 N / 方向真错 M）」避免一刀切误读。[20261013e] 美国宏观判定升级为双维度（用户要求：失业率/非农要分别标注「对经济的影响」和「股市的偏好」，避免单一判定误读）：lib/usMacroResults.js 拆分 ecoDirection（经济影响=基本面框架：就业弱=经济偏空）与 mktDirection（股市偏好=宽松/紧缩交易框架：就业弱=宽松预期升温=股市偏多），directionOf 兼容导出=股市口径（情绪因子锚 FOMC 不受影响，FOMC 两维度同向）；事件新增 eco 字段，summary 双判定文案「经济影响：…；股市偏好：…」；homeMacro.js 双徽章（经济/股市，偏多红/偏空绿各自配色，旧数据回退单徽章）；LOGIC_VERSION=20261013e 旧缓存自动失效。修复 20261013c 单一判定的两处硬伤：失业率上升标「偏多」无维度限定易误读为经济改善；文案"失业率上升=缓解压力"事实性矛盾。[20261013c] 美国宏观数据「落地复盘」（用户要求：参考预期值，分析超预期/不及预期影响）：新增 lib/usMacroResults.js 抓华尔街见闻宏观日历（api-one-wscn.awtmt.com，单源三值齐全，forecast=彭博/路透共识口径，接口限7天/次须切片），过滤美国FD importance>=3，按标题分类（CPI/PPI/非农/失业率/FOMC/零售/ISM），三值数值化判定 超预期/符合/不及预期，按类型×偏离给方向影响（通胀超预期偏空/弱就业偏多等）；usMacroEvents 升级三级源（华尔街见闻三值→FedRateCalc排期→内置清单），released 保留7天/upcoming 过期剔除；前端三值行+超预期角标+偏多红卡。修复：transform 未存 type 导致 FOMC 上下限未合并。[20261013b] 美国宏观事件排期改为自动抓取：新增 lib/usMacroCalendar.js 抓 FedRateCalc 汇总表（条目来源 BLS/美联储官方排期；BLS 直爬被 Akamai 403、美联储官网只有 FOMC），美东时间确定性转北京时间（含 DST 规则），类型模板方向框架解读（不编数值），落盘缓存 12h TTL + 失败回退陈旧缓存 + 内置策划清单兜底；getUsMacroEvents 保持同步兼容情绪因子；路由返回数据来源标注。[20261013a] 修复首页「国际经济数据 & 事件」过期事件永久滞留：usMacroEvents 加日期判定自动剔除过期事件（9月FOMC/CPI/非农落地近月仍挂预告、且持续向美国宏观情绪因子输出-1偏空），清单更新至BLS/美联储官网排期（10-14 CPI、10-29 FOMC决议、11-06非农、11-10 CPI、12-10 FOMC）；macroSentimentFactors 去掉写死旧事件id；homeMacro 空清单诚实空态 + 纳入强制刷新名单。：顶栏常驻组（与投资心得/大盘记录/AI 设置同高并列）新增入口，点击弹出「总—分」树状弹层展示整个工作台的逻辑框架（数据层→计算层→API 层→展示层 + AI 叙事层 + 规则守卫层）。新增 public/js/logicModel.js（纯静态结构 + 纯前端渲染，不请求后端、不调用大模型）；?v= 与 FRONTEND_BUST_FILES 同升。零副作用：未改动 app.js 与任何既有模块。[20261003j] 修复 2.5D 柱状图渲染 bug（用户反馈「大量图表出现bug」）：bar25D custom series 的 renderItem 原直接返回元素数组，ECharts 5.4.3 createEl 读取 elOption.type 遇数组 undefined 抛「graphic type 'undefined'」→ 机构持仓变化空白 / 股东户数走势数据压缩 / 成交密集区渲染失败；改为 { type:'group', children:items } 包裹（垂直 + 横向两处）。?v= 与 BUST 同升，强制浏览器放弃修复前缓存的 chart3D.js。[20261003i] 柱状图 2.5D 补齐（用户再次反馈「大量柱状图未修改」）：① 深析「负债结构」横向柱图接入 bar25D horizontal；② 股东页「股东户数趋势」「机构家数趋势」接入 bar25D（dataZoom 手动追加 + 折线透传 + 多 y 轴），解除此前「带 dataZoom 保持 2D」限制；③ 全部保留 2D 兜底。[20261003h] 柱状图 2.5D 补全升级（用户反馈大量柱状图未改）：① bar25D 新增横向模式（类目在Y轴，等轴测向右上挤出；支持 rgba 半透明筹码光带与现价 markLine）→「成交密集区与价格引力」升级；② bar25D 新增折线系列透传 + 双柱分组错位 + 多系列 tooltip + 顶部数值标签 → 「分红分析（每次/每年/每股切换）」「营收/净利润增长率」「当季NBV+累计/TTM」「营运利润+净利润同比」接入 2.5D；③ 全部保留原 2D 兜底渲染；④ K线量柱 / MACD 柱 / 带 dataZoom 的趋势柱图（股东户数/机构家数）读数优先保持 2D。[20261003g] 柱状图/饼状图 2.5D-3D 升级（参照用户参考图等轴测立体柱+3D甜甜圈）：① chart3D.js 新增 SA3D.bar25D()——纯 ECharts custom series 的 2.5D 立体柱（正面玻璃渐变+左侧高光条+右侧深色面+顶面高光+底部贴地投影，保留 2D 坐标轴/grid/dataZoom/折线叠加，无需 echarts-gl，任意环境可用）；② 深析「保费收入趋势」（立体柱+同比折线）、「短期偿债风险」（四色立体柱+数值标签）接入 bar25D；③ 深析「资产结构」「险种结构」「前十大股东」与股东页「前十大股东持股比例」四个饼图升级为 2.5D 厚度圆环（SA3D.donut：厚度底座+扇区悬浮弹出+中心大数字：资产合计/占比最大险种/第一大股东）；④ 全部带数据Zoom/多轴/横向的柱图保持 2D 增强不动（读数优先）；⑤ 无 SA3D 环境全部自动回退原 2D 渲染。[20261003f] 修复「很多图表被压缩」：Charts.get() 初始化实例后未注册进 Charts.instances，导致技术面 tab（display:none 隐藏期）初始化的 paMonthly/paProfile/macd/rsi/kdj/boll 等 6 图退化为 200px 宽后，switchTab 与 window resize 遍历 Charts.instances 永远触达不到 → 切回 tab 仍压缩；现已注册实例（charts.js get()），并在 switchTab 切到 technical 时补一次 120ms resize 兜底。（只改视觉层，数据源与计算逻辑零改动）：① 本地引入 echarts-gl 2.0.9（vendor/echarts-gl.min.js，CDN 兜底）——bar3D 真 3D 柱（光影+SSAO+bevel+自动旋转），加载失败/移动端(pointer:coarse/宽<768)自动静默降级 2D/2.5D；② 新增 public/js/chart3D.js 组件库：SA3D.glb() 环境检测、SA3D.bar3D()（bar3D+line3D 混合、红涨绿跌、生长动画两段式 grow）、SA3D.donut() 2.5D 圆环（厚度底座+扇区弹出+中心文字）、SA3D.lightBar() 2.5D 柱增强；③ 资金流向图（主力净流入 bar3D + 超大/中/小单 line3D）与融资融券图（融资余额 bar3D + 融券余额 line3D）接入 3D，非 3D 环境维持原 2D；④ K线主图 2D 克制增强：蜡烛/均线/成交量柔光晕（shadowBlur 4-6，不遮挡十字光标与价格精度）；⑤ 表格卡片化 CSS：冻结表头(sticky)+斑马纹+涨跌色块+排名徽章；⑥ /js/chart3D.js 纳入 FRONTEND_BUST_FILES。 准确率入口最终定案（经用户确认）：与「首页/已自选/导出HTML/导出JSON/刷新」同组（global-nav-extra 内、排在刷新之后）并列，个股页显示、首页不显示（与该组同步显隐，还原图一布局+新增准确率）。上一版误放常驻组（首页也显示）已回退。[20261003c] 修正准确率入口位置（第二次）：用户所指「首页这些tab」= global-nav-common 常驻组（投资心得/大盘记录/AI设置）。由 global-nav-extra（个股页按钮组，首页隐藏）移入 global-nav-common 内、排在 AI 设置之后——首页与个股页均可见、与三个常驻 tab 同高并列。padding 8px 16px/13px 与 .home-action-btn 一致。[20261003b] 修正准确率入口摆放：由 .global-nav 直接子元素（常驻、首页会单独占位）改为 global-nav-extra 组内成员（排在「刷新」之后），与首页/自选/导出HTML/导出JSON/刷新同组并列、同步显隐——首页不再单独出现（避免看起来像顶替了那组按钮），个股页才显示。[20261003a] 准确率入口从顶栏移入常驻导航行 .global-nav：index.html 删除顶栏 #topbarAccuracyLink，改挂到导航行 global-nav-extra 之后（始终可见——首页无操作按钮组时右对齐显示），与首页/自选/导出/刷新等按钮同高并列；新增 .nav-acc-link 样式（保留金色强调色，padding 对齐 .home-action-btn 8px 16px 以同高），/css/style.css 已在强制刷新名单。[20261002c-2] 个股技术面「待验证」口径统一与显示优化：settleSymbol 对全部未结算记录归一 targetDate=基准日+HORIZON个交易日（含2026法定节假日），并纠正旧版误存的 base+1；isOverdue 无 status 兜底改为实时重算真实目标日，长假期间合法 pending 不再误报「过期未结算」；accuracy.js 待验证记录显示「预计结算日；遇长假顺延」。[20261002b] 新增「数据诚实原则」核心底层逻辑：未成功获取的数据必须明示"获取失败"，绝不拿其他数据/陈旧快照/零值聚合凑数（lib/dataHonesty.js 统一信封 + 前端 public/js/dataStatus.js 标准态 + scripts/test_data_honesty.js 反凑数守卫；标杆改造股息率分析链路 yield.js/pipeline.js/deepCharts.js） [20261002a] 行业板块拥挤度多周期聚合修复：今日/本周/本月的成交额与涨跌幅由「窗口末日值」改为「区间累计」（Σ各日成交额 / 复利累计涨跌幅），彻底修复三列成交额恒等；app.js 口径文案同步 [20261001d] Robinhood 式图表与界面视觉升级（只改视觉，不改任何数据源与计算逻辑）：① 新增 public/js/chartTheme.js 统一图表视觉层——注册升级版 softDark 主题（极简坐标轴：隐藏轴线/刻度仅留柔和网格；悬浮卡片 tooltip：深色玻璃卡圆角+投影+模糊；圆润图例小色块；dataZoom 柔和蓝手柄 #7fa8c9）+ SA_CHART.polish/attach/grad/rgba 助手，echarts.init(el,'softDark') 自动继承，attach 包装 setOption 全模块生效；② charts.js 主 K 线专项打磨——主题降级兜底（chartTheme 加载失败时回退旧版主题注册）、K 线 barMaxWidth=14 + 现价虚线标线（右端涨跌语义色价签）、MA 线 1.5px 细线、成交量半透明圆角柱、tooltip 悬浮卡外壳、面积渐变；③ capitalCharts/industryCharts/shareholderCharts/deepCharts 四模块 init 处 SA_CHART.attach 包装 + 柱图半透明圆角 + 折线渐变面积；④ style.css 字体栈升级（Segoe UI Variable Text 优先）+ 时间范围/周期/分红切换统一 Robinhood 式胶囊分组（.chart-controls 内凹浅底 + .range-btn/.period-btn/.dy-toggle-btn 圆角胶囊 + 选中态品牌金 #F0B97B）；⑤ /js/chartTheme.js 与 /js/charts.js 纳入 FRONTEND_BUST_FILES 强制刷新。 [20261001c] 首页市场情绪模型三处数据异常修复：① 融资余额假读数（-50.47%）——沪深交易所披露节奏不同步（沪已到 09-30、深仅到 09-29），market_emotion.py fetch_margin 原按日期盲加导致最新日只有单边数据被腰斩；改为仅计沪深双边完整日期，单边最新日给出 partialNote 说明，并在 marketEmotionModel.calcMargin 加 ±10%  sanity 闸门（超出即降级归零、标注疑源数据残缺）+ lagDays=1；② 「热度数据滞后」张冠李戴——app.js 滞后提示硬编码「热度数据」，改通用「数据滞后 N 个交易日」；③ 主力资金缺失文案改清楚——东财 push2 行情通道被限流属环境性中断（无大盘级备胎），市场主力净额缺失/主力资金缺失两处提示注明通道不可达、恢复后每日快照自动回补。 [20261001b] 图标更换：工作台图标整体换为用户上传的七彩扇形轨道图（豆包生成图已裁除右下角水印）：① scripts/make_favicon.py 生成 public/icon.png(512) + public/favicon.ico(16/32/48，中心80%裁剪保小尺寸辨识度)；② index/accuracy/judgments 三页 icon 链接改 ICO+PNG 双声明（删除 favicon.svg 死文件）；③ 顶栏品牌「📈 股票分析台」emoji 改为 icon.png 小图（style.css 新增 .brand-logo 20px）；④ /icon.png 纳入 FRONTEND_BUST_FILES。[20261001a] 体检修复包：① aiRoutes quoteService 死引用改 stockData.getQuote（专属估值实时价修复）；② CNINFO orgId 落盘缓存 + 1 次重试；③ app.js 搜索结果 XSS 转义；④ server.js 全局错误中间件 + unhandledRejection 兜底、移除死 multer 引用；⑤ 删死文件 marketOverviewEm.js / cheerio 依赖 / 根目录旧日志与 tk24.json；⑥ webSearchMcp MCP 会话复用 + 总超时守卫 + 百度每日计数 + 错误归一化。 [20260928a] 修复「策略」模块 60 分钟数据取不到（用户华安证券 600909 截图「无法获取60分钟数据」）：strategyGenerator 误传对象 {symbol} 给 getHistoryPeriod → detectMarket 把对象串成 "[OBJECT OBJECT]" → tencentCode 非法 → 60m 全空回退日线；改为传 symbol 字符串。同时 fetchTencentKline60m 的 count 由 2000 改为 800（腾讯 m60 上限 800，>800 会被对端静默回退到默认 320，样本量不升反降），并在取数层强制夹紧 count∈[1,800] 兜底。 // [20260923a] 个股页新增「官方公告（巨潮资讯·确定性数据）」卡片（GET /api/announcements/:symbol + #cninfoAnnouncements 骨架 + loadCninfoAnnouncements 渲染）；首页宏观卡增补 LPR(直连 axios 取 RPTA_WEB_RATE) 与社融(pbc_social_financing) 两项确定性指标。 | [20260922l] 修复「海天味业行业分析里，多个『行业板块总市值 vs 个股总市值』对比图表消失」：东财 push2 家族 clist/get 全通道被对端重置（socket hang up），使 sectorMarketCapHistory.fetchConstituents 抛错 → 三张图整体 style.display=none。① fetchConstituents 改多主机轮询重试（push2delay/push2/82.push2/16.push2 × 2 轮）；② 新增 readLatestCacheAny + staleFallback：成分股拉取失败/为空/无序列时，回退「最近一次成功快照」并标注 stale；③ 前端 renderSectorMarketCap 增「（快照）」日期角标 + 黄色告警行（.sector-cap-stale），明确「非实时、源恢复后自动更新」。 | [20260922k] 修复「宏观情绪因子写着权重自动归 0、却仍占 5%」：① macroSentimentFactors 的 observedIndex 未持久化导致「走势相悖→归零」判定被永久跳过 → 增加事件日锚定 + 旧快照自愈补锚；② marketEmotionModel.calcMacro 只看 signal 不看 status → 休眠因子回落默认 5% → 改为尊重 dormant（未激活→权重 0，常驻因子按比例吸收）；③ 卡片文案改为「按实际状态」生成（休眠/激活/中性三种措辞）。[20260922j] 因子权重调整：增持减持 +5pp（0.0485→0.0985）、大盘 −5pp（0.3071→0.2571），一增一减 Σ 仍=1.0000；权重变化由 _hashFactorStructure 自动捕获 → 旧判断强制重算。[20260922i] 修复公告漏抓（东财 /ann 端点生效 + detectForcedReduction 正则扩展覆盖真实措辞），同步 LAYOUT_VERSION=20260922c 强制重算当日判断。[20260922h] 「增持减持」因子新增第④子模块「股东被动减持/司法强制执行」(公告/新闻实时检测，确认被动减持 signal=-0.8、司法冻结/拍卖预告 -0.6，父因子叠加 0.2×forcedSignal 困境溢价)；同步升 sameDayJudgment LAYOUT_VERSION=20260922b 强制重算当日判断。 // [20260922g] 长江证券 补丁G 口径修正 + 规则4：① 废弃「历史50%分位=1.33倍」（实为2017年以来约9年长周期均值，跨周期数据混用），下轨铁底正式确认为**近5年日K真实50%分位 0.916 倍（¥6.11）**，防御说明栏改为「已触及近5年真实估值铁底（0.916倍），市场处于极度悲观定价，下行空间有限，静待均值回归。」；② 上轨逻辑不变（动态PB锚 1.4057 > 近5年90%分位 1.165 → 估值体系重构警告继续生效）；③ 新增规则4「乐观复苏情景」：长周期均值锚 1.33 倍 × BVPS 6.67 = ¥8.87，仅当【市场日均成交额 ≥ 1.5 万亿 且 公司 ROE 持续上行】双闸门同时满足时，作为**额外情景在备注展示，不参与主模型计算**（实时读本地成交额存盘 data/sector_crowding_history.json 近20交易日日均）；④ 顺手修 nz(x, default) 单参误用（缺省值被静默吞为 0）共 6 处 ｜ [20260922g] 长江证券 补丁G 口径修正 + 规则4 // [20260922g] 长江证券 补丁G 口径修正 + 规则4：① 废弃「历史50%分位=1.33倍」（实为2017年以来约9年长周期均值，跨周期数据混用），下轨铁底正式确认为**近5年日K真实50%分位 0.916 倍（¥6.11）**，防御说明栏改为「已触及近5年真实估值铁底（0.916倍），市场处于极度悲观定价，下行空间有限，静待均值回归。」；② 上轨逻辑不变（动态PB锚 1.4057 > 近5年90%分位 1.165 → 估值体系重构警告继续生效）；③ 新增规则4「乐观复苏情景」：长周期均值锚 1.33 倍 × BVPS 6.67 = ¥8.87，仅当【市场日均成交额 ≥ 1.5 万亿 且 公司 ROE 持续上行】双闸门同时满足时，作为**额外情景在备注展示，不参与主模型计算**（实时读本地成交额存盘 data/sector_crowding_history.json 近20交易日日均）；④ 顺手修 nz(x, default) 单参误用（缺省值被静默吞为 0）共 6 处 ｜ [20260922f] 长江证券 补丁F-Plus（单边空间展示 + SOTP偏离深度归因）+ 补丁G（动态锚双轨兜底） ｜ [20260922e] 长江证券 补丁F：估值矩阵逻辑自洽强制校验（排序/空间/基准一致性） ｜ [20260922b] 华安证券专属估值引擎升级 V3.0（指令9：核心参股资产联动监测 + SOTP权重自适应：实时抓取长鑫科技688825总市值、持股价值=长鑫市值×0.4391%×(1-流动性折扣)、参股占比驱动SOTP权重<10%→30% / 10~30%→40% / >30%→影子股模式(50%/40%/10%)+单独列示长鑫持股贡献+60日收益相关系数联动强度）；run 改为 async（实时抓取长鑫/华安总市值与日K相关性，失败回退锁定快照）。 [20260921l] 「原油主连」冲击有效期 3 天→1 天，并修正取数通道（push2delay 不可达→新浪 nf_SC0）；[20260921k] 「股份回购」完成实施/停止实施/被股东大会否决时判定转为中性（signal=0、不再计入增持家数）；[20260921j] 「股份回购」子卡片改走东财结构化回购报表（datacenter-web RPTA_WEB_GETHGLIST_NEW）：按「数据日期 / 已回购数量和金额 / 承诺回购金额 / 回购进度」四要素提炼（旧口径只扫公告/新闻标题、把标题原文当详情，用户看不到任何回购数据）；配套升 sameDayJudgment LAYOUT_VERSION 强制重算当日判断。 [20260921i] 「板块涨跌幅前5」也切回东财：新增东财「数据中心」通道（datacenter-web 报表 RPT_INDUSTRY_FUNDFLOW，与 push2 同为东财口径/同源板块分类），取数顺位 push2族(实时tick) → 数据中心报表(稳定可达) → 同花顺；新增 push2 失败 10 分钟静默期（首轮 2.5s → 静默期 0.3s）；面板与资金流卡现在同源同值。指数行情按用户决定保持腾讯并如实标注（无东财可达实时通道）。 [20260921h] 行业资金流改走东财「数据中心」报表源（datacenter-web 可达，push2delay 被对端重置）：恢复「散户(小单)前五」+「近5日主力/散户」，整卡统一东财口径；新增 push2 连续失败静默期（10 分钟）避免每次刷新白等。 [20260921g] 实时大盘「逐行标注数据源」：中国指数/美国指数两行补齐数据源标签，板块榜与资金流延续既有来源标注；同时修复妙想业务错误（如「积分已用完」）被静默当作「无数据」的问题。原注：[20260921c] 量价配合口径修正：大涨+平量由「显著上涨」利好改判中性「大涨平量」；同步升 LAYOUT_VERSION=20260921c 强制重算旧判断。 // [20260921b] 同步升 sameDayJudgment 的 LAYOUT_VERSION→20260921a，强制重算当日判断缓存，修复「清掉事件后个股页事件驱动卡片仍显示旧事件」。 // [20260921a] 事件驱动修正:新闻医药行拆药品/医疗器械二级(药监局药品监管不再误伤医疗器械股) // [20261029m] 三季报同步第二轮修复（用户报障：海天味业/长江证券发布了三季报工作台没获取到）：①hasReportDoc 假阳性修复——docStore.year 是公告日期年份，「2026-04-28 发布的 2026 年第一季度报告」被标 year=2026 错误挡住 2026 三季报同步；改为按标题解析报告期年份+季度（reportPeriodOf，与 earnings pickReportDoc 同口径），quarterly 事件按标题收窄到具体季度；②registerDownloadedReports 登记年份改为报告期年份（修正「2025年度报告」被标 2026 的错位），存量索引 278 条中 99 条已修（备份 data/etf-flow/backup/index.before-year-fix.json）；③东财通道两处改版适配——np-anotice 列表 ann_type 数字类目失效（2→恒 0 条）改用 A，列表不再带 attachments → 新增 _fetch_em_detail 详情接口取 pdf.dfcfw.com 直链；④删除「无 ann_type」回退组合（该组合使股票过滤失效，防错下别家公司报告），新增公告归属校验（codes.stock_code 必须含目标代码）；⑤通道回退：巨潮命中 0 自动补试东财备链（A+H 公司巨潮索引延迟数小时实证）。结果：603288/000783/002643 三季报 PDF 已下载+登记+财报解读缓存失效；600460 士兰微今晚发布较晚索引未出，明日自动重试（其 2022-2025 历史 Q3 已顺带补齐）。 || [20261029l] 资料库三季报自动同步静默降级 bug 修复（用户报障：华安证券 600909 三季报已公布但资料库/财报解读不更新）：①根因=reportSync 传 --types quarterly，而 download_reports.py 合法键仅 annual/semi/q1/q3，quarterly 被静默丢弃后回退 annual,semi——三季报/一季报自 20260821f 上线起从未被下载（全自选股同因普查证实）；②python 侧新增 quarterly 别名展开 q1+q3 + 未知类型 stderr 告警（杜绝静默降级）；③reportSync 侧 scriptTypesFor 按事件标题收窄（三季报→q3/一季报→q1/泛称→q1,q3）；④新文档落地后定点失效该股财报解读缓存（earnings TTL 30 天，旧解读会挂一个月——000902 旧中报缓存实证）；⑤已修复落地：600909/688289 三季报 PDF 下载+登记+缓存失效，601318/000902/300232 已有三季报；000783/603288/002643 公告今夜刚发、巨潮索引滞后，明日自动重试。 || [20261029k] ETF 持仓/现金趋势图数据日标签修正（用户指出：10-29 的点实际是 10-28 收盘结构）：cashPositionTrend 点标签改用份额披露日 shareDate（数据日铁律 20261027b 全台适用——清单预估现金按 T-1 收盘净值计算、加权份额 T+1 披露，整个点都是 T-1 收盘口径），新增 snapshotDate 溯源字段；前端口径注记补第⑤条（点标签 D = D-1 收盘口径）；ratio-history.json 备份后重置重建（6 个旧点全有磁盘快照，按新标签重导出，消除按 tradeDate 的旧标签残留）。 || [20261029j] ETF 申赎残缺快照守卫+20261028 快照还原（用户报障：沪深300 组 15 只全部『基期无快照（新入名单）』）：①根因=10-28 18:42 采集 27/34 只 PCF 抓取失败，残缺快照（仅 7 只）却被 settled 定稿，10-29 计算误选为基期；②collect 加固=只要有 ETF 未采全（PCF 失败或份额缺失）一律不定稿（settled:false+partial:true+gaps 落盘），残缺快照留待重采自愈；③computeFromSnapshots 基期选择与 stockMonthlyFlow 双保险排除 partial 快照；④数据还原=20261028.json 重建（S(10-26)官方快照+Δ(10-27)权威外部源：腾讯金融搜索结构化表×上交所官网基金规模×新浪/证券之星三源交叉验证，官方 7 只原值保留+还原 27 只，四组校验[链路整篮/Δ整篮/官方总量逐位相等/前向整篮]全过，scripts/restore_etf_20261028.js 留档，原文件备份 data/etf-flow/backup/）；⑤台账重放补齐 10-27/10-28 两日 27 只缺失增量（重置 lastDate 后按快照链升序幂等重放，不手写 cum）。 || [20261029i] 指标分析同比格式统一为图二三段式（用户指令，圣湘生物 688289 报障驱动）：①yoyDim 全部水平型指标（毛利率/净利率/资产负债率/流动比率）改为「本报告期 X（去年同期 Y，边际 ±Z）」，百分比口径差值单位用 pp；②修复 qoqDim 硬编码 % bug（流动比率 4.54 被显示成 4.54%）；③ROE TTM 同口径分支同格式；④营运利润/NBV 同比改「本报告期 X亿（去年同期 Y亿，边际 ±Z亿）」，同比%移入边际维度；⑤毛利率/净利率新增口径 note（左卡 TTM vs 右卡报告期累计，财报更新后两卡数值不同属口径差异非数据错误）。排查结论：10 只自选股左右两卡营收增长全部一致、zyzb 最新期=2026-09-30 三季报无错位——三季报更新无同类数据错误，矛盾源=TTM vs 报告期口径被旧文案隐藏。测试 test_metric_analysis_nbv.js 59→61 项全绿。 // [20261029h] // [20261029h] 平安估值协议落地「缺失变量处理规则 v3.1.1」（用户逐字下发，替换原缺失值规则，本次及后续强制执行）：①六变量（OCIEQ_BV/OCIEQ_URG/FVTPL_EQ/LU_BV/M_LU/S_LU）缺失不视为错误——不中止、不填0、不估算、不要求复核、**不在备注行之外单独输出缺失警告**：前端 app.js 删除 missingNote 黄条（用户 2026-10-29 截图报障的「⚠️ 以下输入变量缺失」条），缺失信息只在备注行固定格式块汇总；②陆金所估值门控改 **LU_BV 为前提**：LU_BV 缺失→分支一律 N/A（即使 M_LU/S_LU 有值也不单独加总，避免「其他资产未扣减陆金所净资产却又单独加总陆金所市值」的重复计算）；LU_BV 有值但 M_LU 或 S_LU 缺失→LU_BV×0.60 并扣减（不构成重复计算）；LU_BV 有值且 M_LU×S_LU 有效→M_LU×S_LU（市值替换净资产）；③OCIEQ_URG 缺失→仅「FVOCI税后浮盈/股」辅助行 N/A，不影响任何估值计算（skippedBranches 新增「FVOCI税后浮盈每股」）；④备注行新增固定格式块（协议五）：「缺失变量：[六缺失项]；跳过分支：[含辅助行]；未扣减项：[OCIEQ_BV/FVTPL_EQ/LU_BV]；对应资产已落入其他资产按0.60估值；P/EV与DDM照常；SOTP按剩余成功分支合成」，原报告期块去掉跳过分支（避免重复）；⑤异常检查（其他资产<0 ⚠️+暂停 SOTP）保留，与六变量缺失无关。实算不变：其他资产 1922.00、SOTP 68.74（61.87~75.62）、合成 [43.47,95.55]、rating 合理。测试 test_valuation_pingan.js 179→193 项（LU_BV 门控三分支/缺失变量固定格式/无独立告警守卫）。601318.json protocol generalRules/remarkFormat/pipeline 3.6 同步改写。 // [20261029g] 中国平安滚动估值协议第三站替换为「SOTP 分部估值（修正版）」（用户逐字下发 v3.1 修正文本）：①新增输入变量 E_L=寿险及健康险业务归属母公司股东权益（会计净资产口径）——数据承接自中报附注分部报告原 EV_L_BV 键（4289.85 亿，2026H1），严禁用 EV_L 替代；②总则新增四条规则：分层报告期（混合不告警不中止，20261029f 已落地）、缺失值规则（缺失→依赖分支记 N/A 并跳过，严禁填 0 落入其他资产池；缺失项资产留在 BV_Total→备注「未单独拆分，已落入其他资产按0.60估值」）、EV_L 使用规则（仅作寿险 ×0.80 乘数，严禁作 BV_Total 扣减项）、异常检查规则（其他资产<0→输出「⚠️ 其他资产为负，请检查 E_L 是否误用 EV_L 或扣减项是否超范围」并暂停 SOTP）；③第三站全公式重写：非权益其他资产=BV_Total−E_L−E_PC−E_BK−OCIEQ_BV−FVTPL_EQ−LU_BV（仅扣实际有值项，无 BVPS×N 回退）；N/A 分支不计入 SOTP 分子并在备注列明；整体跳过条件=三项核心均缺失或异常未通过；④备注行固定格式（协议四）：「报告期：EV/EV_L/E_PC/E_BK=[报告期]；N/NBV/BV_Total=[报告期]；E_L=[报告期或N/A]；跳过分支=[N/A分支]；其他资产=[正数或异常警告]」；⑤终审约束三条写入配置 constraints。实算：其他资产 −3496.54→**+1922.00 亿**（E_L 会计口径替代 EV_L 内含价值扣减，负值异常根因消除）、SOTP 50.79→**68.74**（区间 61.87~75.62）、极值法合成 [43.47,95.55] 不变、评级「合理」不变；陆金所分支 B（LU_BV）与扣减 ×0.60 数学抵消为协议必然。zeroFilled 概念废止（恒空数组，契约兼容），新增 skippedBranches/notSplit/sotpAnomaly 字段透传（ai/valuation.js 同步）。前端 app.js 估值卡脚注/分部说明改 v3.1 口径。测试 test_valuation_pingan.js 145→179 项（EV_L 扣减禁用守卫/BV_Total 无回退/E_PC 分支跳过/异常熔断/固定格式备注/分支抵消校验）。 // [20261029f] 平安滚动估值协议落地「分层报告期规则」（用户指令：EV/EV_L/E_PC/E_BK 保留 2026H1，N/NBV/BVPS 用 2026Q3，SOTP 优先用 BV_Total(Q3) 替代 BVPS×N，照常计算、只标注报告期、不中止、不自行统一口径、不再输出口径警告）：①pingAn601318 SOTP 非权益其他资产改为**优先 BV_Total（2026Q3 归母净资产 10443.66 亿）**、BV_Total 缺失才回退 BVPS×N（otherAssets −3496.55→−3496.54，sotpTotal/sotpTarget/合成区间不变：SOTP=50.79、合成 [43.47,95.55]）；②**删除口径一致性告警**——caliberMismatch 生成/alerts.push/备注条目/return 字段全部移除，混合报告期是协议设计允许的策略（三季报不披露 EV→EV 组按协议保留中报口径），不再视为异常；③保留报告期标注（periodAnnotation「报告期标注：N/BV_Total/N:2026Q3；EV/EV_L/E_PC/E_BK:2026H1；NBV:2026Q3(9M)」）与未声明 period 变量的补录提示（文案改为「无法纳入报告期标注」）；④下游 ai/valuation.js 同步移除 caliberMismatch 透传（前端本就未消费，无 UI 改动）；⑤SOTP 明细 segments/formula 文案按实际路径标注 BV_Total 或 BVPS×N。测试 test_valuation_pingan.js 141→145 项（新增 BV_Total 优先/回退两断言，第15节改「混合口径不告警」断言）。 // [20261029d] 平安滚动估值协议「三步复核」落地（用户指令，全部在数据库/公告内完成）：①总股本复核——旧 N=182.10 亿的 A 股数（107.63 亿）有误，港交所证券变动月报表（1月/7月/9月一致）实证 A 股 106.60 亿 + H 股 74.48 亿 = 181.0764 亿股，与东财 datacenter TOTAL_SHARES 双源一致；年内月报表无回购注销、库存股 0 → 无未落地股本变动，非注销所致；②BV_Total（2026Q3 归母权益 10,443.66 亿，F10 资产负债表 + 三季报点评双源吻合）新增入配置，BVPS=BV_Total÷N=57.6754（同报告期同口径派生，禁止中报 BVPS×中报 N 替代三季报 BV_Total）；③NBV 更新至三季报 9M 口径 309.87 亿（巨潮 2026-10-29 三季报公告 30,987 百万元，同比 −13.3%），M=9；EV/EV_L/E_PC/E_BK 按协议保留最近一次中报（2026H1）口径（三季报不披露）。代码：备注行新增逐变量报告期标注（格式「报告期标注：N/BV_Total/N:2026Q3；EV/EV_L/E_PC/E_BK:2026H1；NBV:2026Q3(9M)」，periodTag 单独成组不放大到同组其它变量）+ periodAnnotation 字段透传。新值下：EVPS=86.58、SOTP=50.79、其他资产 −3496.55 亿、合成 [43.47,95.55] 不变。测试 test_valuation_pingan.js 126→132 项。 // [20261029c] 平安滚动估值协议新增「数据时效规则」（用户下发）：①每个输入变量必须记录取数日期 asOf（601318.json 全变量补录：财报组 2026-09-08=配置真实更新日、D 2026-08-27、N 2026-04-30；P 实时量由 ai/valuation 与 conclusion 覆盖时写当日 asOf）；②任一变量取数日期距今超 180 天（maxAgeDays 可配）→ 协议表格备注行逐字标注「变量X取数于YYYY-MM-DD，已超180天，请复核」，不替换数值、不中止计算、计算照常仅标注；未记录 asOf 的有效变量备注提示补录；③口径一致性：变量须与同一报告期匹配（inputs[k].period 声明，D=TTM/P=实时天然跨期不参与），period 分组不一致 → 备注标注「口径不一致：A组(报告期x) 与 B组(报告期y)」；真实配置实测即抓到两处真实状态——N 超龄 182 天（年报股本口径）+ N(2025FY) 与财报组(2026H1) 口径不一致，均如实标注；freshness 检查从仅 D/N 两项泛化为全部有 asOf 变量（freshnessRows 契约不变、前端时效条带自动覆盖），freshness.items 旧结构不再被消费。测试 test_valuation_pingan.js 126 项。 // [20261029b] 中国平安专属估值模型 v2→v3「滚动估值计算协议」（用户逐字下发协议全文）：①输入新增 OCIEQ_BV/OCIEQ_URG/FVTPL_EQ/LU_BV/M_LU/S_LU 六变量（缺失按0处理+表格行标N/A+备注披露）；②SOTP 扩展为 7 分部=EV_L×0.80+E_PC×0.84+E_BK×0.83+OCIEQ_BV×1.00+FVTPL_EQ×0.60+非权益其他资产×0.60+陆金所(条件：M_LU×S_LU→LU_BV×0.60→0)；非权益其他资产公式改为 BVPS×N−EV_L−E_PC−E_BK−OCIEQ_BV−FVTPL_EQ−LU_BV（v2 的 EV_L_BV 账面口径弃用，现值下其他资产为负已在备注如实披露）；③SOTP 熔断放宽为仅 EV_L/E_PC/E_BK 三项均缺失才整体跳过（部分缺失按0继续）；④合成区间改极值法（P/EV+DDM+SOTP 各取极值，N/A 模型排除），覆盖 v2「只采用SOTP」；⑤新增第六站 FVOCI 税后浮盈/股=OCIEQ_URG×(1−0.25)÷N 辅助行；⑥D 口径以 inputs.D.caliber 声明（现值=营运利润优先口径）；⑦协议表格 13 行禁用定性词（rating 仅供工作台徽标）；⑧固定参数写死+用户覆盖参数备注标注。同步改 conclusion.js（DDM/EVPS null 防护+极值法文案）、ai/valuation.js（v3 模型名+新字段透传）、app.js 平安卡（极值法区间标签/7 分部折扣系数/新公式标签/v3 口径脚注）、601318.json（v3 版本+6 新输入键+D.caliber+protocol 重写）。测试 scripts/test_valuation_pingan.js 111 项。 // [20261029a] 关键财务指标新增两指标（用户 2026-10-29 需求）：①「营运利润」全个股——数据源=F10 利润表 lrbAjaxNew OPERATE_PROFIT（已实测 zyzbHistory 无此科目），lib/deep/financials.js 新增 fetchOpProfitSnippet（最新报告期+去年同期两期轻量请求，负值有效、缺科目如实降级 null 整行不渲染）；②「NBV(新业务价值)」保险股专属（601318/601628/601336/601319/601601，当前仅平安有备查库数据 2026H1=248.5亿）——lib/insuranceAnalysis.js 新增 latestNbvSnapshot（去年同期同累计阶段同比，非保险股返回 null 绝不泄漏）。metricAnalysis METRIC_ORDER 14→16 项（dedProfitGrowth 后插 opProfit/nbv），两新 builder 均带确定性判定（同比符号）+ note 口径说明（右卡黄字「营运利润与扣非净利润的区别」：位置中段 vs 末端、未扣税 vs 已扣税剔非经常、盘面盈利 vs 经常性盈利；并声明平安财报非通用口径「营运利润」不采用）；app.js 左卡两行条件插入+METRIC_HELP 两条释义+keyOf 映射+renderMetricAnalysis 支持 note 渲染（.ma-metric-note 黄字重点信息语义着色）。测试 scripts/test_metric_analysis_nbv.js。 // [20261028b] 量能盘中停判守门：volumeEngine 规则3「缩量假突破」与 11.3.1「该放量未放量」盘中（末根bar=今日且未到15:00）停判——盘中当日量为部分日累计，与前高全天量/60日均量×1.5 结构上不可比（fail-closed 必假命中，新洋丰 000902 盘中实测）；analyzeVolume 计算 intradayPending 经 ctx 透传，盘中输出「盘中参考」数值（当日量/前高量能带日期/60日均量×1.5=阈值），收盘后按同一规则自动恢复定论；规则3命中文案同步量能三数据具象化；app.js 11.3 卡支持「盘中停判」徽标。测试 test_volume_engine.js [20]。 // [20261028a] 全部宽基ETF「持仓比例 vs 现金比例」折线趋势图（用户云端任务本地重做，云端推送 GitHub 失败弃用）：lib/etfFlow.js 新增 cashPositionTrend()——口径=PCF 预估现金部分(ESTIMATED_CASH_COMPONENT，含现金替代与现金差额)÷每篮净值(NAVPERCU)=现金比例，持仓比例=1−现金比例，按 nav×shares 总市值加权汇总；快照盘只保留 KEEP_DAYS=10 天，趋势另存 data/etf-flow/ratio-history.json 幂等累积（磁盘快照优先、历史只补已清理日期，可跨越清理窗口）；±50% 现金比例异常守卫防单只脏数据带偏均值。server.js 新增 GET /api/etf-flow/cash-trend。前端 etf-flow.html 引入本地 vendor/echarts.min.js（第三方库本地随包铁律），etfFlowPage.js 在概览下方新增趋势卡（双折线：持仓红 #F6465D=风偏进攻、现金绿 #0ECB81=防守，echarts.init(el,'softDark')，y 轴贴近数据区间避免 0~100 压平，盘中未定稿点 tooltip 标注「盘中参考值」）。测试 scripts/test_etf_cash_trend.js。 // [20261027d] 个股数据后台预热落地（用户报「工作台开很久后切个股页仍长时间读数，与之前要求的提前后台缓存相悖」）：根因=getQuote/getHistory 无缓存、/api/analysis 每次现拉腾讯/东财，而已有后台任务只预热自选股「判定」（复用不刷数据）与板块资金（一次性），个股页面数据零预热。新建 lib/analysisWarm.js：① /api/analysis TTL 缓存（交易日盘中 9:15~15:10 内 2 分钟、其余 30 分钟，数据最新性=按类型 TTL+交易日感知 isTradingDay；LRU 30 条；失败/404 响应不缓存防毒化；附加 cachedAt/cacheAgeSec 字段、原结构不变）；② 最近查看 LRU（上限 12，持久化 data/analysis-warm.json）+ 预热循环（自选股∪最近查看，去重自选优先上限 20，逐只经本机 HTTP 走同一路由填充缓存，间隔 500ms 防打爆，单轮防重入）；③ 调度随 startServer 启动（首泡 20s，盘中 2 分钟一轮、其余 30 分钟一轮）。前端主路径无 refresh=1（那些都在手动「重新判断」按钮与污染重试路径），缓存命中即秒开。 // [20261027c] 修「自学习样本>20 仍显示样本不足」误导文案（用户质询「是不是死逻辑」）：实证非死逻辑——自学习早已运行，indexMomentum/margin 因子命中率 >60% 已把权重学满顶到 30% 上限（state.weights 实证），此后每次计算 clamp 无变化 → learnLog 空 → 前端二元文案把「已学满/死区」误报成「样本不足」。marketEmotionModel.learnWeights 新增 learnDetail 逐因子诊断（样本数/近窗命中率/当前权重/状态 adjusted·cap_up·cap_down·deadzone·insufficient，调整行为与原逻辑完全一致），结果透传 learnDetail；app.js 自学习行改诚实三分态（已顶边界/死区观望/待积累 n 因子），仅全部因子样本不足才显示「样本不足」。另澄清：截图「22 条预测」是整体预测台账（次日上证涨跌口径），自学习门槛按因子各自样本计（中性因子不累积；priceVolume 28 为改名前旧 key 不迁移）。 // [20261027b] 修当月逐日明细表标签口径（用户质询「中国平安今日的数据怎么获得的」）：快照 20261027 里的份额是 T+1 披露的 20261026 官方值，行标 20261027 = 「标注今日、数据是昨天」——违反 20261023j 数据日=披露日规则。stockMonthlyFlow 行标签改用 shareDate（数据日），保留 snapshotDate 溯源，基期取全量快照链前一份已定稿（正确处理跨月），披露日不相邻打 spanNote「多日合计」；前端日期格式化 YYYY-MM-DD、spanNote 徽标、补口径脚注（T+1 + 理论推导值非实际申报 + 周末无数据）。 // [20261027a] 宽基ETF累计表股票名→超链接 + 当月逐日明细表（用户 2026-10-27 要求）：点击累计表任一只股票名，卡片下方新建「当月逐日申赎明细」表（日期/申购股/赎回股/净申赎股 + 当月合计行）；后端 lib/etfFlow.js 新增 stockMonthlyFlow（遍历当月已定稿快照，相邻快照 ETF Δ份额÷单位=篮数 × 该股篮子股数=当日申赎，多ETF含同股合并），server.js 新增 GET /api/etf-flow/stock-monthly?code=&month=；前端 etfFlowPage.js 股票名改 <a class=etf-stock-link>，efBody 事件委托点击→拉取→渲染，支持切换/收起；style.css 补 .etf-stock-link/.etf-month-table/.etf-month-total/.etf-month-close。 // [20261026f] 个股记录行内编辑表单补样式（用户 2026-10-26 截图「182743/182749」指出修改表单渲染成原生白色控件）：20261026e 只加了 HTML 结构未补 CSS——style.css 新增 .sl-edit(修改按钮,与 .sl-del 同款、hover 琥珀)、.sl-btns、.sl-item.sl-editing(琥珀描边+淡琥珀底标记编辑态)、.sl-edit-form/date/text(与 .sl-add 添加表单同款暗色输入框+color-scheme:dark)、.sl-edit-actions、.sl-save(btn-primary 同款琥珀实底)/.sl-cancel(描边)，全部复用模块既有 token（card-bg #161B22 / accent #F0B97B / text #E6EDF3）。 // [20261026e] 个股记录「修改」按钮（用户 2026-10-26 截图「181737」要求每条记录带「修改」按钮）：lib/stockLog.js 新增 updateLog（按 id 定位、可改日期与内容、校验与 addLog 一致、updatedAt 溯源）；server.js 新增 PUT /api/stock-log/:symbol/:id；public/js/stockLog.js 整体重写渲染「修改」按钮 + 就地内联编辑表单（日期 input + textarea + 保存/取消，Ctrl+Enter 保存 / Esc 取消，事件委托）。 // [20261026d] 红涨绿跌文本着色落地（用户 2026-10-26 截图「164518」指出情绪因子卡里涨跌文字/数据未按要求标色）：app.js 新增 _dirColorize——带符号数值 +0.19%=红/-1.19%=绿、上涨/涨停 N=红、下跌/跌停 N=绿、其余「涨/跌」方向字按语义着色（日期 2026-10-26、时间 14:30-15:00、T+1 不误染）；应用于①首页情绪因子卡 value/detail 与核心驱动/量能状态/操作建议/风险提示四行，②个股市场情绪提醒面板 value/detail，③个股短期判断子因子卡与长短期判断因子 detail/value（同口径统一）。 // [20261026c] 颜色语义对齐红涨绿跌：① 行业政策徽章 战略扶持(利好)→红、受限(利空)→绿（原绿/红颠倒）；② 量比口诀3/5「尾盘放量拉升」由 ve-bear(绿=看空) 改为 ve-block(琥珀=警惕)，因模型明确「不得输出看多信号」，非看空信号。 10-23 真数据回填（用户 2026-10-26 报「还是没有获取到数据」）：经 NeoData 逐日权威份额变动回填——① 双路交叉验证（S21+Δ1022 与 S23−Δ1023 相等）33/33 严丝合缝后，data/etf-flow/20261023.json 还原为「按 10-23 当日采集」口径（shares=S22、shareDate=20261022、含 restored 溯源标记与全部 Δ 数据），运行中服务经 /api/etf-flow 实测「净申购 322.86 亿 · 24 只净申购/1 只净赎回」，台账 10-23 增量由代码幂等入账（lastDate=20261023、days=3）；② 510310（易方达沪深300发起式）NeoData 无逐日份额表（5 次尝试、实体解析正确），今日按「份额缺失」诚实处理、明日自愈；③ lib/marketEmotionModel.js calcEtfFlow 降级分支补透传 etfDate（修卡片「数据日期」回退到模型基准日的错标）；④ LAYOUT_VERSION 20261026b 强制当日判断重算（etfFlow 输入数据实质变化）。备份：data/etf-flow/20261023.backup-20261026.json、ledger.backup-20261026.json。 // [20261026a] 修宽基ETF申赎「净申购 0.00 亿/0 只净申购」假数据（用户 2026-10-26 报障）：[20261026a] 修宽基ETF申赎「净申购 0.00 亿/0 只净申购」假数据（用户 2026-10-26 报障）：根因是快照 shareDate 按 tradeDate 推、而份额 T+1 披露按采集日可见——周六补采的 10-23 快照实际已拿到 10-23 官方份额却标成 10-22，与 10-26 快照（同为 10-23 值）相减得假 Δ=0（510300 真实净申购 +25.13 亿份被吞）。修复：① lib/etfFlow.js collect 的 shareDate 改按采集日推（_prevTd(localCompact())，钳回 ≤tradeDate）；② computeFromSnapshots 加披露未跨日守卫（baseShareDate>=shareDate → 诚实报「无法计算」，禁假 0）；③ 跨多日缺口加 spanNote 标注多日合计；④ 存量纠偏：20261023.json shareDate→20261023、20261022.json 显式补 20261021、ledger.lastDate 回滚 20261022（假 0 消耗的幂等锁）。10-23 当日真实增量因基期值未捕获无法恢复，10-27 起披露跨日自动恢复。 // [20261025p] 三项改动（用户 2026-10-25 要求）：[20261025p] 三项改动（用户 2026-10-25 要求）：① 情绪总分改「权重比合计净值」——前端显示 totalScore×100 = 各因子净权重合计（±100 分制，徽章/详情行/阈值同步 ±20 分），内部 totalScore 语义不变（子卡/落盘兼容）；② 删除首页「情绪因子明细/宽基ETF申赎」页签（_renderEmoTabs/_renderEtfFlowPane/_loadEtfFlow 整体移除），情绪卡片回归单视图；③ ETF 明细改独立网页 /etf-flow.html + public/js/etfFlowPage.js（渲染逻辑整体迁移、全量成分股表默认展开、带刷新按钮），因子卡片「查看宽基ETF明细」按钮改 window.open 新标签直达。排版保持独立页统一外壳（DESIGN §12），因子网格对称布局不受影响。 // [20261025o] 市场情绪数据统一两位小数（用户 2026-10-25 要求「数据保留小数点后两位，百分比也是」）：① 模型 volumeText 量比 round 2（修「量比 1.2390594651481384」16 位浮点外漏）；② 核心驱动「净权重 ±X 分/权重 Y%」round 2；③ 前端情绪面板权重/净权重/情绪总分 toFixed(2)；④ 个股「市场情绪提醒」子卡情绪总分 round 2。另核实：股吧热度 94% 分位判「中性」为模型本意（score=-1 需「分位>90% 且大盘近期大涨」双条件）；用户所见「情绪总分 0.009/旧文案核心驱动」为旧进程未重启覆写的旧口径数据，重启即愈。LAYOUT_VERSION 20261025g。 // [20261025n] 市场情绪模型改「净权重=评分」（用户 2026-10-25 要求「市场情绪提醒 8 因子参考个股短期判断模块同样修改」）：① lib/marketEmotionModel.js 总分由 Σ(score×权重) 改 Σ(满格方向±1×权重)，因子评分=±权重（净权重），强度折扣退场（保留在文案与核心驱动排序）；② 因子下发 contribution（方向×权重，已含降级归零/滞后 8 折）；③ 前首页情绪面板因子明细大字改「净权重 ±X%」（判断模块同款），倾向阈值/仓位档位/自学习机制不变；④ 同日情绪记录每次刷新覆写（existing 路径），个股页「市场情绪提醒」子卡读落盘 score 自动跟随。 // [20261025m] 修「量能信号中性 vs 量价配合放量下跌」同屏矛盾（用户 2026-10-25 报「两个模块合并后出现数据错误和矛盾」）：根因是 volumeEngine._reconcileTodayBar 的追加条件 quote.date===todayStr 在周末/节假日失效——周六访问时最近交易日（10-23 周五）终值 quote 被拒，bars 末根停留 10-22，量能信号与量价配合都把 10-22 的「放量下跌 -4.18%」当成当日（实际 10-23 放量上涨 +2.26%）；同时旧服务进程内存里还跑着 10-23 初稿的口诀文案「放量下跌筑转周」（工作区已是「放量下杀防转弱」，重启即愈）。修复：追加条件放宽为「quote 新于末根 + 不晚于本地今天 + 是交易日」，实测 000902 date 补至 10-23、主判转第 5 条「量增价升看延续」、资金面偏多 0.24，与行情一致；量能三测试 28+295+229 全绿。LAYOUT_VERSION 20261025e 强制重算当日判断。 // [20261025l] 个股页新增最右侧「个股记录」tab（用户 2026-10-25 要求）：按日期排序的手动记录，自由文本添加该个股值得注意的问题——lib/stockLog.js（落盘 data/stock-log/<代码>.json，日期校验/2000字上限/500条上限/损坏按空处理）+ GET/POST/DELETE /api/stock-log/:symbol + public/js/stockLog.js（日期倒序分组、删除确认、Ctrl+Enter 提交、本地时区默认今天）+ index.html tab/面板/脚本 + app.js 切股与切 tab 挂钩（同股已加载跳过）。纯手动记录：不参与任何判断/评分/回测，不触发模块联动（隔离原则）。 // [20261025k] 子卡取值去裸百分比（用户 2026-10-25 问「融资余额为什么有两个权重」）：融资余额 value 加「较前值」前缀、涨停/跌停占比加「涨停/跌停」、行业短期走势加「板块」、期货近5日走势加「期货」——与「权重 ±X%」评分数字区分；-0.95% 实为融资余额较前值变化幅度（市场数据），权重只有子卡头部一个。LAYOUT_VERSION 20261025d 强制重算。 // [20261025j] 「权重=评分」铺满整个短期判断模块（用户 2026-10-25 要求「应用到整个短期判断模块，不是只用在事件驱动」）：① 全部 7 因子子卡下发因子内份额（share），因子信号 = Σ(份额×满格方向±1)，贡献分=净权重——市场情绪/个股短期动向沿用既有子权重归一化，资金量能沿用融合权重比例（主结论槽由量价配合承载）且主力净流入新增 0.05 份额（此前纯展示不计分），增持减持 0.55/0.45/0.20 归一化、被动减持按方向计分，行业板块涨跌停互斥持权 0.45/行业走势 0.35/板块消息 0.20，对标期货以相关性强度作份额、传导方向入子卡，跷跷板死区后满格；② 事件引擎子事件改发份额（effWeight/sumEff，显示数值不变）；③ 前端子卡权重=份额×因子有效权重、因子行净权重=Σ(份额×eff×方向)。LAYOUT_VERSION 20261025c 强制重算。 // [20261025i] 「权重=评分」口径落地 + 布局自适应（用户 2026-10-25 要求）：① lib/eventEngine.js 事件聚合信号由「信号强度加权」改为「方向满格加权」（事件按权重把 ±1 计入，贡献分≈净方向权重：回购+30%、原油-4% → 净+26%≈26 分），内幕抢跑保留原强度微调；② 前端因子行/长期卡片/子卡片全部删除「得分」数字——因子行只留「净权重 X%（最高 Y%，方向色）」或「权重 X%」，子卡片只留「权重 ±X%」；③ CSS 因子行与子卡片头 flex-wrap 自适应（条形弹性收缩、数字不截断，内容增减不再破版）；④ LAYOUT_VERSION 20261025b 强制重算。 // [20261025h] 判断卡片恢复「权重+得分」双显示并新增净权重口径（用户 2026-10-25 要求「所有权重与得分都要显示」）：① lib/eventEngine.js 事件子因子下发 effWeight（恒正、方向由 signal 承载）；② 短期因子行有带权子因子时显示「净权重 X%（最高 Y%）」=Σ(子权重×方向)，其余因子仍「权重 X%」；③ 因子行与长期卡片恢复「得分」（contribution×100），子卡片显示「权重 ±X% + 得分=权重×|signal|」；④ LAYOUT_VERSION 20261023i→20261025a 强制重算。 // [20261025g] 短期/长期判断卡片评分标注统一为「权重」口径（用户 2026-10-25 要求「统一采取权重」）：因子行删「利好/利空 ±档位」徽章与「贡献分」数字，只保留「权重 X%」+ 方向色/箭头；子卡片「利好+1」改纯文字「利好/利空/中性」；综合分与置信度保留。纯前端展示口径、后端判断缓存不重算。 // [20261025f] 工作台布局深度优化与统一（用户 2026-10-25 要求「深度优化布局设计，统一不统一的地方」）：style.css 新增「独立长页统一外壳」段——四独立页（notes/accuracy/judgments/logic-model）统一页宽阶梯（808/1148/1148/1328 居中，accuracy·judgments 与首页 home-card 1100 同宽对齐）、统一 .jd-header 页头（logic-model 独立页头结构废弃对齐，lm-tool-btn/lm-head-actions 死规则删除）、统一 sticky 工具条（np/acc/jd-toolbar 同一套）、统一页面级筛选芯片（np-tab/acc-tab/jd-tag 同一套金令牌着色）、统一大空态虚线空盒（表格内小空态不受影响）；独立页颜色全部令牌化（home-action-btn.active 杂金 rgba(207,174,124,0.14) 修正为 --accent-light、nav-acc-link 硬编码金改令牌、acc-kpi 裸 hex 红绿金改 var()）；jd-filter 圆角对齐 --radius-sm；notes 写按钮与范围 tab 去 emoji（DESIGN.md §6 动作按钮纯文字）；accuracy 页头按钮次序统一（次要在前、主操作在后、返回居末）；DESIGN.md 新增 §12 独立长页统一外壳；[20261025e] 删除归档模块（用户 2026-10-25 要求「把归档的模块删除」）：notes.js 移除 ARCHIVE_DAYS/_isArchived/_pageList 与 SCOPE_META.archive，renderScopePage 恢复 getByScope 全量渲染、hint 文案复原；notes.html 删除「📦 归档」tab 与 archive 初始化分支（scope 白名单复原 global/market、写按钮恢复常显、计数复原「共 X 条」）；20261025d 的单列流式布局与正文折叠摘要（展开全文/收起）保留；[20261025d] notes 独立页改纵向单列流式布局（固定宽度居中、上下留间距）+ 正文折叠摘要（3 行截断，「展开全文/收起」切换）+ 新增归档 Tab（超过 30 天的投资心得/大盘记录自动进入归档，只读视图隐藏写按钮）；[20261025c] 三弹窗改独立页面（用户 2026-10-25 要求「把这三个模块的弹窗改为新建网页页面」）：新增 public/notes.html（投资心得/大盘记录，?scope=global|market，顶部 tab 切换 + grid 多列卡片，Notes.renderScopePage 渲染进 #scopePageList）与 public/logic-model.html（逻辑模型树，LogicModel.buildInto 构建进 #lmPageBody，TREE 与首页同源）；notes.js 删 showScopeModal/renderScopeModalBody/refreshScopeModal/closeScopeModal 四个弹窗函数、新增 SCOPE_META + renderScopePage 并挂入 renderHome 刷新链（验证/设为主/保存/删除后页面列表自动刷新）；logicModel.js 提取 buildInto() + init 页面模式检测 + toggleAll 双容器 + 行点击委托放行页面模式；index.html 三入口按钮改 window.open 新标签跳转、删 lm-modal overlay 骨架与 logicModel.js 引用（该脚本移至 logic-model.html 加载）。 // [20261025b] 记录弹窗金融工作台风格重排（用户 2026-10-25 要求）：note-card 日期居左+状态标签小色块居右（note-head-tags 容器）、正文行高 1.75、动作按钮缩小（11.5px/3px 10px，含 btn-set-main 补基础尺寸）右对齐沉底+细分隔线、journal/scope 弹窗加宽 760px 内边距加大、记录块间距 14px、lm-modal-body 内边距加大；与左侧股票列表深色主题统一。 // [20261025a] 量能数据按档位着色（用户 2026-10-25 要求，放量红/缩量绿/平量白）：app.js 新增 volTierCls 共用助手，接入个股量能分析卡「量能档位」「60日量能确认」、大盘情绪卡「量能状态」两处、四维度客观描述「量能状态」；档位真值源 lib/volumeEngine.js VOLUME_TIERS（极度缩量/温和缩量/平量/温和放量/大量/天量），cap-pos/cap-neg 复用全站红绿语义。 // [20261024m] 修「AI 解读仍不同步到大盘记录」（用户 2026-10-24 16:24 报障）：20261024l 的落盘加了 `cached !== true` 门槛，导致「缓存已存在但从未落盘」被跳过（16:08 旧代码生成缓存，16:24 点按钮命中缓存 → 不落盘）。改为**只要 success 就 upsert**（saveMarketReviewNote 幂等，同一交易日只更新不重复），缓存命中也补齐落盘；并已用现有缓存回填一条「AI 大盘复盘 · 2026-10-23」到大盘记录。守卫 test_market_ai_cache_notes 22 项。 // [20261024l] AI 大盘解读「缓存 + 落盘大盘记录」（用户 2026-10-24 16:09 截图：手动 AI 解读没同步进大盘记录；且每次系统更新都重新解读）：① lib/ai/market.js 缓存由「4 小时 TTL」改为「按 asOfTradingDate 交易日缓存」——同一交易日（含周末/长假沿用最近交易日）复用同一份解读，只有跨交易日或显式 force 才重调 LLM，缓存记录写入 asOfTradingDate；② 手动生成（POST /api/ai/market-overview）成功后自动 upsert 到 data/notes.json（scope=market，标题「AI 大盘复盘 · 交易日」，同日更新不重复），与 15:30 定时复盘共用 lib/dailyMarketReview.saveMarketReviewNote，命中缓存不重复写；③ 首页「AI 解读」按钮改为「确保有解读」（POST force:false，复用缓存、缺失才生成），Alt+点击=强制重新解读；页面刷新 GET 直接读缓存。守卫 test_market_ai_cache_notes 21 项。 // [20261024k] 非交易日数据口径铁律（用户 2026-10-24 要求：非交易日无法获取「当日」数据应判定为正常，沿用最近一个交易日的数据即可，不得因此判「数据不足」）：lib/cnTradingCalendar 新增 asOfTradingDate / isDataCurrent（非交易日 → 最近交易日，沿用即视为最新）；板块拥挤度 recordDaily 落盘门槛由「字面 today」改为「最近交易日」（周末/节假日沿用最近交易日数据，只有严格滞后才拒绝），ensureSectorCrowdingToday 增加周末分支——确保最近交易日记录存在，避免首页板块拥挤度周末显示暂无数据；板块涨幅榜 recordDailyRanking 改为按最近交易日为键（消除周末伪日期污染近 N 日统计）。量能引擎 20261024f 的 _staleBarGapText 已同口径（周末末根=最近交易日 → 中性说明，不进红框）。守卫 test_non_trading_day_policy 19 项。 // [20261024j] 修「60日量能确认」文案歧义（用户 2026-10-24 15:52 截图：指标卡写「未确认」，生死位规则 1 却给出「60 日均量 927010 手 ×1.5」，判为前后矛盾）：confirm=null 实为「当日量落在 0.7~1.5×60日均量之间」→ 60 日口径平量，并非缺数据。app.renderVolumeEngine 不再写「未确认」，改为显示「平量 / 放量 / 缩量（x.xx×60日均量）」+ tooltip（均量 / 当日量 / 阈值）+ 一句窗口说明（÷5日均量与 60日均量是不同窗口，结论可并存）。纯前端展示改动，数据与计算零影响。守卫 test_volume_confirm_label 15 项。 // [20261024i] 量价分析合并进量能分析（用户 2026-10-24 要求，重复展示删除）：删除个股页独立「📊 量价关系分析」卡（#capVolumePrice），量能卡标题改「🔬 量能分析（量价 × 价格位置 × 量能行为）」；量价配合结论 + 量价独有指标（今日涨跌 / 20日涨跌日 / 20日量价比 / 20日净涨跌）并入 renderVolumeEngine，去重「量比 / 量能热度」（与量能档位同源，不重复展示）；量价数据缺失时显示明确原因（不整卡空白）。修复「个别个股量价分析失效」：capitalFlow.volumeIndicators 改双源兜底（引擎 bars ↔ 路由 history，任一 ≥20 根即可计算）；renderVolumePrice 加元素缺失安全退出，renderAll/实时刷新不再单独渲染旧卡。守卫 test_volume_merge 18 项。 // [20261024h] 新增「模块联动应答机制」（用户 2026-10-24 要求：源模块变动时自动给联动模块发同步/失效信号）：lib/moduleSync.js 声明依赖图（14 模块）+ emitChange 传递失效（BFS 含间接依赖、环路 visited 去重、3s 合并去抖、force 重发、处理器错误隔离）+ 为有内存缓存的模块注册失效句柄（priceActionHub 丢快照 → sameDayJudgment 作废判断）；把原本散落在 server.js / routes 的手写 invalidation 循环统一改为 emitChange（manualZones / eventEngine / dedicatedFactor），并新增 manualZones→priceActionHub→sameDayJudgment 的传递失效（手动区间一变连带作废个股判断，此前只丢快照不作废判断）；新增 routes/moduleSyncRoutes（GET /api/module-sync/graph|signals、POST /api/module-sync/emit 排障/验证）并挂载；marketEmotion→sameDayJudgment 仍走 _emotionSubStale 懒同步（避免首页每次重算情绪就 eager 失效抖动），依赖图仅声明关系。守卫 scripts/test_module_sync.js 37 项。 // [20261024g] 两件事：① 修「首页情绪 vs 个股大盘因子」同屏矛盾（用户 2026-10-24 14:00 截图：首页情绪总分 0.009 中性 vs 士兰微「大盘」因子 -0.317 看跌，且都自称引用同一判断）——根因是个股判断生成时把当日情绪总分烘死进 factors[sentiment].subFactors[市场情绪提醒].signal；首页情绪此后重算（数据源恢复 -0.317→0.009）但判断按 targetDate 复用旧快照，未感知情绪已变；修复：lib/sameDayJudgment 新增 _emotionSubStale/_findEmotionSubSignal，复用前比对「烘焙情绪信号 vs readLatestJudgment() 当前最新值」，不一致即强制重算（getJudgmentWithAccuracy + ensureAllTrackedJudgments 两处同源门控），守卫 test_emotion_judgment_consistency 15 项。② 新增「每日收盘后自动 AI 大盘复盘→写入大盘记录」（用户 2026-10-24 要求，截图「实时大盘·AI 解读」）：15:30 每日结算批内执行 runDailyMarketAiReview（getMarketOverview 同源取数 + analyzeMarketOverview force:true），结果作为 scope=market 笔记落 data/notes.json，同日幂等（标题带日期）、SA_NO_DAILY_AI_REVIEW=1 可关、无 API Key 时如实跳过；新增 lib/dailyMarketReview + 守卫 test_daily_market_review 27 项。 // [20261024f] 修「非交易日恒报『未包含今日数据』假缺口」（用户 2026-10-24 周六 13:35 截图）：末根=周五 10-23、今日周六 10-24，却进红色「数据不足」框。新增 lib/volumeEngine._staleBarGapText 交易日感知（走 lib/cnTradingCalendar）——周末/节假日末根≥最近交易日 → 中性说明「数据已更新至最近交易日」（不进红框）；末根<最近交易日 → 真缺口「未包含最近交易日 X」；交易日口径不变。前端 TRUE_GAP_RE 增「未包含最近交易日」；守卫 test_volume_gap_label 37 项。 // [20261024e] 量能分析「数据缺口」文案展示计算结果（用户 2026-10-24 截图要求）：五大生死位规则里「（未连续超过 60 日均量 ×1.5）」「（未超 60 日均量 ×1.5）」等阈值类缺口由纯阈值描述改为带实际计算值——嵌入最近3日成交量（手）/60日均量×1.5阈值、今日量/60日均量×1.5阈值、当日量/近12月历史峰值、换手率/均值×2阈值等；纯文案改动，dataGaps 仍为字符串数组、下游渲染（app.js ve-rule-gaps 仅 esc 后拼接）零格式影响；审计 9 只自选股确认缺口为系统性（东财通道本机网络层阻断→同花顺降级，全样本统一缺「历史段推算值」+「未含今日数据」两条），非个股特有。 // [20261024d] 个股「量能分析」指标卡括号内说明文字缩小一号（用户 2026-10-24 截图要求）：量能档位（1.41×）/价格位置（分位…）/关键支撑（…）/关键压力（…）四类括号内容包 .cm-paren（font-size 12px，主值 15px），关键支撑/压力 kind 内嵌套括号（如「MA250（上翘）」）随外层 span 一并继承小字号；纯展示层改动，数据与结论零影响。改动 public/js/app.js metrics 数组 + public/css/style.css 新增 .cm-paren。 // [20261024c] 量比口径二级一致性审计（用户 2026-10-24「检查其他量比口径不一致」）：主档位四处（volumeEngine/marketEmotion/marketTechnical/zoneValidity）已统一 1.2/0.8；本版本把两处「共用放量/缩量标签却用 1.5」的次级口径对齐到铁律——① capitalFlow.latestVsPriorAvg.trend（个股页 volumeTrend 来源）：>1.5→温和放量 改 >1.2，<0.5→缩量 改 <0.8，消除量比 1.3 时主档位说「放量」、个股页说「normal」的观感冲突；② capitalFlow 个股突破 breakoutVolRatio >=1.5 改 >=1.2，与 zoneReversal/zoneValidity 箱体突破 BREAK_VOL_MIN=1.2 同源（不另立一套）。迁移守卫 test_volume_root_migration 同步更新 oldAnalyzeVolume/oldBreakout 阈值；新增 test_volume_caliber_20261024c 显式边界断言。 // [20261024b] 量能活跃度卡量比阈值对齐项目「量比」铁律：原 1.5/0.7（>1.5放量/<0.7缩量）与 volumeEngine._volumeTier（>1.2放量/<0.8缩量，东方财富 App 量比口径）矛盾，用户 2026-10-24 截图「量比 1.21（平量）」报障。三处量能分档统一改 1.2/0.8：_latestDayMetrics、calcVolumeActivityLatest、calcVolumeActivity（旧 5日/3日函数亦对齐，供大盘技术分析页与守卫）。量比 1.21 现正确判「放量」、1.08 仍「平量」。守卫 scripts/test_volume_latest_day.js 36 项 + test_market_emotion 62 项零回归。 // [20261024a] 主力资金因子（图二 mainFund）数据源重构：原主链 push2delay 实时通道本机常年 TLS 重置、备链数据中心行业资金流求和又因 'fb.date===today' 硬门槛拒收 T-1 → 因子长期「缺失」。改用 fetchMarketMainFund() 稳定源链路（S1 行业资金流求和优先 + S2 板块资金流汇总兜底，同源东财数据中心族、不引异源，满足数据一致性铁律），接受「最新已收盘交易日」并如实标注口径日/T-lag（与融资余额 T+1 同范式）；快照写入加 lagged 护栏，T-1 值不得挂今日污染历史样本。守卫 test_mainfund_stable_source。 // [20261023p] 量能根新浪降级：腾讯 fqkline 全族被 WAF 拦（HTTP 501 + wa.gtimg.com 跳转验证页）→ 指数日线取不到 → 首页「量能活跃与量价配合」「大盘近期涨跌势头」全线降级「上证/深证日线不足 21 根」（用户 2026-10-23 20:37 截图报障）。修法：lib/marketTechnical.fetchIndexDailyBars 加新浪日K降级（money.finance.sina.com.cn getKLineData，仅限指数——指数无复权概念与腾讯 qfq 等价；个股 qfq≠不复权不走此降级）。关键量纲：新浪指数 volume=股、腾讯=手，实测 100.0 倍整 → ÷100 对齐（否则卡片「亿手」错 100 倍）。腾讯恢复后自动回到主通道。守卫 test_index_sina_fallback 15 项；实测 320 根 0.3s。 // [20261023o] 量能活跃与量价配合卡口径升级：所有口径改为「最新日 + 上证+深证双市」，弃用 5日/3日窗口。calcVolumePrice 改调 calcVolumeActivityLatest/calcPriceVolumeLatest（新增，旧 5日/3日函数保留给大盘技术分析页与守卫）；getMarketEmotionData 注入 indexSZ（深证成指，同量能根通道，失败单市降级）；PV_RISK_TEXT 窗口 近5日/近3日→最新日；detail 末尾口径说明改写。 // [20261023n] 量能活跃与量价配合卡补口径说明：用户看到「今日上证 +0.89%」但卡片写「量升价跌」，误以为分析的是今日。实际该卡用「上证指数 5日价格（今收 vs 5根前）+ 3日量能（近3日 vs 前3日）」：5日 -0.69% + 3日量能 +5.4% → 量升价跌，与今日涨跌无关。detail 末尾加「（口径：上证指数 · 5日价格 + 3日量能，非今日涨跌）」。 // [20261023m] 纠正 PCF/份额的措辞混用：上交所《ETF业务实施细则》第三十条——申购赎回清单（PCF）为「每日开市前」提供、网站 8:30 更新（T 日盘前，基于 T-1 收盘持仓）；T+1 的是「基金份额」，不是 PCF。原 UI「T+1 例行披露」易被读成 PCF 也 T+1。现 margin/etfFlow 因子各带 lagNote 明确区分：融资余额 T+1；基金份额 T+1、PCF T 日盘前 8:30。 // [20261023l] 数据日期再补齐：① 「各宽基ETF申赎」区块标题后加「· 数据日 2026-10-22」；② 融资余额是交易所 T+1 例行披露（最新可得=上一交易日），原 calcMargin 硬编码 lagged:true 且卡片用模型基准日 10-23 标注 → 出现「数据日期 10-23 + 滞后1天打8折」的自相矛盾；现 margin 因子输出 dataDate=2026-10-22、lagKind='cadence'（ETF 同标），前端对「例行披露」改用中性说明「T+1 例行披露（最新可得 …）→ 模型规则权重 ×0.8（惯例折扣，非数据异常）」，只有真正异常滞后才用 ⏱ 警告。 // [20261023k] 数据一致性补齐：① 情绪模型 factors.map 透出 etfDate/settleStatus/totalNet（原被剥掉，卡片只能回退模型基准日 → 标 10-23、数据 10-22）；② ETF 滞后判断把紧凑 20261022 归一到 YYYY-MM-DD 再比（原字符串比较误判 lagged=false），lagDays=1；③ ETF 页签「（当日）」/「当日买·当日卖」改为真实数据日（2026-10-22），术语不再用「当日」。守卫 test_market_emotion / test_etf_flow。 // [20261023j] 两处数据日期修复：① 情绪因子卡补「数据日期」（ETF=份额披露日、讨论热度=热度时间、其余=模型基准日；宏观月度已在 detail 写明）；② 宽基 ETF 申赎「数据日」改用份额披露日（T-1）——腾讯 field 72 是上一交易日份额（实测 510300 在 10-23 取到 327.3 亿份 = 东财 2026-10-22 份额），原按 tradeDate 标注导致「标注今日、数据是昨天」；快照新增 shareDate、台账按 shareDate 键并一次性迁移、_computeEtfFlow 返回 calc.date。守卫 test_etf_flow（58 项）。 // [20261023i] 股份回购从「增持减持」卡片迁入「突发事件」（事件驱动因子），权重按进度：回购提议（001 董事会预案 / 002 股东大会通过）10%、回购实施中（004）30%（用户 2026-10-23 截图要求）。新增 lib/eventEngine.buildBuybackEvent（合成事件，跳过内幕抢跑/市场反应核验，detail 保留四要素）；factorHoldings 不再消费 buyback、不再把回购计入利好家数；LAYOUT_VERSION=20261023i 强制重算。守卫 test_buyback_event_weight（29 项）。 // [20261023h] 修复「三季报已出仍解读半年报」：lib/deep/financials.getLatestPartialQuarterDates 原按月份猜报告期（5-7月=一季报 / 8-10月=中报 / 11月+才三季报），而三季报法定披露期是 10 月 → 整个 10 月读不到 09-30（用户 2026-10-23 洲明科技 300232 截图：「三季报已经出了，模块还在默认解读半年报，自动搜索最新财报的机制是死逻辑吗？」）。现改为直接请求最近两年全部季末报告期，由 F10 返回实际已披露的那些（实测 300232 请求 2026-09-30 返回「2026三季报」）；并升 EARNINGS_PROMPT_VERSION=20261023h 强制失效旧中报缓存，深析管线丢弃 stale 缓存后前端自动触发重新解读。守卫 test_latest_report_period（15 项）。 // [20261023g] 准确率台账增加「待结算明细」：`sentimentAccuracy.computeAccuracy` 输出 `pendingList`（baseDate/targetDate），前端在准确率行下方列出「待结算 N 条：10-22（目标 10-23，待今日收盘）· 10-23（目标 10-26，未到目标日）」，解决「20 条为何只结算 18 条」看不出差在哪两天（用户 2026-10-23 提问）。 // [20261023f] 修复「数据不足标注」误读：① 历史段成交额回填改用腾讯「不复权」收盘价（前复权价会系统性低估 2~3.5%，实测 603288 改用后偏差 <1%），turnover 仍按流通盘推算（实测一致），该条从「推算值」降级为「来源与口径说明」；② 前端把 dataGaps 拆成「数据不足（影响结论置信度）」与「数据来源与口径说明（不影响结论）」两个框——日K降级/当日bar覆写/量比直采/分时未收盘不再塞进红色缺口框。lib/stockData 新增 fetchTencentRawCloseMap；守卫 test_volume_gap_label（25 项）+ test_ths_backfill（21 项）。 // [20261023e] 量价十口诀区块标题去掉「（郭睿体系 · 主判）」括号及其中文字，标题改为「量价十口诀」（用户 2026-10-23 截图要求）。 // [20261023d] 资金量能整合「量价十口诀（郭睿体系）」为用户指定框架：新增 lib/volumeEngine `_tenRules` 主判层（10 条口诀 × 位置/量能/价格，输出 primary/items/framework/reminders/summary），个股页「资金量能」卡顶部渲染（主判 + 10 行对照表 + 框架提醒）；既有 7.4 位置量价 / 7.5 量比口诀 / 11.3 矛盾信号保留为「补充交叉验证」。补齐原引擎 6 个缺口：①低位无量 ②高位无量两子型 ③低位放量吸收确认 ④高位放量创新高/滞涨/放量下跌三分 ⑤放量下杀承接判定 ⑥平量涨跌定性；平量涨/跌方向由 neutral 调整为 observe。引擎 schema → volume-engine-20261023d。 // [20261023c] 修正「低位放大量但价格不跌，要跟踪」误判：原条件 `(isStagnant || chgPct > 0)` 把任何上涨（含 +3.41% 大涨）都当「价格不跌」，与结论文案「仅小阴小阳震荡或重心企稳」自相矛盾（用户 2026-10-23 海天味业 603288 截图报障）。现要求当日 |涨跌幅| < 1.2%（小阴小阳硬门槛，与 isStagnant / 低位放量震荡同阈值），重心企稳（近 3 日收盘重心不下移）只作二次确认；大涨/大跌一律不命中，未命中时明说「已属大涨、方向性上涨、不适用本项」。lib/volumeEngine.js 11.3.3.2。 // [20261023b] 回滚 20261023a 的「卡内页签 + 整行宽卡片」：用户 2026-10-23 截图报障「卡片的布局全部乱了」。宽基 ETF 因子卡恢复为普通网格卡（与其余 9 张等宽），卡片只保留核心数值 + 一句短摘要 + 「查看宽基ETF明细 →」入口；口径解释、ETF 数量统计、逐股统计全部移到独立的「宽基ETF申赎」页签承载，不再撑乱首页网格。删除 _renderEtfFactorCard/_renderEtfInlineBody/_renderEtfStockTable/_renderEtfListTable 与 .tp-comp-wide/.etf-inline-* 样式，新增 .tp-comp-more。 // [20261023a] 宽基 ETF 因子卡新增「卡内页签」（概况 / 个股当日净申赎 / ETF 名单）：用户指出卡片内容看不全，要求卡内直接统计每只成分股当日被净申购/赎回的数量 + 当前模块统计的 ETF 名单。因子卡改为整行宽（tp-comp-wide），卡内复用 /api/etf-flow（同源 3 分钟 memo）按需加载；个股表按当日净额降序，ETF 表按净申赎额降序，红涨绿跌。 // [20261022j] 修正②卡「上方/下方关键区间」排序口径：用户指出 20261022h 做错了——当时实现为「阻力 low 升序 / 支撑 low 降序」，两段都是"离现价最近的在最上面"，方向相反、整卡不连续（截图表现：上方 5.48→6.62 递增、下方 4.94→4.59 递减）。用户原话「我要求的是上方和下方区间统一从上到下按照价格的高度排序」。现改为**两段统一按 low 降序**（高价在上、低价在下），整卡自上而下价格单调不增，等价于一根竖直价格轴：6.62…5.48（阻力）→ 4.99…4.59（支撑），与看盘软件纵轴方向一致。`_sortZones` 删除 side 分支、side 参数保留仅为兼容调用点；强度不再影响顺序，只由行首徽标承担。**后端数组顺序不变**（仍为阻力 low 升序 / 支撑 low 降序），④卡 `resistances[0]` 与量能规则4 `zoneLevelsHint` 的依赖不受影响。守卫：scripts/test_zone_sort_order.js（27 项，用截图里 7 阻力+3 支撑的逐条真实数值断言）。 // [20261022i] 两件事（用户连续两条需求）——①**主图删除「今日收盘价」光标，改为「区间最高/最低」两条自动追踪光标**：原右侧 5.77 价签只标末根收盘价、信息量低；改为两条虚线（红·高 / 绿·低）随**当前选定时间范围**实时重算，滚轮缩放/拖动平移/3月·6月·1年·3年按钮四条路径全部收敛到 `Charts._visibleRange`（读 dataZoom 百分比→下标）→ `_rangeExtremes`（区间极值）→ `_rangeMarkLine`（固定两条，防 ECharts 按索引合并残留脏光标），dataZoom 事件用 rAF 节流。②**修「自选股需要点好几次才切得过去、系统反应缓慢」**：实测冷缓存切股 `/api/analysis/:symbol` 要 2.0~4.0 秒，四个成因叠加——(a) `showLoading(text)` 把 text 参数整个丢弃、只走一条 3px 进度条 → 几秒内屏幕仍是上一只股票，用户以为没点上；(b) 连点时每次 `analyze()` 都 `_reqToken++` 并重发请求、前一结果被 token 丢弃 → 越点等于不断重置读条；(c) 自选股行默认 `draggable="true"`，指针按下轻微移动就被判为 HTML5 拖拽、**click 事件直接被吞**；(d) 60s 定时刷新调 `renderWatchlist()` 整体 `innerHTML` 重建（注释却写「只更新价格单元」）→ 重置滚动/悬浮，还可能吃掉按下时有、抬起时没了的点击。修法：新增 `#loadingPill` 胶囊（pointer-events:none，显示「正在加载 XX」）+ 点击后立即高亮目标行；`analyze` 加 `_inflightTokens` 同股在飞去重（force:true 供刷新按钮/换范围突破）；行导航收敛为 `navigateToRow`，由 `pointerup`（位移≤6px、≤900ms）兜底并带 symbol 维度去重；定时刷新改 `patchWatchlistPrices()` 只 patch 价格/涨跌幅单元格（排序态仍重排，保顺序语义）。守卫：scripts/test_chart_range_cursor.js（39 项）、scripts/test_switch_stock.js（47 项）。 // —— 历史： [20261020l] 三处修复（用户连续三条报障）——①**下线「关键位有效性检验」卡与其联动**：用户指出 20261020i **删错了模块**——当时该删的是这张「生死位规则口径」⑤卡，我方却把箱体区块删了。本轮彻底移除：`getLevelValidity`/`_extractLevelValidity`/`_lvCache`/`LV_TIMEOUT_MS`（lib/priceActionHub.js，连 analyzeVolume+getQuote 依赖）、路由层 `levelValidity` 注入（server.js）、`#paLevelValidity` 卡与 `_renderLevelValidity`/复位/错误占位（public/js/app.js）、`.pa-lv-*` 样式（style.css）、`scripts/test_price_action_level_validity.js`；资金量能页自身的规则3/规则4 不受影响。②**修「距失效还需 3 日」误解**：`invalidation.remainDays` 原在未越界时也恒算 3，前端照渲染成倒计时，看上去像「模型三日后自动失效」；实际条件是「连续 3 日收盘在失效线外」，股价在箱体内震荡时根本未触发。改为：未越界时 `remainDays = null`，前端显示「未触发失效」，只有 `currentStreak > 0` 才显示「已连续 N 日在外，再有 M 日失效」；并加源码守卫禁止「距失效还需」文案复活。③**修「来回震荡却不触发检验」**：`lib/zoneValidity.js` 把「越界」拆成两套谓词——`beyondOf`（收盘越过区间**远端**：阻力>high / 支撑<low）用于标准1、breakCount、streakNow；新增 `touchOf`（收盘**到达**区间近端：阻力≥low / 支撑≤high）用于标准2 的往返计数，字段 `transitions` → `touchTransitions`。根因：603288 现价 34.09、阻力区间 34.33~34.67，近 60 日收盘在该位置反复进出 **7 次**却从未收在 34.67 之上，旧口径一次都不计 → 永远判「有效」，正是用户报障「在阻力/支撑区间来回缩量震荡为什么不触发检验」。新口径实测：603288 阻力 1/2、支撑 1/3（34.33~34.67 往返 7 次、MA20 33.56~34.24 往返 9 次、33.29~33.63 往返 4 次均判无效隐藏，保留 34.53~34.87 与 32.25~32.57）；600909 阻力 0/3；601318 阻力 1/3、支撑 1/1。测试：`test_zone_validity.js` 新增 [15] 触及口径 7 项 → 61/61；`test_range_detector.js` 182/182（新增倒计时断言与文案守卫）。 [20261020k] 箱体上下限并入②卡阻力/支撑清单（用户要求「把箱体的上下限合并到上方阻力和下方支撑区间里面」）——①`lib/rangeDetector.js` 新增纯函数 `boxEdges(sr)`（导出供单测），活动箱体在结果里多挂 `edges:{upper,lower,label}`；②**取「实际收盘区间」envU/envL，不取中轴±容差的失效线 bandU/bandL**：失效线是纯判定阈值（600909 为 9.35/6.91），离现价 33%、且从未被价格触碰过，摆进「阻力/支撑」没有交易含义，用户核对形态用的也是实际高低点（8.54/7.03）；失效线仍留在箱体行与 tooltip 明示「越过 X 连续 3 日才判箱体失效」；③**箱体条目 isBox=true，绝不交给 zoneValidity 过滤**（用户第六条：箱体检验与两条区间有效性检验必须独立）——前端写成 `validOnly(摆动点).concat(箱体条目)`，顺序即约束，测试 [16] 用正则守住，任何人把它挪进 validOnly 都会红；④现价已越到某一侧之外时该侧条目自动省略（不把刚破的上沿继续挂在「上方阻力」里误导）；⑤箱体边界是单点价（`low===high`）→ 渲染单值 `8.54` 而非 `8.54 ~ 8.54`，并加 `.pa-zone-row.box-edge` 金色虚线左边框标识结构边界；⑥②卡箱体行**移除「收盘区间」字段**（已并入清单，避免同屏重复），只留「自 X 起 N 个交易日 · 失效线 · 距失效还需 N 日」；⑦实测（日K1500根）：600909 → 阻力 8.54（箱体上沿 56 日）/ 支撑 7.03（箱体下沿 56 日）；603288 42.22/32.44；601318 58.24/47.23；000858 79.92/68.77；600460 无活动箱体 → 清单不加箱体条目。测试 `test_range_detector.js` 新增 [16] 21 项 → 177/177。 [20261020j] 单箱体模型落地（用户口径：自最新日回溯 20 个交易日起、无固定长度、容差随长度放宽、连续 3 日突破即失效、与阻力/支撑两条有效性检验完全独立）——①`lib/rangeDetector.js` 彻底重写为**单箱体状态机**，删除 20261020f/g/h 的固定多窗口版本（WINDOWS/detectRanges/measureRange/measureDrift/scoreStability/annualizedVol/ampGrade/mergeZoneLevels 全部移除，旧 130 项单测同步重写为 156 项）：种子 = 最近 `SEED_DAYS=20` 个交易日（含最新日），中轴 = 段内收盘**中位数**，段内每个收盘须落在「中轴 ± 容差」的**带**内（不是 min/max 包络）即成立；容差 `tolPctFor(len)=min(10%×√(len/20), 15%)`——√ 的依据是随机游走位移 ∝ √t，15% 上限防久箱体带宽失去意义；成立后逐日推进，收盘在带内则延长，在带外累计 `OUT_BREAK_DAYS=3` 日即失效（**与成交量完全无关**，严禁复用 zoneValidity 的放量/反转次数口径），失效后须重新积累 20 个交易日才可能形成下一个箱体；离群/空值（`Number(null)===0` 陷阱）在 `_num` 前置挡掉。②**重新接入但只展示精简一行**：`priceActionHub` 用已拉到的 daily 直接算 `data.singleRange`（纯函数零网络，故不进路由层二次拉取；失败降级 null 只隐藏本行），②卡「短期动向预判」内 `_renderSingleBoxRow` 输出「自 X 起 N 个交易日 · 收盘区间 · 失效线（中轴±容差）· 距失效还需 N 日」，无箱体时输出「上一个箱体何时因何失效 / 新箱体还差几日」，完整口径进 title 悬停；旧多窗口表格与死样式不再复活（有源码级守卫测试）。③与「阻力/支撑区间有效性检验」（`lib/zoneValidity.js`，20261020i）**源码级双向不引用**、不共用常量，唯一共用只有收盘价原始数据，界面同屏声明两套口径不可互相验证。④顺带修复 20261020i 遗留：区间行悬停明细误用已不存在的 `ck.outDays/ck.maxOutDays/ck.breakDate/ck.breakVr`（会显示 undefined），改为 `transitions/crossMax/streakNow/outStreakMax/lastBreakDate/lastBreakVr`。实测（日K 1500 根）：600909 判出「2026-07-27 起 56 个交易日、收盘区间 7.03~8.54」，与用户截图「7月28日至今、最高 8.54、最低 7.03」一致（旧模型因振幅 19.4% > 16.8% 阈值判不构成）；603288 为 235 日大箱体（中轴 37.97、实际 32.44~42.22）、601318 92 日、000858 86 日，600460 上一箱体已于 2026-10-14 连续 3 日向下突破 28.18 失效（现价 25.91，失效判对）。 [20261020i] 箱体模块下线 + 阻力/支撑区间有效性检验（用户两条标准）——①**箱体模块与②卡联动整体删除**：用户实测 600909「7/28 至今 7.03~8.54」区间内收盘占比 **100%**、越界段 **0**、中轴漂移 **4.8%**，却因固定 60 日窗口（振幅阈值被窗口基准×1.4 压到 16.8%）与实际振幅 19.4% 判「不构成箱体」——证明「固定回看窗口 + 窗口基准振幅上限」与市场直觉「箱体一旦形成就一直延续到失效」不符；故移除 `ranges` 快照字段、`zoneLevels` 路由注入、前端「箱体判定」区块与箱体上下沿并入阻力/支撑的联动、以及相关死样式；引擎 `lib/rangeDetector.js` 及其 130 项单测保留待「自适应起点」版本复用，但不再参与任何运行时计算；②**新增 `lib/zoneValidity.js`**：阻力/支撑区间有效性检验（用户原话「不需要放量就轻松突破则无效」「超过三天在区间处来回突破则无效」），口径：近 60 日窗；收盘穿越（close>阻力上沿 / close<支撑下沿，等于端点算区间内）；突破日量比 = 当日量÷前 5 日均量，>1.2 为放量（与 volumeEngine `_volumeTier` 同源）；量比 ≤1.2 即突破 → 无效；近 60 日收盘在区间外 >3 天 → 无效（「超过三天」故 3 天仍有效）；量能缺失 → 标准1 不判定、不臆造量比；窗内从未穿越 → 有效（未被测试不等于无效）；③区间在 `priceAction.js` 内**原地打标**（valid/invalidReasons/zoneCheck）而非删除，保证语义单源——④卡「反转量化边界」改取首个**有效**区间，前端按 `valid!==false` 过滤、无效区间不展示，区段全被过滤时该标题整段隐藏；④悬停可核对检验明细（区间外天数/最近穿越日/量比/阈值）。 [20261020h] 箱体上下沿拆入②卡「上方关键阻力区间 / 下方关键支撑区间」（用户截图要求）——①**归属**：上限 U → 阻力区、下限 L → 支撑区，右侧标注所属窗口（`250日箱体上沿（主判定）`/`（辅助）`/`（未确认）`，主判定窗即使未确认也保留「主判定」字样）；②**排序**：整卡自上而下按价格由高到低（两区各自降序 + 阻力区整体在支撑区之上，等同点用下沿降序作次序键，单点边界排在同顶点波段之前）；③**单点边界**：箱体上下沿是收盘统计得出的单点价（low=high）渲染单值，悬停给该窗口完整计数（振幅阈值/越界段/假突破/中轴漂移/置信度）；④**单一口径**：归属/标注/排序收敛到 `lib/rangeDetector.mergeZoneLevels` 纯映射+排序，经 /api/price-action 的 `zoneLevels` 实时下发（不缓存、不污染 priceActionHub 快照语义，沿用 20261020e 路由层注入模式），前端只渲染不重复实现；⑤**未确认淡显**：未构成箱体的窗口仍出边界，但 `stable=false` → 前端淡显 + 标注「未确认」，避免被当成已验证的强阻力/支撑；⑥②卡原「箱体区间」区块改为「箱体判定」，只留每窗口的振幅/占比/假突破/漂移/结论（价格区间已移入阻力/支撑，不再重复），口径声明改为「箱体上下沿（收盘统计）与摆动点区间（近60日聚类）两套口径，同屏并列不互证」。 [20261020g] 箱体判定阈值体系升级（用户第二轮规范：不要只按窗口缩放，要结合波动率、改中轴漂移、主判定 250 日、置信度分级）：①**振幅阈值三层结构**——窗口基准（60/120/250/500 日 = 12/18/25/35%）→ 波动率自适应（`ampMax = clamp(1.5 × σ250年化, 窗口基准×0.6, min(窗口基准×1.4, 35%))`，低波动股收紧到 15%、高波动股最多放到 35%，用户原话「不应低于年化波动率 1.5–2 倍但不超过上表上限」）→ 无 σ 数据退回窗口基准并标注依据；②**漂移口径改写**——主判据改为「中轴相对漂移」（滚动子窗中轴 vs 全窗中轴的最大偏离，阈值分层 10/12/15/20%），原「上下沿绝对漂移」降为披露字段 edgeDriftPct 不参与判定（用户：不要用上下沿绝对漂移硬阈值）；③**判定分层**——主判定固定 250 日（数据不足降级 120→60 并写入 dataGaps），60/120/500 只做稳健性检验、不一票否决；④**置信度三级**（不再是有/无二值）：主判稳定+≥1 辅助稳定=高、仅主判稳定或最大连续越界>5=中、主判不稳=低（辅证稳定时提示「箱体可能仅为近期形成」）；⑤**振幅宽度分级** 窄幅≤15%/常规≤25%/宽幅>25%，结论文案直接写「250 日·宽幅箱体成立」，避免与窄幅同等宣传（用户：500 日 35% 只能算宽幅箱体）。实测 6 只自选股：σ 年化 22.5%~54.6% → 250 日阈值 33.8%~35%（自适应生效）；中轴漂移口径使平安（沿漂 28.6% 但中轴仅 12.8%）不再被误杀；海天 250 日 25.3% 判「宽幅箱体成立·置信度高」（60 日辅助同稳）。test_range_detector.js 扩到 100 项全绿（新增阈值三层夹取、σ 计算、分级、主判定降级、置信度三级、中轴漂移口径）。 // [20261020f] 技术面②卡新增「箱体区间（多窗口）」（用户 2026-10-20 提供七段式箱体判定规范并选定 B 方案）：新建 lib/rangeDetector.js 纯计算引擎——多窗口 60/120/250/500 各算一组上下沿，三族候选（收盘分位法 5/95 与 10/90 / 滚动20日高低点分位 / 网格搜索多目标惩罚）择优；口径严格按用户规范：收盘价定界（>U 向上突破、<L 向下突破、== 视为区间内）、按「越界段」计数（收回当天不计入连续越界、首次突破后 5 个交易日内收回记 1 次假突破、第 6 日收回或未收回记有效突破、上下分别计数、二次突破=新段、方向翻转未回区间仍属同段、盘中突破单独计数不进主计数）；阈值随窗口缩放（振幅 60日12%/120日18%/250日25%/500日35%，漂移 8%/10%/15%/20%；占比≥90%、假突破≤3、有效突破=0 不随窗口变；最大连续越界>5 只降置信度）；不存在稳定区间时明确写「不存在」并给最接近候选与不满足原因。priceActionHub 快照附加 ranges 字段（纯计算零网络，不改 priceAction.js 内核，sameDayJudgment 因子不读该字段，无副作用）；app.js ②卡内渲染多窗口行（复用 pa-zone-row 样式、金色=稳定/灰淡=不构成箱体、title 悬停展示八项计数与阈值评分、明示与「近60日摆动点区间」为两套口径）。scripts/test_range_detector.js 71 项全绿（含用户给的每条计数边界）；真实数据标定：000902 新洋丰 60 日命中稳定箱体 13.08~14.50（振幅 10.3%/占比 91.7%/假突破 3 次/漂移 2.7%），并已逐日手工对账一致。APP_VERSION 20261020e→20261020f（public 31 处 ?v= 同步）。 // [20261020e] 技术面分析卡新增「⑤ 关键位有效性检验」（用户问「模型对上方关键阻力区间和下方关键支撑区间，有没有关于这些价位的有效性检验」）：价格行为推演只给区间不做历史检验，现把资金量能引擎（生死位规则）既有检验结论联动展示——lib/priceActionHub.js 新增 getLevelValidity（独立 _lvCache 同 TTL 口径、12s 超时、getQuote 兜底、失败返回 null 不阻塞主链路）+ 纯函数 _extractLevelValidity（levels/platform/breakThrough/breakDown/规则3 缩量假突破/规则4 放量破位含 partial 初步破位/突破后回踩缩量正向确认 + schema/date/barsSource，导出供单测）；server.js /api/price-action 路由在 ...data 之后合并 levelValidity；public/index.html pa-grid 后加全宽卡 #paLevelValidity（.pa-lv-card 专用 CSS，.hidden 显式声明——本项目 .hidden 非全局类）；app.js _renderLevelValidity 复用 ve-rule 样式与红涨绿跌配色，meta 行明示与②「近 60 日摆动点区间」为两套口径；scripts/test_price_action_level_validity.js 31 项全绿、test_volume_engine 295/295、test_volume_consistency 227/227、test_volume_price_signal_wiring 13/13。 // [20261020a] 修复情绪准确率台账「周末基准日」永久卡死（用户截图报障「结算的数量比预测的数量少太大，哪里出bug了？」）：2026-10-18（周日）下午首页接口调用时上证日线通道瞬时失败，marketEmotionModel.js:832 的 baselineDate 兜底为 today=周日，留档基准日落非交易日→上证无 10-18 K 线→settleRecord findIndex 恒为 -1→该记录永久 pending（截图 18 条中 15 已结算/3 待结算，其中仅 1 条卡死，另 2 条为目标日在途与未来的正常态；264 条行情判断台账 256 已结算、33 条权重记录 31 条 T+1 已结算，均健康）。修复三处：①结算侧 settleRecord 新增 resolveBaseDate——baseDate 非交易日回滚到上一交易日（与 20261013f targetDate 防呆对称；不变量 nextTradingDay(d)==nextTradingDay(previousTradingDay(d)) 由测试锁定，目标日不受影响）；②留档侧 recordDailyJudgment 同样回滚，且回滚而来的记录不得覆盖目标日既有留档（通道故障日的降级结论不得顶替正常交易日的完整判断）；③删除 data/sentiment-accuracy/2026-10-18.json 重复计数产物（与 10-16 记录同目标日同方向）。scripts/test_event_weight_sentiment_acc.js 新增 9 项防呆用例（44 项全绿）；实测复刻周日基准日记录可正常结算（回滚至 10-16 基准收盘），磁盘台账 overdue=0。 // [20261019f] 缩量判定标准对齐市场（用户新洋丰 000902 截图反馈「缩量的判定标准和市场上的缩量的判定标准出现矛盾」）：量比 0.99 按市场标准（东方财富 App：量比 0.8~1.2 为平量）应判平量，工作台却因「60 日均量口径（当日量<60日均量×0.7）确认缩量」把 ÷5 日均量的平量翻转成「温和缩量」，标签/热度/引擎结论全变缩量。修复：定档标准改为市场标准量比单独定档——LEVEL_RULES/_volTriState/judgedLevel/_comboEngine/_volTraits/_volumeTier 全链路只认 ÷5 日均量，阈值对齐市场（缩量 <0.8 / 平量 [0.8,1.2] / 放量 >1.2 / 极度缩量 <0.5，大量/天量 2.5/4 内部分级保留）；60 日均量确认降级为分歧披露（volumeTier.divergenceNote 如实说明，不再翻转档位）；capitalFlow unifiedVolState dry 边界 0.4→0.5。schema 升至 volume-engine-20261019f；sameDayJudgment LAYOUT_VERSION 升 20261019f 强制重算当日判断；test_volume_engine.js 新增市场标准对齐回归块（233 项全绿）、test_volume_consistency.js 227 项全绿。实测影响：今日 10 只自选股中 600460(0.93)/000902(0.99)/000783(0.82) 标签由缩量回平量。 // [20261019e] 修复量价标签与解释自相矛盾（用户海天味业 603288 截图报障：标签「量价齐跌」vs 解释「下跌放量」）：capitalFlow.js 下跌分支 amp 档标签「量价齐跌」是 20 日窗口时代遗留词（价跌+20日量能萎缩），20260902m 改当日口径时只改解释漏改标签——当日口径 amp 档=价跌且量增，标签暗示量缩与解释语义相反。修复：下跌侧分级对称化，huge「放量下跌」→「巨量下跌」、amp「量价齐跌」→「放量下跌」（desc 本就正确未动）；VP_MAP 与 sameDayJudgment vpSigMap 分值按档位继承（巨量下跌=原放量下跌 -12/-0.6、放量下跌=原量价齐跌 -9/-0.5，零分值变化）；修复历史遗漏——旧 amp 档不在 bearScore/capitalCharts bear 列表（下跌放量竟不得空头分）；sameDayJudgment LAYOUT_VERSION 升 20261019e 强制重算当日判断；scripts/test_volume_consistency.js 新增第 14 组「标签与解释方向一致护栏」20 场景（181→217 项全绿）。 // [20261019d] 量能引擎「该放量/该缩量」判定缺口补齐（用户提供规范性判定清单，要求去重后补入）：lib/volumeEngine.js 新增纯 IF-THEN 函数 _expectedVolumeRules（零 LLM）——风险类 3 条：高位放量下跌（高位+巨量+明显收跌 chgPct≤-1.2%，补 highHugeNotUp/highStagnant 仅覆盖滞涨横盘/冲高回落之漏）、下跌途中放量阳线诱多（补 shouldShrinkHuge「下跌途中」仅抓 chgPct<0 阴跌之漏，放量阳线诱多原完全漏判）、高位缩量横盘（补 shrinkUp 高位阶段仅覆盖 chgPct>0 缩量上涨之漏）；正向确认类 3 条：突破后回踩缩量不破、低位倍量阳线启动、主升浪缩量上涨控盘（补模型偏矛盾/风险信号、缺理想剖面正向确认之缺口）。注入 _classify（风险类→禁看多；下跌途中放量阳线→强制看空；正向类→signal.bullSupport 看多支撑）、riskTags、highlights、_buildSummaries 新增 expectedVolumeSummary 归集；前端 renderVolumeEngine 渲染新卡片。schema 升至 volume-engine-20261019d；scripts/test_volume_consistency.js 新增 [13] 组，test_volume_engine.js 同步断言。 // [20261019b] 当日 bar 实时行情终值对齐（用户 000902 新洋丰实测：东财 App 量比 0.99 / 当日 +1.87%，工作台 0.97 / +2.39%）：20261019a 新鲜度判据只校验「末根日期=今天」，但同花顺当日 bar 虽带今日日期、收盘后数值仍是盘中快照（close 13.69 / 79,232 手，真实终值 close 13.62 / 80,528 手）——日期新鲜 ≠ 数值终值，快路径直接采用错误快照；本机东财通道间歇被断（socket hang up），腾讯日K虽正确但排在同花顺之后永远轮不到。修复（数据一致性铁律：当日数据单一权威源）：lib/volumeEngine.js 新增纯函数 _reconcileTodayBar 并导出——主行情源腾讯实时 quote 即交易所终值，末根日期=quote 日期→覆写末根 OHLC/量/额（一致则幂等静默）；quote 日期更新且为今日→直接以 quote 补齐当日 bar（全通道日K集体延迟场景，与 20261019a「全 stale 选末根最新」互补：历史段用通道、当日段永远以实时行情为准）；单位按通道自适应（quote.volume 为「股」，tencent 通道 bar 为「手」→÷100，其余通道原值）；quote 缺失/停牌（量 0）/价格非正→不动；覆写/补齐动作在 dataGaps 如实留痕。量价卡与量能卡共用引擎同一份 bars（20261017i），两卡同时受益。scripts/test_volume_consistency.js 新增第 [11] 组 21 项（快照覆写/单位换算/补齐/防御/幂等/静默阈值），总量 104→125 项。 // [20261019a] 日K降级链「新鲜度」判据修复（用户 000783 长江证券实测：东财 App 量比 0.82，工作台 1.26）：旧判据「任一级 ≥10 根即采用」只看根数不看新旧——本机东财被断，同花顺返回 140 根但当日K线收盘后延迟更新（末根止于 10-16），链条直接采用、不再看腾讯（腾讯有 10-19），工作台遂用 3 天前的 K 线得出与东财 App 截然不同的量比与涨跌幅（工作台「当日-1.79%」实为 10-16 跌幅，东财当日实际 -0.26%）。新判据：末根日期=今天才视为新鲜；某级新鲜→立即采用（快路径零额外请求）；不新鲜→记为候选继续下一级；全部非新鲜（停牌/节假日/通道集体延迟）→选「末根最新」者，并列时按 东财>同花顺>腾讯 优先级（字段全优先，与旧行为一致）；全部不足10根→保留最长可用集（原兜底）。选中的日K若非新鲜，analyzeVolume 在 dataGaps 如实标注「日K最新一根为 X，未包含今日数据」。选取逻辑抽为纯函数 _chooseDailyBars 并导出，scripts/test_volume_consistency.js 新增第 [10] 组 11 项（含 000783 场景复现），总量 91→102 项。 // [20261017i] 量能跨卡一致性修复（用户 2026-10-19 反馈「所有个股的资金量能里量价分析和量能分析的数据互相矛盾：量价信号=缩量回调 / 量能热度=量能平稳 / 量能分析资金行为=平量下跌」）：根因是三套口径各自独立、无交叉校验——①数据源分裂：量价卡用路由传入的 getHistory() 日K，量能卡用引擎四级降级链自拉，两条通道可能停在不同交易日；②分子不同：量价信号用当日量、量能热度用近3日均量；③分母不同：前20日均量（不含当日）/ 近20日均量（含当日，且分子含在分母内，比值天然压向1，几乎恒为「平稳」）/ 5日均量+60日确认；④阈值不同：1.5-1.2-0.8-0.5 五档 vs 1.3/0.7。实测 20 只样本 14 只（70%）互斥。修复：①建立统一量能档位真值源 lib/volumeEngine.js _volumeTier（当日量÷前5日均量定档 + 60日均量×1.5/×0.7 确认，与 _comboEngine 的 amplified/shrunk 同式），capitalFlow 的 volumePriceSignal 与 heatLevel 改引自该档位，五档文案体系原样保留；②引擎新增判定性档位 judgedLevel，修正「展示用 pc.level（纯÷5日均量）而结论走 amplified/shrunk」的内部自相矛盾（600460/000902/002594/600030 等 4/15 触发），原始档位以 ratio5Level 保留追溯；③两卡共用引擎同一份日K（volume 按通道归一为「手」，与 getHistory 同口径），内部 bars 字段在返回前剔除、不下发前端；④跨口径分歧（跨窗口/跨基准）如实标注 divergenceNote，不静默取一侧；⑤前端两卡均标注口径来源。实测修复后 15/15 三方一致（70%→0%），新增 scripts/test_volume_consistency.js 91 项零网络回归。 // [20261017h] 个股主图新增「分时」视图（用户 2026-10-19 指令「在个股的主图上添加分时图」）：①主图周期按钮新增「分时」（快捷键 0，其余 1日K/2周K/3月K/4=60分钟），分时与 60 分钟下自动隐藏「时间范围」按钮（无此概念）；②public/js/charts.js 新增 Charts.minute()——分时价格线（涨红跌绿）+ 均价线 + 分钟量柱双 grid，Y 轴以昨收为中心对称并带右侧涨跌幅轴，昨收基准虚线，tooltip 显示价格/涨跌幅/均价/分钟量；③诚实性：只画到 15:00，过滤腾讯分时收盘后追加的 15:01+ 盘后条目（15:38 实测已达 267 条），与量能引擎口诀3「尾盘 14:30-15:00」同一窗口口径；④数据源日期标注：lib/stockData.js fetchTencentMinutes 提取腾讯返回的 data.date（YYYYMMDD→YYYY-MM-DD，实测 "20261019"），server.js /api/minute 透传 minuteDate，图上标题显示数据日期且与今日不符时用黄色标注「（最近交易日，非今日）」——休市时接口返回上一交易日分时，不得冒充今日走势；⑤app.js 切股清空 minuteData 缓存（另有 symbol 校验兜底）。数据源与「资金量能」量能分析引擎同源（同一份腾讯分时），保证图上看到的开盘放量/尾盘拉升与量能卡 7.5 口诀判定口径一致。新增 scripts/test_minute_chart.js 零网络回归。 // [20261017g] 量能引擎分时口径修正（用户 2026-10-19 追问「是不是需要分析分时图」后实测发现的两处缺陷）：①「尾盘突然放量拉升」窗口改为按**时间戳**截取真实交易时段 14:30-15:00，取代原先「取数组末尾 30 条」——腾讯分时收盘后会追加盘后条目（15:10 实测 000902 共 247 条，末尾 1500/1506/1507/1508/1509/1510），按末尾取会把盘后非交易时段算进窗口且随时间持续后移；且盘中未收盘时不得把「最近半小时」当尾盘，改为如实标注「分时尚未覆盖到收盘（当日未收盘）」。②开盘量比单位换算按日K通道自适应——分时 cumVol 恒为「手」，东财/同花顺日K为「股」（实测同日均是大几百万）而腾讯日K为「手」（同日 80,528 手，比值≈100），原先写死 ÷100 会在降级到腾讯日K时把基准缩小 100 倍、开盘量比虚高到 ~320 倍必然误判「量比超3」。schema 升 volume-engine-20261017g；scripts/test_volume_engine.js 217 项全绿（新增单位换算三通道一致 + 反向印证虚高、盘中未收盘/尾盘窗口不足 25 分钟两组数据不足、集成层未收盘标注）。 // [20261017f] 量能分析引擎按《AI 股票量能分析工作台统一业务逻辑说明书（最终整合版）》补齐：①7.4 不同位置量价补充规则（高位放量滞涨/低位放量震荡/缩量上涨两种情况[低位启动/高位阶段]/缩量下跌两种情况[低位大跌后/下跌初期]，子阶段不明按数据不足谨慎处理）；②7.5 五句量比实战口诀（开盘量比超3站均价线/量比回落横盘不跌/尾盘放量拉升/连续低成交不再新低/量比大涨不动，分时类条目缺数据时如实标「数据不足」不臆造）；③11.2/11.3/11.4 三个强制归集总结（无论是否命中逐条完整输出：未命中写「未命中」、数据不足写「数据不足，无法判定」，命中多条全部列出）；④信号分类一致性约束（高位放量滞涨/高位缩量上涨/高位放巨量不涨/尾盘放量/量比大涨不动禁看多信号；下跌初期缩量无承接强制看空观察；spec 7.4 例外：规则1 低位吸筹完整命中时低位放量震荡不限制看多）；⑤s40 约束（高位放量滞涨封顶 12 分、低位缩量上涨保底 16 分）；schema 升 volume-engine-20261017f，前端量能卡新增三个归集卡片（复用既有样式），scripts/test_volume_engine.js 205 项全绿（新增 [15]/[16]/[17] 三组）。 // [20261017e] 量能分析日K降级链补同花顺通道（用户 2026-10-18 指令「@skill:cnfinancialscraper 能不能把同花顺的数据源也接入」——东财双主机均不可达时原链只剩腾讯仅-OHLCV，缺成交额/换手率）：①lib/stockData.js 新增同花顺日K通道（纯新增，既有函数零改动）：fetchThsHistory = last.js（d.10jqka.com.cn/v4/line/hs_<code>/01/last.js，明文近140根含 amount/turnover，前复权与腾讯qfq/东财fqt=1同口径）+ all.js（压缩全历史：price每天4值=(最低,开−最低,高−最低,收−最低)×priceFactor、volumn=股、dates=MMDD按sortYear逐年展开，仅OHLCV）；_mergeThsBars 以重叠段 close 逐日±0.05内一致（≥30根）才采信 all.js 向过去延伸；结构闸门 fail-closed（三列不等长/坏MMDD月日越界/sortYear计数和≠dates数/价格非数字 → null 绝不返回半可信数据）；网络按 20260911 教训 http(80)优先 https 兜底 + proxy:false 直连 + transformResponse 保原始串（JSONP 正则解包）。②lib/volumeEngine.js 日K链升四级：东财多主机 → 同花顺（近期含成交额/换手率，历史段仅OHLCV）→ 腾讯（仅OHLCV）→ 全断诚实报「可用N根」；computeVolumeEngine 新增 barsSource=ths，schema 升 volume-engine-20261017e；_precompute 对同花顺部分窗口（成交额/换手率样本<250天）追加 dataGaps 标注，不冒充全窗口分位。③scripts/test_ths_kline.js 48 项零网络回归全绿（含 2026-10-18 真实黄金样本：000902 解码all.js vs 明文last.js 尾部30根逐根一致，末根锚定 close=13.37/amount=86263040/turnover=0.565 防静默漂移）；引擎 135 项单测仍全绿。 // [20261017d] 量能分析卡数据通道修复（用户 2026-10-18 截图反馈「日线数据明显有」但量能分析卡报「日线数据不足（可用 0 根）」——根因：引擎唯一日K通道东财 push2his 在本机网络被切断，而主图走腾讯通道所以有数据）：①lib/stockData.js 新增 fetchEastmoneyHistoryMultiHost（纯新增导出；按 push2his→push2 主机顺序尝试同一 kline 接口，字段与 fetchEastmoneyHistory 完全一致含 amount/turnover；既有 fetchEastmoneyHistory 及其他调用方零改动）+ 导出 fetchTencentHistory；②lib/volumeEngine.js analyzeVolume 改日K三级降级链：东财多主机 → 腾讯日K（仅 OHLCV，缺成交额/换手率由 _precompute 按 spec 降级并如实标注，不臆造）；任一级 ≥10 根即采用，全不可达保留最长可用集并如实报「可用 N 根」；computeVolumeEngine 新增 barsSource 输出与降级来源 dataGap，schema 升 volume-engine-20261017d；③专项脚本验主机轮询/字段解析/降级路径/全阻断诚实报错全 PASS（临时脚本已删），引擎 135 项单测仍全绿。 // [20261017c] 量能分析引擎落地（用户 2026-10-17 指令：工作台量能分析按《AI 股票量能分析工作台统一业务逻辑说明书》升级）：①新建 lib/volumeEngine.js（纯计算引擎+采集入口，零 LLM，确定性 IF-THEN）——预计算（均量不含当日/六档/60日确认/250日分位）→位置判定（低位<30%/高位>70%/上涨中途/下跌途中/横盘并列/分歧标注降置信）→量价三问（真实性/价格认可度/持续性/单日脉冲）→严格背离检测→五大生死位规则（低位吸筹/高位派发/缩量假突破/放量破位含 partial 待确认/分时无量拉升）→位置×量能组合矩阵→连续量能序列→打分 0-100（40/30/20 权重+背离扣分）→流动性四分层与黑名单衰减→信号分类（空头优先级永远高于多头，规则3 多头失效出中性不得看多）→四维度客观描述+结论提示+免责备注；数据不足一律标注不臆造，叙事字段禁交易指令。②lib/stockData.js fetchTencentMinutes 增量 cumVol 字段（规则5 每分钟量=相邻累计量差分，纯增量不影响既有消费方）。③lib/capitalFlow.js analyzeCapitalFlow 并行补抓并新增 volumeEngine 字段（纯新增，既有字段零改动；引擎内部按通道降级，整体失败置 null 不阻塞主链路）。④前端个股页资金量能 tab 新增「量能分析」卡（public/index.html #capVolumeEngine + app.js renderVolumeEngine + style.css ve-* 样式，红涨绿跌，与 renderCapitalScore 并列 try/catch 隔离，实时刷新链路同步挂载）。⑤scripts/test_volume_engine.js 135 项断言全绿（14 组，零网络）。 // [20261017b] 首页侧量能收敛（用户 2026-10-17 架构指令第二步）：首页量能根数据源落在大盘技术分析的量价关系（lib/marketTechnical）——①新增导出 fetchIndexDailyBars（上证日线唯一采集通道，腾讯 fqkline 直采，320 窗口）与 computeMarketVolumeMetrics（首页共用量能指标纯函数：当日量/剔除极端值后近20日均量/250根分位/近5日价格/近3v3量比，trimExtremes 与 rankPercentile 逐行等价副本随迁）；②lib/marketEmotionModel.js 的 calcVolumeActivity/calcPriceVolume 底层指标改引根函数，打分/市场宽度修正/文案保留本地，返回对象逐字不变；③lib/marketEmotionData.js 的 index 块改从根通道采集（原走 market_emotion.py 的 akshare 通道，实测两通道重叠 260 根 date/close/vol 零差异），输出格式 {code,name,bars:[{date,close,vol}]} 不变、窗口统一 320；④scripts/market_emotion.py 移除 index 块与 fetch_index（ok_count 阈值 3 不变）。等价性守卫 scripts/test_market_volume_root_migration.js 98/0：同一份 bars 旧新逐字相等、260→320 结论零变化（尾部窗口样本集相同）、根指标无漂移。 // [20261017a] 个股侧量能收敛为唯一出口 lib/capitalFlow.js（用户 2026-10-17 架构指令）：computeVolumeIndicators 新增 7 项量能根指标——latestVsPriorAvg（含 priorAvgVol）/ breakout / vol5Vs20 / shrink3d / turnoverChange / volActivity，另加 opt-in 的 volumeProfile（opts.includeProfile）；4 个引用方改为引用根模块并删除本地副本：lib/analysis.js analyzeVolume、lib/priceAction.js（calcLongTerm/calcShortTerm/classifyShortState/calcFalsification 四处内部算法，calcVolumeProfile 整函数删除）、lib/sameDayJudgment.js（turnoverChange 改经 volumeIndicators 透传、factorCapital 的 volActivity 改读根结果）；顺带消除 sameDayJudgment 与 analyzeCapitalFlow 对同一换手率序列的重复抓取；新增 scripts/test_volume_root_migration.js 等价性守卫（59 项 deepStrictEqual 全过）。纯计算位置迁移，对外输出格式零变化（仅新增可选字段）；_computeTurnoverChange 的 detail 文案「近15日均值」按实际口径改为「基准均值」。首页侧量价收敛（marketTechnical step3Volume）排在下一步。 // [20261016c] 审计修复收尾 12 项：①L4 前端因子染色阈值 ±0.03 → ±0.05，对齐后端判色口径（lib/sameDayJudgment.js:209/1040、lib/marketEmotionModel.js:526），修「文字显示中性、颜色却染偏多/偏空」的语义错位（app.js 2 处）；②TE2 技术面评分说明补齐 MACD/KDJ 可叠加子项与理论区间 −6.5~+6.5；③J3 短期/长期判断脚注披露「数据缺失因子按 signal=0 占位但仍计入归一化，会摊薄有效因子权重」；④G7 深度分析缓存条披露「事件引擎识别的突发事件未并入本页结论」；⑤F1/G10 删除 lib/deep/conclusion.js 死变量 weights，并在 lib/analysis.js、lib/companyType.js 加注「weights 仅 legacy 兜底分支生效，正常计分固定每维满分 25」；⑥J2 逻辑模型文案如实说明震荡双口径（个股 ≤1.0%、大盘技术 ≤0.5%），阈值本身未动；⑦G5 深度分析缓存新增「估值模型哈希」门控（FNV-1a 覆盖估值链路全部文件，改模型即自动失效重算，不依赖人工记得升版本号），并在 /api/health 暴露 valuationModelHash；⑧K1 资料库注释纠正为实际抓取通道「巨潮资讯网 cninfo」，并标注本地上传文件由用户提供、非抓取来源；⑨ST1 策略回测页披露「趋势跟踪·短期行情判定」为派生策略（复用 priceAction.shortTerm.direction，属工作台内部联动，非外部 AI / 第三方信号源）；⑩H1/H2 概览「亮点/雷点」卡：距生成日超 7 天标注「已过期」，尚未生成时卡内直接给「立即生成」按钮（POST /api/ai/aspects），失败如实回显原因；⑪P1 公司简介补渲染「主营业务 / 经营范围」（后端 shareholderData.js:307-314 早已返回，前端此前从未渲染）；⑫S6 行情日期解析失败时后端新增 dateFallback 标志位（仅加字段、不改原字段），前端标注「⚠️ 日期解析失败，显示为本机日期」，不再静默冒充真实交易日。 // [20261016b] 审计修复六项：①IA1/IA2 行业政策库 + 上游行业名归一化「顺序 includes 第一命中」偏置 → 改「最长（最具体）关键词优先」，两处同改，返回格式零变化；②L1 长期判断 source 去除「AI 联网抓取」虚假归因，如实标注内置静态政策库；③G4/DA6 评级严格三档（去除「偏高」「合理偏低」，conclusion.js 4 处 + insuranceAnalysis.js 1 处）；④CA5 资金量能热度注释「±15」校正为实际 +13~-10；⑤P2 简介卡与事实库标注「企业性质」为按股东结构推断值（非东财F10权威登记口径）；⑥G8 深度分析路由并发去重（在途 Promise 复用，返回结果完全一致）。 // [20261016a] 修复个股页 1-4 项前端口径：S2 总市值去掉 ×10000（totalValue 单位本为亿）、S1 港股货币符号 HK$、T1 技术面"6信号"改"4类信号(MA/RSI/MACD/KDJ)、T2 基本面权重固定25、T3 资金热度 MFI 仅展示不计分、T4 资金卡去除"仅支持A股"虚假归因+T5 失败评分卡显示"加载失败"。纯前端 app.js 文案/口径修正，数据格式与后端逻辑零改动。 // [20261015m] 板块舆情热度周榜数字含义标注（用户反馈：右侧一列白色大数字未标明含义）：①前端 public/js/homeHotTopics.js 综合分大数字上方增加「综合分」小标签（.htw-score-label，muted 色 10px，与下方市场行三段式右对齐）；②后端 lib/hotTopicsWeekly/index.js footnotes 新增口径条——右侧「综合分」（0~100）= A 舆情曝光 / B 社区讨论 / D 舆情情感 / E 社区情感 四指标加权合成，C 韭菜讨论只触发告警不计分，5 日涨跌幅与资金净额占比仅作交叉参考、热度高不代表看涨。纯展示层与脚注文案改动，数据格式与计算逻辑零变化；test_hot_topics_merge 25/25。前版 [20261015l] 实时大盘「行业板块涨幅前5 / 跌幅前5」两组末尾各新增一卡（用户需求：各自添加当日最多涨停/最多跌停的板块）：①采集层 lib/stockData.js 新增 push2ex 涨停/跌停股池取数（getTopicZTPool / getTopicDTPool，与 20261015j 炸板池同域名同族；本机实测稳定：2026-10-16 涨停池 61 行与乐咕涨停 61 互证、跌停池 10 行），新增聚合纯函数 aggregateTopIndustry（按股池 hybk 行业字段计数取 top1，leader=该行业池内首只个股〔涨停池 sort=fbt:asc 即封板最早〕，并列取先出现者〔确定性规则〕，空/脏数据返回 null 不伪造）；getEastmoneySectorRanking 返回注入 topLimitUpBoard/topLimitDownBoard（双池各自容错，失败字段 null），并经 getMarketOverview 独立透传（盘中面板切同花顺时仍保留——池为全市场事实、与榜单渲染源解耦）。②前端 app.js renderMarketOverview：renderGroup 参数化 items，两组榜单各追加 kind:'limitUpTop'/'limitDownTop' 卡片（name+金色「涨停最多/跌停最多」标签、price=封板最早/代表个股、chg=N 家涨停/跌停，涨红跌绿与既有卡一致；数据 null 不渲染该卡）；css 新增 .mo-limit-tag。既有 sectorsUp/sectorsDown 数组格式与 AI 解读/榜单历史记录/提醒卡槽位零改动（隔离修改）。新增 scripts/test_limit_board_top.js 聚合单测 9 项全绿。前版 [20261015k] 大盘量能情绪模型因子结构合并（用户需求：「量能活跃度」与「量价配合度」两个卡片合并、权重也合并）：10 因子 → 9 因子（7 常驻 + 2 非常驻）。①lib/marketEmotionModel.js：BASE_WEIGHTS volumeActivity:15 + priceVolume:10 → volumePrice:25（量能活跃与量价配合），FACTOR_NAMES 同步；新增 calcVolumePrice 合成函数——得分 =（量能活跃度得分 × 15 + 量价配合度得分 × 10）÷ 25，按原权重加权，权重不变时与合并前两因子分别计分对总分的贡献数学等价（数据不变则结论不变）；降级规则：任一半数据缺失 → 整体降级归零并按比例分摊（两半同源于上证日线，实际同生同死；reason 指明是哪一半）；value/detail 合并两边统计并在 detail 尾部写出合成算式（可解释）；返回新增 volRatio/volPct/volState/pvScore 透出字段。②历史兼容：loadState 增加幂等迁移——state.json 旧 volumeActivity+priceVolume 权重合并为 volumePrice（保留自学习成果，超 W_MAX 部分由 scaleBounded 夹紧）；历史 factorAcc 旧 key 记账保留可追溯，新因子学习从零开始（仍需 20 样本）；模型标识 volume-emotion-v1 → v2（结构变更诚实标注）。③前端零逻辑改动：app.js 因子网格自动渲染 9 因子；model 判断同步 v2；「8 常驻」标题 →「7 常驻」；logicModel.js badge「10 因子」→「9 因子」与描述口径同步。④回归 test_market_emotion.js 新增 [6c]（加权合成数值 -0.2 / 0.7 双场景、降级 reason、state.json 迁移幂等），59 项全绿。前版 [20261015j] 大盘量能情绪模型「市场宽度与极端情绪」因子新增炸板率（统计展示 + 封板质量修正）：①采集层 scripts/market_emotion.py fetch_breadth 增加东财炸板股池取数（akshare stock_zt_pool_zbgc_em，底层 push2ex.eastmoney.com 实测本机稳定可达：收盘后 49 行、连续三次 0.2 秒一致；与收盘涨停池互斥，代码交集为 0，口径干净），breadth 新增 zbgcCount/zbgcBreaks/zbgcRate/zbgcNote 四字段（炸板率 = 炸板家数 ÷ (涨停 + 炸板家数)，与涨跌家数同一次采集、同一统计日期；取数失败仅炸板字段为 null 并记 warnings 如实标注，不拖垮涨跌家数、不伪造）。②模型层 lib/marketEmotionModel.js calcBreadthExtreme：value/detail 增加炸板率展示（如「炸板率 44.6%（49/110）」），方向分 >0 时做封板质量修正（炸板率 ≥50% 得分 ×0.7、≥70% ×0.5，防「虚涨停」把普涨判满分；普跌/分化场景不修正、缺失不修正），返回值与 factors 白名单投影同步新增 zbgcRate/zbgcCount/zbgcBreaks，风险提示新增炸板率 ≥70% 条目，来源脚注补充炸板股池口径。前端因子网格直接渲染后端字符串零改动；落盘判断记录仅存得分符号、个股页「大盘」卡片仅读总分倾向，均不受影响；回归 test_market_emotion.js 补 [6b] 炸板率五路断言（展示/字段/40%不修正/60%打7折/80%打5折/缺失不修正/普跌不修正），45 项全绿。前版 [20261015i] 工作台 UI 设计升级（impeccable 精修）：红绿 tint 令牌化、h1 21px 排版步进、按钮 emoji 纯文字化、金色 :focus-visible、hover 瞬时态 AA 修复、搜索历史面板默认折叠、prefers-reduced-motion 无障碍、图表红绿色板集中（chartTheme 单一定义点）、死 CSS 清理、结算完成 num-flash 确定性反馈。前版 [20261015h] 全工作台数据源一致性审计与统一（用户需求：同一数据在不同模块使用不同数据源时，统一为稳定数据源）：实测审计 lib/ + server.js + routes/ + scripts/*.py 共 120+ 处外部调用，修复 4 处真实分裂/失效（全部为后端 lib 函数，前端零改动）。①lib/deep/financials.js fetchShareholders——个股市值/股本/PE 原走 push2.eastmoney.com（本机常年被对端 TLS 重置，服务日志实测 000783/600909 持续 socket hang up，深析估值/DCF/公司分类长期拿不到股本市值），改走东财数据中心 RPT_VALUEANALYSIS_DET 报表（datacenter-web 稳定可达；与基本面卡片的 totalShares/PS_TTM 同源同报表，与腾讯行情实测逐位一致：000783 总市值 431.90 亿/PE 8.38/PB 1.17、600909 总市值 363.25 亿/PE 11.46），返回六字段与原 push2 f84/f85/f116/f117/f162/f163 完全同名同单位，下游 analyzeValuation/calculateDCF/classifyCompanyType 零改动，失败仍返回 null 不伪造。②同文件 fetchFinancialStatement——companyType 回退链 [4,2] 扩展为 [4,2,3,1]（对齐 lib/stockData.js 现金流量表取数的既有全类型循环；接口实测：券商股 000783/600909 的资产负债表/现金流量表仅 companyType=1 返回数据，ct=4/2/3 全空 → 修复前深析 Balance: 0/Cashflow: 0、资产负债与现金流分析及 DCF 全部失真，修复后实测 Balance=5/Cashflow=9 行；普通股 ct=4 首次命中行为不变）。③lib/newsSearch.js fetchEastmoneyAnnouncements——原域名 np-anotice.eastmoney.com 已失效（实测 HTTP 200 恒返回 0 条，个股「新闻与公告」页的公告部分长期静默为空），统一为全站唯一实测可用路径 np-anotice-stock.eastmoney.com/api/security/ann?ann_type=A&client_source=web&f_node=0&s_node=0（与 cnscraperAdapter 20260922i 修正路径完全一致；f_node/s_node 必带否则返回全市场公告；响应字段 title/notice_date/art_code 不变，解析零改动；修复后实测 000783 返回 10 条）。④lib/deep/research.js fetchAnnouncementsEastmoney——原 /api/security/announcement 死端点（20260922i 在 cnscraperAdapter 已确认失效但本处漏改，深析公告的东财兜底形同虚设），统一为同一 /ann 活路径，date 取 notice_date/eiTime、url 用 art_code 合成正文直链（与 newsSearch/cnscraperAdapter 同一格式）。审计排除项（实测确认同源或属正常主备链设计，未改动）：AI 权威财务快照（ai/augmentStock）与基本面卡片（stockData.fetchEastmoneyFundamentals）同走 emweb ZYZBAjaxNew 同参数同解析=同源；深析公告主链（deep/research）与官方公告卡（cninfoAnnouncements→python）同走巨潮 hisAnnouncement/query=同源；前十大股东两处同走 datacenter RPT_F10_EH_HOLDERS=同源；原油主连 20260921l 已把新浪 nf_SC0 设为主力、push2delay 降兜底；日K线 getHistory 腾讯主链+东财/新浪兜底顺序合理；顶栏四卡与基本面关键指标已于 20261015e 统一 fundamental.metrics 单一权威口径。已知遗留（如实报告、本次不改）：download_reports.py 东财 ann_type=2 通道已失效（其依赖 attachments PDF 直链需重新设计获取方式；人工研报下载工具且有巨潮主链兜底，非页面实时链路）；个股资金流 push2his fflow daykline 为东财独占口径、无稳定备源（已有 axios→curl→K线量价估算三级降级并如实标注 estimated，非分裂问题）。 // [20261015e] 顶栏关键指标卡（PE/PB/PS/ROE）联动「基本面·关键财务指标」（用户需求：数据联动基本面关键指标，利好标红、利空标绿）：①public/js/app.js renderKeyMetrics 四卡数值改为优先取 data.fundamental.metrics（与基本面左卡 renderFundamental 的 m.pe/m.pb/m.ps/m.roe 同一权威口径，杜绝顶栏与基本面两处口径分裂；fundamental 缺失时回退 quote.fundamentals 既有值，行为不劣化）；②着色复用同一响应内的 data.signals.signals（lib/analysis.js evaluateSignals 确定性判定，key=pe/pb/ps/roe）：signal=bull→metric-value.red（利好红）、bear→green（利空绿）、neutral→默认白，与基本面左卡 sig-bull/sig-bear 完全同一判定来源，全站涨红 #F6465D/跌绿 #0ECB81 规范色不变；③判定依据（reason）追加进卡片 title，鼠标悬停可见「信号判定（利好/利空/中性）：原因」；ROE 数值优先 roeTtm（与左卡 metrics.roe 实证同值）。隔离修改：仅前端渲染层（app.js 一个函数 + 两处 ?v= 戳），不动任何后端取数/计算/信号逻辑。 // [20261015d] 主力资金流向因子接入稳定备链（实时大盘情绪模型最后一个死因子）：主链 scripts/market_emotion.py fetch_main_fund 走东财 push2delay fflow（本机常年被 TLS 重置，因子自 20260917 模型上线以来长期权重归零）。备链：东财「数据中心」RPT_INDUSTRY_FUNDFLOW 报表全行业求和——128 个申万行业的 SUPERDEAL_NET(超大单)+BIGDEAL_NET(大单) 逐日求和 ≈ 沪深两市主力净额，与 push2 主链完全同一东财口径/同一单位（行业是市场的完整划分；datacenter-web 本机稳定可达，2026-10-15 实测当日 128 板块全齐、合计 -637.35 亿与行情吻合）。实现：lib/marketEmotionData.js 新增 fetchMainFundViaDataCenter（含完整性守卫：当日板块行数 ≥ 前日行数才认定当日已发布完整，否则当日值宁缺毋假）并在 getMarketEmotionData 中于 selfCheck 之前注入 raw.mainFund（顺序关键：保证 issues 反映注入后真实状态），仅当备链交易日=今天才注入当日值，盘中未更新至今日时如实标注「备链最新为 X，收盘后自动回补」。同步更新三处文案：selfCheck 缺失提示、模型 calcMainCapital 降级原因、模型 source 脚注（如实描述双通道）。隔离：主链 python 脚本零改动（通道恢复即自动优先实时值）；mainFund 数据形状不变，无下游格式变化。 // [20261015c] 修复实时大盘「AI 解读」点击无反应：① 根因为联网模型 qwen3.8-max 阿里百炼免费额度耗尽（403 Free quota exhausted，同账号实测 qwen3.5-35b-a3b 也耗尽、qwen-plus 可用、qwen3-vl-plus 可用；阿里免费额度按模型独立计算）——data/ai_config.json 的 modelWeb 已切换 qwen3.8-max → qwen-plus（loadConfig 每次读盘，即时生效；本地模型 qwen3-vl-plus 不动），额度恢复后可在「⚙️ AI 设置」换回。② 前端 loadMarketAI 失败静默缺陷：原只有 NO_KEY 弹窗，API_ERROR 被静默吞掉 → 用户点按钮毫无反应误判「功能失效」；现在所有失败路径（API_ERROR / 无内容 / 网络异常）均 alert 明确原因（诚实合规：失败必须可见）。隔离：仅 app.js loadMarketAI 一个函数，不动任何渲染与数据链路。 // [20261015b] 实时大盘数据源稳定化：① 顶栏日经225（100.N225）主源由东财 push2delay/push2 切换为新浪 hq.sinajs.cn int_nikkei（本机 push2 族常年被 TLS 重置，2026-10-15 全天 socket hang up 实测 ECONNRESET；新浪 38ms 实测稳定，4 字段 名称/点位/涨跌点/涨跌%，昨收=点位-涨跌点 反推），fetchEastmoneyIndex 双 host 降为备胎保留（跨网络环境兜底）。② 新增 lib/stockData.fetchSinaIndicesBatch（新浪 hq 批量指数：s_sh/sz 简版 + rt_hk 详细 + gb_ 美股 + int_ 全球四种格式统一解析，强制 Referer 否则 400），并接入 module.exports。③ 腾讯 qt.gtimg.cn 整批请求失败时整批回退新浪（text 标记 __SINA_FALLBACK__ + JSON Map，parse 命中顺序 东财全球→新浪兜底→腾讯文本），新浪也失败才抛原错（维持 500，绝不伪造数据），消除 qt 单点抖动导致实时大盘整卡 500 的问题。隔离性：输出 JSON 键集合 22 键与改造前完全一致、cn/us 组腾讯路径逐位不变、indexSource 标注不受影响（日经在 topbar 组且顶栏不显示来源标注）；端到端实测 unavailable 项数 0（改造前日经恒为 unavailable）、跨源现值一致（腾讯 3677.01 = 新浪 3677.0092）。妙想 MCP 定位为手动深度查询（按积分计费，不适合秒级轮询），不接入本模块。 // [20261015a] 修复「未找到 Python 解释器」进程级永久缓存 bug：受管 Python 是指向 WorkBuddy 应用资源目录的符号链接（versions/3.13.12 → resources/vendor/python），WorkBuddy 自更新重写该目录的几秒窗口内探测全败（实测 2026-10-15 11:01 服务器启动恰逢更新，日志 "did not find executable"），旧逻辑把失败永久缓存 → 情绪模型 8 因子权重归零、同花顺板块/融资余额/汇率/研报下载等到重启前全部不可自愈。修复：lib/stockData.findPythonForScript、lib/pyRuntime.findPython、lib/pdfText.findPdfPython 三处统一改为「失败仅冷却 60 秒，到期自动重探；成功仍永久缓存」。返回契约（路径|null）不变，成功路径行为逐位不变，无下游格式变化。lib/indexPETrend 本无缓存（每次重探、可自愈）维持不动。——幸存者偏差系数由固定 0.9 升级为证据驱动（曾用名含 *ST/ST 则按次数下调至 0.60~0.90，无 ST 历史则 1.0），取数失败时保底 0.9 并如实标注未获证据；输出新增 survivorship_evidence 与 risk_check_result.f10_status（additive）。② Johansen 协整：新增 jacobiEigen/matInverse/matMul/matT/johansen（VECM 辅助回归 + 矩矩阵 + 特征值分解 + 迹/最大特征值统计量 + Osterwald-Lenum 临界值），pair 策略优先 Johansen 并附 Engle-Granger 交叉验证与一致性标记；样本不足/矩阵奇异自动降级 EG。③ 60 分钟长窗口：腾讯 m60 实测硬上限 800 根且不接受起止日期（分页不可行），改走新浪 scale=60（实测上限 4023 根 ≈4 年，最新收盘价与腾讯逐位一致），新增 lib/stockData.fetchSinaKline60m；count>800 自动切换并挂 .meta 标注来源与切片口径差异（10:30/14:00 两处 ≤0.06 元）。默认 count≤800 仍走腾讯、行为不变。④ 止损/止盈/移动止盈 + 等批建仓：runBacktest 新增 opts.stopLoss/takeProfit/trailing/tranches/trancheGap（触发优先级 止损>止盈/移动>信号平仓，保守口径）；normalizeDSL 解析 stop_loss/take_profit/trailing/tranches；lib/strategyNL.js 新增 parseRiskParams 支持中文「止损8%/止盈20%/回撤5%/分3批建仓/每隔5个交易日」；前端 backtestUI.js 新增风控出场表与 F10 证据块 + style.css .bt-evidence。隔离：默认全关 → 输出字段与历史逐位一致（不再拒绝仓位类中文，金字塔/动态加减仓仍如实拒绝）。[20261014b] 策略回测引擎 P1/P2 升级：① ADF 滞后阶按 AIC 自动定阶（`adfCore`+`adf`；不传 lags 时自动、显式传参保持固定）② `walkForward` 新增 purge/embargo（默认 0 保持旧行为，生成器传 min(20, 3%N) 消除指标回看窗跨折泄漏）③ 新增多重检验校正（Benjamini-Hochberg 单侧二项 vs 50%）：auto-strategy 输出 `multiple_testing` 块，最优若本可 PASS 但未过校正则降级 WARNING ④ 分层成本能力：`runBacktest` 支持非对称 `buyCost`/`sellCost` + `aShareCostModel` 助手（佣金+印花税仅卖出+过户费+滑点），DSL 可传 `cost_model`，默认仍对称 0.55%/边。前端 `backtestUI.js` 新增参数敏感性逐候选条形可视化与多重检验展示；`style.css` 新增 `.bt-ps-bars`（中性蓝/金，避开红绿语义）。隔离：默认路径输出结构不变（新增字段均 additive）。 // [20261014b] 策略回测引擎 P1/P2 升级：① ADF 滞后阶按 AIC 自动定阶（`adfCore`+`adf`；不传 lags 时自动、显式传参保持固定）② `walkForward` 新增 purge/embargo（默认 0 保持旧行为，生成器传 min(20, 3%N) 消除指标回看窗跨折泄漏）③ 新增多重检验校正（Benjamini-Hochberg 单侧二项 vs 50%）：auto-strategy 输出 `multiple_testing` 块，最优若本可 PASS 但未过校正则降级 WARNING ④ 分层成本能力：`runBacktest` 支持非对称 `buyCost`/`sellCost` + `aShareCostModel` 助手（佣金+印花税仅卖出+过户费+滑点），DSL 可传 `cost_model`，默认仍对称 0.55%/边。前端 `backtestUI.js` 新增参数敏感性逐候选条形可视化与多重检验展示；`style.css` 新增 `.bt-ps-bars`（中性蓝/金，避开红绿语义）。隔离：默认路径输出结构不变（新增字段均 additive）。 [20261014a] 策略回测引擎 P0 修复（风控审查四项）：① 交易成本不再双重计入（runBacktest 已在成交价按单边成本计提，applyCorrections 的「交易成本」步改为系数 1、仅作信息展示）② KPSS 重写为 Newey-West(Bartlett) 长程方差 + 正确统计量公式（修复实测 stat=61.97 的量纲失真）③ adjustedReturn 与 adjustedWinRate 统一口径（补乘前视 f1/成本 f2，前视命中时修正收益同步归零）④ 手动校验入口 validateStrategy 新增「样本量闸门」（交易笔数 < 10 → 新裁决 INSUFFICIENT_SAMPLE，不再给 PASS/WARNING/REJECT）；diagnostics 透出 sample_trades/min_trades。下游同步：backtestUI.js verdictBadge/verdictBadgeText 增加 INSUFFICIENT_SAMPLE 映射、style.css 新增 .bt-verdict.INSUFFICIENT_SAMPLE（中性蓝，避开红绿涨跌语义）、strategyGenerator verdictText/rankOrder 补该枚举值。隔离说明：自动生成路径因上游已按笔数过滤，其输出结构与裁决值不变。 [20261013j] 基本面 tab「指标分析」改为按需单卡展示（用户要求：右侧指标分析拆分隐藏，点击关键指标左侧 tab 后才展示对应指标分析卡片，其他隐藏）：renderMetricAnalysis 增加 activeKey 参数——非当前项卡片一律渲染 ma-hidden（display:none），无 activeKey 时面板顶部显示 .ma-empty 引导空态（提示点击左卡「分析 ▸」查看、再次点击同一 tab 收起）；新增 showMetricAnalysis(key) 统一驱动右卡显隐/空态/左卡 tab 激活态（.metric-jump.active），当前选择维护在 this.activeMetricKey——实时刷新（60s）与切股后重渲染均按该键恢复，用户选择不丢失；scrollIntoView 平滑定位 + ma-flash 闪烁保留作为切换确认。style.css 新增 .ma-row.ma-hidden/.ma-empty(+.hidden)/.metric-jump.active（中性金色系，避开红绿涨跌语义）。隔离修改：不动任何取数/计算/图表口径与 METRIC_ORDER 单一权威顺序。 [20261013i] 基本面 tab「关键财务指标」×「指标分析」tab 联动（用户要求：关键指标每个指标右侧加 tab、指标分析按指标拆成独立卡片、点击 tab 自动弹出/定位对应指标分析）：public/js/app.js 的 renderKeyMetrics 为每个指标行新增「分析▸」跳转按钮（data-key 取 keyOf(label)，与右卡 metricAnalysis.metrics[].key 同一套 14 键·单一权威口径），点击后 smooth scrollIntoView 定位右卡同键 .ma-row 并加 ma-flash 闪烁高亮（重复点击重触发动画），右卡数据缺失时 toast「该指标暂无分析数据」不静默失败；renderMetricAnalysis 每张卡片加 data-key 锚点；style.css 新增 .metric-jump（中性金色小胶囊，避开红绿涨跌语义）与 .ma-row.ma-flash/@keyframes maFlash，.metric-row .mr-value 加 margin-left:auto 保证加 tab 后数值仍紧贴右缘。同步修复 test_current_quote_refresh.js §4 六项预存失败（index.html/accuracy.html 的 ?v= 戳从 20261006a 升级到 APP_VERSION）。隔离修改：不动任何取数/计算/图表口径，仅新增导航交互。 [20261013h] 工作台逻辑模型弹层从「总—分四层链路」重构为「按工作台页面布局」展示（用户要求：按整个工作台页面布局，列出每个页面有哪些模块、每个模块的判定逻辑、模块间的数据共享/引用）：public/js/logicModel.js 的 TREE 重组为 4 个页面区域（🏠 首页 9 卡 / 📈 个股页 10 tab+顶部评分区 / 🔗 跨页面公共支撑·数据源+API+AI+事件引擎+估值库+准确率闭环+规则守卫 / 📄 独立页面与全局入口），每个模块新增结构化字段 logic（判定逻辑）、inputs（数据来源）、outputs（输出去向），渲染层新增 renderFields 展示这三项，实现「模块↔模块数据共享/引用」可视化；弹层 intro 与标题文案改为「按页面布局」；style.css 新增 .lm-logic/.lm-io/.lm-k 样式（金/蓝/青三色，避开红绿涨跌语义）；index.html 版本戳同步 ?v=20261013h。隔离修改，仅影响本弹层展示，无下游数据格式变化。[20261013g] 个股近期热点新增振幅触发（用户要求：个股当日震荡幅度超过 3%，联网搜索分析原因）：lib/hotTopics.js 新增 AMPLITUDE_THRESHOLD=3% + resolveTrigger 确定性判定（涨跌幅≥3% 或 振幅>3% → 「当日异动归因」联网归因；振幅字段缺失时用 high/low/prevClose 补算），收盘平盘但盘中深 V/冲高回落也触发归因；归因 prompt 按触发方式区分（振幅触发问「盘中宽幅震荡的最直接原因」）；缓存加 triggeredBy 一致性校验（触发方式/方向变化重算）；CACHE_VER=20261013g 旧缓存作废重算；前端异动归因卡新增「振幅 X%」角标标注触发来源；getState 返回增加 amplitude/triggeredBy 字段（只加不改，无下游破坏）。通用模块改动，自动适用全部个股。[20261013f] 修复首页「越用越准·准确率台账」两处问题（用户质疑 12 条预测为何只结算 9 条、命中率为何 0%）：① 根因=历史留档的验证目标日落在休市日（09-25 中秋/10-01 国庆，留档时交易日历数据缺失），找不到 K 线永久卡「待结算」；sentimentAccuracy.settleRecord 加防呆——存档 targetDate 非交易日时按当前日历重算（isTradingDay 校验），并修复两条脏数据（09-24→09-28、09-30→10-08），补结算后两条均命中，命中率 0%→18.2%（2/11）。② 命中率 0% 的构成=7 条震荡未命中（|chg|≤0.5%，口径经用户 20260914i 确认「不姑息」）+2 条方向真错；computeAccuracy 新增 flatMissCount/dirMissCount 分项（口径不变），app.js 台账展示改为「命中率 X%（其中震荡未命中 N / 方向真错 M）」避免一刀切误读。[20261013e] 美国宏观判定升级为双维度（用户要求：失业率/非农要分别标注「对经济的影响」和「股市的偏好」，避免单一判定误读）：lib/usMacroResults.js 拆分 ecoDirection（经济影响=基本面框架：就业弱=经济偏空）与 mktDirection（股市偏好=宽松/紧缩交易框架：就业弱=宽松预期升温=股市偏多），directionOf 兼容导出=股市口径（情绪因子锚 FOMC 不受影响，FOMC 两维度同向）；事件新增 eco 字段，summary 双判定文案「经济影响：…；股市偏好：…」；homeMacro.js 双徽章（经济/股市，偏多红/偏空绿各自配色，旧数据回退单徽章）；LOGIC_VERSION=20261013e 旧缓存自动失效。修复 20261013c 单一判定的两处硬伤：失业率上升标「偏多」无维度限定易误读为经济改善；文案"失业率上升=缓解压力"事实性矛盾。[20261013c] 美国宏观数据「落地复盘」（用户要求：参考预期值，分析超预期/不及预期影响）：新增 lib/usMacroResults.js 抓华尔街见闻宏观日历（api-one-wscn.awtmt.com，单源三值齐全，forecast=彭博/路透共识口径，接口限7天/次须切片），过滤美国FD importance>=3，按标题分类（CPI/PPI/非农/失业率/FOMC/零售/ISM），三值数值化判定 超预期/符合/不及预期，按类型×偏离给方向影响（通胀超预期偏空/弱就业偏多等）；usMacroEvents 升级三级源（华尔街见闻三值→FedRateCalc排期→内置清单），released 保留7天/upcoming 过期剔除；前端三值行+超预期角标+偏多红卡。修复：transform 未存 type 导致 FOMC 上下限未合并。[20261013b] 美国宏观事件排期改为自动抓取：新增 lib/usMacroCalendar.js 抓 FedRateCalc 汇总表（条目来源 BLS/美联储官方排期；BLS 直爬被 Akamai 403、美联储官网只有 FOMC），美东时间确定性转北京时间（含 DST 规则），类型模板方向框架解读（不编数值），落盘缓存 12h TTL + 失败回退陈旧缓存 + 内置策划清单兜底；getUsMacroEvents 保持同步兼容情绪因子；路由返回数据来源标注。[20261013a] 修复首页「国际经济数据 & 事件」过期事件永久滞留：usMacroEvents 加日期判定自动剔除过期事件（9月FOMC/CPI/非农落地近月仍挂预告、且持续向美国宏观情绪因子输出-1偏空），清单更新至BLS/美联储官网排期（10-14 CPI、10-29 FOMC决议、11-06非农、11-10 CPI、12-10 FOMC）；macroSentimentFactors 去掉写死旧事件id；homeMacro 空清单诚实空态 + 纳入强制刷新名单。：顶栏常驻组（与投资心得/大盘记录/AI 设置同高并列）新增入口，点击弹出「总—分」树状弹层展示整个工作台的逻辑框架（数据层→计算层→API 层→展示层 + AI 叙事层 + 规则守卫层）。新增 public/js/logicModel.js（纯静态结构 + 纯前端渲染，不请求后端、不调用大模型）；?v= 与 FRONTEND_BUST_FILES 同升。零副作用：未改动 app.js 与任何既有模块。[20261003j] 修复 2.5D 柱状图渲染 bug（用户反馈「大量图表出现bug」）：bar25D custom series 的 renderItem 原直接返回元素数组，ECharts 5.4.3 createEl 读取 elOption.type 遇数组 undefined 抛「graphic type 'undefined'」→ 机构持仓变化空白 / 股东户数走势数据压缩 / 成交密集区渲染失败；改为 { type:'group', children:items } 包裹（垂直 + 横向两处）。?v= 与 BUST 同升，强制浏览器放弃修复前缓存的 chart3D.js。[20261003i] 柱状图 2.5D 补齐（用户再次反馈「大量柱状图未修改」）：① 深析「负债结构」横向柱图接入 bar25D horizontal；② 股东页「股东户数趋势」「机构家数趋势」接入 bar25D（dataZoom 手动追加 + 折线透传 + 多 y 轴），解除此前「带 dataZoom 保持 2D」限制；③ 全部保留 2D 兜底。[20261003h] 柱状图 2.5D 补全升级（用户反馈大量柱状图未改）：① bar25D 新增横向模式（类目在Y轴，等轴测向右上挤出；支持 rgba 半透明筹码光带与现价 markLine）→「成交密集区与价格引力」升级；② bar25D 新增折线系列透传 + 双柱分组错位 + 多系列 tooltip + 顶部数值标签 → 「分红分析（每次/每年/每股切换）」「营收/净利润增长率」「当季NBV+累计/TTM」「营运利润+净利润同比」接入 2.5D；③ 全部保留原 2D 兜底渲染；④ K线量柱 / MACD 柱 / 带 dataZoom 的趋势柱图（股东户数/机构家数）读数优先保持 2D。[20261003g] 柱状图/饼状图 2.5D-3D 升级（参照用户参考图等轴测立体柱+3D甜甜圈）：① chart3D.js 新增 SA3D.bar25D()——纯 ECharts custom series 的 2.5D 立体柱（正面玻璃渐变+左侧高光条+右侧深色面+顶面高光+底部贴地投影，保留 2D 坐标轴/grid/dataZoom/折线叠加，无需 echarts-gl，任意环境可用）；② 深析「保费收入趋势」（立体柱+同比折线）、「短期偿债风险」（四色立体柱+数值标签）接入 bar25D；③ 深析「资产结构」「险种结构」「前十大股东」与股东页「前十大股东持股比例」四个饼图升级为 2.5D 厚度圆环（SA3D.donut：厚度底座+扇区悬浮弹出+中心大数字：资产合计/占比最大险种/第一大股东）；④ 全部带数据Zoom/多轴/横向的柱图保持 2D 增强不动（读数优先）；⑤ 无 SA3D 环境全部自动回退原 2D 渲染。[20261003f] 修复「很多图表被压缩」：Charts.get() 初始化实例后未注册进 Charts.instances，导致技术面 tab（display:none 隐藏期）初始化的 paMonthly/paProfile/macd/rsi/kdj/boll 等 6 图退化为 200px 宽后，switchTab 与 window resize 遍历 Charts.instances 永远触达不到 → 切回 tab 仍压缩；现已注册实例（charts.js get()），并在 switchTab 切到 technical 时补一次 120ms resize 兜底。（只改视觉层，数据源与计算逻辑零改动）：① 本地引入 echarts-gl 2.0.9（vendor/echarts-gl.min.js，CDN 兜底）——bar3D 真 3D 柱（光影+SSAO+bevel+自动旋转），加载失败/移动端(pointer:coarse/宽<768)自动静默降级 2D/2.5D；② 新增 public/js/chart3D.js 组件库：SA3D.glb() 环境检测、SA3D.bar3D()（bar3D+line3D 混合、红涨绿跌、生长动画两段式 grow）、SA3D.donut() 2.5D 圆环（厚度底座+扇区弹出+中心文字）、SA3D.lightBar() 2.5D 柱增强；③ 资金流向图（主力净流入 bar3D + 超大/中/小单 line3D）与融资融券图（融资余额 bar3D + 融券余额 line3D）接入 3D，非 3D 环境维持原 2D；④ K线主图 2D 克制增强：蜡烛/均线/成交量柔光晕（shadowBlur 4-6，不遮挡十字光标与价格精度）；⑤ 表格卡片化 CSS：冻结表头(sticky)+斑马纹+涨跌色块+排名徽章；⑥ /js/chart3D.js 纳入 FRONTEND_BUST_FILES。 准确率入口最终定案（经用户确认）：与「首页/已自选/导出HTML/导出JSON/刷新」同组（global-nav-extra 内、排在刷新之后）并列，个股页显示、首页不显示（与该组同步显隐，还原图一布局+新增准确率）。上一版误放常驻组（首页也显示）已回退。[20261003c] 修正准确率入口位置（第二次）：用户所指「首页这些tab」= global-nav-common 常驻组（投资心得/大盘记录/AI设置）。由 global-nav-extra（个股页按钮组，首页隐藏）移入 global-nav-common 内、排在 AI 设置之后——首页与个股页均可见、与三个常驻 tab 同高并列。padding 8px 16px/13px 与 .home-action-btn 一致。[20261003b] 修正准确率入口摆放：由 .global-nav 直接子元素（常驻、首页会单独占位）改为 global-nav-extra 组内成员（排在「刷新」之后），与首页/自选/导出HTML/导出JSON/刷新同组并列、同步显隐——首页不再单独出现（避免看起来像顶替了那组按钮），个股页才显示。[20261003a] 准确率入口从顶栏移入常驻导航行 .global-nav：index.html 删除顶栏 #topbarAccuracyLink，改挂到导航行 global-nav-extra 之后（始终可见——首页无操作按钮组时右对齐显示），与首页/自选/导出/刷新等按钮同高并列；新增 .nav-acc-link 样式（保留金色强调色，padding 对齐 .home-action-btn 8px 16px 以同高），/css/style.css 已在强制刷新名单。[20261002c-2] 个股技术面「待验证」口径统一与显示优化：settleSymbol 对全部未结算记录归一 targetDate=基准日+HORIZON个交易日（含2026法定节假日），并纠正旧版误存的 base+1；isOverdue 无 status 兜底改为实时重算真实目标日，长假期间合法 pending 不再误报「过期未结算」；accuracy.js 待验证记录显示「预计结算日；遇长假顺延」。[20261002b] 新增「数据诚实原则」核心底层逻辑：未成功获取的数据必须明示"获取失败"，绝不拿其他数据/陈旧快照/零值聚合凑数（lib/dataHonesty.js 统一信封 + 前端 public/js/dataStatus.js 标准态 + scripts/test_data_honesty.js 反凑数守卫；标杆改造股息率分析链路 yield.js/pipeline.js/deepCharts.js） [20261002a] 行业板块拥挤度多周期聚合修复：今日/本周/本月的成交额与涨跌幅由「窗口末日值」改为「区间累计」（Σ各日成交额 / 复利累计涨跌幅），彻底修复三列成交额恒等；app.js 口径文案同步 [20261001d] Robinhood 式图表与界面视觉升级（只改视觉，不改任何数据源与计算逻辑）：① 新增 public/js/chartTheme.js 统一图表视觉层——注册升级版 softDark 主题（极简坐标轴：隐藏轴线/刻度仅留柔和网格；悬浮卡片 tooltip：深色玻璃卡圆角+投影+模糊；圆润图例小色块；dataZoom 柔和蓝手柄 #7fa8c9）+ SA_CHART.polish/attach/grad/rgba 助手，echarts.init(el,'softDark') 自动继承，attach 包装 setOption 全模块生效；② charts.js 主 K 线专项打磨——主题降级兜底（chartTheme 加载失败时回退旧版主题注册）、K 线 barMaxWidth=14 + 现价虚线标线（右端涨跌语义色价签）、MA 线 1.5px 细线、成交量半透明圆角柱、tooltip 悬浮卡外壳、面积渐变；③ capitalCharts/industryCharts/shareholderCharts/deepCharts 四模块 init 处 SA_CHART.attach 包装 + 柱图半透明圆角 + 折线渐变面积；④ style.css 字体栈升级（Segoe UI Variable Text 优先）+ 时间范围/周期/分红切换统一 Robinhood 式胶囊分组（.chart-controls 内凹浅底 + .range-btn/.period-btn/.dy-toggle-btn 圆角胶囊 + 选中态品牌金 #F0B97B）；⑤ /js/chartTheme.js 与 /js/charts.js 纳入 FRONTEND_BUST_FILES 强制刷新。 [20261001c] 首页市场情绪模型三处数据异常修复：① 融资余额假读数（-50.47%）——沪深交易所披露节奏不同步（沪已到 09-30、深仅到 09-29），market_emotion.py fetch_margin 原按日期盲加导致最新日只有单边数据被腰斩；改为仅计沪深双边完整日期，单边最新日给出 partialNote 说明，并在 marketEmotionModel.calcMargin 加 ±10%  sanity 闸门（超出即降级归零、标注疑源数据残缺）+ lagDays=1；② 「热度数据滞后」张冠李戴——app.js 滞后提示硬编码「热度数据」，改通用「数据滞后 N 个交易日」；③ 主力资金缺失文案改清楚——东财 push2 行情通道被限流属环境性中断（无大盘级备胎），市场主力净额缺失/主力资金缺失两处提示注明通道不可达、恢复后每日快照自动回补。 [20261001b] 图标更换：工作台图标整体换为用户上传的七彩扇形轨道图（豆包生成图已裁除右下角水印）：① scripts/make_favicon.py 生成 public/icon.png(512) + public/favicon.ico(16/32/48，中心80%裁剪保小尺寸辨识度)；② index/accuracy/judgments 三页 icon 链接改 ICO+PNG 双声明（删除 favicon.svg 死文件）；③ 顶栏品牌「📈 股票分析台」emoji 改为 icon.png 小图（style.css 新增 .brand-logo 20px）；④ /icon.png 纳入 FRONTEND_BUST_FILES。[20261001a] 体检修复包：① aiRoutes quoteService 死引用改 stockData.getQuote（专属估值实时价修复）；② CNINFO orgId 落盘缓存 + 1 次重试；③ app.js 搜索结果 XSS 转义；④ server.js 全局错误中间件 + unhandledRejection 兜底、移除死 multer 引用；⑤ 删死文件 marketOverviewEm.js / cheerio 依赖 / 根目录旧日志与 tk24.json；⑥ webSearchMcp MCP 会话复用 + 总超时守卫 + 百度每日计数 + 错误归一化。 [20260928a] 修复「策略」模块 60 分钟数据取不到（用户华安证券 600909 截图「无法获取60分钟数据」）：strategyGenerator 误传对象 {symbol} 给 getHistoryPeriod → detectMarket 把对象串成 "[OBJECT OBJECT]" → tencentCode 非法 → 60m 全空回退日线；改为传 symbol 字符串。同时 fetchTencentKline60m 的 count 由 2000 改为 800（腾讯 m60 上限 800，>800 会被对端静默回退到默认 320，样本量不升反降），并在取数层强制夹紧 count∈[1,800] 兜底。 // [20260923a] 个股页新增「官方公告（巨潮资讯·确定性数据）」卡片（GET /api/announcements/:symbol + #cninfoAnnouncements 骨架 + loadCninfoAnnouncements 渲染）；首页宏观卡增补 LPR(直连 axios 取 RPTA_WEB_RATE) 与社融(pbc_social_financing) 两项确定性指标。 | [20260922l] 修复「海天味业行业分析里，多个『行业板块总市值 vs 个股总市值』对比图表消失」：东财 push2 家族 clist/get 全通道被对端重置（socket hang up），使 sectorMarketCapHistory.fetchConstituents 抛错 → 三张图整体 style.display=none。① fetchConstituents 改多主机轮询重试（push2delay/push2/82.push2/16.push2 × 2 轮）；② 新增 readLatestCacheAny + staleFallback：成分股拉取失败/为空/无序列时，回退「最近一次成功快照」并标注 stale；③ 前端 renderSectorMarketCap 增「（快照）」日期角标 + 黄色告警行（.sector-cap-stale），明确「非实时、源恢复后自动更新」。 | [20260922k] 修复「宏观情绪因子写着权重自动归 0、却仍占 5%」：① macroSentimentFactors 的 observedIndex 未持久化导致「走势相悖→归零」判定被永久跳过 → 增加事件日锚定 + 旧快照自愈补锚；② marketEmotionModel.calcMacro 只看 signal 不看 status → 休眠因子回落默认 5% → 改为尊重 dormant（未激活→权重 0，常驻因子按比例吸收）；③ 卡片文案改为「按实际状态」生成（休眠/激活/中性三种措辞）。[20260922j] 因子权重调整：增持减持 +5pp（0.0485→0.0985）、大盘 −5pp（0.3071→0.2571），一增一减 Σ 仍=1.0000；权重变化由 _hashFactorStructure 自动捕获 → 旧判断强制重算。[20260922i] 修复公告漏抓（东财 /ann 端点生效 + detectForcedReduction 正则扩展覆盖真实措辞），同步 LAYOUT_VERSION=20260922c 强制重算当日判断。[20260922h] 「增持减持」因子新增第④子模块「股东被动减持/司法强制执行」(公告/新闻实时检测，确认被动减持 signal=-0.8、司法冻结/拍卖预告 -0.6，父因子叠加 0.2×forcedSignal 困境溢价)；同步升 sameDayJudgment LAYOUT_VERSION=20260922b 强制重算当日判断。 // [20260922g] 长江证券 补丁G 口径修正 + 规则4：① 废弃「历史50%分位=1.33倍」（实为2017年以来约9年长周期均值，跨周期数据混用），下轨铁底正式确认为**近5年日K真实50%分位 0.916 倍（¥6.11）**，防御说明栏改为「已触及近5年真实估值铁底（0.916倍），市场处于极度悲观定价，下行空间有限，静待均值回归。」；② 上轨逻辑不变（动态PB锚 1.4057 > 近5年90%分位 1.165 → 估值体系重构警告继续生效）；③ 新增规则4「乐观复苏情景」：长周期均值锚 1.33 倍 × BVPS 6.67 = ¥8.87，仅当【市场日均成交额 ≥ 1.5 万亿 且 公司 ROE 持续上行】双闸门同时满足时，作为**额外情景在备注展示，不参与主模型计算**（实时读本地成交额存盘 data/sector_crowding_history.json 近20交易日日均）；④ 顺手修 nz(x, default) 单参误用（缺省值被静默吞为 0）共 6 处 ｜ [20260922g] 长江证券 补丁G 口径修正 + 规则4 // [20260922g] 长江证券 补丁G 口径修正 + 规则4：① 废弃「历史50%分位=1.33倍」（实为2017年以来约9年长周期均值，跨周期数据混用），下轨铁底正式确认为**近5年日K真实50%分位 0.916 倍（¥6.11）**，防御说明栏改为「已触及近5年真实估值铁底（0.916倍），市场处于极度悲观定价，下行空间有限，静待均值回归。」；② 上轨逻辑不变（动态PB锚 1.4057 > 近5年90%分位 1.165 → 估值体系重构警告继续生效）；③ 新增规则4「乐观复苏情景」：长周期均值锚 1.33 倍 × BVPS 6.67 = ¥8.87，仅当【市场日均成交额 ≥ 1.5 万亿 且 公司 ROE 持续上行】双闸门同时满足时，作为**额外情景在备注展示，不参与主模型计算**（实时读本地成交额存盘 data/sector_crowding_history.json 近20交易日日均）；④ 顺手修 nz(x, default) 单参误用（缺省值被静默吞为 0）共 6 处 ｜ [20260922f] 长江证券 补丁F-Plus（单边空间展示 + SOTP偏离深度归因）+ 补丁G（动态锚双轨兜底） ｜ [20260922e] 长江证券 补丁F：估值矩阵逻辑自洽强制校验（排序/空间/基准一致性） ｜ [20260922b] 华安证券专属估值引擎升级 V3.0（指令9：核心参股资产联动监测 + SOTP权重自适应：实时抓取长鑫科技688825总市值、持股价值=长鑫市值×0.4391%×(1-流动性折扣)、参股占比驱动SOTP权重<10%→30% / 10~30%→40% / >30%→影子股模式(50%/40%/10%)+单独列示长鑫持股贡献+60日收益相关系数联动强度）；run 改为 async（实时抓取长鑫/华安总市值与日K相关性，失败回退锁定快照）。 [20260921l] 「原油主连」冲击有效期 3 天→1 天，并修正取数通道（push2delay 不可达→新浪 nf_SC0）；[20260921k] 「股份回购」完成实施/停止实施/被股东大会否决时判定转为中性（signal=0、不再计入增持家数）；[20260921j] 「股份回购」子卡片改走东财结构化回购报表（datacenter-web RPTA_WEB_GETHGLIST_NEW）：按「数据日期 / 已回购数量和金额 / 承诺回购金额 / 回购进度」四要素提炼（旧口径只扫公告/新闻标题、把标题原文当详情，用户看不到任何回购数据）；配套升 sameDayJudgment LAYOUT_VERSION 强制重算当日判断。 [20260921i] 「板块涨跌幅前5」也切回东财：新增东财「数据中心」通道（datacenter-web 报表 RPT_INDUSTRY_FUNDFLOW，与 push2 同为东财口径/同源板块分类），取数顺位 push2族(实时tick) → 数据中心报表(稳定可达) → 同花顺；新增 push2 失败 10 分钟静默期（首轮 2.5s → 静默期 0.3s）；面板与资金流卡现在同源同值。指数行情按用户决定保持腾讯并如实标注（无东财可达实时通道）。 [20260921h] 行业资金流改走东财「数据中心」报表源（datacenter-web 可达，push2delay 被对端重置）：恢复「散户(小单)前五」+「近5日主力/散户」，整卡统一东财口径；新增 push2 连续失败静默期（10 分钟）避免每次刷新白等。 [20260921g] 实时大盘「逐行标注数据源」：中国指数/美国指数两行补齐数据源标签，板块榜与资金流延续既有来源标注；同时修复妙想业务错误（如「积分已用完」）被静默当作「无数据」的问题。原注：[20260921c] 量价配合口径修正：大涨+平量由「显著上涨」利好改判中性「大涨平量」；同步升 LAYOUT_VERSION=20260921c 强制重算旧判断。 // [20260921b] 同步升 sameDayJudgment 的 LAYOUT_VERSION→20260921a，强制重算当日判断缓存，修复「清掉事件后个股页事件驱动卡片仍显示旧事件」。 // [20260921a] 事件驱动修正:新闻医药行拆药品/医疗器械二级(药监局药品监管不再误伤医疗器械股);圣湘生物自选归属改挂医疗器械;company_event仅按个股名匹配,停止泛化广播全行业(阳普医疗认证不再误挂圣湘生物) // [20260920a] 行业分析:新增行业景气度卡片(双轴折线,展示行业总营收TTM vs 总市值,数据=东方财富业绩报表+估值明细按申万二级全量汇总);同时移除行业分析总览卡片底部K线图 // 20260919e：修「分产品收入构成趋势」与东方财富完全对不上（用户 2026-09-19 新洋丰 000902 截图）——四处根因：① 末年 TTM 滚动还原在「上年同期无同名分部」时会把该分部静默丢弃，而只要还有任一项算得出就返回残缺清单，主力分部因此凭空显示为 0（新洋丰 磷复肥 2026=0，实际 103.56 亿、占营收 91.8%）；② TTM 本身产出东财从未公布的数值（精细化工 2026 显示 9.49 亿，东财披露 6.19 亿）；③「其中:xxx」子项被当作独立分部进入占比分母，致主营收入合计 115.44 亿（东财 112.85）→ 磷复肥占比 89.71%（东财 91.80%）；④ 图例按「首次出现顺序」截断前 8 项，把 2023/2024 的主力业务（常规复合肥 / 新型复合肥）挤出榜单。 修复：lib/deep/research.js 剔除「其中:」子项 + pageSize=500 改为分页抓全量（东财单页上限 500，新洋丰 709 条、长江证券 1719 条、平安 789 条原被静默截断，2001–2010 年数据整体丢失）；public/js/deepCharts.js 分产品趋势改为逐年原始披露口径（去 TTM）、某年未按该名称披露时留 null 断线（不再填 0 被误读为「营收为零」）、图例改按各年最大收入排序取前 8、说明文案同步更新。 修复后与东财「主营构成」页面逐点一致（新洋丰 41/41 项通过；8 只个股回归无异常），细分产品毛利率卡占比回归 91.80%/5.48%/2.33%/0.38%、合计 112.81 亿；另修一处【下发链路】隐患——public/index.html 里 js/deepCharts.js 的 ?v= 自 2026-09-06 起就停在 20260906e 从未随版本更新，且该文件不在 FRONTEND_BUST_FILES 强制刷新名单内，导致此后对 deepCharts.js 的任何改动都无法下发到浏览器（用户需手动硬刷新才生效，否则看到的仍是旧渲染逻辑）；本次一并将该戳更正为 20260919e 并把 /js/deepCharts.js 纳入强制刷新名单。 20260919d：修复「重大变化 AI 归因」长期显示「大模型请求失败（Request failed with status code 400）」——根因：归因失败/占位结果被当作有效缓存冻结 7 天（重跑深度分析也会直接复用旧失败，用户侧表现为该错误永不消失）；本次改为仅 explanationSource==='ai' 的成功结果才可复用，并重跑圣湘生物 688289 / 士兰微 600460 / 长江证券 000783 的历史失败条目；20260918b：修复「个股最大亮点/雷点无法获取数据」（用户 2026-09-18 18:16 海天味业 603288 截图）——根因：该日 17:42 ai_config.json 的「联网模型」被改为 glm-4.5-air，而阿里百炼上该模型 ① 只接受 stream:true（非流式直接 HTTP 400「This model only support stream mode」）② 不接受 enable_search（流式下以 SSE error 返回、HTTP 仍 200），叠加后所有联网类 AI 调用 5 秒内 400 失败，概览卡恒显「尚未生成」。修复：lib/ai/llm.js 新增「首见即记忆」的模型能力兼容层（STREAM_ONLY_MODELS / NO_SEARCH_PARAM_MODELS + _parseSseContent 流式解析 + _sseError 归一化 + 有界重试），默认路径请求体与历史完全一致（其他分析器零影响）；顺带修好此前被包装丢弃 err.response 而形同虚设的「400 → 去 enable_search 重试」兜底。新增 scripts/test_llm_stream_fallback.js（27 项，含桩服务端握手次数断言）。 20260918a：删除个股「短期行情判断」中「行业板块」因子的「板块成分」子卡片（用户 2026-09-18 截图要求）。该子卡片 signal=0、纯展示且父因子 detail 已含「成分 N 家」，属冗余重复，不直接参与评分，移除不影响方向/权重/得分。属展示布局调整（_hashFactorStructure 仅哈希 FACTOR_KEYS+DEFAULT_WEIGHTS、不含子因子名，不自动捕获），已手动 +1 LAYOUT_VERSION 强制重算旧判断缓存。前端 subFactors 通用循环渲染，无需改 app.js。 20260917l：修「中国平安(601318)个股亮点/雷点**长时间无法获取**」（用户 2026-09-17 20:18 截图：卡片停在「AI 正在联网重新分析…」+ 计数 0/0）。根因（服务端日志实证）：`lib/ai/llm.js` 的 `callLLM` 内部最多会**串行**发起 4 次 `postLLM`（① 妙想事实纯推理 → ② 外部搜索通道纯推理 → ③ 外部通道失败后的纯推理 → ④ 内置 enable_search），每次都用同一个 `timeoutMs` 各自做硬超时；本任务传 240s，单股最坏 ≈4×240s≈16 分钟无响应，用户侧表现就是「长时间拿不到」。601318 恰好踩中该路径（日志 `[search:mcp] 调用失败，本次仅做纯推理…：大模型请求超时（240000ms 无响应）`），而其它的股（600460/600909/000783）同期均秒级命中缓存成功，故只有这一只「永远转圈」。修复（四处，均为隔离修改）：①【核心】`lib/ai/llm.js` 新增**可选**「整链路总耗时预算」`opts.overallBudgetMs`（配套可单测纯函数 `createBudget`）：受预算约束后每次 `postLLM` 只允许用 `min(timeoutMs, 剩余预算)`，剩余不足 5s 即**秒级抛错**（`err.budgetExhausted=true`），不再无限串行等待；**不传该参数时 `enabled=false / leftMs()=Infinity / timeoutFor()=原值`，行为与历史版本完全一致**，故 companyDeep/valuation/earnings/research/announcements 等既有调用方零影响。②【接线】`lib/ai/augmentStock.js` 的 `analyzeAspects` 传 `overallBudgetMs: 300000`（单次仍可跑满 240s，累计超 300s 快速失败）。③【兜底】`analyzeAspects` 失败时若本地已有历史成功结果，直接返回并标记 `stale:true`（新增字段，向后兼容），避免用户看到空白卡片。④【等待体验】`public/js/notes.js` 的 `generateAspects` 补三件事：状态栏每秒刷新「已等待 N 秒」（不再像卡死）、客户端 330s `AbortController` 硬超时（比后端预算多 30s 余量）、超时/失败给出可执行提示；并对 `stale` 回退显示「本次超时/失败，已回退上一次成功结果（时间）」。另修：`lib/macroNews.js` 的 `_localDate` 未定义回归（该文件只导入了 `localDate` 无别名，`localToday()` 却调用 `_localDate()` → 每次调用抛 `ReferenceError: _localDate is not defined`，首页宏观新闻长期取不到）→ 改回 `localDate()`。 20260917k：亮点/雷点「只累积、需手动清理」口径正式落地 + 🤖 AI 徽标修复（用户 2026-09-17 明确选择「只累积、需手动清理」，否决「生成时自动替换旧 AI 条目」方案）——背景：上一条(20260917j)排查中发现 `add()` 漏拷 `ai` 字段，导致 ①🤖 AI 徽标永不显示、②`generateAspects` 里「生成前先清除本股旧 AI 条目」的过滤条件 `n.ai === true` 永远匹配不到（所以实际表现一直是「只追加不清旧」，但属于**意外的**行为）。本次把该行为**显式化并锁定**：①【口径锁定】`generateAspects` **删除**「先清除旧 AI 条目」整段逻辑，改为只统计 `existingAi` 数（不删任何数据），AI 状态提示改为「该股原有 N 条 AI 条目已保留，如需精简可点『🧹 清理重复』」—— 即用户要的「只累积、需手动清理」；代码注释写明「若将来要改回自动替换，必须先征得用户同意」，并新增断言防止回退。②【徽标修复】`renderNoteCard` 的 🤖 判定改为 `note.ai === true || note.type === 'ai'`，使**历史条目也立即恢复显示** 🤖（`data/notes.json` 中 34 条 AI 条目本就有 `type:'ai'`，**无需数据迁移**）。③【字段补全】`add()` 补落 `ai: note.ai === true`，让今后数据自带真实来源标记（**仅用于展示/追溯，不用于自动删除**）。回归测试 `scripts/test_notes_scope_switch.js` 扩展至 **34/34**：新增 §7（历史条目徽标 + 手动录入不误标）、§8（**口径锁定**：生成后原有亮点/雷点一条未删、仅 +1 新增；新条目 `ai` 已落盘）。只改 `public/js/notes.js` 一个文件（隔离修改，服务端 `/api/notes` 契约与 `data/notes.json` 结构均未变）。 20260917j：修「个股亮点/雷点不随个股页面切换」（用户 2026-09-17 截图反馈：页面为华安证券 600909，卡片却全是士兰微 600460 的内容）——根因：`public/js/notes.js` 的 AI 生成 fetch 明确「不随标签页/个股切换取消」（原注释即如此设计），等待期间用户切到别的个股后，回调里的 `this.renderStock(旧symbol)` 会把 `#stockNotesContainer` 刷成上一只股票的亮点/雷点，且此后不会再被纠正（该容器仅在 activeTab==='journal' 时重渲染）。实测吻合：`data/notes.json` 中 600460 恰为 3 亮点 + 5 雷点（= 截图计数），600909 为 0 条，证明容器停留在 600460 的渲染结果。修复（症状级 + 机制级双保险）：①【机制】`notes.js` 新增防串股守卫 `_currentStockCode()/_isCurrentStock()/renderStockIfCurrent()`，凡「目标股票未必等于当前展示股票」的重渲染一律走守卫 —— 覆盖 `generateAspects`（3 处回调 + AI 状态条 + 按钮复位）、`setAsMain`、`confirmDelete`、`saveForm`；非当前股票一律丢弃，不再污染其他个股页面（`renderStock` 本身不加守卫，保持既有契约）。②【症状】`app.js` 的 `analyze()` 在 `window.currentStock` 赋值处（当前个股唯一变更点）立即用新个股重渲染亮点/雷点，不再依赖「恰好停在 journal tab」；③ `generateAspects` 的并发锁由「全局单锁」改为「按股票隔离」（原先 A 股在跑时切到 B 股点生成会被静默 return，按钮看着可用却没反应，同属「不跟随个股切换」）；④ 切股后即使 AI 回调抵达，也只在仍停留该股页面时才刷新 AI 状态条与按钮，避免改到别的股票的界面。新增回归测试 `scripts/test_notes_scope_switch.js`（25/25，用最小 DOM 桩驱动真实 notes.js；含「裸 renderStock 确实会覆盖当前页」的旧行为复现对照，证明守卫是承重的）。注：本次只改前端 2 个文件，`/api/notes` 返回全量由前端按 scope 过滤的既有契约未变（隔离修改）。 20260917i：个股页「短期判断」卡片重组（用户 2026-09-17 要求，5 卡 → 7 因子重构）——①「市场情绪与消息面」改名「大盘」：删除「消息情绪（大盘）」「涨跌停比」两个子因子**及其底层逻辑**，同位置新增「市场情绪提醒」子因子（**直接引用首页判断**：读 data/market-emotion 落盘，同源不重算，非二次计算），并迁入原「大盘及行业板块短期走势」下的「大盘短期走势」；保留「内幕抢跑预警」「全网舆情」。②「板块涨跌停占比」改名「行业板块」（key sectorLimit 不变）：迁入「板块消息」与原「行业板块」因子（**改名为「行业短期走势」**），保留涨停/跌停占比、板块成分。③「大盘及行业板块短期走势」**整卡删除**（原因子 key market 移除）。④「财报解读」「舆情与讨论热度（个股）」两因子迁入「个股短期动向」。⑤ 权重处理：删除 market 后其余 7 因子**等比放大至 Σ=1.0000**；被迁入的子因子**参与评分**（子权重 MARKET_SHORT_SUB_W / SECTOR_TREND_SUB_W / SECTOR_NEWS_SUB_W / LIMIT_SUB_W / EMOTION_SUB_W / STOCK_SENT_SUB_W / EARN_SUB_W / SHORT_DIR_SUB_W），各 factor* 函数一律引用 W_* 常量、不再内嵌字面量。⑥ 缓存失效：LAYOUT_VERSION → 20260917i；因子结构变化（market 移除）由 _hashFactorStructure() **自动捕获**（SCHEMA_VERSION=h1f4df388-20260917i）→ 旧 data/judgments/*.json 判「旧 schema」强制重算，重启即生效。配套改动：lib/marketEmotionModel.js 新增导出 readLatestJudgment() 并补写记录字段 tendencyKey/coreDriver/advice/riskTip（供个股页单源引用首页结论）；public/js/app.js _renderSameDayLogicHtml 的 FACTOR_ORDER 去掉 market 并重排。E2E 实测（603288 海天味业）：7 基础因子 + 事件驱动共 8 因子、权重合计 100.0000%、「大盘」内含「市场情绪提醒=看跌·预警」与首页 /api/sentiment-turning-point 结论一致。回归全绿：test_factor_direction 41/41（新增第 4 节拆分校验）、test_local_date 12/12、test_tz_smoke 23/23、test_market_emotion 31/31、test_news_time 19/19、test_hot_topics_consistency 11/11、test_shareholder_period 10/10、test_sanxi_selling_expense 32/32、test_news_sector_scoring 17/17、test_event_weight_sentiment_acc 31/31；6 个文件 node --check 通过。顺带修掉 scripts/test_factor_direction.js 两处测试基建缺陷：'localDate' 与 require 解构重名导致 SyntaxError（源码里它是委托壳且引用未注入的 _localDate）、FACTOR_NAME 未注入沙箱导致 ReferenceError。 20260917h：修「今日财经热点」卡片数据源与时间口径（2026-09-17 抓真实响应核对后执行）——(1)【数据源已下线、静默失败】旧接口 https://newsapi.eastmoney.com/kuaixun/v1/getlist 实测返回 404，lib/newsSearch.js fetchKuaixunNews() 因 axios 抛错被 try/catch 吞掉、**永远返回 []**，卡片实际长期靠 fetchEastmoneyContentNews 兜底撑着；现改走 https://np-listapi.eastmoney.com/comm/web/getFastNewsList（client=web&biz=web_724&fastColumn=102），响应结构 data.fastNewsList[]。(2)【时间字段口径修正】新接口条目**没有** datetime 字段，实际是 showTime（北京墙钟字符串 "YYYY-MM-DD HH:mm:ss"）＋ realSort（微秒级**真 epoch**，实测 1789642048033848；/1e6 后按 Asia/Shanghai 渲染与 showTime 逐条一致）；旧代码把真 epoch 交给 `new Date(ts).toISOString()` 渲染 → toISOString 输出 UTC，展示时间比北京时间**早 8 小时**；现新增 normalizeNewsTime() 统一归一化（兼容北京墙钟字符串、ISO-T、以及秒/毫秒/微秒三种精度 epoch；脏字符串一律返回空串，避免垃圾字符被当时间展示），一律按北京时间渲染。(3)【原文深链缺失】新接口不含 url，现用 code 合成 https://finance.eastmoney.com/a/{code}.html（实测 200 可访问），卡片条目恢复可点击跳原文。(4)【摘要去重】新接口 summary 常以「【标题】正文」开头重复标题，现自动剥掉该前缀。返回对象字段仍为 { title, summary, source, url, date }，**下游卡片/影响标注模块无需改动**（隔离修改）。新增回归测试 scripts/test_news_time.js（19/19，含「旧 UTC 渲染提前 8 小时」的 bug 复现对照）；scripts/test_local_date.js 12/12、scripts/test_tz_smoke.js 23/23、scripts/test_market_emotion.js 31/31 均通过。 20260917g：全项目统一「中国自然日」日期口径，修掉 UTC 跨日错位（新增 lib/localDate.js + 回归测试 scripts/test_local_date.js 12/12、scripts/test_market_emotion.js 31/31）——根因：`new Date().toISOString().slice(0,10)` 取的是 **UTC 日期**，在 UTC+8 下每天北京时间 00:00–07:59 会比北京日期晚一天，导致交易台账/事件/缓存 的「今天」写成昨天（记录错位、幂等失效），估值基准日、板块快照日期、新闻日期也整体前移一天；白天 08:00 后两者一致，故长期隐蔽。新增 lib/localDate.js（Intl + Asia/Shanghai + formatToParts，hourCycle h23，**不依赖宿主机时区**；提供 localDate / localDateTime / localCompact / localDateFromTs；月/毫秒时间戳自动识别）。已改造 20 个文件：lib/eventEngine.js(4)、lib/factStore.js、lib/hotTopics.js(3，含 ctime 秒级时间戳→北京日)、lib/marketTechnical.js、lib/sectorCapitalFlow.js(2)、lib/stockData.js(4，含东财 beg/end 的 YYYYMMDD 参数)、lib/sentimentTurningPoint.js、lib/deep/conclusion.js、lib/deep/research.js(3，含把原本手写 +8h 的等价写法统一)、lib/cnscraperAdapter.js、lib/ai/valuation.js、server.js、scripts/test_factor_direction.js，以及 3 只个股估值模型的「估值基准日」(海天603288/华安600909/新洋丰000902)。同时把 4 处既有的手写 localDate 实现（sameDayJudgment / marketSentimentIndex / marketEmotionModel / macroNews.localToday）统一委托给 lib/localDate.js——scripts/test_local_date.js 用 2000 个采样点证明委托前后**逐点等价**（UTC+8 宿主机），故不改变既有行为。**刻意未改**：lib/stockData.js:985 的 Yahoo 日线日期（美股日线时间戳按 UTC 表示才是正确交易日）、以及全部 `date: new Date().toISOString()` 形式的绝对时间戳（本就是瞬时值，非日历日）。20260917f：修「股吧讨论热度（散户情绪）」因子三处问题（由用户确认后执行，回归测试 31/31 通过）——(1)【修陈旧值静默使用】server.js readMsiHeat() 会回退到「最后一条含 marketHeat 的记录」，而 marketEmotionModel.calcDiscussionHeat 只取数值、不比对日期，遇到 MSI 当天缺 marketHeat（实测缺 2026-09-10 / 09-16）就把上一天的旧值当"今天"用，且不打 spec §九 的滞后折扣；现新增 tradingLagDays()（以上证 bars 日期为交易日历）：同日=正常、滞后 1~2 个交易日=打 8 折并标「⏱ 数据滞后 N 个交易日」、滞后 ≥3 个交易日（LAG_DEGRADE_DAYS）=降级归零并分摊、日期缺失=按剔除处理（不再静默当今日）；快照 upsertSnapshot 也只在 lagDays===0 时记 heat，避免把旧值挂到新日期污染分位历史。(2)【补回来源标注】lib/marketSentimentIndex.js recordDailySnapshot 原先只持久化 {key,label,signal,weight}，把 value/detail 丢掉，导致任何「读序列」的消费方都拿不到数据源/样本数/更新时间/看多占比；现一并持久化，readMsiHeat() 透传，卡片「股吧讨论热度」明细恢复完整来源标注（兜底实时抓取路径也补齐同样格式）。(3)【分位样本交易日过滤】热度历史里混有非交易日读数（实测 series.json 26 条里 7 条是周末），会稀释历史分位；现用上证 bars 的日期白名单过滤，并在明细标注「已滤除 N 个非交易日样本」。另：marketEmotionModel 新增 SA_MSI_SERIES 环境变量出口，使回归测试不再读取生产 series.json（完全隔离）。20260917e：修复「大盘量能情绪模型」两处权重硬约束漏洞（scripts/test_market_emotion.js 22/22 通过）——(1) computeWeights 原样采用 state.weights 里自学习后的常驻权重，未做 5%~30% 夹紧；(2) 因子降级后的「按比例分摊」（spec §八.4）只做普通归一，会把已顶到 30% 上限的因子再次顶出（实测量能活跃度被摊到 34.47%）。修复：新增有界缩放 scaleBounded（等比缩放 + 溢出量按比例转嫁给仍自由的因子），computeWeights 与降级分摊两处统一走它；非常驻因子激活时若事件残留 {status:'dormant',weight:0} 则回落基准权重（原逻辑会把刚激活的因子压成 0）；可用因子过少导致 5%~30% 区间装不下 100% 时按需平移边界，并在 dataNote 诚实标注「权重被迫越界 · 本日结论置信度偏低」。20260917d：首页「市场情绪提醒」卡片逻辑模型整体升级为「大盘量能情绪分析模型（完整版）」——新增 lib/marketEmotionModel.js（10 因子确定性计算引擎：量能活跃度/市场宽度与极端情绪/量价配合度/大盘涨跌势头/融资余额/主力资金流向/股吧讨论热度(反向)/避险情绪 8 常驻 + 国内宏观/美国宏观 2 非常驻；含动态权重归一化、非常驻 0.8/日衰减、自学习(20次样本门槛·>60%上调<45%下调·常驻权重5%~30%边界)、极端值剔除+双基准(20日均量+1年分位)、市场风格自适应、数据源异常自检与权重分摊、月度健康度报告、极端行情熔断、月末/季末修正、T+1/T+3/T+5 准确率台账）+ lib/marketEmotionData.js（数据采集层：scripts/market_emotion.py 一次取全上证量价/涨跌家数涨跌停/融资余额5日/大盘主力净额/成交额换手率集中度/美元离岸人民币/中债10年）+ 前端 _renderEmotionPanel 按「情绪总分/短期倾向/核心驱动/量能状态/操作建议/风险提示」六行结论渲染；个股页 /api/sentiment-turning-point/:symbol 仍走原拐点检测逻辑不受影响。20260917c：修复「大盘技术分析准确率只停留在 9/15」——根因是 server.js 的 /api/market-technical 路由里调用了 marketClosed() 但**从未从 sameDayJudgment 导入该函数**，命中 ReferenceError 后被外层 catch(e){} 静默吞掉，导致「收盘后落盘当日判断」常年不写文件（data/market-tech/ 仅剩早期手工写入的 2026-09-14.json）；同时原实现只在「用户打开首页」时才落盘、无定时器兜底。修复：(1) 补上 marketClosed 导入；(2) 路由落盘失败改为显式 console.error 不再静默；(3) 新增每交易日 15:30 后自动落盘任务（不依赖用户打开页面），与个股结算调度同源。已实测路由与调度器两条路径均能写入 2026-09-17.json。20260917b：在 20260917a 基础上，进一步修复「个别股亮点/雷点长时间无法获取/卡死」——(1) lib/ai/llm.js postLLM（大模型调用）同样强制 adapter:'http' + 手动 setTimeout 兜底（原无 adapter 导致命中 fetch adapter 静默丢弃 timeout，卡到 60s 才以「timeout of 60000ms exceeded」报错，且被 mxQuery 外层 try/catch 误标为妙想失败）；(2) 亮点/雷点 timeoutMs 由 60s 放宽至 240s（qwen3.5-35b-a3b 实测单股 90~133s），与 companyDeep 一致；(3) 分离「妙想抓取」与「大模型推理」的异常捕获，LLM 超时不再误报为妙想失败。20260917a：修复两处 AI 配置/联网稳定性问题 —— (1) lib/miaoxiang.js 妙想（东财）请求改用 axios 直连 + 强制 adapter:'http' + 手动 setTimeout 竞速兜底 15s（本环境全局 fetch 是 axios 多填实现、自带 60s 内部超时且忽略 AbortSignal，axios 命中 https 会切 fetch adapter 导致 timeout 被静默丢弃、请求卡到 60s 才以「timeout of 60000ms exceeded」绕过 try/catch），妙想慢/不通即 15s 内快速失败并回退阿里百炼 MCP 搜索，根治「AI 生成亮点/雷点」永久卡「分析中…」；(2) 前端 openAISettings 打开前强制重新拉取服务端配置，修复偶发误显示「尚未配置 API Key / 内置联网搜索」（init 时 loadAIConfig 未 await 完成导致 this.aiConfig 为旧值）。20260916h：修复新洋丰（000902）顶部「综合估值评级」卡片口径 —— lib/deep/conclusion.js 原缺 000902 分支（9 个 if(sym===) 里没它），导致掉入通用「PE估值带」逻辑，产出 ¥13.26~¥24.84 / 中枢 ¥19.05，与下方专属卡（16.93 / 13.38~20.43）打架；现补上 xinyangfeng000902 分支（方法 chips 改为 正常化PE(锚)/PB-ROE交叉/DCF参考/磷矿资源期权(独立)/三情景加权），顶部卡与专属卡口径统一。20260916g：新增新洋丰（000902）专属「永久逻辑」估值引擎——正常化盈利为锚（禁单一年份PE）+ 分部估值(A正常化PE75%/B PB-ROE15%/C DCF10%/D磷矿资源期权独立/E磷酸铁期权) + 三情景 + 敏感性 + 四项失效预警，确定性计算无LLM；前端 app.js 增加 xinyangfeng 卡片分支并登记 _isDedicated。20260916e：修复「图表渲染失败」——ECharts 由 CDN(jsdelivr) 改为本地随包加载（public/vendor/echarts.min.js，CDN 仅作回退），根治国内网络下 CDN 被墙/超时导致所有图表报「图表渲染失败」；industryCharts _initChart 增加「图库未就绪时轮询等待 + 缺失时给可诊断提示」；capitalCharts 5 处裸 echarts.init 加 _safeInit 容错（不再因图库缺失中断整页渲染）；/js/capitalCharts.js 纳入缓存破坏。20260916d：个股亮点/雷点 AI 财务数字治理 —— 给 analyzeAspects 注入与「基本面」卡片同源的东方财富 F10 权威财务快照（资产负债率/毛利率/净利率/营收同比/归母净利及同比/流动比率），并新增后置数字校验：AI 输出的资产负债率绝对数值若与权威值偏差 > 1 个百分点，直接修正为权威值，杜绝凭空编造（如新洋丰 000902 资产负债率被写成 48.60%，实际 39.76%）。20260916c：后台计费治理 —— (A) 新增后台 AI 总开关 SA_NO_BG_AI（start.vbs 默认置 1），禁用两个后台 LLM 定时任务（事件驱动扫描 eventEngine + 专属因子月度触发），用户手动点开个股页的 AI 功能不受影响；(B) 封堵 callLLM 静默回退暗道：searchMode 为 mcp/volc/baidu 外部通道且失败/无 Key 时，不再升级 LLM 内置 enable_search（不再绕过免费 MCP 额度自行上网），统一降级纯推理。20260916b：个股亮点/雷点（含投资心得/大盘记录）数据改为服务端持久化（data/notes.json），不再仅存 localStorage —— 硬刷新清缓存 / 代码更新都不会丢失手动录入数据；并移除每次加载时的「内容相似自动去重」，避免误删手动条目（清理重复改由「🧹 清理重复」按钮手动触发）。20260916a：行业分析页「板块总市值走势」统一模板 —— 每只个股分别与所属申万一级/二级/三级行业板块总市值做双坐标走势比对（三张图，无三级板块自动省略）；新增 GET /api/stock-sector-levels/:symbol（东财个股所属板块 slist spt=3 + parseSwSectorName 归类一/二/三级）。20260915d：宏观情绪两因子并入市场情绪统一权重池（国内0.10/美国0.10，原6因子压缩至80%），共同决定短期倾向；移除独立区块；20260915c：每日宏观卡片新增社零/固定资产投资实时抓取（工业增加值无活源→降级占位）+ 国际经济事件卡片（FOMC 9/17 等策划式）+ 市场情绪提醒新增两个非常驻宏观因子小卡片（国内经济/美国经济，等权 0.5，指数相悖则权重归0）；20260915a：公司概况与 sameDay 行业板块因子统一用 sectorIdentity 精确行业（修 688660 电气风电被 F10 CSRC 错配为通用设备）+ companyDeep 长文本卡片截断修复（chart-card max-height 4000px→99999px）+ 信息分析配图禁用 Wikimedia Commons 兜底（避免产品/竞争对手图片全部不相关）；20260914j：事件驱动修行业误配（智能家居补贴不再归食品饮料）+ 权重重设（重大40%/中度12%/轻微3%，封顶40%）+ 删除卡片外重复白字 + 准确率页新增「短期行情判断」「市场情绪提醒」两个 tab；20260914i：大盘技术分析 + 个股技术面新增「准确率检查」（每日留档 + 事后验证 + 卡片内嵌 + 独立核对页 accuracy.html）；20260914h：信息分析（CFA 七段）改为「固定联网模型 + 永久缓存」并补齐本地资料自动加载；20260914g：信息分析卡片改名（「公司深度分析（CFA）」→「信息分析」）+ 联网超时 60s→240s；20260914f：三模块合并为单一 companyDeep.js（七段统一输出）；20260914e：大盘技术分析六步 + 短线结构研判合并为 lib/marketTechnical.js 融合引擎（七步推演，移除 /api/short-term-market）。 ★20260920a：万润股份（002643）专属「永久逻辑」估值引擎上线——data/valuation/002643.json(kind=wanrun)+lib/valuation/wanrun002643.js（三层加权 PB-ROE50%/PE35%/DCF15% + 五业务单元叙事 + 防失真规则）；接线 lib/ai/valuation.js 分发块+hasDedicatedValuation、public/js/app.js _isDedicated 白名单+wanrun 卡片、lib/deep/conclusion.js 顶部综合卡分支（替换旧通用「PE估值带」模型：由 高估/中枢8.71 纠正为 合理/中枢18.55）。
+app.use((req, res, next) => {
+  if ((req.path === '/' || req.path === '/index.html') && req.query.v !== APP_VERSION) {
+    return res.redirect(`/index.html?v=${APP_VERSION}`);
+  }
+  next();
+});
+
+// 关键前端资源：强制 ?v= 与 APP_VERSION 一致，避免浏览器沿用旧版本
+// 用户反复反馈「页面像旧版数据」时，多数是因为老 URL 命中 etag 304 后还返回缓存的旧 JS。
+// 这里主动 redirect 到带正确版本号的 URL，配合 Cache-Control: no-store 一起兜底。
+const FRONTEND_BUST_FILES = new Set(['/js/app.js', '/css/style.css', '/js/backtestUI.js', '/js/industryCharts.js', '/js/notes.js', '/js/capitalCharts.js', '/js/deepCharts.js', '/js/accuracy.js', '/js/shareholderCharts.js', '/js/chartTheme.js', '/js/charts.js', '/js/chart3D.js', '/js/logicModel.js', '/js/homeMacro.js', '/js/dailyReview.js', '/js/stockLog.js', '/icon.png']);
+app.use((req, res, next) => {
+  if (FRONTEND_BUST_FILES.has(req.path)) {
+    const v = req.query.v;
+    if (v !== APP_VERSION) {
+      const u = new URL(req.originalUrl, 'http://x');
+      u.searchParams.set('v', APP_VERSION);
+      return res.redirect(302, u.pathname + '?' + u.searchParams.toString());
+    }
+  }
+  next();
+});
+
+app.use(express.static(path.join(__dirname, 'public'), {
+  etag: true,
+  lastModified: true,
+  setHeaders: (res, filePath) => {
+    // JS/CSS/HTML 文件禁用缓存，确保前端代码更新后浏览器一定重新获取
+    if (filePath.endsWith('.js') || filePath.endsWith('.css') || filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    }
+  }
+}));
+
+// [20261104h] 笔记附件静态服务——投资心得图片等附件落盘 data/note-attachments/，
+// 以 /note-attachments/ 前缀对外提供（img 缩略图与点击查看原图共用同一 URL）。
+app.use('/note-attachments', express.static(path.join(__dirname, 'data', 'note-attachments'), {
+  etag: true,
+  lastModified: true,
+  maxAge: '7d', // 附件文件名含 uuid 不可变，可长缓存
+}));
+
+
+// ---- API Routes ----
+
+// 轻量健康检查（看门狗 / 冒烟测试用）：不探测外呼，避免慢。
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    version: APP_VERSION,
+    // 20261016b（审计 G5）：估值模型哈希，深度分析缓存门控键之一；变化即触发旧缓存失效重算
+    valuationModelHash: VALUATION_MODEL_HASH,
+    uptime: Math.round(process.uptime()),
+    mem: Math.round(process.memoryUsage().rss / 1024 / 1024),
+  });
+});
+
+// Search stocks
+app.get('/api/search', async (req, res) => {
+  try {
+    const q = req.query.q;
+    if (!q) return res.json([]);
+    const results = await searchStocks(q);
+    res.json(results);
+  } catch (err) {
+    console.error('Search error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get quote
+app.get('/api/quote/:symbol', async (req, res) => {
+  try {
+    const quote = await getQuote(req.params.symbol);
+    if (!quote) return res.status(404).json({ error: 'Stock not found' });
+    res.json(quote);
+  } catch (err) {
+    console.error('Quote error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get history
+app.get('/api/history/:symbol', async (req, res) => {
+  try {
+    const range = req.query.range || '1y';
+    const history = await getHistory(req.params.symbol, range);
+    res.json(history);
+  } catch (err) {
+    console.error('History error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 60分钟 K线 + 技术指标（东财 klt=60，供中栏「60分钟」周期切换使用）
+app.get('/api/history60/:symbol', async (req, res) => {
+  try {
+    const symbol = req.params.symbol;
+    const count = Math.min(parseInt(req.query.count) || 400, 800);
+    const history = await getHistoryPeriod(symbol, '60m', count);
+    const technical = history.length >= 30 ? technicalAnalysis(history) : null;
+    res.json({ success: history.length > 0, symbol, history, technical });
+  } catch (err) {
+    console.error('History60 error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 价格行为趋势推演（技术面页/短期判断/长期判断共用：10年日K重采样周/月线 + 60分钟K线，本地计算零LLM成本）
+// 20260905g：缓存与计算下沉到 lib/priceActionHub 唯一出口，与短期/长期判断共用同一份快照（指标级单源）
+app.get('/api/price-action/:symbol', async (req, res) => {
+  try {
+    const symbol = req.params.symbol;
+    const force = req.query.refresh === '1' || req.query.force === '1';
+    const data = await getPriceActionSnapshot(symbol, { force });
+    if (!data || data.error) {
+      return res.json({ success: false, error: (data && data.error) || '价格行为推演失败' });
+    }
+    // 20260914i：落盘当日技术面方向判断（未来 5 个交易日口径），供准确率检查事后结算。
+    // 与「短期行情判断」的 technicalShort 因子互不干扰——本模块只认「技术面自身方向 vs 后续价格」。
+    let accuracy = null;
+    try {
+      const sym = normalizeSymbol ? normalizeSymbol(symbol) : symbol;
+      techFaceJudgment.recordDailyJudgment(sym, data, { name: (req.query.name || '') });
+      accuracy = techFaceJudgment.computeAccuracy(sym);
+    } catch (e) {}
+    // 20261020l：⑤「关键位有效性检验」卡与路由注入已下线（用户要求删除该模块及其联动）。
+    res.json({ success: true, symbol, accuracy, ...data });
+  } catch (err) {
+    console.error('PriceAction error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 20261021d：个股「手动阻力/支撑区间」（②卡「手动添加」页签）
+// 口径：用户自填，**不参与**模型的有效性检验/侵蚀，也不影响方向判断与准确率统计（lib/manualZones.js 头注释）。
+app.get('/api/manual-zones/:symbol', (req, res) => {
+  try {
+    res.json({ success: true, ...manualZones.listZones(req.params.symbol) });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+app.post('/api/manual-zones/:symbol', (req, res) => {
+  try {
+    const r = manualZones.addZone(req.params.symbol, req.body || {});
+    if (!r.ok) return res.status(400).json({ success: false, error: r.error });
+    // 20261021e：手动区间已并入 /api/price-action 的短期清单（并走两条有效性检验），
+    // 新增后必须丢缓存，否则快照里还是旧的那一份，用户加完看不到。
+    invalidateSnapshot(r.data.symbol);
+    // 20261024h：源模块变动 → 自动通知联动模块（priceActionHub 丢快照 → sameDayJudgment 连带作废判断）
+    moduleSync.emitChange('manualZones', { symbols: [r.data.symbol], reason: '手动区间新增' });
+    res.json({ success: true, zone: r.zone, ...r.data });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+app.delete('/api/manual-zones/:symbol/:id', (req, res) => {
+  try {
+    const r = manualZones.removeZone(req.params.symbol, req.params.id);
+    if (!r.ok) return res.status(400).json({ success: false, error: r.error });
+    try { purgeByManualId(r.data.symbol, req.params.id); } catch (e) {}   // 20261103h：源手动区间删除 → 其反转记录联动清除（否则反转出来的对侧区间还挂着）
+    invalidateSnapshot(r.data.symbol);   // 同上：删完不能还留在快照里
+    moduleSync.emitChange('manualZones', { symbols: [r.data.symbol], reason: '手动区间删除' });
+    res.json({ success: true, removed: r.removed, ...r.data });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 20261025l：个股记录（个股页「个股记录」tab，用户要求）——按日期排序的手动记录，
+// 落盘 data/stock-log/<代码>.json；纯手动记录，不参与任何判断/评分/回测，不触发模块联动。
+const stockLog = require('./lib/stockLog');
+app.get('/api/stock-log/:symbol', async (req, res) => {
+  try {
+    // 20261108a：读取时按真实日K自动结算「涨跌幅判断正确率」；
+    // 数据未到/取数失败诚实标「待验证」，不臆造、不进准确率分母。
+    res.json({ success: true, ...(await stockLog.settleAndList(req.params.symbol)) });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+app.post('/api/stock-log/:symbol', (req, res) => {
+  try {
+    const r = stockLog.addLog(req.params.symbol, req.body || {});
+    if (!r.ok) return res.status(400).json({ success: false, error: r.error });
+    res.json({ success: true, item: r.item });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+app.delete('/api/stock-log/:symbol/:id', (req, res) => {
+  try {
+    const r = stockLog.removeLog(req.params.symbol, req.params.id);
+    if (!r.ok) return res.status(400).json({ success: false, error: r.error });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+// 20261026e：修改记录（用户要求每条记录带「修改」按钮）——可改日期与内容
+app.put('/api/stock-log/:symbol/:id', (req, res) => {
+  try {
+    const r = stockLog.updateLog(req.params.symbol, req.params.id, req.body || {});
+    if (!r.ok) return res.status(400).json({ success: false, error: r.error });
+    res.json({ success: true, item: r.item });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 20260914i：个股技术面 · 准确率检查
+app.get('/api/tech-face/records', async (req, res) => {
+  try {
+    const symbol = req.query.symbol ? (normalizeSymbol ? normalizeSymbol(req.query.symbol) : req.query.symbol) : null;
+    if (symbol) {
+      if (req.query.settle === '1') await techFaceJudgment.settleSymbol(symbol);
+      const records = techFaceJudgment.readAll(symbol);
+      const accuracy = techFaceJudgment.computeAccuracy(symbol, records);
+      return res.json({ success: true, mode: 'symbol', symbol, accuracy, records: records.slice().reverse() });
+    }
+    if (req.query.settle === '1') await techFaceJudgment.settleAll();
+    const accuracy = techFaceJudgment.computeGlobalAccuracy();
+    // 全局模式返回各股汇总（按已结算样本数降序），逐条明细请带 ?symbol=
+    const dirFiles = require('fs').readdirSync(techFaceJudgment.DIR).filter(f => f.endsWith('.json'));
+    const bySymbol = dirFiles.map(f => {
+      const s = f.replace(/\.json$/, '');
+      const recs = techFaceJudgment.readAll(s);
+      const a = techFaceJudgment.computeAccuracy(s);
+      // 20260928c：聚合行补「最新判断日 + 数据区间」（口径与「各股短期判断准确率」一致，展示一致性）
+      const dates = recs.map(r => r.baseDate).filter(Boolean).sort();
+      return {
+        ...a,
+        name: (recs.slice(-1)[0] || {}).name || '',
+        minDate: dates[0] || '',
+        maxDate: dates.slice(-1)[0] || '',
+      };
+    }).sort((a, b) => (b.settledCount || 0) - (a.settledCount || 0));
+    res.json({ success: true, mode: 'global', accuracy, bySymbol });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+app.post('/api/tech-face/settle', async (req, res) => {
+  try {
+    const symbol = req.body && req.body.symbol;
+    const r = symbol ? await techFaceJudgment.settleSymbol(symbol) : await techFaceJudgment.settleAll();
+    res.json({ success: true, ...r });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ---- 市场情绪提醒 · 准确率（20260914i）----
+// 情绪拐点预警的历史记录 + 准确率；?settle=1 先结算（拉上证 K 线）
+app.get('/api/sentiment-accuracy/records', async (req, res) => {
+  try {
+    if (req.query.settle === '1') await sentimentAccuracy.settleAll();
+    const records = sentimentAccuracy.getAllRecords();
+    res.json({ success: true, accuracy: sentimentAccuracy.computeAccuracy(records), records });
+  } catch (err) {
+    console.error('[SentimentAccuracy] records error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+app.post('/api/sentiment-accuracy/settle', async (req, res) => {
+  try {
+    const r = await sentimentAccuracy.settleAll();
+    res.json({ success: true, ...r });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 分时行情（腾讯分钟线，仅 A 股/港股/美股可用，供中栏「分时」周期切换使用）
+app.get('/api/minute/:symbol', async (req, res) => {
+  try {
+    const info = detectMarket(req.params.symbol);
+    const { minutes, prevClose, date } = await fetchTencentMinutes(info.tencentCode);
+    // date = 这份分时所属交易日（休市时是上一交易日），前端据此诚实标注，不冒充今日走势
+    res.json({ success: true, symbol: req.params.symbol, minutes, prevClose, minuteDate: date });
+  } catch (err) {
+    console.error('Minute error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Get news
+app.get('/api/news/:symbol', async (req, res) => {
+  try {
+    const name = req.query.name || '';
+    const news = await getNews(req.params.symbol, name);
+    res.json(news);
+  } catch (err) {
+    console.error('News error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 今日财经热点（东方财富 7×24 快讯，首页展示；?refresh=1 强制刷新缓存）
+app.get('/api/hot-news', async (req, res) => {
+  try {
+    const data = await getHotNews(req.query.refresh === '1');
+    // 新闻 → 行业板块影响识别（标注受影响的板块 + 热门个股 + 涨跌方向），并记录到自学习库
+    if (data && Array.isArray(data.items)) {
+      data.items = annotateNewsImpact(data.items);
+      for (const n of data.items) {
+        if (n.impact && n.impact.sector) {
+          recordImpact(n.title, n.impact.sector, n.impact.direction);
+        }
+      }
+      data.impactLearning = getNewsImpactLearningState();
+      // 20261016 D2（用户批准方案②）：板块映射当前只覆盖 N 个行业，表外新闻一律无影响标注。
+      // 前端脚注据此明示覆盖范围，避免用户把「无标注」误读为「无影响」。
+      data.sectorMapCount = NEWS_SECTOR_MAP.length;
+    }
+    res.json(data);
+  } catch (err) {
+    console.error('Hot news error:', err);
+    res.status(500).json({ source: '东方财富 7×24 快讯', updated: new Date().toISOString(), items: [], error: err.message });
+  }
+});
+
+// 首页「板块舆情热度周榜」（20260909m：舆情+社区讨论热度五指标引擎，?refresh=1 强制刷新；不涉及行情主计算）
+app.get('/api/home-hot-topics', async (req, res) => {
+  try {
+    const data = await hotTopicsWeekly.getWeeklyReport(req.query.refresh === '1');
+    res.json(data);
+  } catch (err) {
+    console.error('Home hot topics error:', err);
+    res.json({ ok: false, status: 'error', updated: new Date().toISOString(), rows: [], message: '周榜计算失败：' + err.message });
+  }
+});
+
+// 原油主连冲击 · 诊断接口（突发因子·轻微事件变量，20260911；参考对象由布伦特原油期货改为原油主连）
+app.get('/api/event/oil-shock', async (req, res) => {
+  try {
+    const eventEngine = require('./lib/eventEngine');
+    res.json({ ok: true, ...eventEngine.getOilShockStatus() });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+app.post('/api/event/oil-shock/refresh', async (req, res) => {
+  try {
+    const eventEngine = require('./lib/eventEngine');
+    const force = !!(req.query.force || (req.body && req.body.force));
+    await eventEngine.refreshCrudeShock(force);
+    res.json({ ok: true, status: eventEngine.getOilShockStatus() });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// 新闻影响判断 · 人工更正（自学习）：反馈某条判断是否正确，并可纠正板块/方向
+app.post('/api/news-impact/correct', async (req, res) => {
+  try {
+    const { id, correct, correctedSector, correctedDirection } = req.body || {};
+    if (!id) return res.status(400).json({ success: false, error: '缺少 id' });
+    const rec = correctImpact(String(id), !!correct, correctedSector || null, correctedDirection || null);
+    if (!rec) return res.status(404).json({ success: false, error: '未找到对应记录' });
+    res.json({ success: true, record: rec, learning: getNewsImpactLearningState() });
+  } catch (err) {
+    console.error('[NewsImpact] correct error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 板块涨跌幅前五 · 近一周滚动统计提醒
+app.get('/api/sector-rank-reminder', async (req, res) => {
+  try {
+    res.json({ success: true, ...getSectorRankReminder() });
+  } catch (err) {
+    console.error('[SectorRankReminder] error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 首页「每日宏观 & 政策」采集（按自然日缓存，每日自动采集一次）
+app.get('/api/macro-news', async (req, res) => {
+  try {
+    const data = await getMacroNews(req.query.refresh === '1');
+    res.json(data);
+  } catch (err) {
+    console.error('Macro news error:', err);
+    res.status(500).json({ source: '东方财富 7×24 快讯', updated: new Date().toISOString(), items: [], byCategory: {}, order: [], total: 0, error: err.message });
+  }
+});
+
+// 首页「重要经济数据」（结构化指标 + 解读，每日缓存）
+app.get('/api/macro-data', async (req, res) => {
+  try {
+    const data = await getMacroIndicators(req.query.refresh === '1');
+    res.json({ success: true, ...data });
+  } catch (err) {
+    console.error('Macro data error:', err);
+    res.status(500).json({ success: false, error: err.message, indicators: [], date: localDate(), available: 0, total: 5 });
+  }
+});
+
+// 个股官方公告（巨潮资讯，确定性数据，非 AI）
+app.get('/api/announcements/:symbol', async (req, res) => {
+  try {
+    const data = await getCninfoAnnouncements(req.params.symbol, 30);
+    res.json(data);
+  } catch (err) {
+    console.error('Cninfo announcements error:', err);
+    res.status(500).json({ ok: false, error: err.message, items: [] });
+  }
+});
+
+// 首页「每日宏观 & 政策」—— 美国经济数据 / 事件（策划式事件卡片）
+app.get('/api/us-macro-events', async (req, res) => {
+  try {
+    // 20261013c：先触发自动抓取（华尔街见闻三值为主 + FedRateCalc 排期兜底；12h TTL，失败回退缓存/内置清单）
+    const cal = await refreshUsMacroEvents({ force: req.query.refresh === '1' });
+    const events = getUsMacroEvents();
+    // 空清单时给诚实 notice（全部过期或双源失败且无兜底），前端据此显示空态而非静默隐藏
+    const notice = events.length
+      ? ''
+      : '美国宏观数据排期自动抓取失败且内置清单已全部过期，待数据源恢复后自动更新。';
+    const calSource = cal && cal.ok
+      ? (cal.stale ? '自动抓取（陈旧缓存，源暂不可达）' : (cal.hasResults ? '自动抓取（华尔街见闻·含公布/预期/前值）' : '自动抓取（FedRateCalc 排期）'))
+      : '策划式清单兜底（自动抓取不可达）';
+    res.json({ success: true, events, notice, source: calSource, updated: new Date().toISOString() });
+  } catch (err) {
+    console.error('US macro events error:', err);
+    res.status(500).json({ success: false, error: err.message, events: [] });
+  }
+});
+
+// 首页「基金重仓行业配置矩阵」（季度行业配置比例，支持用户导入更新）
+app.get('/api/market-rank', async (req, res) => {
+  try {
+    const data = await getMarketRank({ force: req.query.refresh === '1' });
+    res.json(data);
+  } catch (err) {
+    console.error('Market rank error:', err);
+    res.status(500).json({ updated: new Date().toISOString(), title: '行业配置矩阵', available: false, reason: err.message, quarters: [], sectors: [], note: '数据获取失败。' });
+  }
+});
+app.post('/api/market-rank', (req, res) => {
+  try {
+    const { updateMarketRank } = require('./lib/marketRank');
+    const input = req.body && (req.body.matrix || req.body.csv || req.body);
+    const saved = updateMarketRank(input);
+    res.json({ success: true, saved });
+  } catch (err) {
+    console.error('Market rank update error:', err);
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+
+// ---- 当日个股涨跌判断（透明加权打分 + 准确率统计）----
+
+// 全部判断记录列表（供独立「准确率核对」页使用）
+//   ?settle=1 时先触发全量结算（拉取各股 K 线，可能较慢）再返回最新快照
+//   必须注册在 /:symbol 路由之前，否则 "records" 会被当作 symbol 参数匹配
+app.get('/api/sameday-judgment/records', async (req, res) => {
+  try {
+    const symbol = req.query.symbol ? String(req.query.symbol).trim() : '';
+    if (symbol) {
+      // 个股视图：仅结算该股 + 仅返回该股记录与准确率
+      if (req.query.settle === '1') await settleSymbol(symbol);
+      const records = filterBySymbol(getAllRecords(), symbol);
+      const accuracy = computeAccuracy(records);
+      const name = records.length ? (records[0].name || symbol) : symbol;
+      res.json({ success: true, records, accuracy, learning: getLearningState(symbol), count: records.length, symbolScope: symbol, symbolName: name });
+    } else {
+      if (req.query.settle === '1') await settleAll();
+      const records = getAllRecords();
+      const accuracy = computeAccuracy(records);
+      res.json({ success: true, records, accuracy, learning: getLearningState(), count: records.length, symbolScope: null });
+    }
+  } catch (err) {
+    console.error('[SameDayJudgment] records error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 自我进化 / 错误学习状态（因子命中率、权重演进、错误归因）
+// 固定路径，必须注册在 /:symbol 之前
+// ?symbol=xxx 时只返回该股票的最近错误归因，避免跨股展示。
+app.get('/api/sameday-judgment/learning', async (req, res) => {
+  try {
+    const symbol = req.query.symbol ? String(req.query.symbol).trim() : '';
+    res.json({ success: true, learning: getLearningState(symbol || undefined) });
+  } catch (err) {
+    console.error('[SameDayJudgment] learning error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Part B：弱关联关联度 / 持续性经验库状态（调试透明用）
+app.get('/api/relevance-learning', async (req, res) => {
+  try {
+    res.json({ success: true, state: getRelevanceLearningState() });
+  } catch (err) {
+    console.error('[RelevanceLearning] error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/sameday-judgment/:symbol', async (req, res) => {
+  try {
+    const symbol = req.params.symbol;
+    const name = req.query.name || '';
+    const industry = req.query.industry || '';
+    const force = req.query.refresh === '1' || req.query.force === '1';
+    const result = await getJudgmentWithAccuracy(symbol, name, industry, force);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    console.error('[SameDayJudgment] error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 全量结算历史判断并返回准确率（按需触发，可能较慢：需拉取各股K线）
+app.post('/api/sameday-judgment/settle', async (req, res) => {
+  try {
+    const acc = await settleAll();
+    res.json({ success: true, accuracy: acc });
+  } catch (err) {
+    console.error('[SameDayJudgment] settle error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ---- 长期行情判断（中长期走势 / 价值取向，不核算准确率，每次打开自动 AI 联网更新）----
+app.get('/api/long-term-judgment/:symbol', async (req, res) => {
+  try {
+    const symbol = req.params.symbol;
+    const name = req.query.name || '';
+    const force = req.query.refresh === '1' || req.query.force === '1';
+    const result = await getLongTermJudgment(symbol, name, force);
+    res.json({ success: true, judgment: result });
+  } catch (err) {
+    console.error('[LongTermJudgment] error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// [20261104b] 增长口径一键切换（用户指令：利润增长的单季/累计口径切换，切换后对应指标分析同步切换）
+// GET  /api/growth-caliber → { caliber, label }
+// POST /api/growth-caliber { caliber: 'sq'|'cum' } → 持久化 data/settings.json + 清空 /api/analysis
+//      TTL 缓存（analysisWarm.clearAllCache）确保切换即时生效；影响范围=左卡关键财务指标/右卡指标分析/
+//      顶栏 tiles/信号判定/历史百分位（全链路同口径）；sameDayJudgment 短期因子与 deep 年度结论保持单季/年度口径不变。
+app.get('/api/growth-caliber', (req, res) => {
+  try {
+    const caliber = growthCaliber.getGrowthCaliber();
+    res.json({ ok: true, caliber, label: growthCaliber.growthCaliberLabel(caliber) });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+app.post('/api/growth-caliber', (req, res) => {
+  try {
+    const caliber = req.body && req.body.caliber;
+    const applied = growthCaliber.setGrowthCaliber(caliber);
+    analysisWarm.clearAllCache();
+    console.log(`[GrowthCaliber] 增长口径已切换为 ${applied === 'cum' ? '累计口径' : '单季优先口径'}，分析缓存已清空`);
+    res.json({ ok: true, caliber: applied, label: growthCaliber.growthCaliberLabel(applied) });
+  } catch (e) {
+    res.status(400).json({ ok: false, error: e.message });
+  }
+});
+
+// Comprehensive analysis
+app.get('/api/analysis/:symbol', async (req, res) => {
+  try {
+    const symbol = req.params.symbol;
+    const range = req.query.range || '1y';
+    const name = req.query.name || '';
+
+    // 20261027d：记录「最近查看」+ TTL 缓存命中即秒回（交易日盘中 2 分钟 / 其余 30 分钟，过期则同步重建）
+    analysisWarm.noteAnalysisRequest(symbol);
+    const cachedPayload = analysisWarm.getCached(symbol, range, isTradingDay);
+    if (cachedPayload) {
+      console.log(`[Analysis] cache hit for ${symbol} (age ${cachedPayload.cacheAgeSec}s)`);
+      return res.json(cachedPayload);
+    }
+
+    console.log(`[Analysis] Fetching data for ${symbol}...`);
+
+    // Fetch quote, history, and company profile in parallel
+    const [quoteResult, historyResult, profileResult] = await Promise.allSettled([
+      getQuote(symbol),
+      getHistory(symbol, range),
+      getCompanyProfile(symbol)
+    ]);
+
+    const quote = quoteResult.status === 'fulfilled' ? quoteResult.value : null;
+    const history = historyResult.status === 'fulfilled' ? historyResult.value : [];
+    const companyProfile = profileResult.status === 'fulfilled' ? profileResult.value : null;
+
+    if (!quote && history.length === 0) {
+      return res.status(404).json({ error: '无法获取该股票的数据，请检查代码是否正确' });
+    }
+
+    console.log(`[Analysis] Quote: ${quote ? 'OK' : 'N/A'}, History: ${history.length} bars, Profile: ${companyProfile ? 'OK' : 'N/A'}`);
+
+    // Technical analysis
+    const technical = technicalAnalysis(history);
+
+    // Classify company type for differentiated fundamental analysis
+    const companyType = quote ? classifyCompanyType(symbol, name || quote?.name, quote, { income: [], balance: [], cashflow: [] }, null, []) : null;
+    console.log(`[Analysis] Company type: ${companyType?.typeName || 'N/A'} (${companyType?.type || 'N/A'})`);
+
+    // Market overview
+    const info = detectMarket(symbol);
+
+    // 关键财务指标对标：历史百分位 + 行业均值（先算，作为全站统一的「行业均值」基准）
+    // 20260909d：基本面评分需以行业均值为基准，故必须先算 comparison，再算 fundamental（单一数据源）。
+    let comparison = null;
+    if (quote && info.market === 'CN') {
+      try {
+        comparison = await buildFundamentalComparison(symbol, quote);
+      } catch (e) {
+        console.error('[Analysis] fundamental comparison failed:', e.message);
+      }
+    }
+    const industryAvgForScore = (comparison && comparison.industryAvg) ? comparison.industryAvg : null;
+
+    // Fundamental analysis (with company type differentiation)
+    const fundamental = quote ? fundamentalAnalysis(quote, companyType, { industryAvg: industryAvgForScore }) : { error: 'No fundamental data' };
+
+    // 利好/利空 信号标记：统一复用 comparison.industryAvg 作为「行业均值」基准，
+    // 确保概览信号卡与基本面卡的「行业均值」数值完全一致（单一数据源，杜绝两套基准）。
+    const industryAvg = (comparison && comparison.industryAvg) ? comparison.industryAvg : null;
+    const signals = quote ? evaluateSignals(quote.fundamentals, companyType, industryAvg, { percentiles: (comparison && comparison.percentiles) || null }) : { signals: [], compareBasis: '行业均值' };
+
+    // ─── 20261029a：营运利润（全个股）+ NBV（保险股专属）取数 ───
+    // 营运利润：zyzbHistory 无 OPERATE_PROFIT（实测核实），走 F10 利润表 lrbAjaxNew 轻量请求
+    //（20261102a 起为 4 期：最新报告期 + 去年同期 + 最新上期 + 去年上期，供单季差分）；失败如实降级 null（整行不渲染）。
+    let opProfit = null;
+    let insuranceNBV = null;
+    if (quote && info.market === 'CN') {
+      try {
+        const rd = String((quote.fundamentals && quote.fundamentals.reportDate) || '').slice(0, 10);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(rd)) {
+          const prevRd = (parseInt(rd.slice(0, 4), 10) - 1) + rd.slice(4);
+          // 20261102a（用户指令：指标优先最新单季口径）：单季 = 本期累计 − 上期累计（Q1 报告期单季=累计，无需上期），
+          // 追加「最新上期 + 去年上期」两期供差分；上期按报告期映射，Q1（03-31）不传。
+          const prevMap = { '12-31': '-09-30', '09-30': '-06-30', '06-30': '-03-31' };
+          const mmdd = rd.slice(5); // 'YYYY-MM-DD' → slice(5) 取 'MM-DD'（slice(4) 会带前导横杠导致映射失败）
+          const opDates = [
+            rd,
+            prevRd,
+            prevMap[mmdd] ? (rd.slice(0, 4) + prevMap[mmdd]) : null,
+            prevMap[mmdd] ? ((parseInt(rd.slice(0, 4), 10) - 1) + prevMap[mmdd]) : null,
+          ].filter(Boolean);
+          const emCode = `${info.exchange}${info.tencentCode.replace(/^(sh|sz)/, '')}`;
+          opProfit = await fetchOpProfitSnippet(emCode, opDates);
+        }
+      } catch (e) {
+        console.error('[Analysis] opProfit snippet failed:', e.message);
+      }
+      try {
+        if (isInsuranceCompany(symbol, quote.name || name || '', quote)) {
+          insuranceNBV = latestNbvSnapshot(symbol);
+        }
+      } catch (e) {
+        console.error('[Analysis] NBV snapshot failed:', e.message);
+      }
+    }
+
+    const result = {
+      symbol,
+      name: quote?.name || name || symbol,
+      market: info.market,
+      exchange: info.exchange,
+      quote,
+      history,
+      technical,
+      fundamental,
+      signals,
+      comparison,
+      // 20260919a：指标分析——对左侧「关键财务指标」做确定性五维对比 + 判定依据（替代原分析师评级）
+      // 20261029a：追加 opProfit / insuranceNBV 两个新增指标的数据入参
+      metricAnalysis: quote ? buildMetricAnalysis(quote, comparison, companyType, signals.signals, fundamental, opProfit, insuranceNBV) : null,
+      opProfit,
+      insuranceNBV,
+      companyType: companyType ? { type: companyType.type, typeName: companyType.typeName, typeIcon: companyType.typeIcon, description: companyType.description, focusText: companyType.focusText } : null,
+      companyProfile,
+      timestamp: new Date().toISOString()
+    };
+
+    analysisWarm.setCached(symbol, range, result);   // 20261027d：成功响应写入预热缓存（失败响应不缓存）
+    res.json(result);
+  } catch (err) {
+    console.error('Analysis error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 个股量化策略虚拟盘风控校验（POST：接收 DSL / 区间 / 标的，返回结构化校验 JSON）
+app.post('/api/backtest-validate', async (req, res) => {
+  try {
+    const body = req.body || {};
+    if (!body.symbol && !(body.dsl && (body.dsl.symbols || (body.dsl.symbol)))) {
+      return res.status(400).json({ error: '缺少标的 symbol 或 DSL.symbols' });
+    }
+    const result = await validateStrategy({
+      symbol: body.symbol,
+      name: body.name,
+      dsl: body.dsl
+    });
+    res.json({ success: true, ...result });
+  } catch (err) {
+    console.error('Backtest validate error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 自动策略生成（POST：仅需标的 + 区间，无需用户 DSL；代码确定性生成并校验）
+app.post('/api/auto-strategy', async (req, res) => {
+  try {
+    const body = req.body || {};
+    if (!body.symbol) return res.status(400).json({ error: '缺少标的 symbol' });
+    const result = await generateStrategies({
+      symbol: body.symbol,
+      name: body.name,
+      range: body.range || '3y',
+      skipLLM: !!body.skipLLM
+    });
+    res.json(result);
+  } catch (err) {
+    console.error('Auto strategy error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 股东分析（issue5）：股东户数走势 + 机构持仓变化 + 十大股东 + 基金持股
+app.get('/api/shareholders/:symbol', async (req, res) => {
+  try {
+    const symbol = req.params.symbol;
+    console.log(`[Shareholders] Fetching for ${symbol}...`);
+    const data = await getShareholdersData(symbol);
+    res.json(data);
+  } catch (err) {
+    console.error('Shareholders error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 公司概况（issue6）：主要产品 / 主要客户 / 企业性质
+app.get('/api/company-profile/:symbol', async (req, res) => {
+  try {
+    const symbol = req.params.symbol;
+    console.log(`[CompanyProfile] Fetching for ${symbol}...`);
+    const data = await getCompanyProfile(symbol);
+    res.json(data);
+  } catch (err) {
+    console.error('CompanyProfile error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 首页实时大盘概览（issue：大盘指数 / 美国股指 / 热门板块）
+app.get('/api/market-overview', async (req, res) => {
+  try {
+    const data = await getMarketOverview();
+    // 按日记录行业板块涨跌幅前五（供近一周滚动统计）
+    if (Array.isArray(data.sectorsUp) || Array.isArray(data.sectorsDown)) {
+      recordDailyRanking(data.sectorsUp, data.sectorsDown);
+      // 首次启用或数据不足时，用当前板块数据回填近 SEED_DAYS 天的种子，
+      // 让"出现次数"立即可见；明天起真实数据逐日覆盖种子。
+      backfillSeed(data.sectorsUp, data.sectorsDown);
+    }
+    res.json({ success: true, ...data });
+  } catch (err) {
+    console.error('[MarketOverview] error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 首页·大盘估值趋势：上证50 / 沪深300 / 科创50 近5年PE(TTM)趋势
+app.get('/api/index-pe-trend', async (req, res) => {
+  try {
+    const force = req.query.refresh === '1' || req.query.force === '1';
+    const result = await getIndexPETrend({ force });
+    res.json(result);
+  } catch (err) {
+    console.error('[IndexPETrend] route error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 首页·大盘技术分析：上证/深证/创业板指 收盘后七步技术面推演（融合版：趋势/量价/指标/周期/短线/外部/综合决策）
+app.get('/api/market-technical', async (req, res) => {
+  try {
+    const force = req.query.refresh === '1' || req.query.force === '1';
+    const result = await getMarketTechnical({ force });
+    // 20260914i：落盘当日方向判断（短期=次日 / 中期=20交易日），供准确率检查事后结算。
+    // 成交后（marketClosed）才落盘，避免盘中把「未定方向」当成收盘判断记入。
+    try {
+      if (marketClosed(new Date())) marketTechJudgment.recordDailyJudgment(result);
+    } catch (e) { console.error('[MarketTechnical] 落盘判断失败:', e && e.message); }
+    res.json(result);
+  } catch (err) {
+    console.error('[MarketTechnical] route error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 20260914i：大盘技术分析 · 准确率检查（逐条记录 / 统计 / 手动结算）
+app.get('/api/market-tech/records', async (req, res) => {
+  try {
+    if (req.query.settle === '1') await marketTechJudgment.settleAll();
+    // 20261021c：读取即结算（3 分钟节流）。此前该接口只读不算，用户看到的「待验证/过期未结算」
+    // 必须点进「准确率核对」再手动结算才会推进，观感上就是「老是结算不了」。
+    else await marketTechJudgment.settleIfDue();
+    const records = marketTechJudgment.getAllRecords();
+    const accuracy = marketTechJudgment.computeAccuracy(records);
+    res.json({ success: true, accuracy, records: records.slice().reverse() });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+app.post('/api/market-tech/settle', async (req, res) => {
+  try {
+    const r = await marketTechJudgment.settleAll();
+    res.json({ success: true, ...r });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 首页·行业板块拥挤度（当日/本周/本月 前五）：板块成交额 ÷ 全市场成交额 × 100%
+app.get('/api/sector-crowding', async (req, res) => {
+  try {
+    const refresh = req.query.refresh === '1';
+    const mo = await getMarketOverview();
+    // 落盘当日拥挤度（20260909n：交易日感知——上证日K最新日期==今天才落盘；
+    // 节假日/盘前的陈旧板块数据不再被误标为「今天」污染周月统计。数据源 date 字段=抓取时刻，非真实数据日期）
+    if (Array.isArray(mo.sectorAll) && (await _canRecordToday(mo.sectorAll))) {
+      recordSectorCrowding(mo.sectorAll, mo.sectorDate);
+    }
+    // 历史回填：刷新时同步拉取（前端有 loading 提示）；首跑 store 空时后台静默补，不阻塞首页
+    const should = refresh || sectorCrowdingNeedsBackfill();
+    if (should) {
+      const run = () => backfillSectorCrowding(21, findPython())
+        .then(r => console.log('[SectorCrowding] backfill done:', JSON.stringify(r)))
+        .catch(e => console.error('[SectorCrowding] backfill failed:', e.message));
+      if (refresh) await run(); else run();
+    }
+    const result = getSectorCrowding(mo.sectorAll, mo.sectorDate);
+    res.json({ success: true, ...result, backfilled: Boolean(refresh && should) });
+  } catch (err) {
+    console.error('[SectorCrowding] error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 首页·行业板块资金流向（主力净流入/流出前五 + 近5日最大流入/流出板块）
+app.get('/api/sector-capital-flow', async (req, res) => {
+  try {
+    const refresh = req.query.refresh === '1';
+    const data = await getSectorCapitalFlow(refresh);
+    res.json({ success: data.ok !== false, ...data });
+  } catch (err) {
+    console.error('[SectorCapitalFlow] route error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 市场情绪因子原始数据（量化广度 + 杠杆情绪 + 文本舆情；供调试与透明展示）
+app.get('/api/sentiment/:symbol', async (req, res) => {
+  try {
+    const symbol = req.params.symbol;
+    const name = req.query.name || '';
+    const data = await getMarketSentiment(symbol, name);
+    res.json({ success: true, ...data });
+  } catch (err) {
+    console.error('[Sentiment] error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 行业板块走势原始数据（个股所属行业板块整体涨跌；供调试与透明展示）
+app.get('/api/sector-trend/:symbol', async (req, res) => {
+  try {
+    const symbol = req.params.symbol;
+    const name = req.query.name || '';
+    const industry = req.query.industry || '';
+    const data = await getSectorTrend(symbol, name, industry);
+    res.json({ success: true, ...data });
+  } catch (err) {
+    console.error('[SectorTrend] error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 基金行业配置名单（全市场权益类基金 · 前十大重仓股 · 按持仓市值加总排名）
+// 数据源：东方财富公开接口（基金列表 + 各基金最新报告期前十大重仓股 + 个股行业）
+// 说明：全量约 1 万只母基金，首次采集需十几分钟 → 后台增量采集 + 磁盘缓存（按季度）
+app.get('/api/fund-industry-matrix', async (req, res) => {
+  try {
+    const minFunds = Math.max(0, parseInt(req.query.minFunds || '0', 10) || 0);
+    const data = fundMatrix.getFundIndustryRanking({ minFunds });
+    // 首次访问且尚无缓存 → 自动启动后台采集（不阻塞本次响应）
+    if (data.coverage.covered === 0 && !data.progress.running) {
+      fundMatrix.startCrawl({}).catch(() => {});
+    }
+    res.json({ success: true, ...data });
+  } catch (err) {
+    console.error('[FundMatrix] error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 触发/继续/重建基金持仓采集（force=1 全量重采）
+app.post('/api/fund-industry-matrix/crawl', async (req, res) => {
+  try {
+    const force = req.query.force === '1' || (req.body && req.body.force === true);
+    const r = await fundMatrix.startCrawl({ force });
+    res.json({ success: true, ...r });
+  } catch (err) {
+    console.error('[FundMatrix] crawl error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 采集进度（供前端轮询）
+app.get('/api/fund-industry-matrix/progress', (req, res) => {
+  res.json({ success: true, ...fundMatrix.getCrawlStatus(), quarter: fundMatrix.getQuarterStatus() });
+});
+
+// 自然季度更新状态（目标报告期 / 是否已披露 / 是否已完成 / 上次与下次检查时间）
+app.get('/api/fund-industry-matrix/quarter', (req, res) => {
+  res.json({ success: true, ...fundMatrix.getQuarterStatus() });
+});
+
+// 板块涨跌停占比原始数据（板块内涨停/跌停家数占比；供调试与透明展示）
+app.get('/api/sector-limit/:symbol', async (req, res) => {
+  try {
+    const symbol = req.params.symbol;
+    const name = req.query.name || '';
+    const industry = req.query.industry || '';
+    const data = await getSectorLimitStats(symbol, name, industry);
+    res.json({ success: true, ...data });
+  } catch (err) {
+    console.error('[SectorLimit] error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ---- 全市场情绪（20260917d：升级为「大盘量能情绪分析模型」）----
+// 首页全局预警条用：全市场级，不依赖个股。9 因子确定性计算，无 LLM。
+function readMsiHeat() {
+  try {
+    const series = MSI.readSeries();
+    for (let i = series.length - 1; i >= 0; i--) {
+      const c = (series[i].components || []).find(x => x.key === 'marketHeat');
+      if (c && typeof c.signal === 'number') {
+        // 20260917f：连同 value/detail（数据源、样本数、更新时间、看多占比）一起带出，
+        // 并在找不到「今日」热度时如实返回其真实日期，由模型侧判定时效（不再静默当成今天）。
+        return { marketHeat: c.signal, date: series[i].date, value: c.value || '', detail: c.detail || '' };
+      }
+    }
+  } catch (e) {}
+  return null;
+}
+
+async function buildHomeMarketEmotion(refresh) {
+  const data = await getMarketEmotionData({ refresh });
+  // 股吧讨论热度：优先取 MSI 序列（收盘后由 runAutoReview 落盘，免请求路径上再跑 60s 抓取）
+  let heat = readMsiHeat();
+  if (!heat) {
+    try {
+      const sent = await getMarketSentiment('601318', '中国平安');
+      const ms = sent && sent.marketSentiment;
+      if (ms && ms.ok && typeof ms.marketHeat === 'number') {
+        const rd = (x) => Math.round(x * 100) / 100;
+        heat = {
+          marketHeat: ms.marketHeat,
+          date: data.date,
+          value: `热度 ${rd(ms.marketHeat)}`,
+          detail: `讨论综合得分 ${ms.marketAvgScore != null ? ms.marketAvgScore : '—'}、看多占比 ${ms.marketUpRatio != null ? Math.round(ms.marketUpRatio * 100) + '%' : '—'}（数据源：${ms.coverage || '东财股吧'}${typeof ms.sampleCount === 'number' ? `，样本 ${ms.sampleCount} 只` : ''}${ms.updatedAt ? `，更新于 ${ms.updatedAt}` : ''}；⚠️ MSI 序列缺失，本条以「中国平安」单股股吧代理全市场讨论热度，口径偏保守，仅作降级参考）`,
+        };
+      }
+    } catch (e) { /* best-effort */ }
+  }
+  if (heat) data.discussionHeat = heat;
+  // 宽基 ETF 申购赎回（20261022h）：独立异步，超时/失败只让该因子降级，不拖垮情绪模型
+  let etfFlowRes = null;
+  try {
+    etfFlowRes = await Promise.race([
+      etfFlow.getEtfFlow({ refresh: !!refresh }),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('宽基 ETF 申赎取数超时 20s')), 20000)),
+    ]);
+    if (etfFlowRes && etfFlowRes.factor) {
+      data.etfFlow = Object.assign({}, etfFlowRes.factor, { date: etfFlowRes.date });
+    }
+  } catch (e) {
+    console.error('[MarketEmotion] 宽基 ETF 申赎取数失败:', e && e.message);
+    // [20261103g] 节假日/取数兜底：回读最近一次成功数据并如实标注兜底日期（用户指令：节假日只读取最后一次更新的数据）
+    const last = etfFlow.getLastSuccessfulFactor();
+    if (last && last.factor) {
+      data.etfFlow = Object.assign({}, last.factor, { date: last.date, fallback: true, reason: `实时取数失败（${e && e.message ? e.message : e}），显示最近一次成功数据（${last.date}）` });
+    } else {
+      data.etfFlow = { score: 0, degraded: true, reason: `宽基 ETF 申赎取数失败：${e && e.message ? e.message : e}` };
+    }
+  }
+  let macro = [];
+  try {
+    const shHistory = ((data.index && data.index.bars) || []).map(b => ({ date: b.date, close: b.close }));
+    macro = await computeMacroFactors({ shHistory });
+  } catch (e) { console.error('[MarketEmotion] 宏观因子计算失败:', e && e.message); }
+  return marketEmotionModel.computeMarketEmotion({ data, macroFactors: macro });
+}
+
+/**
+ * 宽基 ETF 申购赎回明细（20261022h）—— 首页情绪面板「ETF 申赎」页签数据源。
+ * 与情绪模型的因子同源（lib/etfFlow 内有 3 分钟内存 memo + in-flight 去重），
+ * 因此面板刷新与页签展开不会重复打上交所接口。
+ */
+app.get('/api/etf-flow', async (req, res) => {
+  try {
+    const refresh = req.query.refresh === '1' || req.query.force === '1';
+    const r = await etfFlow.getEtfFlow({ refresh });
+    res.json({
+      ok: !!r.ok,
+      date: r.date || null,
+      baseDate: r.baseDate || null,
+      settled: r.settled != null ? r.settled : null,
+      baselineOnly: !!r.baselineOnly,
+      reason: r.reason || null,
+      factor: r.factor || null,
+      gaps: r.gaps || [],
+      fromMemo: !!r.fromMemo,
+      summary: r.detail ? {
+        totalNet: r.detail.totalNet,
+        pricedCount: r.detail.pricedCount,
+        ledgerDays: r.detail.ledgerDays,
+        ledgerDate: r.detail.ledgerDate,
+        groups: r.detail.groups || [],
+        etfCount: (r.detail.etfs || []).length,
+        stockCount: (r.detail.stocks || []).length,
+      } : null,
+      etfs: (r.detail && r.detail.etfs) || [],
+      stocks: (r.detail && r.detail.stocks) || [],
+    });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e && e.message ? e.message : String(e) });
+  }
+});
+
+// 20261027a：某只成分股「当月逐日」被宽基 ETF 申购/赎回/净申赎（点击累计表股票名触发）
+app.get('/api/etf-flow/stock-monthly', (req, res) => {
+  try {
+    const code = String(req.query.code || '').trim();
+    const month = String(req.query.month || '').trim();
+    if (!code) return res.status(400).json({ ok: false, error: '缺少股票代码' });
+    const r = etfFlow.stockMonthlyFlow(code, month);
+    if (!r.ok) return res.status(400).json({ ok: false, error: r.error });
+    res.json(r);
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e && e.message ? e.message : String(e) });
+  }
+});
+
+// 20261028a：全部宽基 ETF「持仓比例 vs 现金比例」日度趋势（折线图数据源，云端任务本地重做）
+app.get('/api/etf-flow/cash-trend', (req, res) => {
+  try {
+    const r = etfFlow.cashPositionTrend();
+    if (!r.ok) return res.status(503).json({ ok: false, error: r.note || '暂无快照数据' });
+    res.json(r);
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e && e.message ? e.message : String(e) });
+  }
+});
+
+app.get('/api/sentiment-turning-point', async (req, res) => {
+  try {
+    const force = req.query.refresh === '1' || req.query.force === '1';
+    const emo = await buildHomeMarketEmotion(force);
+    // 20260914i 兼容：把新模型的「短期倾向」留档到既有准确率台账（口径=次日上证涨跌，容差 ±0.5%）
+    let accuracy = null;
+    try {
+      const abs = Math.abs(emo.totalScore);
+      const level = abs >= 0.5 ? '强烈预警' : abs >= 0.2 ? '预警' : '关注';
+      sentimentAccuracy.recordDailyJudgment({
+        level,
+        impliedDir: emo.tendency,
+        zScore: emo.totalScore,
+        extremeZ: null,
+        reasons: [{ text: `情绪总分 ${emo.totalScore}，${emo.coreDriver}；${emo.volumeState}` }],
+      }, { baseDate: emo.baselineDate });
+      accuracy = sentimentAccuracy.computeAccuracy();
+    } catch (e) { /* best-effort */ }
+    res.json({ success: true, ...emo, accuracy });
+  } catch (err) {
+    console.error('[MarketEmotion] error:', err && err.stack ? err.stack : err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 个股页情绪拐点面板用：额外给出该股对全市场情绪的敏感度（beta）
+app.get('/api/sentiment-turning-point/:symbol', async (req, res) => {
+  try {
+    const symbol = req.params.symbol;
+    const name = req.query.name || '';
+    const force = req.query.refresh === '1' || req.query.force === '1';
+    const state = await getTurningPointState({ symbol, name, refresh: force });
+    res.json({ success: true, ...state });
+  } catch (err) {
+    console.error('[SentimentTP] error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 调试/图表用：当前实时指数 + 时间序列（含近似回填）
+app.get('/api/sentiment-index', async (req, res) => {
+  try {
+    const live = await MSI.computeIndex({});
+    const { real, full, backfilled } = MSI.getSeries({ allowBackfill: true });
+    res.json({ success: true, live, real, full, backfilled });
+  } catch (err) {
+    console.error('[SentimentIndex] error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ---- 自选股：服务端持久化（真源移出浏览器 localStorage，避免更新/重启周期中偶发丢失）----
+const WATCHLIST_FILE = path.join(__dirname, 'data', 'watchlist.json');
+
+function readWatchlistFile() {
+  try {
+    if (!fs.existsSync(WATCHLIST_FILE)) return [];
+    const raw = fs.readFileSync(WATCHLIST_FILE, 'utf8');
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch { return []; }
+}
+
+function writeWatchlistFile(list) {
+  try {
+    fs.mkdirSync(path.dirname(WATCHLIST_FILE), { recursive: true });
+    fs.writeFileSync(WATCHLIST_FILE, JSON.stringify(list, null, 2), 'utf8');
+    return true;
+  } catch (e) {
+    console.error('[Watchlist] write failed:', e.message);
+    return false;
+  }
+}
+
+app.get('/api/watchlist', (req, res) => {
+  res.json({ success: true, list: readWatchlistFile() });
+});
+
+// ---- 20261103e：跨板块数据一致性巡检 API ----
+// GET /api/consistency-audit                     → 当日报告（无则 404 附历史日期列表）
+// GET /api/consistency-audit?date=YYYY-MM-DD     → 指定日报告
+// GET /api/consistency-audit?symbol=603288       → 当日报告中该股结果
+// GET /api/consistency-audit?force=1             → 立即重跑巡检并返回（自选股全量）
+app.get('/api/consistency-audit', async (req, res) => {
+  try {
+    const consistencyAudit = require('./lib/consistencyAudit');
+    if (req.query.force === '1') {
+      const report = await runConsistencyAuditDaily();
+      const sym = req.query.symbol;
+      return res.json(sym ? { ...report, results: report.results.filter(r => r.symbol === sym) } : report);
+    }
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(req.query.date || '') ? req.query.date : localDate();
+    const report = consistencyAudit.loadAuditReport(date);
+    if (!report) {
+      return res.status(404).json({ error: `${date} 尚无巡检报告（每日收盘后自动生成，或用 ?force=1 立即执行）`, dates: consistencyAudit.listAuditReports() });
+    }
+    const sym = req.query.symbol;
+    res.json(sym ? { ...report, results: report.results.filter(r => r.symbol === sym) } : report);
+  } catch (e) {
+    res.status(500).json({ error: (e && e.message) || '巡检执行失败' });
+  }
+});
+
+app.put('/api/watchlist', (req, res) => {
+  try {
+    const body = req.body || {};
+    const incoming = Array.isArray(body) ? body : (Array.isArray(body.list) ? body.list : null);
+    if (!incoming) return res.status(400).json({ success: false, error: 'body.list 必须是数组' });
+    // 仅保留含合法 symbol 的项，并按 symbol 去重
+    const seen = new Set();
+    const clean = [];
+    for (const it of incoming) {
+      if (it && typeof it.symbol === 'string' && it.symbol && !seen.has(it.symbol)) {
+        seen.add(it.symbol);
+        clean.push({
+          symbol: it.symbol,
+          name: typeof it.name === 'string' ? it.name : '',
+          market: typeof it.market === 'string' ? it.market : '',
+          addedAt: typeof it.addedAt === 'number' ? it.addedAt : Date.now(),
+        });
+      }
+    }
+    if (!writeWatchlistFile(clean)) return res.status(500).json({ success: false, error: '写入失败' });
+    res.json({ success: true, list: clean });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 20260906 路由拆分：AI 联网 / 妙想 / 行业指数 / 产品图片等 35 条路由移至 routes/aiRoutes.js
+app.use(aiRoutes);
+// 20260907a：三联动·事件驱动路由（活跃事件 / 扫描 / 配置 / 暂停 / 改分级 / 重算）
+app.use(eventRoutes);
+app.use(dedicatedFactorRoutes); // 20260911：专属因子路由
+app.use(moduleSyncRoutes); // 20261024h：模块联动应答机制（依赖图 / 同步信号 / 手动触发）
+
+// 个股市值历史走势（亿元，日频），供行业分析页叠加当前股票市值双坐标轴
+// 复用 lib/eastmoneyValuation.fetchValuationTTM 的日频序列（TOTAL_MARKET_CAP），保证与估值模块同源（规则一）
+app.get('/api/stock-market-cap-history/:symbol', async (req, res) => {
+  try {
+    const symbol = String(req.params.symbol || '').trim();
+    if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL' });
+    const val = await fetchValuationTTM(symbol);
+    // 20260911：优先用「全量日频序列」dailyAll（不过滤 PE 正负）。此前用 daily 时，PE_TTM 为负的
+    // 亏损股（如 688660 电气风电，2023-02-27 起 PE 转负）整段被 pe>0 过滤掉 → 市值线缺失；
+    // dailyAll 保留全部交易日。兼容旧缓存对象（无 dailyAll）时回退到 daily。
+    const src = (val && Array.isArray(val.dailyAll) && val.dailyAll.length) ? val.dailyAll
+      : (val && Array.isArray(val.daily) ? val.daily : null);
+    if (!src || src.length === 0) {
+      return res.json({ success: false, error: '无市值历史数据', source: '东方财富TTM', fetchedAt: new Date().toISOString() });
+    }
+    const data = src
+      .filter(d => d.date && d.marketCap > 0)
+      .map(d => ({ date: d.date, marketCap: d.marketCap }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+    if (data.length === 0) {
+      return res.json({ success: false, error: '无市值历史数据', source: '东方财富TTM', fetchedAt: new Date().toISOString() });
+    }
+    // 20260911：新鲜度闸门（数据最新性铁律）——序列末日距今天过久时不再返回，
+    // 避免前端把「最后一次已知市值」一路平移到最新K线上画出误导性直线。
+    const lastDate = data[data.length - 1].date;
+    const lagDays = Math.floor((Date.now() - new Date(lastDate + 'T00:00:00+08:00').getTime()) / 86400000);
+    if (!isFinite(lagDays) || lagDays > 20) {
+      return res.json({
+        success: false,
+        symbol,
+        error: 'MARKETCAP_STALE',
+        staleDate: lastDate,
+        lagDays,
+        message: `个股市值历史数据已过期（截至 ${lastDate}，滞后 ${lagDays} 天），已跳过市值线绘制`,
+        source: '东方财富TTM',
+        fetchedAt: new Date().toISOString(),
+      });
+    }
+    res.json({
+      success: true,
+      symbol,
+      data,
+      unit: '亿元',
+      source: '东方财富TTM',
+      date: lastDate,
+      fetchedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error('[StockMarketCapHistory] error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ---------- 个股近期热点（20260827c 重构：AI 联网，按涨跌幅切异动归因/网络热议） ----------
+app.get('/api/hot-topics/:symbol', async (req, res) => {
+  try {
+    const symbol = String(req.params.symbol || '').trim();
+    const name = (req.query && req.query.name) || '';
+    const force = !!(req.query && req.query.refresh);
+    if (!symbol) return res.status(400).json({ ok: false, error: 'NO_SYMBOL' });
+    const state = await hotTopics.getState(symbol, name, force);
+    res.json(state);
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+
+// Deep analysis (product company analysis - 26 sections)// ---- Deep Analysis 磁盘缓存（避免每次重新抓取/分析）----
+function getAnalysisCachePath(symbol) {
+  return path.join(__dirname, 'data', 'cache', 'deep-analysis', `${symbol}.json`);
+}
+
+function isAnalysisCacheValid(obj) {
+  if (!obj || !obj.sections) return false;
+  const sec = obj.sections;
+  // 核心财务数据为空 = 抓取/分析失败，不应复用缓存（否则图表空白长期冻结）
+  if (!Array.isArray(sec.revenueCostData) || sec.revenueCostData.length === 0) return false;
+  if (!Array.isArray(sec.marketCapData) || sec.marketCapData.length === 0) return false;
+  return true;
+}
+
+// ---- 估值模型版本哈希（20261016b 审计 G5）----
+// 问题：深度分析磁盘缓存此前只按 APP_VERSION 门控。若只改了估值模型逻辑（评级阈值、方法增删、
+// 专属模型口径）而忘了升 APP_VERSION，旧估值结论会被缓存长期复用，用户看到的是过期结论。
+// 方案：对估值链路相关文件内容做 FNV-1a 哈希并参与门控——任一估值文件变动即自动失效重算，
+// 不依赖人工记得升版本号。文件缺失/读取失败降级计入哈希，绝不阻断服务。
+const VALUATION_MODEL_FILES = [
+  'lib/ai/valuation.js', 'lib/ai/cache.js', 'lib/valuationHub.js',
+  'lib/deep/conclusion.js', 'lib/insuranceAnalysis.js', 'lib/analysis.js',
+];
+function computeValuationModelHash() {
+  const files = VALUATION_MODEL_FILES.slice();
+  try {
+    // 专属估值模型目录：新增/修改任一模型自动纳入
+    const dir = path.join(__dirname, 'lib', 'valuation');
+    for (const f of fs.readdirSync(dir)) {
+      if (f.endsWith('.js')) files.push('lib/valuation/' + f);
+    }
+  } catch (e) {
+    // 不静默吞错：目录读不到说明专属估值模型缺失，属异常情况，必须留痕
+    console.warn('[估值哈希] 读取 lib/valuation 目录失败，该目录未纳入哈希：', e.message);
+  }
+  let h = 0x811c9dc5;
+  const feed = (s) => {
+    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  };
+  for (const rel of files.sort()) {
+    try {
+      feed(rel);
+      feed(fs.readFileSync(path.join(__dirname, rel), 'utf8'));
+    } catch (e) {
+      feed(rel + ':UNREADABLE');
+    }
+  }
+  return 'vmh' + h.toString(16);
+}
+const VALUATION_MODEL_HASH = computeValuationModelHash();
+
+function readAnalysisCache(symbol) {
+  try {
+    const p = getAnalysisCachePath(symbol);
+    if (fs.existsSync(p)) {
+      const obj = JSON.parse(fs.readFileSync(p, 'utf8'));
+      // 版本门控：缓存由旧版本代码写入（无 appVersion 或版本不符）时视为失效，
+      // 强制按新版本重新生成，避免升级后用户仍看到旧结构（如缺失新增字段）。
+      // 估值模型哈希门控（G5）：估值链路任一文件变动即失效，防止「改了模型但没升版本号」导致旧估值结论被复用。
+      if (obj && obj.appVersion === APP_VERSION
+        && obj.valuationModelHash === VALUATION_MODEL_HASH
+        && isAnalysisCacheValid(obj)) return obj;
+      const why = (!obj || obj.appVersion !== APP_VERSION) ? 'version mismatch'
+        : obj.valuationModelHash !== VALUATION_MODEL_HASH ? 'valuation model changed' : 'empty core data';
+      console.log(`[Cache] invalidating ${symbol} (${why})`);
+    }
+  } catch (e) {
+    console.error('[Cache] read failed:', e.message);
+  }
+  return null;
+}
+
+function writeAnalysisCache(symbol, result) {
+  try {
+    if (!isAnalysisCacheValid(result)) {
+      console.log(`[Cache] skip writing invalid cache for ${symbol}: core sections empty`);
+      return;
+    }
+    const dir = path.join(__dirname, 'data', 'cache', 'deep-analysis');
+    fs.mkdirSync(dir, { recursive: true });
+    result.appVersion = APP_VERSION;
+    // 20261016b（审计 G5）：随缓存写入估值模型哈希，供 readAnalysisCache 门控比对
+    result.valuationModelHash = VALUATION_MODEL_HASH;
+    fs.writeFileSync(getAnalysisCachePath(symbol), JSON.stringify(result), 'utf8');
+  } catch (e) {
+    console.error('[Cache] write failed:', e.message);
+  }
+}
+
+// 三规则铺开：行情模块「数据一致性 / 数据最新性 / 变化与边际分析」合规数据
+app.get('/api/quote-rules/:symbol', async (req, res) => {
+  try {
+    const { getQuoteHub, beginSnapshot } = require('./lib/quoteHub');
+    const hub = await getQuoteHub(req.params.symbol);
+    if (!hub || !hub.ok) {
+      return res.json({ success: false, error: (hub && hub.error) || '未获取到行情数据', note: (hub && hub.note) || '' });
+    }
+    // 规则一③：返回即冻结快照，保证本次响应内数据一致
+    res.json({ success: true, ...beginSnapshot(hub) });
+  } catch (err) {
+    console.error('[QuoteRules] error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 三规则样板：估值模块「数据一致性 / 数据最新性 / 变化与边际分析」合规数据
+// 轻量端点，便于快速核验规则落地情况（不必等待整套深度分析）
+app.get('/api/valuation-rules/:symbol', async (req, res) => {
+  try {
+    const { getValuationHub, beginSnapshot } = require('./lib/valuationHub');
+    const hub = await getValuationHub(req.params.symbol);
+    if (!hub || !hub.ok) {
+      return res.json({ success: false, error: (hub && hub.error) || '未获取到估值数据', note: (hub && hub.note) || '' });
+    }
+    // 规则一③：返回即冻结快照，保证本次响应内数据一致
+    res.json({ success: true, ...beginSnapshot(hub) });
+  } catch (err) {
+    console.error('[ValuationRules] error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ---------------- 本地数据库（SQLite）查询接口 ----------------
+// 健康检查：库状态 + 各表行数
+app.get('/api/db/health', (req, res) => {
+  try {
+    res.json({ success: true, ...db.getDbInfo() });
+  } catch (e) {
+    res.json({ success: false, error: e.message });
+  }
+});
+
+// 分红时序（近 N 年每次派息）：直接读本地 SQLite，含 变化率 + 边际变化（规则三）。
+// 若本地为空则先按当前代码补抓一次（仅当请求带 refresh=1 或库为空时），否则纯读库不联网。
+app.get('/api/db/dividend-series/:symbol', async (req, res) => {
+  try {
+    const symbol = normalizeSymbol(req.params.symbol);
+    if (!symbol) return res.json({ success: false, error: 'invalid symbol' });
+    const existing = db.getSeries(symbol, 'dividend_per_share');
+    // 库为空且明确要求刷新时，按单一权威源补抓一次（保持规则一·单源）
+    if ((!existing.length && req.query.refresh !== '0') || req.query.refresh === '1') {
+      try {
+        const rows = await fetchDividends(symbol);
+        persistDividends(symbol, symbol, rows);
+      } catch (e) {
+        console.error('[DB] dividend backfill failed:', e.message);
+      }
+    }
+    const series = loadDividendSeries(symbol);
+    res.json({
+      success: true,
+      symbol,
+      count: series.length,
+      source: series[0]?.source || null,
+      note: '数据来自本地 SQLite（eastmoney:RPT_SHAREBONUS_DET）。changePct=当期变化率；marginal=边际变化（变化的变化）；direction=up/down/flat',
+      series,
+    });
+  } catch (e) {
+    res.json({ success: false, error: e.message });
+  }
+});
+
+// 最近一次分析快照（分析期数据锁定）
+app.get('/api/db/snapshot/:symbol', (req, res) => {
+  try {
+    const symbol = normalizeSymbol(req.params.symbol);
+    const snap = db.getLatestSnapshot(symbol);
+    if (!snap) return res.json({ success: true, symbol, found: false });
+    // payload 可能很大，仅回传概要 + 关键标量，避免接口臃肿
+    const p = snap.payload || {};
+    res.json({
+      success: true,
+      symbol,
+      found: true,
+      snapshotId: snap.snapshot_id,
+      range: snap.range,
+      createdAt: snap.created_at,
+      symbolInPayload: p.symbol,
+      sectionsKeys: p.sections ? Object.keys(p.sections) : [],
+      timestamp: p.timestamp,
+    });
+  } catch (e) {
+    res.json({ success: false, error: e.message });
+  }
+});
+
+// 某股票全部标量数据点（估值/价格等），附 isFresh 新鲜度（规则二 TTL 判定）
+app.get('/api/db/datapoints/:symbol', (req, res) => {
+  try {
+    const symbol = normalizeSymbol(req.params.symbol);
+    const rows = db.getDataPoints(symbol);
+    res.json({
+      success: true,
+      symbol,
+      count: rows.length,
+      note: 'isFresh=true 表示在 TTL 有效期内；false 表示已过期需重拉。value 为数值，value_text 为非数值型。',
+      points: rows.map((r) => ({
+        key: r.key,
+        value: r.value,
+        valueText: r.value_text,
+        asOf: r.as_of,
+        source: r.source,
+        fetchedAt: r.fetched_at,
+        validUntil: r.valid_until,
+        isFresh: r.isFresh,
+        extra: r.extra,
+      })),
+    });
+  } catch (e) {
+    res.json({ success: false, error: e.message });
+  }
+});
+
+// ---------------- 深度分析 ----------------
+// 20261021k 重构为「服务端后台常驻任务」模型（用户诉求：① 切页/断连不中断；② 跑完落盘缓存；③ 前端轮询秒回状态）：
+// - 磁盘缓存命中且非强制刷新 → 立即返回（秒回，不进后台）。
+// - 无缓存 → 启动一个**脱离 HTTP 请求生命周期**的后台任务（detached Promise），客户端断开也不影响；
+//   完成时写磁盘缓存并标记 status=done。同一 symbol 并发/轮询复用同一任务对象，绝不重复计算。
+// - 内部总超时放宽到 280s（财报解读子任务单项即可达 180s，旧 55s 硬超时会让慢分析永远不落盘）。
+// 与旧「在途 Promise 去重」同目标但更彻底：旧版在客户端断开后若 >55s 超时则直接 500 且不写缓存，本版保证跑完必落盘。
+const _deepJobs = new Map(); // symbol -> { status, startedAt, finishedAt, result, error, forceRefresh }
+
+async function _runDeepAnalysisOnce(symbol, name) {
+  // Fetch quote and history in parallel
+  const [quote, history] = await Promise.all([
+    getQuote(symbol),
+    getHistory(symbol, 'daily').catch(() => []),
+  ]);
+  if (!quote) return { __notFound: true };
+  // 内部总超时兜底（仅防外部接口永久挂起；放宽到 280s，远低于 _deepJobs 的 300s 安全网）
+  const result = await Promise.race([
+    deepAnalysis(symbol, name || quote.name, quote, history),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('深度分析超时（外部数据接口响应过慢，请稍后重试）')), 280000)),
+  ]);
+  result.cachedAt = Date.now();
+  result.fromCache = false;
+  return result;
+}
+
+// 把 AI 联网总结的最新版本同步进深度分析缓存结果（与旧路由同逻辑）
+function _attachDeepAICache(symbol, cached) {
+  if (!cached || !cached.sections) return;
+  try { const v = readCache(symbol, '_earnings'); if (v && v.summary) cached.sections.earningsReport = v; } catch {}
+  try { const v = readCache(symbol, '_research'); if (v && v.summary) cached.sections.researchAI = v; } catch {}
+  try { const v = readCache(symbol, '_announcements'); if (v && v.summary) cached.sections.announcementAI = v; } catch {}
+}
+
+// 启动后台任务（detached）：不把 Promise 交回 HTTP 响应，任务在 Node 进程内持续跑，完成时写缓存
+function _startDeepJob(symbol, name, forceRefresh) {
+  const job = { status: 'running', startedAt: Date.now(), finishedAt: null, result: null, error: null, forceRefresh };
+  _deepJobs.set(symbol, job);
+  let settled = false;
+  const timer = setTimeout(() => {
+    if (settled) return;
+    settled = true;
+    job.status = 'error';
+    job.error = '深度分析超时（外部数据接口响应过慢，请稍后重试或点刷新）';
+    job.finishedAt = Date.now();
+  }, 300000); // 5min 安全网
+  _runDeepAnalysisOnce(symbol, name).then((result) => {
+    if (settled) return; // 已被超时兜底接管
+    settled = true; clearTimeout(timer);
+    if (result && result.__notFound) { job.status = 'error'; job.error = '无法获取股票行情数据'; }
+    else { job.result = result; job.status = 'done'; writeAnalysisCache(symbol, result); }
+    job.finishedAt = Date.now();
+  }).catch((e) => {
+    if (settled) return;
+    settled = true; clearTimeout(timer);
+    job.status = 'error'; job.error = (e && e.message) || String(e);
+    job.finishedAt = Date.now();
+  });
+  return job;
+}
+
+// 取/启后台任务：同语义复用；语义不同但正在跑则复用当前的（避免重复跑）；否则启动新任务
+function _getOrStartDeepJob(symbol, name, forceRefresh) {
+  const existing = _deepJobs.get(symbol);
+  if (existing && existing.forceRefresh === forceRefresh) return existing;
+  if (existing && existing.status === 'running') return existing;
+  return _startDeepJob(symbol, name, forceRefresh);
+}
+
+app.get('/api/deep-analysis/:symbol', async (req, res) => {
+  try {
+    const symbol = req.params.symbol;
+    const name = req.query.name || '';
+    const forceRefresh = req.query.refresh === '1' || req.query.refresh === 'true';
+
+    // 标准化为数字股票代码（如 '601318'），用于严格按股票过滤本地资料库
+    let stockCode = symbol;
+    try {
+      const info = detectMarket(symbol);
+      stockCode = info.tencentCode.replace(/^(sh|sz)/, '');
+    } catch (e) { /* 保底使用原始 symbol */ }
+
+    console.log(`[DeepAnalysis] Request for ${symbol} (refresh=${forceRefresh})...`);
+
+    // 1) 命中磁盘缓存且非强制刷新 → 立即返回（秒回，不进后台）
+    if (!forceRefresh) {
+      const cached = readAnalysisCache(symbol);
+      if (cached) {
+        console.log(`[DeepAnalysis] Serving cached result for ${symbol}`);
+        cached.localDocuments = getLocalDocuments(stockCode);
+        _attachDeepAICache(symbol, cached);
+        return res.json({ ...cached, fromCache: true });
+      }
+    }
+
+    // 2) 启动/复用后台任务，立即返回状态（绝不阻塞等待）
+    const job = _getOrStartDeepJob(symbol, name, forceRefresh);
+    if (job.status === 'done' && job.result) {
+      const out = { ...job.result, fromCache: false, background: true };
+      out.localDocuments = getLocalDocuments(stockCode);
+      _attachDeepAICache(symbol, out);
+      return res.json(out);
+    }
+    if (job.status === 'error') {
+      return res.status(500).json({ error: job.error || '深度分析失败' });
+    }
+    // running → 秒回状态，前端轮询
+    return res.json({ status: 'running', startedAt: job.startedAt, finishedAt: null });
+  } catch (err) {
+    console.error('Deep analysis route error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- Investment Journal Verification API ----
+app.post('/api/journal/verify', async (req, res) => {
+  try {
+    const { title, content, stockCode, stockName, type } = req.body;
+    
+    console.log(`[Journal] Verifying note: "${title}" for ${stockName || stockCode}`);
+    
+    // Analyze the note content for verifiable claims
+    const claims = extractClaims(content, title);
+    const results = [];
+    let totalProbability = 50; // Start at neutral
+    let verifiedCount = 0;
+    let partialCount = 0;
+    let unverifiedCount = 0;
+    
+    // Try to verify each claim against available data
+    if (stockCode) {
+      try {
+        const info = detectMarket(stockCode);
+        if (info.market === 'CN') {
+          const code = info.tencentCode.replace(/^(sh|sz)/, m => m.toUpperCase());
+          const emCode = `${info.exchange}${info.tencentCode.replace(/^(sh|sz)/, '')}`;
+          
+          // Fetch financial data and current quote for verification
+          const { fetchFinancialData, fetchDividends } = require('./lib/deepAnalysis');
+          const needDividends = claims.some(c => c.type === 'no_dividend');
+          const [finData, quoteData, dividendRows] = await Promise.all([
+            fetchFinancialData(emCode),
+            getQuote(stockCode).catch(() => null),
+            needDividends ? fetchDividends(emCode).catch(() => []) : Promise.resolve(null),
+          ]);
+          
+          if (finData.income && finData.income.length > 0) {
+            // Verify each claim
+            for (const claim of claims) {
+              const result = verifyClaimAgainstData(claim, finData, stockName || stockCode, quoteData, dividendRows);
+              results.push(result);
+              
+              if (result.status === 'verified') {
+                verifiedCount++;
+                totalProbability += 10;
+              } else if (result.status === 'partially_verified') {
+                partialCount++;
+                totalProbability += 3;
+              } else if (result.status === 'unverified') {
+                unverifiedCount++;
+                totalProbability -= 5;
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.error('[Journal] Data fetch error:', e.message);
+      }
+    }
+    
+    // Analyze claim types for general probability assessment
+    const typeBonus = analyzeClaimTypes(claims, type);
+    totalProbability += typeBonus;
+    
+    // Clamp probability
+    totalProbability = Math.max(5, Math.min(95, totalProbability));
+    
+    // Determine overall status
+    // 全部判断点均验证通过（≥1个且无部分/未验证）→ 直接判 verified：
+    // 事实类声明（如"中报不分红"）经分红数据比对属实，不应因概率公式初始值偏低被压成"部分验证"
+    const allVerified = results.length > 0 && verifiedCount === claims.length && partialCount === 0 && unverifiedCount === 0;
+    let status;
+    if (totalProbability >= 70 || allVerified) status = 'verified';
+    else if (totalProbability >= 40) status = 'partially_verified';
+    else status = 'unverified';
+    
+    // Generate result text
+    const resultText = generateVerificationText(status, totalProbability, results, claims);
+    
+    res.json({
+      status,
+      probability: Math.round(totalProbability),
+      result: resultText,
+      details: results.length > 0 ? results.map(r => `[${r.status}] ${r.claim}: ${r.evidence}`).join('\n') : null,
+      claimsAnalyzed: claims.length,
+      verifiedCount,
+      partialCount,
+      unverifiedCount,
+    });
+    
+  } catch (err) {
+    console.error('Journal verify error:', err);
+    res.status(500).json({ error: err.message, status: 'error', probability: 0, result: '验证失败' });
+  }
+});
+
+// ---- Notes persistence（服务端单一权威源，20260916b）----
+// 投资心得 / 大盘记录 / 个股亮点雷点 全部落盘到 data/notes.json，
+// 避免仅存 localStorage 在「硬刷新清缓存 / 代码更新」时被清空导致手动录入数据丢失。
+// 前端以服务端为权威源，但会合并本地独有（离线录入未上送）的条目并回写，确保不丢数据。
+const NOTES_FILE = path.join(__dirname, 'data', 'notes.json');
+// [20261103i] 大盘记录数据库（用户指令：把大盘记录做成简单的数据库 + 按日期/行业/涨跌/关键词检索）
+const marketLogDb = require('./lib/marketLogDb');
+
+// 大盘记录数据库检索：?q=关键词&sector=行业&direction=up|down|flat&from=&to=&index=指数名&limit=
+// notes.json 是权威源，库为派生镜像（请求时按 mtime 检测自动重建，幂等）。
+app.get('/api/market-log', (req, res) => {
+  try {
+    const result = marketLogDb.searchMarketLog(req.query || {});
+    const stats = marketLogDb.getStats();
+    res.json({ success: true, ...result, stats });
+  } catch (err) {
+    console.error('[MarketLog] 检索失败:', err && err.message ? err.message : err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+function readNotesFile() {
+  try {
+    if (!fs.existsSync(NOTES_FILE)) return [];
+    const raw = fs.readFileSync(NOTES_FILE, 'utf8');
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) {
+    console.error('[Notes] read failed:', e.message);
+    return [];
+  }
+}
+function writeNotesFile(arr) {
+  const dir = path.dirname(NOTES_FILE);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(NOTES_FILE, JSON.stringify(arr, null, 2));
+}
+// 读取全部笔记（前端初始化时拉取，作为权威源）
+app.get('/api/notes', (req, res) => {
+  res.json({ success: true, notes: readNotesFile() });
+});
+// 全量同步（前端本地改动后整体回写；单用户场景下等价于 localStorage 的落盘动作）
+app.post('/api/notes/sync', (req, res) => {
+  try {
+    const body = req.body || {};
+    const notes = Array.isArray(body.notes) ? body.notes : [];
+    writeNotesFile(notes);
+    res.json({ success: true, count: notes.length });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// ===================== [20261104h] 笔记附件（投资心得图片等）上传/删除 =====================
+// 用户指令：写心得时可添加图片等附件。附件文件落盘 data/note-attachments/<yyyyMMdd>/<uuid><ext>，
+// 笔记条目新增 attachments 数组 [{url,name,mime,size}]（随 notes.json 持久化，前端 add() 白名单已透传）。
+// 删除为 best effort（前端在移除附件/删除笔记时逐个调用；失败不影响主流程，孤儿文件磁盘成本极低）。
+const multer = require('multer');
+const NOTE_ATTACH_DIR = path.join(__dirname, 'data', 'note-attachments');
+const NOTE_ATTACH_MIME_EXT = {
+  'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif', 'image/webp': '.webp',
+};
+// multer 将 UTF-8 中文文件名误按 latin1 解码的乱码修复（与 routes/docsRoutes.js 同款）
+function fixNoteAttachName(s) {
+  if (!s) return s;
+  if (/[^\u0000-\u00ff]/.test(s)) return s;
+  try { return Buffer.from(s, 'latin1').toString('utf8'); } catch (e) { return s; }
+}
+const noteAttachUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      const dayDir = path.join(NOTE_ATTACH_DIR, new Date().toISOString().slice(0, 10).replace(/-/g, ''));
+      fs.mkdirSync(dayDir, { recursive: true });
+      cb(null, dayDir);
+    },
+    filename: (req, file, cb) => {
+      const ext = NOTE_ATTACH_MIME_EXT[file.mimetype] || path.extname(fixNoteAttachName(file.originalname)).toLowerCase() || '.bin';
+      cb(null, Date.now().toString(36) + Math.random().toString(36).slice(2, 8) + ext);
+    },
+  }),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB——截图/照片足够，防 notes 页面被超大文件拖慢
+  fileFilter: (req, file, cb) => {
+    if (NOTE_ATTACH_MIME_EXT[file.mimetype]) return cb(null, true);
+    cb(new Error('仅支持图片附件（JPG/PNG/GIF/WebP）'));
+  },
+});
+app.post('/api/notes/attachments', noteAttachUpload.single('file'), (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ success: false, error: '未收到文件（字段名须为 file）' });
+    // 对外 URL：/note-attachments/<相对路径>（静态服务同前缀）
+    const rel = path.relative(NOTE_ATTACH_DIR, req.file.path).replace(/\\/g, '/');
+    res.json({
+      success: true,
+      attachment: {
+        url: '/note-attachments/' + rel,
+        name: fixNoteAttachName(req.file.originalname),
+        mime: req.file.mimetype,
+        size: req.file.size,
+      },
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+app.delete('/api/notes/attachment', (req, res) => {
+  try {
+    const url = String(req.query.url || '');
+    // 安全校验：仅允许删除 /note-attachments/ 前缀且解析后确实位于附件目录内的文件（防路径穿越）
+    if (!url.startsWith('/note-attachments/')) {
+      return res.status(400).json({ success: false, error: 'url 必须以 /note-attachments/ 开头' });
+    }
+    const filePath = path.join(NOTE_ATTACH_DIR, url.slice('/note-attachments/'.length));
+    if (!path.resolve(filePath).startsWith(path.resolve(NOTE_ATTACH_DIR) + path.sep)) {
+      return res.status(400).json({ success: false, error: '非法路径' });
+    }
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    res.json({ success: true, deleted: fs.existsSync(filePath) ? false : url });
+  } catch (e) {
+    // best effort：删除失败不阻断前端主流程
+    res.json({ success: false, error: e.message });
+  }
+});
+
+// Extract verifiable claims from note text
+function extractClaims(content, title) {
+  const text = `${title} ${content}`;
+  const claims = [];
+
+  // PE-related claims (handles 约, 低于, 大约, etc.)
+  const peMatches = text.match(/PE[约低于<大约]?\s*([\d.]+)\s*倍?|市盈率[约低于大约]?\s*([\d.]+)\s*倍?|PE[高于>]?\s*([\d.]+)/gi);
+  if (peMatches) {
+    for (const m of peMatches) {
+      const num = m.match(/[\d.]+/);
+      if (num) claims.push({ type: 'pe', text: m, value: parseFloat(num[0]), raw: m });
+    }
+  }
+  
+  // PB-related claims
+  const pbMatches = text.match(/PB[约低于<大约]?\s*([\d.]+)\s*倍?|市净率[约低于大约]?\s*([\d.]+)\s*倍?|PB[高于>]?\s*([\d.]+)/gi);
+  if (pbMatches) {
+    for (const m of pbMatches) {
+      const num = m.match(/[\d.]+/);
+      if (num) claims.push({ type: 'pb', text: m, value: parseFloat(num[0]), raw: m });
+    }
+  }
+  
+  // Growth rate claims (handles 超过, 达, 约, etc.)
+  const growthMatches = text.match(/增长[率]?\s*(?:超过|约|达|大于|约达)?\s*(\d+)%|增速\s*(?:超过|约|达|大于)?\s*(\d+)%|growth\s*(\d+)%/gi);
+  if (growthMatches) {
+    for (const m of growthMatches) {
+      const num = m.match(/\d+/);
+      if (num) claims.push({ type: 'growth', text: m, value: parseInt(num[0]), raw: m });
+    }
+  }
+  
+  // Price-related claims (handles 约, 左右, etc.)
+  const priceMatches = text.match(/价格?\s*约?\s*(\d+\.?\d*)\s*[元块左右]|股价\s*约?\s*(\d+\.?\d*)|价格?\s*(\d+\.?\d*)\s*[元块]/gi);
+  if (priceMatches) {
+    for (const m of priceMatches) {
+      const num = m.match(/[\d.]+/);
+      if (num) claims.push({ type: 'price', text: m, value: parseFloat(num[0]), raw: m });
+    }
+  }
+  
+  // Dividend yield claims
+  const divMatches = text.match(/股息率\s*[约]?\s*(\d+\.?\d*)%|分红率\s*[约]?\s*(\d+\.?\d*)%|dividend\s*(\d+\.?\d*)%/i);
+  if (divMatches) {
+    const num = divMatches[0].match(/[\d.]+/);
+    if (num) claims.push({ type: 'dividend_yield', text: divMatches[0], value: parseFloat(num[0]), raw: divMatches[0] });
+  }
+  
+  // Net profit margin claims (handles 维持在, 约, etc.)
+  const marginMatches = text.match(/净利润率\s*(?:维持在|约|达|超过)?\s*(\d+\.?\d*)%|净利率\s*(?:维持在|约|达)?\s*(\d+\.?\d*)%|利润率\s*(?:维持在|约|达|超过)?\s*(\d+\.?\d*)%/gi);
+  if (marginMatches) {
+    for (const m of marginMatches) {
+      const num = m.match(/[\d.]+/);
+      if (num) claims.push({ type: 'margin', text: m, value: parseFloat(num[0]), raw: m });
+    }
+  }
+  
+  // Expected return claims
+  const returnMatches = text.match(/涨幅\s*[可达约]?\s*(\d+)%|收益\s*[可达约]?\s*(\d+)%|回报\s*[可达约]?\s*(\d+)%/gi);
+  if (returnMatches) {
+    for (const m of returnMatches) {
+      const num = m.match(/\d+/);
+      if (num) claims.push({ type: 'expected_return', text: m, value: parseInt(num[0]), raw: m });
+    }
+  }
+
+  // No-dividend claims (e.g. "2026年中报不分红" / "不派发现金红利" / "无利润分配方案") —
+  // 事实性声明，可比对东财分红送配表精确验证
+  const noDivMatches = text.match(/(?:不|无|未|没有)[^。，；！\n]{0,12}?(?:分红|派息|派发|股息|红利|利润分配)/g);
+  if (noDivMatches) {
+    const yearM = text.match(/(20\d{2})\s*年/);
+    const stageM = text.match(/中报|中期|半年报|一季报|一季|三季报|三季|年报|年度/);
+    claims.push({
+      type: 'no_dividend',
+      text: noDivMatches[0],
+      value: null,
+      raw: `${yearM ? yearM[1] + '年' : ''}${stageM ? stageM[0] : ''}${noDivMatches[0]}`,
+      year: yearM ? yearM[1] : null,
+      stage: stageM ? stageM[0] : null,
+    });
+  }
+
+  // General qualitative claims (always present if no quantitative claims)
+  if (claims.length === 0) {
+    claims.push({ type: 'qualitative', text: text.substring(0, 100), value: null, raw: '定性判断' });
+  }
+
+  return claims;
+}
+
+// Verify a claim against financial data
+function verifyClaimAgainstData(claim, finData, stockName, quote, dividends) {
+  const { income, balance } = finData;
+  const latest = income[income.length - 1];
+  if (!latest) return { claim: claim.raw, status: 'unverified', evidence: '无法获取财务数据' };
+  
+  const revenue = parseFloat(latest.TOTAL_OPERATE_INCOME || latest.YYSR || 0);
+  const netProfit = parseFloat(latest.PARENT_NETPROFIT || latest.NETPROFIT || latest.JLR || 0);
+  const price = quote?.price || 0;
+  const pe = quote?.pe || quote?.fundamentals?.pe || 0;
+  const pb = quote?.pb || quote?.fundamentals?.pb || 0;
+  const totalValue = quote?.totalValue || 0; // 总市值(亿)
+  
+  switch (claim.type) {
+    case 'pe': {
+      if (pe > 0) {
+        const diff = Math.abs(pe - claim.value);
+        const pctDiff = (diff / claim.value * 100);
+        if (pctDiff < 10) {
+          return { claim: claim.raw, status: 'verified', evidence: `${stockName}当前PE为${pe}，与判断${claim.value}接近，验证通过。` };
+        } else if (pctDiff < 30) {
+          return { claim: claim.raw, status: 'partially_verified', evidence: `${stockName}当前PE为${pe}，与判断${claim.value}有一定偏差(偏差${pctDiff.toFixed(0)}%)。` };
+        } else {
+          return { claim: claim.raw, status: 'unverified', evidence: `${stockName}当前PE为${pe}，与判断${claim.value}偏差较大(偏差${pctDiff.toFixed(0)}%)。` };
+        }
+      }
+      return { claim: claim.raw, status: 'partially_verified', evidence: `${stockName}最新净利润${(netProfit/1e8).toFixed(1)}亿，PE判断需要实时市值数据配合验证。` };
+    }
+    case 'pb': {
+      if (pb > 0) {
+        const diff = Math.abs(pb - claim.value);
+        const pctDiff = (diff / claim.value * 100);
+        if (pctDiff < 10) {
+          return { claim: claim.raw, status: 'verified', evidence: `${stockName}当前PB为${pb}，与判断${claim.value}接近，验证通过。` };
+        } else if (pctDiff < 30) {
+          return { claim: claim.raw, status: 'partially_verified', evidence: `${stockName}当前PB为${pb}，与判断${claim.value}有一定偏差(偏差${pctDiff.toFixed(0)}%)。` };
+        } else {
+          return { claim: claim.raw, status: 'unverified', evidence: `${stockName}当前PB为${pb}，与判断${claim.value}偏差较大(偏差${pctDiff.toFixed(0)}%)。` };
+        }
+      }
+      const latestBal = balance[balance.length - 1];
+      const netAssets = parseFloat(latestBal?.TOTAL_PARENT_EQUITY || latestBal?.TOTAL_EQUITY || 0);
+      return { claim: claim.raw, status: 'partially_verified', evidence: `${stockName}最新归母净资产${(netAssets/1e8).toFixed(1)}亿，PB判断需要实时市值数据配合验证。` };
+    }
+    case 'growth': {
+      // Verify growth rate against historical data
+      if (income.length >= 2) {
+        const prev = income[income.length - 2];
+        const prevRevenue = parseFloat(prev.TOTAL_OPERATE_INCOME || prev.YYSR || 0);
+        const currRevenue = revenue;
+        const actualGrowth = prevRevenue > 0 ? ((currRevenue / prevRevenue - 1) * 100) : 0;
+        const claimedGrowth = claim.value;
+        const diff = Math.abs(actualGrowth - claimedGrowth);
+        
+        if (diff < 5) {
+          return { claim: claim.raw, status: 'verified', evidence: `${stockName}实际营收增速${actualGrowth.toFixed(1)}%，与判断${claimedGrowth}%接近，验证通过。` };
+        } else if (diff < 15) {
+          return { claim: claim.raw, status: 'partially_verified', evidence: `${stockName}实际营收增速${actualGrowth.toFixed(1)}%，与判断${claimedGrowth}%有一定偏差。` };
+        } else {
+          return { claim: claim.raw, status: 'unverified', evidence: `${stockName}实际营收增速${actualGrowth.toFixed(1)}%，与判断${claimedGrowth}%偏差较大。` };
+        }
+      }
+      return { claim: claim.raw, status: 'unverified', evidence: '历史数据不足' };
+    }
+    case 'price': {
+      if (price > 0) {
+        const diff = Math.abs(price - claim.value);
+        const pctDiff = (diff / claim.value * 100);
+        if (pctDiff < 5) {
+          return { claim: claim.raw, status: 'verified', evidence: `${stockName}当前股价${price}元，与判断${claim.value}元接近，验证通过。` };
+        } else if (pctDiff < 15) {
+          return { claim: claim.raw, status: 'partially_verified', evidence: `${stockName}当前股价${price}元，与判断${claim.value}元有一定偏差(偏差${pctDiff.toFixed(0)}%)。` };
+        } else {
+          return { claim: claim.raw, status: 'unverified', evidence: `${stockName}当前股价${price}元，与判断${claim.value}元偏差较大(偏差${pctDiff.toFixed(0)}%)。` };
+        }
+      }
+      return { claim: claim.raw, status: 'partially_verified', evidence: '价格判断需结合实时行情验证，建议查看当前股价。' };
+    }
+    case 'no_dividend': {
+      if (!Array.isArray(dividends)) {
+        return { claim: claim.raw, status: 'partially_verified', evidence: '分红数据获取失败，无法验证分红类判断。' };
+      }
+      // 报告期映射：中报→06-30，一季报→03-31，三季报→09-30，年报→12-31
+      const stageDate = { '中报': '-06-30', '中期': '-06-30', '半年报': '-06-30', '半年': '-06-30',
+                          '一季报': '-03-31', '一季': '-03-31', '三季报': '-09-30', '三季': '-09-30',
+                          '年报': '-12-31', '年度': '-12-31' };
+      // 未写年份/期数时：用最新一期财报报告期兜底（该报告期已披露，验证结果即代表当前事实）
+      const fallbackDate = (latest.REPORT_DATE || latest.REPORTDATE || '').slice(0, 10);
+      let year = claim.year, stage = claim.stage;
+      if (!year || !stage) {
+        if (!fallbackDate) {
+          return { claim: claim.raw, status: 'partially_verified', evidence: '判断未注明报告期，且无法确定最新报告期，需人工核对。' };
+        }
+        year = fallbackDate.slice(0, 4);
+        stage = ({ '03-31': '一季报', '06-30': '中报', '09-30': '三季报', '12-31': '年报' })[fallbackDate.slice(5)] || '年报';
+      }
+      const targetDate = `${year}${stageDate[stage] || '-12-31'}`;
+      const rec = dividends.find(d => String(d.reportDate || '').slice(0, 10) === targetDate);
+      if (rec && rec.dividendPerShare > 0) {
+        return { claim: claim.raw, status: 'unverified', evidence: `东财分红送配数据显示${year}年${stage}有分红方案（${rec.plan || `每10股派${(rec.dividendPerShare * 10).toFixed(2)}元`}），"不分红"判断与事实不符。` };
+      }
+      if (rec) {
+        // 有分红记录但金额未定（预披露/预案阶段）：公司已明确分红意向，"不分红"与事实不符
+        return { claim: claim.raw, status: 'unverified', evidence: `东财分红送配数据显示${year}年${stage}已有分红安排（${rec.plan || '方案'}，进度：${rec.progress || '预案'}），"不分红"判断与事实不符。` };
+      }
+      const yearHasAnyDiv = dividends.some(d => String(d.reportDate || '').startsWith(year));
+      const base = `东财分红送配数据中${year}年${stage}（报告期${targetDate}）无分红记录`;
+      if (yearHasAnyDiv || !claim.year) {
+        return { claim: claim.raw, status: 'verified', evidence: `${base}，"不分红"判断属实。` };
+      }
+      return { claim: claim.raw, status: 'verified', evidence: `${base}，且${year}年全年在东财分红表中也无任何分红方案，"不分红"判断属实。` };
+    }
+    case 'dividend_yield': {
+      return { claim: claim.raw, status: 'partially_verified', evidence: '股息率判断需结合分红方案和当前股价验证。' };
+    }
+    case 'margin': {
+      // Verify net profit margin
+      if (revenue > 0 && netProfit > 0) {
+        const actualMargin = (netProfit / revenue * 100);
+        const diff = Math.abs(actualMargin - claim.value);
+        if (diff < 5) {
+          return { claim: claim.raw, status: 'verified', evidence: `${stockName}实际净利率${actualMargin.toFixed(1)}%，与判断${claim.value}%接近，验证通过。` };
+        } else if (diff < 15) {
+          return { claim: claim.raw, status: 'partially_verified', evidence: `${stockName}实际净利率${actualMargin.toFixed(1)}%，与判断${claim.value}%有一定偏差。` };
+        } else {
+          return { claim: claim.raw, status: 'unverified', evidence: `${stockName}实际净利率${actualMargin.toFixed(1)}%，与判断${claim.value}%偏差较大。` };
+        }
+      }
+      return { claim: claim.raw, status: 'unverified', evidence: '利润数据不足' };
+    }
+    case 'expected_return': {
+      return { claim: claim.raw, status: 'partially_verified', evidence: '预期收益判断属于预测性观点，无法直接验证。建议持续跟踪。' };
+    }
+    default: {
+      return { claim: claim.raw, status: 'partially_verified', evidence: '定性判断需要结合多维度数据综合评估。建议持续跟踪验证。' };
+    }
+  }
+}
+
+// Analyze claim types for probability adjustment
+function analyzeClaimTypes(claims, noteType) {
+  let bonus = 0;
+  
+  // Quantitative claims are more verifiable
+  const quantitative = claims.filter(c => c.type !== 'qualitative').length;
+  if (quantitative >= 3) bonus += 5;
+  if (quantitative >= 5) bonus += 5;
+  
+  // Strategy-type notes are harder to verify
+  if (noteType === 'strategy') bonus -= 5;
+  if (noteType === 'observation') bonus += 3;
+  
+  return bonus;
+}
+
+// Generate verification result text
+function generateVerificationText(status, probability, results, claims) {
+  const parts = [];
+  
+  if (status === 'verified') {
+    parts.push(`✅ 验证结果：你的投资经验/心得有较高可信度（正确概率${probability}%）。`);
+  } else if (status === 'partially_verified') {
+    parts.push(`⚠️ 验证结果：你的投资经验/心得部分得到验证（正确概率${probability}%）。部分判断与实际数据吻合，但仍有需要持续观察的方面。`);
+  } else {
+    parts.push(`❌ 验证结果：你的投资经验/心得暂未得到数据支持（正确概率${probability}%）。建议谨慎参考，并持续跟踪验证。`);
+  }
+  
+  if (results.length > 0) {
+    parts.push('\n具体验证详情：');
+    for (const r of results) {
+      const icon = r.status === 'verified' ? '✅' : r.status === 'partially_verified' ? '⚠️' : '❌';
+      parts.push(`${icon} ${r.evidence}`);
+    }
+  }
+  
+  parts.push(`\n📊 共分析了${claims.length}个判断点。`);
+  parts.push('💡 提示：投资经验验证基于历史财务数据，不构成投资建议。市场环境变化可能影响经验的有效性。');
+  
+  return parts.join('\n');
+}
+
+// ---- 期货关联走势分析 API ----
+app.get('/api/futures-correlation/:symbol', async (req, res) => {
+  try {
+    const symbol = req.params.symbol;
+    const name = req.query.name || '';
+    const meta = getFuturesMeta(symbol);
+    if (!meta) {
+      return res.json({ hasFutures: false });
+    }
+    const result = await fetchFuturesCorrelation(symbol, name);
+    res.json(result);
+  } catch (err) {
+    console.error('Futures correlation error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- 行业分析 API ----
+app.get('/api/industry-analysis/:symbol', async (req, res) => {
+  try {
+    const symbol = req.params.symbol;
+    const name = req.query.name || '';
+
+    // 总超时兜底：避免任何外部接口无响应时前端永久转圈
+    const result = await Promise.race([
+      industryAnalysis(symbol, name),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('行业分析超时（外部数据接口响应过慢，请稍后重试）')), 40000)),
+    ]);
+
+    res.json(result);
+  } catch (err) {
+    console.error('Industry analysis error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- 资金量能分析 API ----
+app.get('/api/capital-flow/:symbol', async (req, res) => {
+  try {
+    const symbol = req.params.symbol;
+    const name = req.query.name || '';
+
+    const [quote, history] = await Promise.all([
+      getQuote(symbol),
+      getHistory(symbol, 'daily').catch(() => []),
+    ]);
+
+    if (!quote) {
+      return res.status(404).json({ error: '无法获取股票行情数据' });
+    }
+
+    // 整体超时兜底：融资融券抓取已内部降级（最坏 ~8s），此处为最后防线，
+    // 一旦超时直接返回错误，避免前端无限 loading。
+    const OVERALL_TIMEOUT_MS = 15000;
+    const result = await Promise.race([
+      analyzeCapitalFlow(symbol, name || quote.name, quote, history),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error(`资金量能分析超时（>${OVERALL_TIMEOUT_MS / 1000}s）`)), OVERALL_TIMEOUT_MS)),
+    ]);
+    res.json(result);
+  } catch (err) {
+    console.error('Capital flow error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- 文档资料库 API ----
+
+
+
+// 20260906 路由拆分：资料库（docs）11 条路由 + 上传辅助移至 routes/docsRoutes.js
+app.use(docsRoutes);
+
+// 将 data/reports 下已下载的年报/半年报登记进本地资料库（按 relativePath 去重）
+// 20260821f：统一委托 lib/reportSync 实现（含 semi 半年报分类），避免双份逻辑漂移
+function registerDownloadedReports() {
+  return reportSync.registerDownloadedReports();
+}
+
+app.post('/api/reports/download', async (req, res) => {
+  try {
+    const { codes, years = 5, types = ['annual', 'semi'], channel = 'cninfo' } = req.body || {};
+    if (!codes || !Array.isArray(codes) || codes.length === 0) {
+      return res.status(400).json({ error: '请提供至少一个股票代码' });
+    }
+    // 通道校验：仅允许已知通道，未知则回退巨潮
+    const allowedChannels = ['cninfo', 'eastmoney', 'all'];
+    const safeChannel = allowedChannels.includes(channel) ? channel : 'cninfo';
+    const py = findPython();
+    if (!py) {
+      return res.status(500).json({ error: '未找到 Python 解释器，请安装 Python 3 或设置环境变量 PYTHON_BIN 指向 python 可执行文件。' });
+    }
+    const script = path.join(__dirname, 'scripts', 'download_reports.py');
+    if (!fs.existsSync(script)) {
+      return res.status(500).json({ error: '下载脚本不存在: ' + script });
+    }
+    const outDir = path.join(__dirname, 'data', 'reports');
+    const args = [
+      script,
+      '--codes', codes.join(','),
+      '--years', String(years),
+      '--types', types.join(','),
+      '--out', outDir,
+      '--channel', safeChannel,
+      '--json',
+    ];
+    console.log(`[Reports] Running: ${py} ${args.join(' ')}`);
+    const child = cp.spawn(py, args, { windowsHide: true, env: { ...process.env, PYTHONIOENCODING: 'utf-8' } });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', d => { stdout += d.toString('utf8'); });
+    child.stderr.on('data', d => { stderr += d.toString('utf8'); });
+    child.on('error', e => {
+      console.error('[Reports] spawn error:', e.message);
+      return res.status(500).json({ error: '启动下载脚本失败: ' + e.message });
+    });
+    child.on('close', (code) => {
+      const m = stdout.match(/RESULT_JSON:(\{[\s\S]*\})/);
+      if (m) {
+        try {
+          const summary = JSON.parse(m[1]);
+          // 下载完成后，将新文件登记进本地资料库，便于在「资料库」中浏览
+          try {
+            registerDownloadedReports();
+          } catch (regErr) {
+            console.error('[Reports] register error:', regErr.message);
+          }
+          return res.json({ ok: true, summary, log: stderr });
+        } catch (e) {
+          // 解析失败，回退
+        }
+      }
+      console.error('[Reports] exited code', code, 'stderr:', stderr.slice(0, 500));
+      return res.json({ ok: false, code, stdout, stderr });
+    });
+  } catch (e) {
+    console.error('[Reports] error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 诊断：探测巨潮接口对指定股票代码、各参数组合能否返回公告（不下载）
+app.get('/api/reports/probe', async (req, res) => {
+  try {
+    const raw = String(req.query.codes || '');
+    const codes = raw.split(/[,\s]+/).map(c => c.trim()).filter(Boolean);
+    if (codes.length === 0) {
+      return res.status(400).json({ error: '请提供股票代码，例如 ?codes=600938' });
+    }
+    const py = findPython();
+    if (!py) {
+      return res.status(500).json({ error: '未找到 Python 解释器，请安装 Python 3 或设置环境变量 PYTHON_BIN。' });
+    }
+    const script = path.join(__dirname, 'scripts', 'download_reports.py');
+    if (!fs.existsSync(script)) {
+      return res.status(500).json({ error: '下载脚本不存在: ' + script });
+    }
+    const args = [script, '--codes', codes.join(','), '--years', '5', '--types', 'annual,semi', '--probe'];
+    console.log(`[Reports] Probe: ${py} ${args.join(' ')}`);
+    const child = cp.spawn(py, args, { windowsHide: true });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', d => { stdout += d.toString(); });
+    child.stderr.on('data', d => { stderr += d.toString(); });
+    child.on('error', e => {
+      console.error('[Reports] probe spawn error:', e.message);
+      return res.status(500).json({ error: '启动诊断脚本失败: ' + e.message });
+    });
+    child.on('close', () => {
+      const m = stdout.match(/PROBE_JSON:(\[.*\])/);
+      let combos = null;
+      if (m) {
+        try { combos = JSON.parse(m[1]); } catch (e) { combos = null; }
+      }
+      const lines = stdout.split('\n').map(l => l.trim()).filter(l =>
+        l.includes('totalRecordNum') || l.includes('请求失败') || l.includes('参数组合探测'));
+      res.json({ ok: true, python: py, combos, lines, stderr: stderr.slice(0, 500) });
+    });
+  } catch (e) {
+    console.error('[Reports] probe error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ==================================================================
+// 每日复盘模块（20261107 · 用户 10 条指令）
+//   ReviewService = lib/reviewService.js（后端聚合服务，13 项数据源并行采集 + 机会/风险识别引擎）
+//   前端只走 /api/review/* 与 /api/calendar/*，不直连任何数据库。
+// ==================================================================
+const reviewService = require('./lib/reviewService');
+const tradeCalendar = require('./lib/tradeCalendar');
+// 定时调度使用固定 Asia/Shanghai 时区的拆时工具（bjParts），不依赖宿主机时区设置
+const { bjParts } = require('./lib/localDate');
+
+// 显式页面路由：/daily-review → public/daily-review.html
+// （必须放在通配 app.get('*') 之前；否则无扩展名路径会落到首页）
+app.get('/daily-review', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'daily-review.html'));
+});
+
+// ① 交易日判定（先查 trade_calendar 表；?date=YYYY-MM-DD，默认今天）
+app.get('/api/calendar/is-trading-day', (req, res) => {
+  try {
+    tradeCalendar.ensureImported();
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.date || ''))
+      ? req.query.date : localDate();
+    const r = tradeCalendar.isTradingDay(date);
+    res.json({ success: true, ...r });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ② 当日复盘（点击页面自动加载；非交易日返回 holiday=true）
+app.get('/api/review/today', (req, res) => {
+  try { res.json({ success: true, ...reviewService.getToday() }); }
+  catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ③ 历史复盘列表（?from=&to=&limit=）
+app.get('/api/review/history', (req, res) => {
+  try { res.json({ success: true, ...reviewService.getHistory(req.query || {}) }); }
+  catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ④ 按日期查询（?date=YYYY-MM-DD，含全部修订版与失败报告）
+app.get('/api/review/by-date', (req, res) => {
+  try {
+    const r = reviewService.getByDate(req.query.date);
+    if (!r.ok) return res.status(400).json({ success: false, error: r.error });
+    res.json({ success: true, ...r });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ⑤ 手动重跑（管理员；?date=&force=1；内部含幂等/修订/3 次重试/失败报告）
+app.post('/api/review/run', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const r = await reviewService.runReview({
+      date: b.date, trigger: 'manual', force: b.force === true || b.force === '1',
+      taskType: b.task_type || b.taskType,
+    });
+    res.json({ success: r.ok !== false, ...r });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ⑤-2 龙虎榜异步补录（20:30 定时槽 / 外部任务 task_type="dragon_tiger_update" 共用）
+// 支持两种入口：POST /api/review/backfill {date}；或 POST /api/review/run 带 task_type。
+app.post('/api/review/backfill', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const r = await reviewService.backfillDragonTiger(b.date, { trigger: b.trigger || 'api' });
+    res.json({ success: r.ok !== false, ...r });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ⑥ 运行状态（running 轮询 / Cron 配置 / skipped_holiday 日志）
+app.get('/api/review/status', (req, res) => {
+  try { res.json({ success: true, ...reviewService.getStatus() }); }
+  catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// 定时任务（20261110b · LLM 生成 Markdown + 龙虎榜异步补录）：
+//   15:35 主跑 formal；15:40/45/50 补跑；20:30 龙虎榜补录升级 complete；
+//   15:35 主跑前先兜底检查昨日是否仍「待补录」，是则先补昨日再生成今日。
+//   每次主跑 / 补录都会实际调用一次大模型（复盘 System Prompt + JSON Context）。
+// 非交易日静默跳过并记录 skipped_holiday。触发前必须先查 trade_calendar 表。
+const REVIEW_SLOTS = [
+  { h: 15, m: 35, kind: 'main' },
+  { h: 15, m: 40, kind: 'retry' },
+  { h: 15, m: 45, kind: 'retry' },
+  { h: 15, m: 50, kind: 'retry' },
+  { h: 20, m: 30, kind: 'backfill' },
+];
+function startDailyReviewScheduler() {
+  let lastSlot = '';
+  setInterval(() => {
+    try {
+      const p = bjParts(new Date());
+      if (!p) return;
+      const hh = parseInt(p.hour, 10), mm = parseInt(p.minute, 10);
+      const slot = REVIEW_SLOTS.find(s => s.h === hh && s.m === mm);
+      if (!slot) return;
+      const today = `${p.year}-${p.month}-${p.day}`;
+      const slotKey = `${today} ${hh}:${mm}`;
+      if (slotKey === lastSlot) return;      // 同一分钟防抖
+      lastSlot = slotKey;
+
+      // 需求 4：定时任务必须先查交易日历表
+      tradeCalendar.ensureImported();
+      const cal = tradeCalendar.isTradingDay(today);
+      if (cal.is_trading_day === false) {
+        reviewService.recordSkip(today, 'cron', cal);
+        console.log(`  [每日复盘] ${today} 非交易日（${cal.day_type}），静默跳过并记 skipped_holiday`);
+        return;
+      }
+      if (cal.is_trading_day !== true) {
+        console.log(`  [每日复盘] ${today} 交易日历判定不可用（${cal.reason || '未知'}），本轮跳过`);
+        return;
+      }
+
+      // 20:30 晚间补录：只重抓当日龙虎榜，不重算整份复盘；complete 幂等静默跳过。
+      if (slot.kind === 'backfill') {
+        reviewService.backfillDragonTiger(today, { trigger: 'cron' })
+          .then(r => console.log(`  [每日复盘] ${today} 20:30 龙虎榜补录：${r.action}${r.version ? ' v' + r.version : ''}（${r.reason || ''}）`))
+          .catch(e => console.error('  [每日复盘] 晚间补录失败:', e && e.message));
+        return;
+      }
+
+      // 补跑：仅当当日尚无正式版 / 为有限分析版 / 完整率不足时才真正重新取数；
+      // 已有高分版本或已升级 complete 则直接跳过，避免每个槽都重复跑约 20 秒 akshare 取数。
+      if (slot.kind === 'retry') {
+        const cur = reviewService.getByDate(today);
+        const doc = cur && cur.review;
+        const ver = doc && (doc.versions || []).find(v => v.version === doc.currentVersion);
+        if (doc && doc.stage === 'complete') {
+          console.log(`  [每日复盘] ${today} ${hh}:${mm} 已升级为完整版，跳过补跑`);
+          return;
+        }
+        if (ver && !ver.limited && ver.completeness && ver.completeness.score >= 90) {
+          console.log(`  [每日复盘] ${today} ${hh}:${mm} 已有完整正式版（${ver.completeness.score}%），跳过补跑`);
+          return;
+        }
+      }
+
+      // 次日兜底（规格第三部分第 3 条）：15:35 生成今日复盘前，先检查昨日复盘是否仍
+      // 停留在「待晚间补录」。是则先把昨日龙虎榜补上，再生成今日，避免缺口跨日固化。
+      const mainRun = async () => {
+        if (slot.kind === 'main') {
+          try {
+            const y = (reviewService.previousTradingDates(today, 1) || [])[0];
+            if (y && reviewService.needsBackfill(y)) {
+              const bf = await reviewService.backfillDragonTiger(y, { trigger: 'cron-fallback' });
+              console.log(`  [每日复盘] ${today} 15:35 次日兜底：${y} → ${bf.action}（${bf.reason || ''}）`);
+            }
+          } catch (e) {
+            console.error('  [每日复盘] 次日兜底补录异常（不阻断今日生成）:', e && e.message);
+          }
+        }
+        return reviewService.runReview({ date: today, trigger: 'cron', skipHoliday: true });
+      };
+      mainRun()
+        .then(r => console.log(`  [每日复盘] ${today} ${hh}:${mm} ${slot.kind}：${r.action}${r.version ? ' v' + r.version : ''}${r.stage ? ' [' + r.stage + ']' : ''}${(r.reason || r.message) ? '（' + (r.reason || r.message) + '）' : ''}`))
+        .catch(e => console.error('  [每日复盘] 定时生成失败:', e && e.message));
+    } catch (e) {
+      console.error('  [每日复盘] 调度器异常:', e && e.message);
+    }
+  }, 60 * 1000);
+  console.log('  [每日复盘] 定时调度已启动：15:35 主跑 + 15:40/45/50 补跑 + 20:30 龙虎榜补录 + 次日兜底（Asia/Shanghai，先查 trade_calendar 表）');
+}
+
+// Serve index.html for all other routes
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// 启动服务器：端口被占用时自动顺延，并记录实际端口并自动打开浏览器
+function openBrowser(url) {
+  const cmd = process.platform === 'darwin'
+    ? `open "${url}"`
+    : process.platform === 'linux'
+      ? `xdg-open "${url}"`
+      : `cmd /c start "" "${url}"`;
+  cp.exec(cmd, (err) => {
+    if (err) console.log(`（自动打开浏览器失败，请手动在浏览器访问 ${url}）`);
+  });
+}
+
+// 每日 15:30 盘后结算短期判断准确率（工作日；服务运行期间每分钟检查一次，
+// 到了 15:30 且当天尚未结算则触发全量结算）。服务未常驻时，启动时的 settleAll() 兜底。
+// 结算后自动执行「自学习复核」：归因不准确因子 + 自动复核新闻影响 + 自动更正权重。
+let _lastSettleDate = null;
+let _lastPreOpenSlot = '';
+let _preOpenRunning = false;
+// 20260928d：自选股自动判定·防抖槽（每 15 分钟至多跑一次，非周末）
+let _lastEnsureSlot = '';
+// 20260917：大盘技术分析「当日判断」每日落盘守卫（避免同一天重复计算）
+let _lastMarketTechRecord = '';
+// 20260917d：大盘量能情绪模型「当日判断」每日落盘守卫
+let _lastMarketEmotionRecord = '';
+// 20261024g：实时大盘 AI 复盘「当日写入大盘记录」守卫（用户要求每天收盘后自动解读一次）
+let _lastMarketAiReview = '';
+// 20261103e：跨板块数据一致性巡检「当日已跑」守卫（15:30 块内触发 + 启动补跑，幂等）
+let _lastConsistencyAudit = '';
+
+// —— 20261103e：每日「跨板块数据一致性巡检」（用户指令：同一数据在多个板块展示的数值必须一致，
+//    即使数据源不同；⚠️ 严格区分累计口径与单季/TTM 口径，口径差异注记为 caliber 不算错误）——
+// 复用 analysisWarm 同机制：对自选股清单逐只本地 HTTP 自调用 /api/analysis/:symbol 取完整载荷，
+// lib/consistencyAudit.auditPayload 纯函数核对后落盘 data/consistency-audit/YYYY-MM-DD.json。
+async function runConsistencyAuditDaily() {
+  const consistencyAudit = require('./lib/consistencyAudit');
+  let symbols = [];
+  try { symbols = (readWatchlistFile() || []).map(s => ({ symbol: s.symbol, name: s.name || '' })); } catch (e) { /* 清单缺失不阻断 */ }
+  if (!symbols.length) symbols = [{ symbol: '603288', name: '海天味业' }];
+  return consistencyAudit.runDailyAudit({ port: PORT, symbols });
+}
+
+// 自学习自动复核：结算判断 → 归因不准确部分 → 自动复核新闻影响 → 自动更正权重。
+// 全部在后台自动运行，无需人工干预。
+async function runAutoReview() {
+  // 0) 全市场情绪指数：盘后落当日快照 + 自适应学习（极值日打标→调 extremeZ）
+  let msiNote = null;
+  try {
+    const snap = await MSI.recordDailySnapshot();
+    if (snap) {
+      // 拉上证历史用于学习校准（best-effort）
+      const shHist = await (require('./lib/stockData').getHistory('sh000001', '1y')).catch(() => []);
+      const { full } = await MSI.getSeries({ allowBackfill: true });
+      const learn = await labelAndLearn(full, shHist);
+      msiNote = `情绪指数 ${snap.index} 已存档；学习样本 ${learn.total} 命中 ${learn.correct}（阈值 ${learn.extremeZ}）`;
+    }
+  } catch (e) {
+    msiNote = '情绪指数快照失败: ' + e.message;
+    console.error('  [结算] 情绪指数快照失败:', e.message);
+  }
+  // 1) 结算全部未结算判断（含因子级命中归因 + 自适应权重重建）
+  const acc = await settleAll();
+  // 2) 新闻影响自动复核：用当日板块实际涨跌对照方向，自动标记对错
+  let impactReview = null;
+  try {
+    const mo = await getMarketOverview();
+    const chgMap = {};
+    for (const s of [...(mo.sectorsUp || []), ...(mo.sectorsDown || [])]) {
+      if (s && s.name != null && typeof s.changePct === 'number') chgMap[s.name] = s.changePct;
+    }
+    impactReview = autoReviewImpacts(chgMap);
+    // 盘后落当日行业拥挤度（20260909n：交易日感知，节假日不落盘）
+    if (Array.isArray(mo.sectorAll) && (await _canRecordToday(mo.sectorAll))) recordSectorCrowding(mo.sectorAll, mo.sectorDate);
+    // 盘后自动回填近 21 个交易日历史，确保本周/本月统计每日收盘后自动更新
+    try {
+      const bf = await backfillSectorCrowding(21, findPython());
+      console.log('  [SectorCrowding] 盘后历史回填:', JSON.stringify(bf));
+    } catch (bfErr) {
+      console.error('  [SectorCrowding] 盘后历史回填失败:', bfErr.message);
+    }
+  } catch (e) {
+    console.error('  [自动复核] 新闻影响复核失败:', e.message);
+  }
+  // 3) 学习状态（因子命中率 / 错误归因 / 权重演进）
+  const learning = getLearningState();
+  // 4) cn-financial-scraper 后台增强复核：对最近误判个股拉取「定期报告解读 + 全网舆情」，
+  //    为学习层补充基本面/舆情上下文（best-effort，失败不阻断结算）
+  const cnscraper = await enrichAutoReviewWithCnscraper(learning).catch(e => {
+    console.error('  [自动复核] cn-financial-scraper 增强复核失败:', e.message);
+    return { reviewed: 0, note: '增强复核失败: ' + e.message };
+  });
+  // 5) 个股近期热点已改为「打开个股页时 AI 联网按涨跌幅自动分析、按交易日缓存」，无需盘后快照。
+  // 6) 20260914i：两个技术分析模块的准确率结算（大盘技术分析 + 个股技术面），
+  //    独立于个股短期判断的 settleAll，互不干扰；失败不阻断主流程。
+  let techAcc = null;
+  try {
+    const mtSettle = await marketTechJudgment.settleAll();
+    const tfSettle = await techFaceJudgment.settleAll();
+    // 20260914i：市场情绪提醒也纳入准确率结算
+    let sentSettle = null;
+    try { sentSettle = await sentimentAccuracy.settleAll(); } catch (e2) { sentSettle = null; }
+    techAcc = {
+      marketTech: { changed: mtSettle.changed, shortRate: mtSettle.accuracy.short.accuracy, shortSettled: mtSettle.accuracy.short.settledCount, midRate: mtSettle.accuracy.mid.accuracy, midSettled: mtSettle.accuracy.mid.settledCount },
+      techFace: { changed: tfSettle.changed },
+      sentiment: sentSettle ? { changed: sentSettle.settled, rate: sentSettle.accuracy.accuracy, settled: sentSettle.accuracy.settledCount } : null,
+    };
+    console.log('  [结算·技术分析] 大盘技术分析 短期命中率 ' + (mtSettle.accuracy.short.accuracy == null ? '—' : mtSettle.accuracy.short.accuracy + '%') +
+      `（已结算 ${mtSettle.accuracy.short.settledCount} 条）/ 中期 ${(mtSettle.accuracy.mid.accuracy == null ? '—' : mtSettle.accuracy.mid.accuracy + '%')}` +
+      `（已结算 ${mtSettle.accuracy.mid.settledCount} 条）；个股技术面 新结算 ${tfSettle.changed} 条` +
+      (sentSettle ? `；市场情绪提醒 新结算 ${sentSettle.settled} 条，命中率 ${sentSettle.accuracy.accuracy == null ? '—' : sentSettle.accuracy.accuracy + '%'}` : ''));
+  } catch (e) {
+    console.error('  [结算·技术分析] 失败:', e.message);
+  }
+  return { acc, impactReview, learning, cnscraper, msiNote, techAcc };
+}
+
+// cn-financial-scraper 后台增强复核：对最近误判个股拉取定期报告解读（东财财报规则引擎）
+// 与全网舆情（60+ 源），把结构化结论落盘到 data/cnscraper_review.json，供学习层与复盘引用。
+async function enrichAutoReviewWithCnscraper(learning) {
+  const errs = (learning && learning.recentErrors) || [];
+  if (!errs.length) return { reviewed: 0, note: '无最近误判个股，跳过增强复核' };
+  // 去重取前 8 只误判个股，避免盘后复核耗时过长
+  const seen = new Set();
+  const targets = [];
+  for (const e of errs) {
+    const k = e.symbol;
+    if (k && !seen.has(k)) { seen.add(k); targets.push(e); }
+    if (targets.length >= 8) break;
+  }
+  const out = { reviewed: 0, reviewedAt: new Date().toISOString(), items: [] };
+  for (const e of targets) {
+    const [rep, sent] = await Promise.all([
+      interpretReport(e.symbol).catch(() => ({ ok: false })),
+      getGlobalSentiment(e.name || '', { days: 3, maxArticles: 10, budget: 10 }).catch(() => ({ ok: false, count: 0 })),
+    ]);
+    out.items.push({
+      symbol: e.symbol, name: e.name, date: e.date, targetDate: e.targetDate,
+      verdict: e.verdict, actualDir: e.actualDir, actualChgPct: e.actualChgPct,
+      report: rep && rep.ok ? {
+        ok: true, score: rep.score, rating: rep.rating,
+        revenue_yoy: rep.revenue_yoy, profit_yoy: rep.profit_yoy,
+        highlights: (rep.highlights || []).slice(0, 2),
+        risks: (rep.risks || []).slice(0, 2),
+      } : { ok: false },
+      sentiment: sent && sent.ok ? {
+        ok: true, count: sent.count, positive: sent.positive, negative: sent.negative,
+        signal: sent.signal, avg_score: sent.avg_score,
+      } : { ok: false },
+    });
+  }
+  out.reviewed = out.items.length;
+  try {
+    const dir = path.join(__dirname, 'data');
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'cnscraper_review.json'), JSON.stringify(out, null, 2));
+  } catch (e) {
+    console.error('  [自动复核] 写入 cnscraper_review.json 失败:', e.message);
+  }
+  return { reviewed: out.reviewed, note: `对 ${out.reviewed} 只误判个股拉取财报解读+全网舆情` };
+}
+
+function logAutoReview(r) {
+  const a = r.acc || {};
+  console.log(`  [结算] 已结算 ${a.settledCount} 条，准确率 ${a.accuracy == null ? '—' : a.accuracy + '%'}，待结算 ${a.pendingCount} 条${a.overdueCount ? '（其中 ' + a.overdueCount + ' 条过期未结算）' : ''}`);
+  if (r.impactReview && r.impactReview.reviewed > 0) {
+    console.log(`  [自学习·新闻影响] 自动复核 ${r.impactReview.reviewed} 条：正确 ${r.impactReview.correctN} / 错误 ${r.impactReview.wrongN}，累计准确率 ${r.impactReview.accuracy == null ? '—' : r.impactReview.accuracy + '%'}`);
+  }
+  const errs = (r.learning && r.learning.recentErrors) || [];
+  if (errs.length) {
+    console.log(`  [自学习·归因] 最近 ${errs.length} 笔判断错误的误导因子已标记，权重已按命中率自动调整`);
+  }
+  if (r.cnscraper && r.cnscraper.reviewed > 0) {
+    console.log(`  [自学习·cn-scraper] ${r.cnscraper.note}`);
+  }
+  if (r.msiNote) {
+    console.log(`  [自学习·情绪指数] ${r.msiNote}`);
+  }
+}
+
+// 20260909n：行业板块拥挤度·交易日感知 + 收盘补写守卫
+// 背景：当日拥挤度此前依赖「15:30 定时结算恰好命中运行中的服务」，电脑/服务未开机或结算失败时，
+//       当日数据会缺席到深夜（实测 2026-09-09 当日记录 23:00 才由历史回填补上）。
+// 交易日判断：上证日 K 最新日期==今天 ⇒ 今天开过盘（节假日/盘前自动为 false）；true 缓存到当日结束，false 缓存 10 分钟。
+let _tradeDayCache = { date: '', result: null, at: 0 };
+// 20260910 修复：主通道改用 Node 原生 fetch 直连腾讯日 K（不走环境代理）。
+// 教训：axios 会读 HTTP_PROXY 走系统代理，代理对腾讯/东财域名转发故障时（实测 09-10 502/断连）
+// getHistory 全线失败 → 交易日判断失败 → 当日拥挤度被保守策略整体拦截。
+// 原生 fetch（undici）不受 HTTP_PROXY 影响，直连实测 0.15s 稳定。
+// 数据新鲜度指纹（20260910）：判断通道全部故障时用它兜底——
+// 交易日 15:30 后的板块成交额是新值；节假日/休市时数据源返回的是上一交易日的冻结值（与 store 最新一天完全一致）。
+// 因此「合计>0 且与最新一天不等」⇒ 判定为新交易日的活跃数据，允许落盘；冻结/为零 ⇒ 拒收。
+function _looksFresh(sectorAll) {
+  if (!Array.isArray(sectorAll) || !sectorAll.length) return false;
+  const total = sectorAll.reduce((s, x) => s + (Number(x.amount) || 0), 0);
+  if (total <= 0) return false;                       // 数据源清零/无成交 ⇒ 拒收
+  const prev = sectorCrowdingLatestTotal();
+  if (prev == null) return true;
+  return Math.abs(total - prev) > Math.max(1, Math.abs(prev) * 1e-6);
+}
+// 是否允许落盘当日：true=确认交易日；false=确认非交易日；null=判断通道故障→退回新鲜度指纹
+async function _canRecordToday(sectorAll) {
+  const tday = await isTradingDayToday();
+  if (tday === true) return true;
+  if (tday === false) return false;
+  return _looksFresh(sectorAll);
+}
+
+async function _lastTradeDateViaFetch() {
+  // 20261021g：主机族降级——ifzq 的 fqkline 会整段 501，同一路径 web.ifzq 正常
+  const hosts = ['https://ifzq.gtimg.cn', 'https://web.ifzq.gtimg.cn'];
+  let lastErr = null;
+  for (const host of hosts) {
+    try {
+      const r = await fetch(host + '/appstock/app/fqkline/get?param=sh000001,day,,,40,qfq', { signal: AbortSignal.timeout(8000) });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const j = await r.json();
+      const days = j && j.data && j.data.sh000001 && j.data.sh000001.day;
+      if (!Array.isArray(days) || !days.length) throw new Error('腾讯日K返回空 day 数组');
+      return String(days[days.length - 1][0]);
+    } catch (e) { lastErr = e; }
+  }
+  throw lastErr || new Error('腾讯日K接口不可用');
+}
+// 返回值：true=今天是交易日 / false=确认非交易日 / null=判断失败（两条通道都不可用）
+// 三态语义：判断失败不再等同于「非交易日」——20260910 教训（代理+直连双故障时，
+// 判断失败被当成非交易日，导致守卫连尝试补写的机会都没有）。
+async function isTradingDayToday() {
+  const now = new Date();
+  const today = localDate(now);
+  if (_tradeDayCache.date === today && _tradeDayCache.result === true) return true;
+  if (_tradeDayCache.date === today && _tradeDayCache.result === false && now - _tradeDayCache.at < 10 * 60 * 1000) return false;
+  try {
+    let lastDate = null;
+    try {
+      lastDate = await _lastTradeDateViaFetch();            // ① 原生直连主通道
+    } catch (e1) {
+      const hist = await (require('./lib/stockData').getHistory('sh000001', '1mo')); // ② axios 兜底
+      const last = Array.isArray(hist) && hist.length ? hist[hist.length - 1] : null;
+      lastDate = last ? String(last.date) : null;
+    }
+    if (!lastDate) throw new Error('两条通道均未返回有效交易日期');
+    const result = lastDate === today;
+    _tradeDayCache = { date: today, result, at: Date.now() };
+    return result;
+  } catch (e) {
+    console.error('  [SectorCrowding] 交易日判断失败（将改用回填接口探测）:', e.message);
+    return null; // 判断失败≠非交易日；由调用方决定是否探测（守卫视作可尝试，写入口仍保守不写）
+  }
+}
+
+// 收盘补写守卫：交易日 15:30 后，凡当日记录缺失 → 立即用实时收盘数据补写（失败再回填兜底）。
+// 触发点：启动后 30 秒（覆盖「白天未开机、晚间才启动」）+ 每分钟调度检查（覆盖「15:30 结算失败」）。
+let _crowdingGuardMinute = '';
+async function ensureSectorCrowdingToday(reason) {
+  try {
+    const now = new Date();
+    const dow = now.getDay();
+    const today = localDate(now);
+    const { asOfTradingDate } = require('./lib/cnTradingCalendar');
+    const asOf = asOfTradingDate(today);
+    // 20261024k：非交易日（周末/节假日）不要求「当日」数据，只确保最近交易日记录存在（沿用其数据），
+    // 否则首页「板块拥挤度」周末会因今日无记录而显示暂无数据（假缺口）。
+    if (dow === 0 || dow === 6) {
+      if (sectorCrowdingHasDate(asOf)) return;
+      const mo = await getMarketOverview();
+      if (Array.isArray(mo.sectorAll) && mo.sectorDate === asOf) {
+        recordSectorCrowding(mo.sectorAll, mo.sectorDate);
+      }
+      return;
+    }
+    const hh = now.getHours(), mm = now.getMinutes();
+    if (hh < 15 || (hh === 15 && mm < 30)) return;
+    if (sectorCrowdingHasDate(today)) return;          // 本地文件查询，每分钟一次零压力
+    const tday = await isTradingDayToday();
+    // false=确认非交易日（周末/节假日）→ 不落盘；null=判断失败 → 仍尝试回填探测：
+    // 同花顺历史接口只有交易日才会产生当日行，节假日天然无数据，不会污染周/月统计
+    if (tday === false) return;
+    const minuteKey = `${today} ${hh}:${mm}`;
+    if (_crowdingGuardMinute === minuteKey) return;    // 同一分钟防抖
+    _crowdingGuardMinute = minuteKey;
+    console.log(`  [SectorCrowding] 收盘补写守卫触发（${reason}，${today} 当日记录缺失）...`);
+    const mo = await getMarketOverview();
+    // true=确认交易日直接写；null=判断通道故障 → 用新鲜度指纹判定（防节假日冻结数据误标为今天）
+    if (tday === true || _looksFresh(mo.sectorAll)) {
+      if (Array.isArray(mo.sectorAll)) recordSectorCrowding(mo.sectorAll, mo.sectorDate);
+    }
+    if (sectorCrowdingHasDate(today)) {
+      console.log('  [SectorCrowding] 当日数据已补写 ✓');
+      return;
+    }
+    const bf = await backfillSectorCrowding(21, findPython());
+    console.log('  [SectorCrowding] 收盘补写·历史回填兜底:', JSON.stringify(bf));
+  } catch (e) {
+    console.error('  [SectorCrowding] 收盘补写守卫失败:', e.message);
+  }
+}
+
+// 20261024g：每交易日收盘后自动执行一次「实时大盘 AI 解读」并写入「大盘记录」（notes scope=market）。
+// 用户 2026-10-24 要求：下午 3 点收盘后自动解读一次，保存到大盘记录里面。
+// 复用首页「AI 解读」同一套能力（lib/aiAugment.analyzeMarketOverview + 同源 getMarketOverview 数据），
+// 结果作为一条 scope=market 的笔记累积到 data/notes.json；同日幂等（标题带日期，重启不重复写）。
+// 说明：这是用户明确要求的定时任务，不受 SA_NO_BG_AI（事件/专属因子后台 AI 总开关）影响；
+// 如需停用，设置环境变量 SA_NO_DAILY_AI_REVIEW=1 即可（不再每天调用大模型）。
+async function runDailyMarketAiReview(today) {
+  if (process.env.SA_NO_DAILY_AI_REVIEW === '1') {
+    return { saved: false, reason: 'SA_NO_DAILY_AI_REVIEW=1 已关闭每日大盘 AI 复盘' };
+  }
+  const dailyReview = require('./lib/dailyMarketReview');
+  const { asOfTradingDate } = require('./lib/cnTradingCalendar');
+  const asOf = asOfTradingDate(today);
+  // 幂等：该交易日已有复盘记录则跳过（防重启/多次触发重复调 LLM 与刷记录）
+  if (dailyReview.alreadyReviewed(readNotesFile(), asOf)) {
+    return { saved: false, reason: `${asOf} 已有 AI 大盘复盘记录` };
+  }
+  // 与首页 /api/market-overview 同源：指数 + 涨跌幅板块
+  const data = await getMarketOverview().catch(() => null);
+  if (!data) return { saved: false, reason: '大盘数据获取失败' };
+  const { analyzeMarketOverview } = require('./lib/aiAugment');
+  // force:true → 定时任务取收盘后最新数据（并写缓存，供当天手动/刷新复用）
+  const ai = await analyzeMarketOverview({ data, force: true });
+  if (!ai || ai.success === false) {
+    return { saved: false, reason: (ai && (ai.message || ai.error)) || 'AI 解读未返回有效内容' };
+  }
+  const r = dailyReview.saveMarketReviewNote({ date: asOf, data, ai });
+  return r.saved ? { saved: true, date: asOf } : { saved: false, reason: r.reason };
+}
+
+function startDailySettlementScheduler() {
+  setInterval(() => {
+    const now = new Date();
+    const dow = now.getDay();
+    const isWeekend = (dow === 0 || dow === 6);
+    const hh = now.getHours();
+    const mm = now.getMinutes();
+
+    // —— 15:30 盘后结算 + 自学习自动复核 ——
+    if (!isWeekend && isTradingDay(localDate(now)) && hh >= 15 && (hh > 15 || mm >= 30)) {
+      const today = localDate(now);
+      if (_lastSettleDate !== today) {
+        _lastSettleDate = today;
+        console.log(`\n  [结算] 触发每日 15:30 盘后结算 + 自学习自动复核（${today}）...`);
+        runAutoReview()
+          .then(logAutoReview)
+          .catch(e => console.error('  [结算] 每日定时结算失败:', e.message));
+      }
+      // —— 20260917：每交易日收盘后自动落盘「大盘技术分析」当日判断（不依赖用户打开页面）——
+      // 修复：原实现只在「用户打开首页调用 /api/market-technical」时才落盘，若不打开该页就永远缺记录
+      //（且 route 内 marketClosed 未导入 → 静默异常 → 长期无任何记录）。此处改为每日 15:30 后自动落盘一次。
+      if (_lastMarketTechRecord !== today) {
+        _lastMarketTechRecord = today;
+        getMarketTechnical({ force: true })
+          .then((mt) => {
+            if (mt && mt.date === today) {
+              const r = marketTechJudgment.recordDailyJudgment(mt);
+              console.log(`  [大盘技术] 每日判断已落盘：${r ? r.baseDate : '跳过（数据不足）'}`);
+            } else {
+              console.log('  [大盘技术] 当日K线未更新（非交易日/数据延迟），跳过落盘');
+            }
+          })
+          .catch((e) => console.error('  [大盘技术] 每日落盘失败:', e && e.message));
+      }
+      // —— 20260917d：每交易日收盘后自动落盘「大盘量能情绪模型」当日判断（不依赖用户打开页面）——
+      if (_lastMarketEmotionRecord !== today) {
+        _lastMarketEmotionRecord = today;
+        buildHomeMarketEmotion(true)
+          .then((emo) => console.log(`  [情绪模型] 每日判断已落盘：${emo.date} 情绪总分 ${emo.totalScore}（${emo.tendency}）`))
+          .catch((e) => console.error('  [情绪模型] 每日落盘失败:', e && e.message));
+      }
+      // —— 20261024g：每交易日收盘后自动「实时大盘 AI 复盘」并写入大盘记录（notes scope=market）——
+      if (_lastMarketAiReview !== today) {
+        _lastMarketAiReview = today;
+        runDailyMarketAiReview(today)
+          .then(r => console.log(r && r.saved
+            ? `  [大盘AI复盘] 已写入大盘记录：${today}`
+            : `  [大盘AI复盘] 跳过：${(r && r.reason) || '未知原因'}`))
+          .catch(e => console.error('  [大盘AI复盘] 失败:', (e && e.message) || e));
+      }
+      // —— 15:30 收盘补写守卫：当日拥挤度记录缺失时自动补写（20260909n，幂等，记录已存在时秒回）——
+      ensureSectorCrowdingToday('每分钟检查').catch(() => {});
+
+      // —— 20261103e：每日收盘后「跨板块数据一致性巡检」（幂等，当日已有报告则跳过；启动时另有补跑兜底）——
+      if (_lastConsistencyAudit !== today) {
+        _lastConsistencyAudit = today;
+        runConsistencyAuditDaily()
+          .then(r => console.log(`  [数据巡检] ${r.date}：${r.symbolCount} 只自选股，不一致 ${r.totals.mismatch} 项 / 口径注记 ${r.totals.caliber} 项 / 缺数据跳过 ${r.totals.missing} 项`))
+          .catch(e => console.error('  [数据巡检] 失败:', (e && e.message) || e));
+      }
+    }
+
+      // —— 盘前预重算（方案 C·Part B）：交易日 8:00–9:30，每 10 分钟一次，吸收隔夜美股与早间消息 ——
+      if (!isWeekend && isTradingDay(localDate(now)) && hh >= 8 && (hh < 9 || (hh === 9 && mm < 30))) {
+        const slot = `${localDate(now)} ${hh}:${Math.floor(mm / 10)}`;
+        if (slot !== _lastPreOpenSlot) {
+          _lastPreOpenSlot = slot;
+          if (!_preOpenRunning) {
+            _preOpenRunning = true;
+            preOpenRecomputeAll()
+              .then(r => console.log(`  [盘前预重算] ${r.targetDate} 重建 ${r.count} 条，跳过 ${r.skipped} 条`))
+              .catch(e => console.error('  [盘前预重算] 失败:', (e && e.message) || e))
+              .finally(() => { _preOpenRunning = false; });
+          }
+        }
+      }
+
+      // —— 20260928d：自选股自动判定（每 15 分钟一次，仅交易日）：补齐新增自选股的判定记录，无需用户手动打开页面 ——
+      if (!isWeekend && isTradingDay(localDate(now))) {
+        const ensureSlot = `${localDate(now)} ${Math.floor((hh * 60 + mm) / 15)}`;
+        if (ensureSlot !== _lastEnsureSlot) {
+          _lastEnsureSlot = ensureSlot;
+          ensureAllTrackedJudgments({ symbols: readWatchlistFile() })
+            .then(r => console.log(`  [自动判定·自选股] 新建 ${r.created} · 已存在 ${r.reused} · 跳过 ${r.skipped}（共 ${r.total} 只）`))
+            .catch(e => console.error('  [自动判定·自选股] 失败:', (e && e.message) || e));
+        }
+      }
+    }, 60 * 1000);
+}
+
+// 20260907a：三联动·事件驱动定时扫描
+// 在 9:00 / 12:30 / 15:30 / 21:00 触发一次新闻扫描，更新活跃事件库并作废受影响个股的短期判断缓存。
+function startEventScheduler() {
+  if (process.env.SA_NO_BG_AI === '1') {
+    console.log('  [事件] 后台 AI 总开关(SA_NO_BG_AI=1)已启用，跳过事件定时扫描（不再自动调用 LLM，停止后台静默计费）');
+    return;
+  }
+  let lastSlot = '';
+  setInterval(() => {
+    const now = new Date();
+    const dow = now.getDay();
+    if (dow === 0 || dow === 6) return; // 周末不扫
+    const hh = now.getHours();
+    const mm = now.getMinutes();
+    const slots = [['09', '00'], ['12', '30'], ['15', '30'], ['21', '00']];
+    let hit = null;
+    for (const [sh, sm] of slots) {
+      if (hh === parseInt(sh, 10) && mm === parseInt(sm, 10)) { hit = `${sh}:${sm}`; break; }
+    }
+    if (!hit) return;
+    const slotKey = `${localDate(now)} ${hit}`;
+    if (slotKey === lastSlot) return;
+    lastSlot = slotKey;
+    eventEngineScanOnce()
+      .then(r => console.log(`  [事件] 定时扫描完成：${r.activeCount} 活跃 / 变更 ${r.changedSymbols ? r.changedSymbols.length : 0} 股`))
+      .catch(e => console.error('  [事件] 定时扫描失败:', e.message));
+  }, 60 * 1000);
+}
+
+// 封装单次事件扫描（依赖 eventEngine，避免与结算调度耦合）
+async function eventEngineScanOnce() {
+  const eventEngine = require('./lib/eventEngine');
+  const result = await eventEngine.scanEvents(false);
+  // 20261024h：事件变化 → 联动应答机制通知受影响个股判断作废（替代手写 invalidation 循环）
+  const syms = result.changedSymbols || [];
+  if (syms.length) moduleSync.emitChange('eventEngine', { symbols: syms, reason: '事件定时扫描' });
+  return result;
+}
+
+// 20260911：专属因子月度定时触发（与事件扫描同机制）
+// 每小时检查一次；仅在国家统计局 CPI 发布窗口(8~13日)内、且当月未尝试、且配置了 AI Key 时，
+// 触发联网检索最新一期 CPI 并落库；窗口外 / 当月已尝试 / 无 Key → 静默跳过，不影响启动与运行。
+function startDedicatedFactorScheduler() {
+  if (process.env.SA_NO_BG_AI === '1') {
+    console.log('  [专属因子] 后台 AI 总开关(SA_NO_BG_AI=1)已启用，跳过专属因子月度定时触发（不再自动调用 LLM，停止后台静默计费）');
+    return;
+  }
+  setInterval(() => {
+    const now = new Date();
+    const dom = now.getDate();
+    if (dom < 8 || dom > 13) return; // 窗口外静默
+    let df;
+    try { df = require('./lib/dedicatedFactor'); } catch (e) { return; }
+    df.triggerDedicatedFactors({ force: false })
+      .then(r => {
+        if (r && r.triggered && r.triggered.length) {
+          // 20261024h：专属因子变化 → 联动应答机制作废变更个股判断
+          const syms = r.changedSymbols || [];
+          if (syms.length) moduleSync.emitChange('dedicatedFactor', { symbols: syms, reason: '专属因子月度触发' });
+          console.log(`  [专属因子] 月度触发完成：新增 ${r.triggered.length} 个实例（${r.period}）`);
+        }
+      })
+      .catch(e => console.error('  [专属因子] 定时触发失败:', e && e.message));
+  }, 60 * 60 * 1000); // 每小时检查
+}
+
+// ── 全局错误兜底（20261001a 体检 P2b）────────────────────────────────────────
+// ---- 集中错误落盘（看门狗 / 排障用） ----
+// 全局错误中间件与 unhandledRejection 在 console.error 之外，额外追加写入 logs/error.log，
+// 含时间戳 + 路由 + 堆栈首行，便于事后排查；按 >5MB 自动轮转，保留最近 14 份。
+const ERROR_LOG_DIR = path.join(__dirname, 'logs');
+const ERROR_LOG_FILE = path.join(ERROR_LOG_DIR, 'error.log');
+function rotateLogIfLarge(file, keep) {
+  keep = keep || 14;
+  try {
+    if (!fs.existsSync(file)) return;
+    const st = fs.statSync(file);
+    if (st.size <= 5 * 1024 * 1024) return;
+    if (!fs.existsSync(ERROR_LOG_DIR)) fs.mkdirSync(ERROR_LOG_DIR, { recursive: true });
+    const ts = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const arch = file.replace(/\.log$/, '.' + ts + '.log');
+    try { fs.renameSync(file, arch); } catch (e) { /* 归档失败不阻塞 */ }
+    // 清理超过 keep 份的旧归档（按修改时间留新删旧）
+    try {
+      const base = path.basename(file).replace(/\.log$/, '');
+      const old = fs.readdirSync(ERROR_LOG_DIR)
+        .filter(function (f) { return f !== path.basename(file) && f.indexOf(base + '.') === 0 && f.endsWith('.log'); })
+        .map(function (f) { return { f: f, t: fs.statSync(path.join(ERROR_LOG_DIR, f)).mtimeMs }; })
+        .sort(function (a, b) { return b.t - a.t; });
+      old.slice(keep).forEach(function (o) { try { fs.unlinkSync(path.join(ERROR_LOG_DIR, o.f)); } catch (e) {} });
+    } catch (e) {}
+  } catch (e) {}
+}
+function logErrorToFile(tag, info, err) {
+  try {
+    if (!fs.existsSync(ERROR_LOG_DIR)) fs.mkdirSync(ERROR_LOG_DIR, { recursive: true });
+    rotateLogIfLarge(ERROR_LOG_FILE);
+    const t = new Date().toISOString();
+    const msg = err && err.message ? String(err.message) : '';
+    const stack = err && err.stack ? String(err.stack).split('\n').slice(0, 3).join(' | ') : '';
+    const line = '[' + t + '] ' + tag + ' ' + (info || '') + ' ' + msg + ' ' + stack + '\n';
+    fs.appendFileSync(ERROR_LOG_FILE, line);
+  } catch (e) { /* 落盘失败绝不影响主流程 */ }
+}
+
+// 1) Express 错误中间件：注册在全部路由之后（含 1904 行 app.get('*') 兜底路由），捕获同步抛错 /
+//    next(err)，统一返回 JSON——既避免 Express 默认 HTML 错误页，也避免前端把 HTML 当 JSON 解析报错。
+//    注意：Express 4 不会自动捕获 async 路由的 rejection，各 async 路由自带 try/catch 的既有约定不变。
+// 2) unhandledRejection：Node 15+ 默认「未处理拒绝 = 进程直接崩溃」，长驻本地服务不因
+//    单个后台 Promise 失败整站退出，这里记录后继续运行。
+app.use((err, req, res, next) => {
+  logErrorToFile('[global-error]', (req && req.method || '') + ' ' + (req && req.originalUrl || ''), err);
+  console.error('[global-error]', req.method, req.originalUrl, (err && err.message) || err);
+  if (res.headersSent) return next(err);
+  res.status(500).json({ success: false, error: 'SERVER_ERROR', message: err && err.message ? String(err.message).slice(0, 300) : '服务器内部错误' });
+});
+
+process.on('unhandledRejection', (reason) => {
+  logErrorToFile('[unhandledRejection]', '', reason);
+  console.error('[unhandledRejection]', reason && reason.stack ? reason.stack : reason);
+});
+
+function startServer(port, retries = 5) {
+  // 20261007a Security fix: bind loopback only. Previously app.listen(port) listened on
+  // 0.0.0.0 (all NICs), so ANY device on the LAN could reach the workbench with no auth
+  // (including file upload and AI config APIs). Binding '127.0.0.1' keeps localhost
+  // browsing identical while making the server unreachable from other devices.
+  const server = app.listen(port, '127.0.0.1', () => {
+    const url = `http://localhost:${port}`;
+    // 由启动器(start.vbs)负责打开浏览器时，这里必须跳过，否则会打开两个相同的网页窗口
+    const launcherOpens = process.env.SA_NO_AUTO_OPEN === '1';
+    console.log(`\n  Stock Analyzer 已启动： ${url}\n  ${launcherOpens ? '（浏览器由启动器打开，此处跳过以避免重复开窗）' : '正在打开浏览器...'}\n`);
+    try {
+      fs.writeFileSync(path.join(__dirname, 'data', '.server-port'), String(port));
+      // 20261004 启动提速配套：写入「就绪标记」，供启动器 start.vbs 轮询以立刻开浏览器。
+      // 原先启动器固定盲等 3500ms，而服务约 0.9 秒就监听完成 → 用户干等 2.5 秒以上。
+      // 标记用文件而非 HTTP 探测：纯文件系统判断，不受本机 HTTP_PROXY 代理影响。
+      // 启动器在拉起新实例前会先删掉它，故一定对应本次新起的实例（不会读到上轮的残留）。
+      fs.writeFileSync(path.join(__dirname, 'data', '.server-ready'), String(Date.now()));
+    } catch (e) { /* 忽略端口/就绪标记写入失败 */ }
+    if (!launcherOpens) openBrowser(url);
+    // 启动时自动结算 + 自学习自动复核（含周末生成的 nextday 预测），确保过期未结算的预测被判对错、准确率真实
+    runAutoReview()
+      .then(logAutoReview)
+      .catch(e => console.error('  [结算] 初始化失败:', e.message));
+    // 20260928d：自选股自动判定——服务启动即补齐所有自选股（含从未打开过的）的当前目标日短期判断，
+    // 落实「打开工作台后自动进行数据分析判定、无需切到对应页面」的核心原则；后台静默执行，失败不阻断启动。
+    ensureAllTrackedJudgments({ symbols: readWatchlistFile() })
+      .then(r => console.log(`  [自动判定·自选股] 新建 ${r.created} · 已存在 ${r.reused} · 跳过 ${r.skipped}（共 ${r.total} 只）`))
+      .catch(e => console.error('  [自动判定·自选股] 初始化失败:', (e && e.message) || e));
+    // 每日 15:30 盘后定时结算 + 自学习自动复核
+    startDailySettlementScheduler();
+    // 20261107：每日复盘定时调度（15:35 主跑 + 15:40/45/50 补跑；先查 trade_calendar 表，
+    // 非交易日静默跳过并记录 skipped_holiday；时区 Asia/Shanghai）
+    startDailyReviewScheduler();
+    // 启动后 60 秒：跨板块数据一致性巡检补跑——当日报告缺失时立即补一次（覆盖「15:30 时电脑未开机」场景，20261103e）
+    setTimeout(() => {
+      const today = localDate();
+      if (_lastConsistencyAudit === today) return;
+      const consistencyAudit = require('./lib/consistencyAudit');
+      if (consistencyAudit.loadAuditReport(today)) { _lastConsistencyAudit = today; return; }
+      _lastConsistencyAudit = today;
+      console.log(`  [数据巡检] 启动补跑：${today} 尚无巡检报告，立即执行...`);
+      runConsistencyAuditDaily()
+        .then(r => console.log(`  [数据巡检] ${r.date}：${r.symbolCount} 只自选股，不一致 ${r.totals.mismatch} 项 / 口径注记 ${r.totals.caliber} 项 / 缺数据跳过 ${r.totals.missing} 项`))
+        .catch(e => console.error('  [数据巡检] 启动补跑失败:', (e && e.message) || e));
+    }, 60000);
+    // 启动后 30 秒：收盘补写守卫——覆盖「交易日 15:30 时电脑未开机、晚间才启动服务」场景（20260909n）
+    setTimeout(() => {
+      ensureSectorCrowdingToday('启动守卫').catch(e => console.error('  [SectorCrowding] 启动守卫失败:', e.message));
+    }, 30000);
+    // 启动后 10 秒：板块资金流向预热——提前填充缓存，用户打开首页即命中（20260909o 提速）
+    setTimeout(() => {
+      try { warmupSectorCapitalFlow(); } catch (e) { console.error('  [SectorCapitalFlow] 预热失败:', e.message); }
+    }, 10000);
+    // 20261027d：个股数据后台预热调度——自选股 ∪ 最近查看，周期性经本机路由填充 /api/analysis 缓存，
+    // 落实「打开工作台后数据提前备好、切股秒开」；盘中 2 分钟一轮、其余 30 分钟一轮（跟随缓存 TTL）。
+    analysisWarm.startAnalysisWarmScheduler({
+      port,
+      getWatchlist: () => { try { return readWatchlistFile(); } catch (e) { return []; } },
+      isTradingDayFn: isTradingDay,
+    });
+    // 20260912c：基金行业配置 · **自然季度**更新调度
+    //   - 启动后 30 秒：若「今天还没检查过」就补跑一次（电脑关机/重启也能补齐，忽略每日时刻）
+    //   - 之后每 30 分钟 tick 一次：到了每日检查时刻(DAILY_HOUR)且今天未跑过 → 跑一次
+    //   每次检查：探测东财是否已开始披露当季报告 → 未发布则只花几次请求后结束；
+    //   已发布则跑一批（受批次大小/时间预算约束），未全部更新完则次日继续，直到本季度完成。
+    setTimeout(() => {
+      try {
+        fundMatrix.startCrawl({ ignoreHour: true })
+          .then((r) => console.log(`  [FundMatrix] 季度检查(启动补偿)：${r.started ? '已启动批次' : '跳过(' + r.reason + ')'}`))
+          .catch((e) => console.error('  [FundMatrix] 季度检查失败:', e.message));
+      } catch (e) { console.error('  [FundMatrix] 季度检查异常:', e.message); }
+    }, 30000);
+    setInterval(() => {
+      try {
+        fundMatrix.startCrawl({})
+          .then((r) => { if (r.started) console.log(`  [FundMatrix] 每日检查：启动（${r.reason}）`); })
+          .catch((e) => console.error('  [FundMatrix] 每日检查失败:', e.message));
+      } catch (e) { console.error('  [FundMatrix] 每日检查异常:', e.message); }
+    }, 30 * 60 * 1000);
+    // 进程退出前把采集进度强制落盘（把「断点」推到最后一刻，最多丢一次落盘间隔）
+    // 覆盖：Ctrl+C / 关闭终端 / 任务管理器结束任务（能捕获到的退出信号）。
+    // 注意：Windows 关机不一定会派发这些信号，那种情况下最多丢 60 秒进度。
+    (function registerFlushOnExit() {
+      let flushed = false;
+      const flush = (why) => {
+        if (flushed) return; flushed = true;
+        try {
+          const r = fundMatrix.flushCache();
+          console.log(`  [FundMatrix] ${why} 退出前落盘：基金 ${r.funds} 只 / 行业 ${r.industry} 条`
+            + (r.ok ? '' : '（失败：' + r.error + '）'));
+        } catch (e) { /* 忽略 */ }
+      };
+      ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGBREAK'].forEach((sig) => {
+        try { process.on(sig, () => { flush(sig); process.exit(0); }); } catch (e) { /* 平台不支持则忽略 */ }
+      });
+      process.on('beforeExit', () => flush('beforeExit'));
+    })();
+    // 20260907a：三联动·事件驱动定时扫描（9:00 / 12:30 / 15:30 / 21:00）
+    startEventScheduler();
+    // 20260911：专属因子月度定时触发（CPI 发布窗口内自动检索并落库）
+    startDedicatedFactorScheduler();
+    // 启动后做一次静默首扫（网络受限时返回空，不影响启动）
+    eventEngineScanOnce().catch(e => console.error('  [事件] 首扫失败:', e.message));
+  });
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      if (retries > 0) {
+        console.log(`端口 ${port} 被占用，0.5s 后重试（剩余 ${retries} 次）...`);
+        setTimeout(() => startServer(port, retries - 1), 500);
+      } else if (port < PORT + 10) {
+        console.log(`端口 ${port} 已被占用，尝试 ${port + 1} ...`);
+        startServer(port + 1);
+      } else {
+        console.error('服务器启动失败:', err.message);
+        process.exit(1);
+      }
+    } else {
+      console.error('服务器启动失败:', err.message);
+      process.exit(1);
+    }
+  });
+}
+
+// 启动前初始化本地 SQLite 数据层（建库 + 建表）。失败仅记录，不影响主服务启动。
+try {
+  db.initDb();
+} catch (e) {
+  console.error('[DB] 初始化失败，数据持久化功能暂不可用：', e.message);
+}
+
+startServer(PORT);
+
+~~~
+
+---
+
+## `SESSION-STATE.md`  ·  46 行
+
+~~~md
+# SESSION-STATE.md（WAL — Write Ahead Log）
+
+> 本文件遵循 `proactive-agent` 技能：用户给出口径决策 / 纠正 / 偏好时，先落盘再实现。
+> **行文口径（2026-11-10 19:10 用户裁决 · 归档瘦身，先落盘再执行）**：
+> ① 每条只写「决策要点 + 涉及文件 + 状态」，5~10 行内；原话长文 / 完整实施清单写进 `docs/logic/` 或本目录归档后只留一行指针。
+> ② 验证按需：小改动只跑直接相关守卫 + `test_cache_bust_guard.js`；全量 `--quick` 只在用户说「同步」前跑一次。
+> ③ 技能提炼只在用户明确说「沉淀成技能」时做，不自动提炼。
+> ④ `.learnings/` 每月归档一次：主文件保持索引态，全文进 `archive/`。
+> 完整历史条目（2026-11-09 ~ 2026-11-10 全部旧口径与实施清单）已归档：`.workbuddy/memory/session-state-archive-20261110.md`。
+
+## 当前状态（2026-11-10 19:15）
+
+- **未同步**：本地约 40 个文件（复盘 20261110b/c + 量能口径 + 颜色语义等累积改动）已完成、**未 git commit/push**，等用户「同步」指令。
+- **服务**：3005 未运行；`APP_VERSION=20261110c`。重启生效：关旧服 → 双击桌面 Stock Analyzer.lnk → Ctrl+F5。
+
+## 2026-11-10 三件裁决（按时间倒序）
+
+### 19:10 · 技能瘦身（归档执行记录）
+
+- 用户裁决：保留 proactive-agent / selfimproving 机制，只做一次归档瘦身。
+- 已完成：
+  - `.learnings/LEARNINGS.md` **307KB → 14.9KB 索引态**（54 条：待办 2 + 已解决 52，每行 ID/日期/状态/摘要首句）；全量逐字在 `.learnings/archive/LEARNINGS-full-20261110.md`（307KB），按 ID grep 找回。
+  - `SESSION-STATE.md` 压缩为本要点版；逐字原件在 `.workbuddy/memory/session-state-archive-20261110.md`。
+  - 新条目口径与验证降级、技能冻结写入上方「行文口径」。
+- 待观察项（非缺陷）：`LRN-20261103-001 pending`（位置驱动展示分支第 3 次同类报障）、`LRN-20261106-005 active`（守卫版本戳负断言需指向上版）。
+
+### 17:39 · 20261110c 复盘排版微调（详见归档）
+
+- `prompts/daily-review-system.md`：`###` 标题骨架 + 两张强制表（题材归因卡 / 明日观察池）= 排版升级，不退回干卡片。
+- `dailyReview.js`：旧 `sections` 兼容还原为 Markdown（历史复盘无需重跑）；`loadByDate` 记 `S.date`；`rerun()` 加 `force`；日期输入即自动加载，删除「按日期查看」按钮。
+- `reviewService.js`：`runReview` 的「complete 不降级」跳过加 `&& !opts.force`。
+- `?v=` / `APP_VERSION` → 20261110c，守卫同步。
+
+### 16:03 · 20261110b 复盘架构反转（详见归档）
+
+- 删除 `lib/reviewOutput.js`；新建 `lib/reviewContext.js`（干净 JSON）、`lib/reviewLlm.js`（System Prompt + Context → callLLM → Markdown）、`public/js/markdown.js`（本地随包渲染）。
+- `reviewService.js`：落盘整篇 Markdown + Context + llm 元信息；取消硬质检（柔性「暂无数据」）；龙虎榜补录并入 Context 重新生成整篇；`SCHEMA_VERSION=review-llm-20261110b`。
+- 实测（非自称）：Context 88KB 曾致 240s 超时 → 加字段白名单 + 12000 字符预算闸后 11133 字符；`deepseek-v4-pro-0813` 142s 返回 1860 字 Markdown，落盘 `outputFormat=markdown`、`versionHasContext=true`。
+- 状态：未 git 同步。
+
+## 归档指针（历史裁决，勿按旧口径实现）
+
+- **2026-11-10 12:07「11 段规格」+ 15:40 实施记录** → 已被 16:03 架构取代；规格原文唯一权威副本仍在 `docs/logic/daily-review-spec-20261110.md`，旧口径全文在归档文件。
+- **2026-11-09 量比图 ÷20（`ratio20Series`）** → 已完成验证（图表 26/0、量能 64/0、一致性 228/0），待同步；旧实施清单在归档文件。
+- **2026-11-09 颜色铁律细分（验证/核对类字段默认字体）** → 已完成验证（颜色语义 153/0），待同步；旧实施清单在归档文件。
+
+~~~

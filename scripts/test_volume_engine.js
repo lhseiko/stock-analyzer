@@ -114,7 +114,7 @@ console.log('\n[2] 预计算：均量不含当日；六档边界（20261019f 对
   ok(t1.tier === '放量' && t1.amplified === true, `1600/1000 = 1.6 > 1.3 → tier=放量（实际 ${t1.tier}）`);
   const bars2 = mkBars(80, i => flatBar(10, i === 79 ? 1500 : 1000));
   const t2 = ve._volumeTier(ve._precompute(bars2));
-  ok(t2.tier === '放量' && t2.amplified === true, '1500/1000 = 1.5 > 1.3 → tier=放量（×1.5 仅是确认级规则阈值，不构成独立档位——档位唯一阈值 >1.3）');
+  ok(t2.tier === '放量' && t2.amplified === true, '1500/1000 = 1.5 > 1.3 → tier=放量（20261109c 起 ×1.5 第二套阈值已退役，档位唯一阈值 >1.3）');
 }
 
 // ============ [3] 位置判定 ============
@@ -298,7 +298,7 @@ console.log('\n[6] 五大生死位规则：命中/未命中/数据不足标注')
   ok(r.dataGaps.some(g => /分时数据不足/.test(g)), '顶层 dataGaps 同步收录分时不足');
 }
 {
-  // 规则3 缩量假突破：冲击②卡有效阻力区间触及线后回落 + 量能未有效放大（20261106p 攻击目标改消费②卡区间）
+  // 规则3 假突破量能不确认：冲击②卡有效阻力区间触及线后回落 + ÷20 量能比未达放量阈值（20261109c 单一真值源）
   const bars = mkBars(260, i => {
     const attack = i >= 257;
     const p = attack ? 12.5 : 12;
@@ -307,15 +307,15 @@ console.log('\n[6] 五大生死位规则：命中/未命中/数据不足标注')
       : flatBar(p, 1000);
   });
   const r = ve.computeVolumeEngine({ symbol: '600000', name: '测试', bars, minutes: null, blacklistReasons: [], levelHints: { resistance: { low: 12.6, high: 12.7, kind: '测试阻力区间·阻力区间' } } });
-  ok(r.rules[2].matched === true, '规则3 缩量假突破 → 命中');
+  ok(r.rules[2].matched === true, '规则3 假突破量能不确认 → 命中');
   ok(/冲击有效阻力区间/.test(r.rules[2].conclusion) && /触及线 12\.6/.test(r.rules[2].conclusion), '命中文案引用②卡区间触及线（不再出现自算平台上沿）');
   ok(!/震荡平台上沿/.test(r.rules[2].conclusion), '命中文案不含旧自算候选「震荡平台上沿」');
   ok(r.signal.category === '中性', '规则3 命中（多头失效）→ 不得看多，输出中性');
   ok(/多头失效信号/.test(r.signal.note), '分类说明含「多头失效信号」');
-  ok(r.riskTags.includes('缩量假突破') && r.riskTags.includes('K线骗线'), '风险标签含缩量假突破 + K线骗线');
+  ok(r.riskTags.includes('假突破量能不确认') && r.riskTags.includes('K线骗线'), '风险标签含假突破量能不确认 + K线骗线');
 }
 {
-  // 规则3 未命中：突破日放量有效（前高量能 1000 手于 i=200 形成，攻击日 5000 手既超前高量又超 20 日均量×1.5）
+  // 规则3 未命中：突破日 ÷20 量能比 >1.3 已获放量确认（前高量能仅作参照、不参与判定）
   const bars = mkBars(260, i => {
     if (i === 200) return { open: 12, high: 12.7, low: 11.99, close: 12, volume: 1000, amount: 12 * 1000 * 100, turnover: 1.5 };
     if (i >= 257 && i < 259) return flatBar(12.5, 1000);
@@ -337,7 +337,7 @@ console.log('\n[6] 五大生死位规则：命中/未命中/数据不足标注')
   const r = ve.computeVolumeEngine({ symbol: '600000', name: '测试', bars, minutes: null, blacklistReasons: [] });
   ok(r.rules[2].matched === false, '②卡区间不可得 → 规则3 诚实停判不命中');
   ok(r.rules[2].dataGaps.some(g => /有效阻力区间不可得/.test(g) && /诚实停判/.test(g)), 'dataGaps 标注「②卡区间不可得，诚实停判」');
-  ok(!r.riskTags.includes('缩量假突破'), '停判 → 不打缩量假突破标签');
+  ok(!r.riskTags.includes('假突破量能不确认'), '停判 → 不打假突破量能不确认标签');
 }
 {
   // 规则4 放量破位：平台下沿放量跌破，连续 2 日站不回 → 看空预警
@@ -460,7 +460,7 @@ console.log('\n[7] 位置×量能组合引擎：矩阵关键格 + 横盘场景 +
     return ve._comboEngine(pc, { bars, pc, platform, position, minutes, persistentHuge: false, checks: ve._threeChecks(pc) }).direction;
   };
   // 低位放量收阳 → bull（资金进场）
-  // 末日 +2% 突破横盘阈值；3000 手 > 20日均量1000×1.5 → 放量；ratio5=3 属大量但低位分支优先
+  // 末日 +2% 突破横盘阈值；3000 手 ÷20日均量1000 = 3 >1.3 → 放量；ratio5=3 属大量但低位分支优先
   {
     const bars = mkBars(260, i => {
       const p = i < 200 ? 20 - i * 0.04 : 4;
@@ -730,7 +730,7 @@ console.log('\n[13] 输出结构完整性 + 禁交易指令扫描');
   // 20261020d：11.3.1「该放量未放量」结论文案阈值具象化（均值×1.5=阈值 + 当日实际量同屏）→ schema 升至 20261020d。
   // 20261106a：旧量价十口诀主判层 tenRules 已从输出体移除（前端 20261101e 已整卡移除，引擎层为死数据）。
   // 20261101d：新增 posJudgment 位置感知量价判定主判（图片 24 格矩阵；十口诀降为补充辅助）→ schema 升至 20261101d。
-  ok(r.schema === 'volume-engine-20261106p', `schema 已升级 20261106p（实际 ${r.schema}）`);
+  ok(r.schema === 'volume-engine-20261109c', `schema 已升级 20261109c（实际 ${r.schema}）`);
   ok(r.volumeTier && typeof r.volumeTier.tier === 'string', '输出含 volumeTier（统一量能档位真值源）');
   ok(r.volumeState.level === r.volumeState.ratio5Level, `volumeState.level（÷5 六态原始指标）与 ratio5Level 同源（${r.volumeState.level}）`);
   ok(['放量', '平量', '缩量'].includes(r.volumeTier.tier), `volumeTier.tier 为 ÷20 三态（放量/平量/缩量），与 135 格推演图同源（${r.volumeTier.tier}）`);
@@ -1002,8 +1002,8 @@ console.log('\n[16] 7.5 五句量比口诀：开盘/均价线/尾盘（分时）
     const k3 = ve._ratioRules(mkPc(), { minutes: null, position: { label: '低位区间' } }).items[2];
     ok(k3.status === '数据不足' && k3.matched === false, '无分时 → 口诀3 数据不足');
   }
-  // 口诀4 命中：近 3 日量 600 < avg20×0.7 且 lowToday 9.95 > 近 20 日最低 9.5
-  // 20261106n：低成交基准由 60 日均量统一改 20 日均量（阈值 ×0.7 不变），confirmed 判定改 ÷20 三态（>1.3）
+  // 口诀4 命中：近 3 日量 600 < avg20×0.8 且 lowToday 9.95 > 近 20 日最低 9.5
+  // 20261109c：低成交阈值统一 volumeCaliber（÷20 <0.8），confirmed 判定同源（>1.3）
   {
     const vols = Array.from({ length: 60 }, () => 1000);
     vols[57] = 600; vols[58] = 600; vols[59] = 600;
@@ -1011,9 +1011,9 @@ console.log('\n[16] 7.5 五句量比口诀：开盘/均价线/尾盘（分时）
     const k4 = ve._ratioRules(pc, { minutes: null, position: { label: '低位区间' } }).items[3];
     ok(k4.matched === true && k4.confirmed === false && k4.tag === '连续低成交不再新低待放量阳线', '口诀4 命中且未确认（等待放量阳线）');
     ok(/不得直接输出看多信号/.test(k4.hint), '口诀4 未确认前禁直接看多');
-    // 20261020b：阈值具象化——均值×0.7=阈值与实际近 3 日量能同屏展示（用户要求「展示数据计算结果」）
-    ok(/近 3 日成交量 600 \/ 600 \/ 600，均低于 20 日均量 1000 ×0\.7 = 700/.test(k4.conclusion), `口诀4 命中文案展示阈值计算过程与实际近 3 日量能（实际：${k4.conclusion}）`);
-    ok(k4.detail.avg20 === 1000 && k4.detail.shrinkThreshold === 700, `detail 具象化字段 avg20/shrinkThreshold（实际 ${k4.detail.avg20}/${k4.detail.shrinkThreshold}）`);
+    // 20261020b：阈值具象化——均值×0.8=阈值与实际近 3 日量能同屏展示（用户要求「展示数据计算结果」）
+    ok(/近 3 日成交量 600 \/ 600 \/ 600，均低于 20 日均量 1000 ×0\.8 = 800/.test(k4.conclusion), `口诀4 命中文案展示阈值计算过程与实际近 3 日量能（实际：${k4.conclusion}）`);
+    ok(k4.detail.avg20 === 1000 && k4.detail.shrinkThreshold === 800, `detail 具象化字段 avg20/shrinkThreshold（实际 ${k4.detail.avg20}/${k4.detail.shrinkThreshold}）`);
     ok(JSON.stringify(k4.detail.vols3) === '[600,600,600]', `detail.vols3 近 3 日量能数组（实际 ${JSON.stringify(k4.detail.vols3)}）`);
   }
   // 口诀4 已确认：当日放量阳线（chg>0 且 ÷20 >1.3 统一三态）→ confirmed
@@ -1023,7 +1023,7 @@ console.log('\n[16] 7.5 五句量比口诀：开盘/均价线/尾盘（分时）
     const pc = mkPc({ vols, chgPct: 2.5, ratio20: 2.0 });
     const k4 = ve._ratioRules(pc, { minutes: null, position: { label: '低位区间' } }).items[3];
     ok(k4.matched === true && k4.confirmed === true && k4.tag === null, '口诀4 已出现放量阳线 → 确认成立不再限制');
-    ok(/20 日均量 1000 ×0\.7 = 700/.test(k4.conclusion), '口诀4 已确认分支同样展示阈值计算过程');
+    ok(/20 日均量 1000 ×0\.8 = 800/.test(k4.conclusion), '口诀4 已确认分支同样展示阈值计算过程');
   }
   // 口诀4 未命中：股价仍创新低
   {
@@ -1032,7 +1032,7 @@ console.log('\n[16] 7.5 五句量比口诀：开盘/均价线/尾盘（分时）
     const pc = mkPc({ vols, chgPct: -0.2, lowToday: 9.4 });
     const k4 = ve._ratioRules(pc, { minutes: null, position: { label: '低位区间' } }).items[3];
     ok(k4.matched === false, '仍创新低 → 口诀4 未命中');
-    ok(/低成交线 20 日均量 1000 ×0\.7 = 700，近 3 日实际 600 \/ 600 \/ 600/.test(k4.conclusion), '未命中文案展示低成交线与实际近 3 日量能（便于核对差在哪一步）');
+    ok(/低成交线 20 日均量 1000 ×0\.8 = 800，近 3 日实际 600 \/ 600 \/ 600/.test(k4.conclusion), '未命中文案展示低成交线与实际近 3 日量能（便于核对差在哪一步）');
   }
   // 口诀4 未命中：量能未达低成交线（20261020b：文案需展示阈值计算过程与实际值）
   {
@@ -1041,7 +1041,7 @@ console.log('\n[16] 7.5 五句量比口诀：开盘/均价线/尾盘（分时）
     const pc = mkPc({ vols, chgPct: -0.2 });
     const k4 = ve._ratioRules(pc, { minutes: null, position: { label: '低位区间' } }).items[3];
     ok(k4.matched === false && k4.detail.low3 === false, '近 3 日量未全部低于低成交线 → 未命中');
-    ok(/低成交线 20 日均量 1000 ×0\.7 = 700，近 3 日实际 900 \/ 950 \/ 800/.test(k4.conclusion), `未命中文案展示阈值计算过程与实际近 3 日量能（实际：${k4.conclusion}）`);
+    ok(/低成交线 20 日均量 1000 ×0\.8 = 800，近 3 日实际 900 \/ 950 \/ 800/.test(k4.conclusion), `未命中文案展示阈值计算过程与实际近 3 日量能（实际：${k4.conclusion}）`);
   }
   // 口诀5 命中：量比 2.5 但滞涨
   {
@@ -1291,7 +1291,7 @@ console.log('\n[18] 底部相位分类：构筑期/启动确认区/方向不明�
 }
 
 // ============ [19] 11.3.1 该放量未放量阈值具象化（20261020d） ============
-console.log('\n[19] 该放量未放量：「20 日均量 ×1.5」同屏展示均值×1.5=阈值与当日实际量（20261106n 基准 60日→20日）');
+console.log('\n[19] 该放量未放量：「20 日均量 ×1.3」同屏展示均值×1.3=阈值与当日实际量（20261109c 单一真值源）');
 {
   // 与 [16] 节同模式的节内私有 mkPc（预计算 pc 夹具；avg20/volToday 等可由 over 覆盖；
   // highs/closes 供 _contradictionRules 攻击压力位与 _bottomPhase 相位判定消费）
@@ -1318,8 +1318,8 @@ console.log('\n[19] 该放量未放量：「20 日均量 ×1.5」同屏展示均
     const item = ve._contradictionRules(pc, baseCtx).shouldAmpNot;
     ok(item.matched === true && /上涨确认/.test(item.scenario), '命中：上涨确认场景且 ÷20 未达放量线 → 该放量未放量命中');
     // 20261021h：文案现在同时给出「当日量 ÷ 阈值」的倍数，便于用户自己核对，不再只凭档位下结论
-    ok(/按 ÷20 日均量统一口径仅 1 倍（放量阈值 >1\.3，确认级阈值 20 日均量 1000 ×1\.5 = 1500（当日量 800）（当日量为阈值的 0\.53 倍））/.test(item.conclusion),
-      `命中文案展示「÷20 统一口径 1 倍 + 20 日均量 1000 ×1.5 = 1500（当日量 800）」计算过程（实际：${item.conclusion}）`);
+    ok(/按 ÷20 日均量统一口径仅 1 倍（放量阈值 >1\.3，确认级阈值 20 日均量 1000 ×1\.3 = 1300（当日量 800）（当日量为阈值的 0\.62 倍））/.test(item.conclusion),
+      `命中文案展示「÷20 统一口径 1 倍 + 20 日均量 1000 ×1.3 = 1300（当日量 800）」计算过程（实际：${item.conclusion}）`);
     ok(!/60 日均量/.test(item.conclusion), '命中文案无 60 日口径残留（20261106n 退役）');
   }
   // 当日量缺失：无「当日量 vs 阈值」可比 → 确认级阈值子句整体不拼（禁 null/0 入文案）
@@ -1328,7 +1328,7 @@ console.log('\n[19] 该放量未放量：「20 日均量 ×1.5」同屏展示均
     const item = ve._contradictionRules(pc, baseCtx).shouldAmpNot;
     ok(/按 ÷20 日均量统一口径仅 1 倍（放量阈值 >1\.3）：资金未跟上/.test(item.conclusion) && !/当日量/.test(item.conclusion) && !/null/.test(item.conclusion),
       `当日量缺失 → 阈值比较子句整体不拼、无「当日量」无 null（实际：${item.conclusion}）`);  }
-  // avg20≤0 数据不足：退回纯符号阈值文本（禁「null ×1.5 = null」）
+  // avg20≤0 数据不足：退回纯符号阈值文本（禁「null ×1.3 = null」）
   {
     const pc = mkPc({ chgPct: 1.5, avg20: 0, volToday: 800, level: '平量', ratio5: 0.8 });
     const item = ve._contradictionRules(pc, baseCtx).shouldAmpNot;
@@ -1345,7 +1345,7 @@ console.log('\n[19] 该放量未放量：「20 日均量 ×1.5」同屏展示均
 }
 
 // ============ [20] 盘中停判守门 + 量能具象化（20261028a） ============
-console.log('\n[20] 盘中停判：规则3 缩量假突破 / 11.3.1 该放量未放量 盘中不判，收盘后定论；量能三数据同屏');
+console.log('\n[20] 盘中停判：规则3 假突破量能不确认 / 11.3.1 该放量未放量 盘中不判，收盘后定论；量能数据同屏');
 {
   // 规则3 命中形态的同款数据（复刻 [规则3 命中] 用例）
   const bars = mkBars(260, i => {
@@ -1355,19 +1355,19 @@ console.log('\n[20] 盘中停判：规则3 缩量假突破 / 11.3.1 该放量未
       ? { open: p, high: 12.7, low: p * 0.998, close: i === 259 ? 12.2 : 12.55, volume: 900, amount: p * 900 * 100, turnover: 1.5 }
       : flatBar(p, 1000);
   });
-  // 收盘口径（不传开关）：命中 + 结论文案含三数据具象化（当日量/前高量能/20日均量×1.5=阈值）
+  // 收盘口径（不传开关）：命中 + 结论文案含量能具象化（当日量/÷20 量能比/×1.3 阈值/同价位带前高参照）
   const rc = ve.computeVolumeEngine({ symbol: '600000', name: '测试', bars, minutes: null, blacklistReasons: [], levelHints: { resistance: { low: 12.6, high: 12.7, kind: '测试阻力区间·阻力区间' } } });
   ok(rc.rules[2].matched === true, '收盘口径 → 规则3 照常命中（守门不影响收盘判定）');
-  ok(/当日成交量 900 手/.test(rc.rules[2].conclusion) && /前高对应量能 \d+ 手（\d{4}-\d{2}-\d{2}，阶段高点 [\d.]+）/.test(rc.rules[2].conclusion) && /×1\.5 = \d+ 手/.test(rc.rules[2].conclusion),
-    `命中结论文案同屏给出 当日量/前高量能(带日期+阶段高点)/20日均量×1.5=阈值（实际：${rc.rules[2].conclusion}）`);
+  ok(/当日成交量 900 手/.test(rc.rules[2].conclusion) && /20 日量能比 0\.91 倍/.test(rc.rules[2].conclusion) && /同价位带/.test(rc.rules[2].conclusion) && /×1\.3 = \d+ 手/.test(rc.rules[2].conclusion),
+    `命中结论文案同屏给出 当日量/÷20 量能比/同价位带前高参照/×1.3 阈值（实际：${rc.rules[2].conclusion}）`);
   // 盘中口径（intradayPending: true）：停判不命中 + 诚实标注 + 盘中参考数值
   const ri = ve.computeVolumeEngine({ symbol: '600000', name: '测试', bars, minutes: null, blacklistReasons: [], intradayPending: true, levelHints: { resistance: { low: 12.6, high: 12.7, kind: '测试阻力区间·阻力区间' } } });
   ok(ri.rules[2].matched === false, '盘中（intradayPending）→ 规则3 停判不命中');
-  ok(!ri.riskTags.includes('缩量假突破') && !ri.riskTags.includes('K线骗线'), '盘中停判 → 不打缩量假突破/K线骗线标签');
+  ok(!ri.riskTags.includes('假突破量能不确认') && !ri.riskTags.includes('K线骗线'), '盘中停判 → 不打假突破量能不确认/K线骗线标签');
   ok(/收盘后定论/.test(ri.rules[2].conclusion), '盘中结论文案标明「收盘后定论」');
   ok(ri.rules[2].dataGaps.some(g => /当日未收盘，本规则收盘后判定/.test(g)), 'dataGaps 标注盘中不可比原因');
-  ok(ri.rules[2].dataGaps.some(g => /盘中参考（不构成判定）/.test(g) && /前高对应量能 \d+ 手/.test(g) && /×1\.5 = \d+ 手/.test(g)),
-    '盘中参考给出 前高对应量能/20日均量×1.5=阈值 具体数值');
+  ok(ri.rules[2].dataGaps.some(g => /盘中参考（不构成判定）/.test(g) && /20 日量能比/.test(g) && /×1\.3 = \d+ 手/.test(g)),
+    '盘中参考给出 ÷20 量能比/×1.3 阈值 具体数值');
 }
 {
   // 11.3.1 该放量未放量：盘中停判（ctx.intradayPending 透传）

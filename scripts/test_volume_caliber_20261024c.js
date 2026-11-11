@@ -5,7 +5,7 @@
  *
  * 背景：20261024b 已把 marketEmotion 三处量比档位对齐到 1.2/0.8。
  * 本测试锁定 audit 后续发现的两处「共用放量/缩量标签、却用 1.5 阈值」的口径，
- * 20261024c 一并对齐到项目「量比」铁律（>1.2 放量 / <0.8 缩量）：
+ * 20261109c 起对齐全工作台单一真值源 lib/volumeCaliber.js（÷20 日均量：>1.3 放量 / <0.8 缩量）：
  *   ① capitalFlow.latestVsPriorAvg.trend（个股页 volumeTrend 来源）
  *   ② capitalFlow 个股突破 breakoutVolRatio（与 zoneReversal 箱体突破 1.2 同源）
  * 两处均经迁移守卫 test_volume_root_migration 等价校验，本测试补显式边界断言。
@@ -27,12 +27,13 @@ function mkHist(n, baseVol) {
   return h;
 }
 
-console.log('\n[1] latestVsPriorAvg.trend 对齐 1.2/0.8（个股页 volumeTrend）');
+console.log('\n[1] latestVsPriorAvg.trend 对齐 1.3/0.8（个股页 volumeTrend，20261109c 单一真值源）');
 {
   const base = 1000;
   const cases = [
     { vol: 2500, expect: '放量', note: '量比 2.5 → 放量' },
-    { vol: 1300, expect: '温和放量', note: '量比 1.3 → 温和放量（旧 1.5 会误判 normal）' },
+    { vol: 1400, expect: '温和放量', note: '量比 1.4 >1.3 → 温和放量' },
+    { vol: 1300, expect: 'normal', note: '量比 1.3 = 阈值边界 → 平量（严格 >1.3 才放量，与 135 格一致）' },
     { vol: 1000, expect: 'normal', note: '量比 1.0 → normal（平量）' },
     { vol: 700, expect: '缩量', note: '量比 0.7 → 缩量（旧 0.5 会误判 normal）' },
   ];
@@ -46,20 +47,20 @@ console.log('\n[1] latestVsPriorAvg.trend 对齐 1.2/0.8（个股页 volumeTrend
   }
 }
 
-console.log('\n[2] 个股突破 breakoutVolRatio 对齐 1.2（与箱体突破同源）');
+console.log('\n[2] 个股突破 breakoutVolRatio 对齐 1.3（÷20 单一真值源；箱体穿越线为 ÷5 独立口径）');
 {
   const base = 1000;
-  // 放量突破前高：收盘 > 前20日最高，量比 ≥1.2
+  // 放量突破前高：收盘 > 前20日最高，量比 >1.3
   const h1 = mkHist(25, base);
-  h1[24].volume = 1300; h1[24].close = 60; h1[24].high = 60.5; h1[24].low = 59.5;
+  h1[24].volume = 1400; h1[24].close = 60; h1[24].high = 60.5; h1[24].low = 59.5;
   const b1 = computeVolumeIndicators(h1, null, null).indicators.breakout;
-  ok(b1.volRatio >= 1.2 && b1.pattern === '放量突破前高', `量比 1.3 突破 → 放量突破前高（实际 ${b1.volRatio}/${b1.pattern}）`);
+  ok(b1.volRatio > 1.3 && b1.pattern === '放量突破前高', `量比 1.4 突破 → 放量突破前高（实际 ${b1.volRatio}/${b1.pattern}）`);
 
   // 放量跌破前低
   const h2 = mkHist(25, base);
-  h2[24].volume = 1300; h2[24].close = 40; h2[24].high = 40.5; h2[24].low = 39.5;
+  h2[24].volume = 1400; h2[24].close = 40; h2[24].high = 40.5; h2[24].low = 39.5;
   const b2 = computeVolumeIndicators(h2, null, null).indicators.breakout;
-  ok(b2.volRatio >= 1.2 && b2.pattern === '放量跌破前低', `量比 1.3 跌破 → 放量跌破前低（实际 ${b2.volRatio}/${b2.pattern}）`);
+  ok(b2.volRatio > 1.3 && b2.pattern === '放量跌破前低', `量比 1.4 跌破 → 放量跌破前低（实际 ${b2.volRatio}/${b2.pattern}）`);
 
   // 缩量新高：收盘 > 前20日最高，但量比 <0.8
   const h3 = mkHist(25, base);
@@ -71,7 +72,7 @@ console.log('\n[2] 个股突破 breakoutVolRatio 对齐 1.2（与箱体突破同
   const h4 = mkHist(25, base);
   h4[24].volume = 1000; h4[24].close = 60; h4[24].high = 60.5; h4[24].low = 59.5;
   const b4 = computeVolumeIndicators(h4, null, null).indicators.breakout;
-  ok(b4.volRatio < 1.2 && b4.volRatio >= 0.8 && b4.pattern === '无显著形态', `量比 1.0 突破 → 无显著形态（实际 ${b4.volRatio}/${b4.pattern}）`);
+  ok(b4.volRatio < 1.3 && b4.volRatio >= 0.8 && b4.pattern === '无显著形态', `量比 1.0 突破 → 无显著形态（实际 ${b4.volRatio}/${b4.pattern}）`);
 }
 
 console.log(`\n===== 结果：${pass} 通过 / ${fail} 失败 =====`);

@@ -133,9 +133,9 @@ console.log('=== §6 接线守卫（server / 前端 / 版本戳）===');
   ok(accJs.includes('loadConsistency(true)'), '结算按钮 = 立即重跑巡检（force）');
   const css = fs.readFileSync(path.join(ROOT, 'public/css/style.css'), 'utf8');
   ok(css.includes('.ca-table'), 'style.css 有巡检明细表样式');
-  ok(/const APP_VERSION = '20261106p'/.test(serverJs), "APP_VERSION = '20261106p'");
+  ok(/const APP_VERSION = '20261111b'/.test(serverJs), "APP_VERSION = '20261111b'");
   const idx = fs.readFileSync(path.join(ROOT, 'public/index.html'), 'utf8');
-  ok(idx.includes('?v=20261106p') && accHtml.includes('?v=20261106p'), 'index/accuracy 页面版本戳已对齐');
+  ok(idx.includes('?v=20261111b') && accHtml.includes('?v=20261111b'), 'index/accuracy 页面版本戳已对齐');
 }
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`);

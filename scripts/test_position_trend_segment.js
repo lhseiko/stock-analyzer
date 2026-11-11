@@ -158,7 +158,7 @@ console.log('===== §4 源码接线守卫 =====');
 console.log('===== §5 版本戳 =====');
 {
   const server = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
-  ok(server.includes("const APP_VERSION = '20261106p'"), 'server.js APP_VERSION=20261106p');
+  ok(server.includes("const APP_VERSION = '20261111b'"), 'server.js APP_VERSION=20261111b');
   ok(server.includes('[20261104e] 量价判定位置阶梯'), 'server.js 含 20261104e 版本注释条目');
   ok(server.includes('[20261104d] 融资融券 tile 文案歧义修复'), '前版 20261104d 注释条目保留');
 }

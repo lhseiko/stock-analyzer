@@ -194,9 +194,9 @@ console.log('=== §5 前端/版本戳守卫 ===');
   const cnt = (appJs.match(/metricAnalysis\?\.metrics \|\| \[\]\)\.forEach/g) || []).length;
   ok(cnt === 2, `app.js 左卡 + 顶栏两处消费 metricAnalysis judgment（实际 ${cnt} 处）`);
   const serverJs = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
-  ok(/const APP_VERSION = '20261106p'/.test(serverJs), "APP_VERSION = '20261106p'");
+  ok(/const APP_VERSION = '20261111b'/.test(serverJs), "APP_VERSION = '20261111b'");
   const idx = fs.readFileSync(path.join(ROOT, 'public/index.html'), 'utf8');
-  ok(idx.indexOf('?v=20261106p') >= 0, 'index.html 版本戳 ?v=20261106p');
+  ok(idx.indexOf('?v=20261111b') >= 0, 'index.html 版本戳 ?v=20261111b');
 }
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`);

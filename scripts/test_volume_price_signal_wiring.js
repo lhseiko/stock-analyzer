@@ -72,8 +72,8 @@ function makeHistory(chgPct, volRatio) {
 if (computeVolumeIndicators) {
   const runtimeCases = [
     { chg: 3.05, vol: 1.13, expect: '大涨平量', note: '圣湘生物实测：大涨+平量 → 中性' },
-    { chg: 3.05, vol: 1.60, expect: '放量上涨', note: '放量大涨仍属利好' },
-    { chg: 3.05, vol: 1.30, expect: '量价齐升', note: '量价齐升仍属利好' },
+    { chg: 3.05, vol: 1.60, expect: '量价齐升', note: '20261109c：显著放量线升至 2.5，1.6 归 amp 档 → 量价齐升（与引擎 unifiedVolState 同源）' },
+    { chg: 3.05, vol: 1.30, expect: '大涨平量', note: '20261109c：1.30 = 平量（严格 >1.3 才放量）→ 大涨平量，与 135 格同源' },
     { chg: 1.20, vol: 1.00, expect: '温和上涨', note: '小涨+平量不受影响' },
     { chg: 3.05, vol: 0.65, expect: '缩量上涨', note: '缩量大涨仍偏空' },
   ];

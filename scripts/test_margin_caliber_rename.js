@@ -150,7 +150,7 @@ ok(auditSrc.includes("label: '归母净利润'"), 'consistencyAudit.js label 应
 ok(exportSrc.includes("['归母净利润', fmtPct(m.profitGrowth)]"), 'export.js 导出表头应为 归母净利润');
 
 // ---------- §4 LAYOUT_VERSION（20261104k 改名升版；l 轮展示回退不涉及因子名，不再升版） ----------
-ok(/const LAYOUT_VERSION = '20261106o'/.test(sjdSrc), 'LAYOUT_VERSION 应为 20261106o（量价配合子信号输入 signal 值域与分值变化：涨跌判定与 135 格走势档同源，哈希不捕获）');
+ok(/const LAYOUT_VERSION = '20261109c'/.test(sjdSrc), 'LAYOUT_VERSION 应为 20261106o（量价配合子信号输入 signal 值域与分值变化：涨跌判定与 135 格走势档同源，哈希不捕获）');
 ok(/\[20261028c 前注\]/.test(sjdSrc), '历史前注 20261028c 应保留为前注');
 
 // ---------- §5 指标分析行内展开（20261104m：用户澄清第二轮——分析内容与所点指标行同一水平） ----------
@@ -176,7 +176,7 @@ ok(appSrc.includes("kEl.closest('.metric-row')"), '重渲染后应按 activeMetr
 ok(/20261104m/.test(appSrc.slice(rmaStart - 500, smaEnd)), '指标分析相关函数应带 20261104m 注释标记（功能引入版本不随全局升版）');
 
 // ---------- §6 版本戳 ----------
-ok(/const APP_VERSION = '20261106p'/.test(serverSrc), 'server.js APP_VERSION 应为 20261106p');
+ok(/const APP_VERSION = '20261111b'/.test(serverSrc), 'server.js APP_VERSION 应为 20261111b');
 ok(/\[20261104k\]/.test(serverSrc), 'server.js 应有 [20261104k] 独立注释条目（本功能引入版本，历史条目不随全局版本升级）');
 ok(/\[20261104m\]/.test(serverSrc), 'server.js 应有 [20261104m] 行内展开条目（功能引入版本，历史条目不随全局升版）');
 const cssSrc = fs.readFileSync(path.join(__dirname, '..', 'public/css/style.css'), 'utf8');

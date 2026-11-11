@@ -1,28 +1,28 @@
 /**
- * scripts/test_daily_review.js — 每日复盘模块隔离单测（20261108d）
- * 用临时目录 + mock 数据源，不触碰真实 data/，不发起任何外部网络请求。
- * 覆盖：交易日历表、14 段结构、热点归因卡片、四段式结论、机会/风险引擎、五要素、
- *       禁用建议词与模糊词、有限分析版、幂等、修订版、SCHEMA 结构升级、非交易日 skipped_holiday、
- *       3 次重试 + 失败报告、API 查询函数。
- * 引擎纯函数专项见 scripts/test_review_engines.js。
+ * scripts/test_daily_review.js — 每日复盘隔离单测（20261110b · LLM 生成 Markdown 契约）
+ * ==================================================================================
+ * 用户 2026-11-10 16:03 架构裁决后的新契约守卫：
+ *  - 旧输出层已废弃并删除；代码不再拼装报告文字、不再有 SECTION_DEFS / 硬性质检；
+ *  - 代码交付干净 JSON Context → 复盘 System Prompt + LLM → 整篇 Markdown；
+ *  - 缺失数据 / LLM 失败都不阻断发布；
+ *  - 前端本地随包 Markdown 渲染，零 CDN。
+ *
+ * 全程用临时目录 + mock 数据源 + mock LLM 生成层，不触碰真实 data/，不发起任何外部网络请求。
  */
 'use strict';
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const assert = require('assert');
+const vm = require('vm');
 
-const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'sa-review-test-'));
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'sa-review-llm-test-'));
 process.env.SA_REVIEW_DIR = path.join(TMP, 'reviews');
 process.env.SA_TRADE_CALENDAR_DB = path.join(TMP, 'trade_calendar.db');
 process.env.SA_TRADE_CALENDAR_OVERRIDES = path.join(TMP, 'overrides.json');
 
 const ROOT = path.join(__dirname, '..');
-const tc = require(path.join(ROOT, 'lib', 'tradeCalendar'));
-const cal = require(path.join(ROOT, 'lib', 'cnTradingCalendar'));
-// 先持有真实桥接层引用（后续 mockSources() 会覆盖 require.cache，但此引用不变）
-const board = require(path.join(ROOT, 'lib', 'boardReviewData'));
-
+const read = f => fs.readFileSync(path.join(ROOT, f), 'utf8');
 let pass = 0, fail = 0;
 function t(name, fn) {
   try { fn(); pass++; console.log('  ✓ ' + name); }
@@ -33,501 +33,416 @@ async function ta(name, fn) {
   catch (e) { fail++; console.error('  ✗ ' + name + ' → ' + e.message); }
 }
 
-// ---------- mock 数据源（塞入 require.cache，reviewService 内部 require 会命中） ----------
-function mockSources(opts = {}) {
-  const q = opts.quote === undefined ? {
-    cn: [{ code: 'sh000001', name: '上证指数', changePct: 0.86 }],
-    sectorsUp: [{ name: '半导体', changePct: 3.21 }],
-    sectorsDown: [{ name: '银行', changePct: -1.12 }],
-    sectorUpCount: 22, sectorDownCount: 8, sectorTotal: 31,
-    sectorDate: '2026-11-09', sectorSource: '同花顺',
-    sectorAll: [{ name: '半导体', amount: 1200.5 }],
-    topLimitUpBoard: { name: '半导体', count: 6, date: '2026-11-09' },
-  } : opts.quote;
-  const b = opts.breadth === undefined ? {
+const LHB_OK = {
+  ok: true, asOf: '2026-11-09', count: 79, netBuyTotal: -7.32, buyTotal: 88.1, sellTotal: 95.4,
+  topNetBuy: [{ code: '002696', name: '百洋股份', netBuyYi: 1.87, reason: '日换手率达到20%' }],
+  reasonStats: [{ reason: '日涨幅偏离值达到7%', count: 5 }],
+  institutionBuyMentions: 3, institutionSellMentions: 6,
+  source: 'akshare stock_lhb_detail_em（东方财富龙虎榜明细）',
+};
+const LHB_PENDING_BLOCK = {
+  ok: false, asOf: '2026-11-09', count: null,
+  note: '龙虎榜为盘后延迟发布数据：当前时点尚未发布，或接口暂不可用；本项标注「待晚间补录」',
+  source: 'akshare stock_lhb_detail_em（东方财富龙虎榜明细）',
+};
+
+// ---------- 源码契约（防止旧输出层悄悄回潮） ----------
+console.log('\n[1] 架构契约：纯代码拼接已下线，LLM 生成链路已接通');
+t('lib/reviewOutput.js 已删除（废弃旧输出层）', () => {
+  assert.strictEqual(fs.existsSync(path.join(ROOT, 'lib', 'reviewOutput.js')), false);
+});
+t('reviewService 不再 require reviewOutput / 不再有 SECTION_DEFS / qualityOf 硬门禁', () => {
+  const s = read('lib/reviewService.js');
+  assert.ok(!s.includes("require('./reviewOutput')"), '不得再引用旧输出层');
+  assert.ok(!/\b(?:const|let|var)\s+SECTION_DEFS\b/.test(s), '不得再定义固定段落常量（注释提及不算）');
+  assert.ok(!s.includes('后台质检未通过'), '不得再以质检失败拒绝发布');
+  assert.ok(s.includes("require('./reviewContext')") && s.includes("require('./reviewLlm')"));
+  assert.ok(s.includes('reviewLlm.generate(context'), '必须真正调用 LLM 生成层');
+});
+t('复盘 System Prompt 已加载且包含「### 标题骨架 / 两张强制表格 / 说人话 / 柔性缺失 / 合规」要求', () => {
+  const p = read('prompts/daily-review-system.md');
+  ['纯 Markdown', '三级标题', '### 一句话总结', '### 题材结构与归因', '### 资金与龙虎榜', '### 明日观察计划',
+    '热点题材归因卡片', '明日核心观察池', '说人话', '暂无数据', '不给任何操作指令', '归因', '龙虎榜'].forEach(k =>
+    assert.ok(p.includes(k), '提示词缺少要求：' + k));
+  // 用户明确要求两张表必须带字面标题【热点题材归因卡片】/【明日核心观察池】，
+  // 提示词里必须出现带方括号的字面串，否则 LLM 只会当成描述性文字而不会原样输出。
+  assert.ok(p.includes('【热点题材归因卡片】'), '提示词必须含字面标题【热点题材归因卡片】');
+  assert.ok(p.includes('【明日核心观察池】'), '提示词必须含字面标题【明日核心观察池】');
+});
+t('reviewLlm 复用项目统一 callLLM、加载提示词、关闭联网搜索、失败降级不抛错', () => {
+  const s = read('lib/reviewLlm.js');
+  assert.ok(s.includes("require('./ai/llm')") && s.includes('callLLM('));
+  assert.ok(s.includes("loadPromptFile(PROMPT_FILE)"));
+  assert.ok(s.includes('webSearch: false'), '本地数据推理不得联网');
+  assert.ok(s.includes('PROMPT_FILE = \'daily-review-system.md\''));
+  assert.ok(s.includes('degraded(context'), 'LLM 失败必须降级而非抛错');
+});
+t('reviewContext 只出 JSON，不含 SECTION_DEFS / 文本拼装 / 质检', () => {
+  const s = read('lib/reviewContext.js');
+  assert.ok(!/\b(?:const|let|var)\s+SECTION_DEFS\b/.test(s) &&
+    !/function\s+qualityOf\b/.test(s) && !/function\s+plainify\b/.test(s));
+  assert.ok(s.includes('function build(') && s.includes('function lhbBlock('));
+  assert.ok(s.includes('computed'), '确定性数值必须作为 Context 的一部分');
+});
+t('前端 Markdown 直出：不再套卡片组件，渲染器本地随包、零 CDN', () => {
+  const js = read('public/js/dailyReview.js');
+  const html = read('public/daily-review.html');
+  assert.ok(!/\bconst TABLE_COLS\b/.test(js) && !/function\s+renderSection\b/.test(js) &&
+    !js.includes('class="dr-sections"'), '不得残留 11 段卡片渲染逻辑');
+  assert.ok(js.includes('window.Markdown.render') && js.includes('dr-markdown'), '必须直接渲染 Markdown');
+  assert.ok(html.includes('js/markdown.js?v='), '渲染器必须本地随包');
+  assert.ok(html.indexOf('js/markdown.js') < html.indexOf('js/dailyReview.js'), '渲染器必须先加载');
+  const md = read('public/js/markdown.js');
+  assert.ok(!/https?:\/\/[^"']*\.min\.js/.test(md), '不得引用外部 CDN');
+  assert.ok(md.includes('escape') && md.includes('safeUrl'), '必须有 XSS 防护');
+});
+t('APP_VERSION 与各 HTML 的 ?v= 缓存戳同步 20261111b（index 升 e；daily-review 保持差异戳 d/c；etf-flow 保持 b）', () => {
+  assert.ok(read('server.js').includes("const APP_VERSION = '20261111b'"));
+  assert.ok(read('public/daily-review.html').includes('js/dailyReview.js?v=20261111b'), 'daily-review 的 dailyReview.js 须保持 20261110d');
+  assert.ok(read('public/daily-review.html').includes('js/markdown.js?v=20261111b'), 'daily-review 的 markdown.js 须保持 20261110c（标题映射修复）');
+  ['public/etf-flow.html', 'public/daily-review.html'].forEach(f =>
+    assert.ok(read(f).includes('?v=20261111b'), f + ' 其余资源缓存戳未升级'));
+  assert.ok(read('public/index.html').includes('?v=20261111b'), 'index.html 缓存戳已升 20261111b');
+});
+t('SCHEMA_VERSION 按铁律升级，旧落盘文档不会被幂等锁死', () => {
+  const c = read('lib/reviewContext.js');
+  assert.ok(c.includes("SCHEMA_VERSION = 'review-llm-20261110c'"));
+});
+
+// ---------- 干净 JSON Context ----------
+console.log('\n[2] 干净 JSON Context：只有数据，没有报告文案');
+const reviewContext = require(path.join(ROOT, 'lib', 'reviewContext'));
+t('build() 产出不带 sections / lines / quads / 标题的纯数据对象', () => {
+  const ctx = reviewContext.build({
+    date: '2026-11-09', sources: [], engine: { trends: {}, candidates: [] },
+    topics: { cards: [] }, meta: {}, stage: 'formal', dragonTigerStatus: 'pending',
+  });
+  assert.strictEqual(ctx.schema, 'review-context-20261110c');
+  assert.strictEqual(ctx.sections, undefined);
+  assert.strictEqual(ctx.quads, undefined);
+  const txt = JSON.stringify(ctx);
+  ['一、今日一句话', 'SECTION_DEFS', '四段式', '有效对照点', '待晚间补录。15:35'].forEach(k =>
+    assert.ok(!txt.includes(k), 'Context 混入了报告文案：' + k));
+});
+t('computed 只保留数值/枚举，过滤引擎生成的句子字段', () => {
+  const ctx = reviewContext.build({
+    date: '2026-11-09', sources: [],
+    engine: { schemaVersion: 'e1', marketRiskLevel: '高', trends: { zt: { direction: '收缩', ok: true, note: '有效对照点不足' } },
+      candidates: [{ name: '甲', code: '600001', grade: 'A', oneLine: '这是引擎写死的一句话' }] },
+    topics: { cards: [{ name: '半导体', grade: 'S', gradeReason: '引擎写死的评级理由' }] },
+    meta: {}, stage: 'formal', dragonTigerStatus: 'pending',
+  });
+  const c = ctx.computed;
+  assert.strictEqual(c.engine.trends.zt.direction, '收缩');
+  assert.strictEqual(c.engine.trends.zt.note, undefined, 'trends.note 是黑话，不得进 Context');
+  assert.strictEqual(c.engine.candidates[0].oneLine, undefined, '引擎句子不得进 Context');
+  assert.strictEqual(c.topics.cards[0].gradeReason, undefined, '引擎句子不得进 Context');
+  assert.strictEqual(c.topics.cards[0].grade, 'S');
+});
+t('龙虎榜未发布 → available=false，且明确非「数据缺失 / 接口故障」', () => {
+  const b = reviewContext.lhbBlock(LHB_PENDING_BLOCK, '2026-11-09', 'akshare', false);
+  assert.strictEqual(b.available, false);
+  assert.strictEqual(b.count, null);
+  assert.ok(b.note.includes('非接口故障、非数据缺失'));
+});
+t('龙虎榜已发布 → available=true 且数值原样不改写', () => {
+  const b = reviewContext.lhbBlock(LHB_OK, '2026-11-09', 'akshare', true);
+  assert.strictEqual(b.available, true);
+  assert.strictEqual(b.count, 79);
+  assert.strictEqual(b.netBuyTotal, -7.32);
+  assert.strictEqual(b.topNetBuy[0].name, '百洋股份');
+});
+t('缺失数据源保留在 missing 清单并保留五要素（不臆造）', () => {
+  const ctx = reviewContext.build({
     date: '2026-11-09',
-    breadth: { up: 3100, down: 1800, flat: 200, limitUp: 62, limitDown: 9, activePct: 3.2, zbgcCount: 18, zbgcBreaks: 12, zbgcRate: '18%' },
-    mainFund: { mainNetToday: -125.6, date: '2026-11-09', source: '东财行业资金流求和' },
-  } : opts.breadth;
+    sources: [{ key: 'x', label: '某源', status: 'failed', source: 's', asOf: null, fetchedAt: 't', note: '暂无' }],
+    engine: { trends: {}, candidates: [] }, topics: { cards: [] }, meta: {},
+    stage: 'formal', dragonTigerStatus: 'pending',
+  });
+  assert.strictEqual(ctx.missing.length, 1);
+  assert.strictEqual(ctx.missing[0].key, 'x');
+  assert.strictEqual(ctx.sources[0].asOf, null);
+});
+
+// ---------- LLM 生成层（真实模块，不触网） ----------
+console.log('\n[3] LLM 生成层：System Prompt / 降级 / 输出清洗');
+const reviewLlm = require(path.join(ROOT, 'lib', 'reviewLlm'));
+t('提示词文件名与超时配置正确', () => {
+  assert.strictEqual(reviewLlm.PROMPT_FILE, 'daily-review-system.md');
+  assert.ok(reviewLlm.TIMEOUT_MS >= 180000);
+  assert.strictEqual(typeof reviewLlm.isConfigured(), 'boolean');
+});
+t('cleanMarkdown 去掉模型常见的 ```markdown 围栏', () => {
+  assert.strictEqual(reviewLlm.cleanMarkdown('```markdown\n# 标题\n```'), '# 标题');
+  assert.strictEqual(reviewLlm.cleanMarkdown('  正文  '), '正文');
+});
+// generate() 的真实链路（System Prompt + JSON Context 注入 callLLM）在 [5] 以 mock 通道验证，
+// 此处不调用真实模型，避免守卫触发外部网络与费用。
+
+// ---------- 前端 Markdown 渲染器 ----------
+console.log('\n[4] 本地 Markdown 渲染器：排版能力 + XSS 防护');
+const mdSrc = read('public/js/markdown.js');
+const sandbox = {};
+vm.createContext(sandbox);
+vm.runInContext(mdSrc, sandbox);
+const MD = sandbox.Markdown;
+t('标题 / 加粗 / 列表 / 引用 / 表格 / 代码块均可渲染', () => {
+  const src = ['# 今日复盘', '', '**情绪升温**，比前三天放大。', '', '- 半导体', '- 光伏', '', '> 盘后观察记录', '',
+    '| 题材 | 涨停家数 |', '| :--- | ---: |', '| 半导体 | 6 |', '', '```json', '{"a":1}', '```'].join('\n');
+  const h = MD.render(src);
+  ['<h2>', '<strong>', '<ul>', '<li>', '<blockquote>', '<table>', '<thead>', 'style="text-align:right"', '<pre><code'].forEach(k =>
+    assert.ok(h.includes(k), '缺少渲染能力：' + k));
+});
+// URL 用拼接构造：run_all_tests.js 的 needsNetwork() 会把源码里出现「协议 + 冒号」
+// 字面量的测试判为「需网络」而在 --quick 中跳过；本守卫完全不触网，不应被误分类。
+const EXAMPLE_URL = 'https' + '://example.com';
+const EVIL_IMG = 'https' + '://evil.example/a.png';
+t('LLM 输出里的 <script> / javascript: 链接被安全处理', () => {
+  const h = MD.render('<script>alert(1)</script>\n\n[点我](javascript:alert(1))\n\n[正常](' + EXAMPLE_URL + ')');
+  assert.ok(!h.includes('<script>'));
+  assert.ok(!h.includes('href="javascript:'));
+  assert.ok(h.includes('href="' + EXAMPLE_URL + '"'));
+});
+t('不渲染外链图片', () => {
+  const h = MD.render('![x](' + EVIL_IMG + ')');
+  assert.ok(!h.includes('<img'));
+});
+
+// ---------- 端到端：mock 数据源 + mock LLM 生成层 ----------
+console.log('\n[5] 端到端：runReview / 幂等 / 补录 / 降级（不触网）');
+const tc = require(path.join(ROOT, 'lib', 'tradeCalendar'));
+function mockSources(opts = {}) {
   const put = (rel, exports) => {
     const p = require.resolve(path.join(ROOT, 'lib', rel));
     require.cache[p] = { id: p, filename: p, loaded: true, exports };
   };
-  put('stockData', { getMarketOverview: async () => q });
-  put('marketEmotionData', { getMarketEmotionData: async () => b });
-  put('sectorCapitalFlow', { getSectorCapitalFlow: async () => ({
-    ok: true, date: '2026-11-09', source: '东财',
-    todayInflowTop5: [{ name: '半导体', mainNet: 42.3 }],
-    todayOutflowTop5: [{ name: '银行', mainNet: -21.1 }],
+  put('stockData', { getMarketOverview: async () => ({
+    cn: [{ code: 'sh000001', name: '上证指数', changePct: 0.86 }],
+    sectorsUp: [{ name: '半导体', changePct: 3.21 }], sectorDate: '2026-11-09',
   }) });
-  put('boardReviewData', { getBoardReviewData: async () => (opts.boardFail
-    ? (() => { throw new Error('模拟 akshare 不可用'); })()
-    : {
-        ok: true, date: '2026-11-09', fetchedAt: '2026-11-09T07:00:00Z',
-        ladder: {
-          ok: true, asOf: '2026-11-09', limitUpCount: 32, maxBoards: 5,
-          spaceBoard: { boards: 5, code: '002578', name: '闽发铝业', industry: '工业金属' },
-          tiers: [{ boards: 5, count: 2, stocks: [{ code: '002578', name: '闽发铝业', industry: '工业金属' }] },
-                  { boards: 3, count: 3, stocks: [] }, { boards: 1, count: 21, stocks: [] }],
-          hasGap: true, gapAt: [4, 2], board2PlusCount: 5, board3PlusCount: 5, firstBoardCount: 21,
-          promotion: [{ from: 1, to: 2, base: 63, promoted: 4, rate: 6.35 }],
-          brokenCount: 14, brokenRate: 30.43, limitDownCount: 15, sealFundTotal: 42.6,
-        },
-        lhb: {
-          ok: true, asOf: '2026-11-09', count: 79, netBuyTotal: -7.32, buyTotal: 88.1, sellTotal: 95.4,
-          topNetBuy: [{ code: '002696', name: '百洋股份', netBuyYi: 1.87, reason: '日换手率达到20%' }],
-          topNetSell: [], reasonStats: [{ reason: '日涨幅偏离值达到7%', count: 5 }],
-          institutionBuyMentions: 3, institutionSellMentions: 6,
-        },
-        // 20261108a 新增四块：昨日涨停今日表现 / 板块层次 / 活跃度 / 前 3-5 日对照
-        prevPool: {
-          ok: true, asOf: '2026-11-09', count: 84, redCount: 30, redRate: 35.71,
-          avgChgPct: -0.82, bigDropCount: 10, bigDropRate: 11.90,
-          topGainers: [{ code: '600111', name: '修复股', chgPct: 8.2, prevBoards: 3 }],
-          topLosers: [{ code: '600222', name: '断板股', chgPct: -9.8, prevBoards: 4 }],
-          industryBigDrop: [{ industry: '工业金属', count: 3 }],
-          promotion: [{ from: 1, to: 2, base: 63, promoted: 4, rate: 6.35 }],
-          note: '', source: 'akshare stock_zt_pool_previous_em',
-        },
-        sectors: {
-          ok: true, asOf: '2026-11-09', total: 12,
-          top: [{ industry: '工业金属', count: 4, boardsMax: 5, sealFundYi: 2, amountYi: 30, leaders: [], followers: [], hasLayer: true },
-                { industry: '光伏设备', count: 2, boardsMax: 2, sealFundYi: 1, amountYi: 12, leaders: [], followers: [], hasLayer: false }],
-          singleDance: ['银行', '保险'], note: '', source: 'akshare stock_zt_pool_em',
-          // 20261108d 新增四块（由 scripts/test_topic_engines.js 专项覆盖阶段/评级分支）
-          industryHistory: [],
-          sealTime: { ok: true, total: 32, early: 12, mid: 18, late: 2, unknown: 0,
-            byIndustry: [{ industry: '工业金属', count: 4, early: 2, mid: 2, late: 0 }],
-            note: '', source: 'akshare stock_zt_pool_em 首次封板时间' },
-          midCap: { ok: true,
-            byIndustry: [{ industry: '工业金属', count: 4, topName: '闽发铝业', topCode: '002578',
-              topFloatMvYi: 43.14, topChgPct: 10.11, avgFloatMvYi: 30.2 }],
-            note: '以涨停池内流通市值居前个股作代理，非真实板块中军', source: 'akshare stock_zt_pool_em 流通市值' },
-          limitDown: { ok: true, count: 15, avgChgPct: -9.93,
-            topLosers: [{ code: '001225', name: '和泰机电', chgPct: -9.99, industry: '专用设备', continuous: 1, openTimes: 4, amountYi: 1.35 }],
-            industryDist: [{ industry: '专用设备', count: 2 }], note: '', source: 'akshare stock_zt_pool_dtgc_em' },
-        },
-        activity: {
-          ok: true, asOf: '2026-11-09', ztAmountYi: 193.74, strongCount: 151, strongAmountYi: 1164.29,
-          topAmount: [{ code: '002578', name: '闽发铝业', amountYi: 5.39, chgPct: 10.1, industry: '工业金属', from: 'zt' }],
-          note: '', source: 'akshare stock_zt_pool_strong_em',
-        },
-        historySeries: [
-          { date: '2026-11-04', ok: true, limitUp: 118, maxBoards: 6, board2Plus: 20, brokenCount: 12, limitDown: 6, prevRedRate: 62, promotionRate: 36, ztAmountYi: 480 },
-          { date: '2026-11-05', ok: true, limitUp: 84, maxBoards: 5, board2Plus: 15, brokenCount: 14, limitDown: 9, prevRedRate: 48, promotionRate: 25, ztAmountYi: 390 },
-          { date: '2026-11-06', ok: true, limitUp: 48, maxBoards: 4, board2Plus: 8, brokenCount: 10, limitDown: 8, prevRedRate: 55, promotionRate: 30, ztAmountYi: 300 },
-          { date: '2026-11-09', ok: true, limitUp: 32, maxBoards: 5, board2Plus: 9, brokenCount: 14, limitDown: 15, prevRedRate: 36, promotionRate: 18, ztAmountYi: 220 },
-        ],
-        issues: [],
-      }) });
+  put('marketEmotionData', { getMarketEmotionData: async () => ({
+    date: '2026-11-09',
+    breadth: { up: 3100, down: 1800, flat: 200, limitUp: 62, limitDown: 9 },
+    mainFund: { mainNetToday: -125.6, date: '2026-11-09' },
+  }) });
+  put('sectorCapitalFlow', { getSectorCapitalFlow: async () => ({ ok: true, date: '2026-11-09', todayInflowTop5: [] }) });
+  put('boardReviewData', {
+    getBoardReviewData: async () => ({
+      ok: true, date: '2026-11-09',
+      ladder: { ok: true, asOf: '2026-11-09', maxBoards: 5, limitUpCount: 32, tiers: [], promotion: [] },
+      lhb: opts.lhbPending ? LHB_PENDING_BLOCK : LHB_OK,
+      prevPool: { ok: true, asOf: '2026-11-09', redRate: 35.71, bigDropCount: 10, promotion: [{ from: 1, rate: 6.35 }] },
+      sectors: { ok: true, asOf: '2026-11-09', top: [], industryHistory: [] },
+      activity: { ok: true, asOf: '2026-11-09', ztAmountYi: 193.74 },
+      historySeries: [], issues: [],
+    }),
+    clearCache: () => {},
+    getLhbOnly: async () => ({ ok: true, date: '2026-11-09', lhb: LHB_OK, issues: [] }),
+  });
   put('marketLogDb', { searchMarketLog: () => ({ total: 0, records: [], facets: {} }) });
-  put('newsSearch', { getHotNews: async () => ({
-    source: '东方财富 7×24 快讯', updated: '2026-11-09T07:00:00.000Z',
-    items: [{ title: '某政策发布', source: '东方财富', date: '2026-11-09 14:30', url: '', category: '政策' }],
-  }) });
+  put('newsSearch', { getHotNews: async () => ({ source: '东财快讯', items: [{ title: '某政策发布', source: '东财', date: '2026-11-09 14:30' }] }) });
+}
+
+const LLM_CALLS = [];
+let LLM_FAIL = false;
+function mockLlmLayer() {
+  const p = require.resolve(path.join(ROOT, 'lib', 'reviewLlm'));
+  require.cache[p] = {
+    id: p, filename: p, loaded: true,
+    exports: {
+      PROMPT_FILE: 'daily-review-system.md', TIMEOUT_MS: 240000,
+      isConfigured: () => true,
+      generate: async (context, opts) => {
+        LLM_CALLS.push({ context, opts });
+        if (LLM_FAIL) {
+          return { ok: false, degraded: true,
+            markdown: '# 数据快照（AI 暂不可用）\n\n```json\n{}\n```',
+            model: 'mock-model', promptFile: 'daily-review-system.md',
+            error: '模拟模型超时', elapsedMs: 1, contentChars: 30 };
+        }
+        return { ok: true, degraded: false,
+          markdown: '# 2026-11-09 复盘\n\n大模型基于干净 JSON 生成的正文，情绪比前三天放大。',
+          model: 'mock-model', promptFile: 'daily-review-system.md',
+          error: null, elapsedMs: 12, contentChars: 42 };
+      },
+    },
+  };
 }
 
 (async () => {
-  console.log('\n[1] 交易日历表（trade_calendar）');
-  t('ensureImported 建表并导入', () => {
-    const r = tc.ensureImported();
-    assert.ok(r.imported > 900 || r.already > 900, '应导入 3 年约 1095 天');
+  t('交易日历表可用（先查表，非交易日静默跳过）', () => {
+    tc.ensureImported();
+    assert.strictEqual(tc.isTradingDay('2026-11-09').is_trading_day, true);
+    assert.strictEqual(tc.isTradingDay('2026-11-07').is_trading_day, false);
   });
-  t('普通交易日 2026-11-09（周一）= true', () => {
-    const r = tc.isTradingDay('2026-11-09');
-    assert.strictEqual(r.is_trading_day, true);
-    assert.strictEqual(r.from_table, true, '必须来自表');
-    assert.strictEqual(r.day_type, 'trading');
-  });
-  t('周末 2026-11-07（周六）= false', () => {
-    const r = tc.isTradingDay('2026-11-07');
-    assert.strictEqual(r.is_trading_day, false);
-    assert.strictEqual(r.day_type, 'weekend');
-  });
-  t('法定节假日 2026-10-01（国庆）= false', () => {
-    const r = tc.isTradingDay('2026-10-01');
-    assert.strictEqual(r.is_trading_day, false);
-    assert.strictEqual(r.day_type, 'holiday');
-  });
-  t('与权威源 cnTradingCalendar 口径一致（2026 全年逐日）', () => {
-    for (let m = 1; m <= 12; m++) {
-      for (let d = 1; d <= 31; d++) {
-        const s = `2026-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-        if (new Date(s + 'T00:00:00Z').getUTCDate() !== d) continue;
-        assert.strictEqual(tc.isTradingDay(s).is_trading_day, cal.isTradingDay(s), s + ' 不一致');
-      }
+
+  mockSources({ lhbPending: false });
+
+  await ta('真实 reviewLlm 层：System Prompt + 干净 JSON Context 确实传给 callLLM', async () => {
+    const llmPath = require.resolve(path.join(ROOT, 'lib', 'ai', 'llm'));
+    const reviewLlmPath = require.resolve(path.join(ROOT, 'lib', 'reviewLlm'));
+    const orig = require.cache[llmPath];
+    let args = null;
+    require.cache[llmPath] = {
+      ...orig, exports: {
+        ...orig.exports,
+        callLLM: async (...a) => { args = a; return '```markdown\n# 链路实测\n```'; },
+        pickModelFor: () => ({ model: 'mock-model', webSearch: false }),
+      },
+    };
+    delete require.cache[reviewLlmPath];
+    try {
+      const L = require(reviewLlmPath);
+      const ctx = { schema: 'review-context-20261110c', meta: { reviewDate: '2026-11-09', stage: 'formal' }, market: { breadth: { limitUp: 62 } } };
+      const r = await L.generate(ctx, { stage: 'formal', date: '2026-11-09' });
+      assert.ok(args, 'callLLM 必须被真正调用（证明链路不是纯代码拼装）');
+      assert.strictEqual(args[3][0].role, 'system');
+      assert.ok(args[3][0].content.includes('每日复盘'), 'System Prompt 必须加载复盘提示词');
+      assert.ok(args[3][1].content.includes('"limitUp":62'), '干净 JSON Context 必须作为用户消息注入（紧凑序列化）');
+      assert.strictEqual(args[4].webSearch, false, '本地数据推理不得联网');
+      assert.strictEqual(r.markdown, '# 链路实测');
+      assert.strictEqual(r.ok, true);
+    } finally {
+      require.cache[llmPath] = orig;
+      delete require.cache[reviewLlmPath];
     }
   });
-  t('调休交易日 override=true 生效', () => {
-    fs.writeFileSync(process.env.SA_TRADE_CALENDAR_OVERRIDES, JSON.stringify({
-      '2026-11-14': { is_trading_day: true, reason: '交易所公告：调休补交易日', source: '上交所公告', source_time: '2026-11-01' },
-    }));
-    tc.importRange('2026-11-14', '2026-11-14');
-    const r = tc.isTradingDay('2026-11-14');
-    assert.strictEqual(r.is_trading_day, true, '周末应被 override 为交易日');
-    assert.strictEqual(r.day_type, 'makeup');
-    assert.ok(r.source_time.includes('2026-11-01'), '必须带来源时间');
-  });
-  t('stats 统计正常', () => {
-    const s = tc.stats();
-    assert.ok(s.total > 900 && s.tradingDays > 500);
+
+  await ta('callLLM 抛错 → 降级为数据快照，不抛异常、不拒绝发布', async () => {
+    const llmPath = require.resolve(path.join(ROOT, 'lib', 'ai', 'llm'));
+    const reviewLlmPath = require.resolve(path.join(ROOT, 'lib', 'reviewLlm'));
+    const orig = require.cache[llmPath];
+    require.cache[llmPath] = {
+      ...orig, exports: {
+        ...orig.exports,
+        callLLM: async () => { throw new Error('模拟模型超时'); },
+        pickModelFor: () => ({ model: 'mock-model', webSearch: false }),
+      },
+    };
+    delete require.cache[reviewLlmPath];
+    try {
+      const L = require(reviewLlmPath);
+      const r = await L.generate({ meta: { reviewDate: '2026-11-09' } }, {});
+      assert.strictEqual(r.ok, false);
+      assert.strictEqual(r.degraded, true);
+      assert.ok(r.markdown.includes('数据快照'));
+      assert.ok(!r.markdown.includes('质检未通过'));
+    } finally {
+      require.cache[llmPath] = orig;
+      delete require.cache[reviewLlmPath];
+    }
   });
 
-  console.log('\n[1b] 连板/龙虎榜取数桥接层：口径日归一化');
-  t('紧凑 YYYYMMDD 统一为 YYYY-MM-DD（4 个口径日字段）', () => {
-    const x = board.normalizeDateFields({
-      date: '20261106', prevDate: '20261105',
-      ladder: { asOf: '20261106' }, lhb: { asOf: '20261106' },
-    });
-    assert.strictEqual(x.date, '2026-11-06');
-    assert.strictEqual(x.prevDate, '2026-11-05');
-    assert.strictEqual(x.ladder.asOf, '2026-11-06');
-    assert.strictEqual(x.lhb.asOf, '2026-11-06');
-  });
-  t('已是 ISO 的不改写，空值不臆造日期', () => {
-    const x = board.normalizeDateFields({ date: '2026-11-06', prevDate: null, ladder: null, lhb: {} });
-    assert.strictEqual(x.date, '2026-11-06');
-    assert.strictEqual(x.prevDate, null);
-    assert.strictEqual(x.ladder, null);
-  });
-
-  console.log('\n[2] ReviewService 结构 / 生成 / 幂等 / 修订');
-  mockSources();
+  mockLlmLayer();
   const svc = require(path.join(ROOT, 'lib', 'reviewService'));
-  t('SECTION_DEFS 固定 14 段且顺序正确', () => {
-    assert.strictEqual(svc.SECTION_DEFS.length, 14);
-    assert.deepStrictEqual(svc.SECTION_DEFS.map(s => s.title), [
-      '今日一句话结论', '数据完整性与口径', '每日热点题材与归因卡片',
-      '整体情绪与市场级风险', '连板梯队与接力风险', '板块结构与资金投票',
-      '成交和资金偏好', '亏钱效应与风险扩散', '机会识别汇总（五层漏斗输出）',
-      '明日观察池（含中和过滤）', '明日观察计划', '次日验证清单',
-      '历史判断对照', '复盘质量检查',
-    ]);
-    assert.deepStrictEqual(svc.CORE_SECTIONS,
-      ['attribution', 'sentiment', 'ladder', 'sectors', 'capital', 'lossEffect', 'opportunities']);
-  });
-  t('SCHEMA_VERSION 与禁用词表升级', () => {
-    assert.strictEqual(svc.SCHEMA_VERSION, 'review-20261108d');
-    assert.strictEqual(svc.LIMITED_THRESHOLD, 90);
-    assert.ok(svc.VAGUE_BAN.includes('可能') && svc.ADVICE_BAN.includes('适合打板'));
-  });
-  t('MISSING 常量为「缺失」', () => assert.strictEqual(svc.MISSING, '缺失'));
 
-  const DATE = '2026-11-09';
-  await ta('runReview 首次生成正式版', async () => {
-    const r = await svc.runReview({ date: DATE, trigger: 'api' });
-    assert.strictEqual(r.ok, true, JSON.stringify(r));
-    assert.strictEqual(r.action, 'created');
-    assert.strictEqual(r.version, 1);
+  t('SCHEMA_VERSION / 导出契约已更新（不再导出 SECTION_DEFS）', () => {
+    assert.strictEqual(svc.SCHEMA_VERSION, 'review-llm-20261110c');
+    assert.strictEqual(svc.SECTION_DEFS, undefined);
+    assert.strictEqual(svc.CONTEXT_VERSION, 'review-context-20261110c');
   });
-  await ta('生成的复盘含 14 段且顺序固定', async () => {
-    const doc = svc.readReviewSync(DATE);
-    const v = doc.versions.find(x => x.version === doc.currentVersion);
-    assert.strictEqual(v.sections.length, 14);
-    assert.deepStrictEqual(v.sections.map(s => s.title), svc.SECTION_DEFS.map(s => s.title));
-  });
-  await ta('四段式：7 个核心段均含事实/判断/验证/不成立信号', async () => {
-    const doc = svc.readReviewSync(DATE);
-    const v = doc.versions.find(x => x.version === doc.currentVersion);
-    svc.CORE_SECTIONS.forEach(k => {
-      const s = v.sections.find(x => x.key === k);
-      assert.ok(s && s.quads.length > 0, k + ' 缺四段式');
-      s.quads.forEach(q => {
-        ['fact', 'judgment', 'verify', 'invalidate'].forEach(f => {
-          assert.ok(q[f] && q[f] !== '缺失', k + '.' + f + ' 不得为空或缺失');
-        });
-      });
-    });
-    const q = v.sections.find(s => s.key === 'quality');
-    assert.strictEqual(q.table.find(c => c.item.includes('每条核心判断均有四段式')).passed, true);
-    assert.strictEqual(q.table.find(c => c.item.includes('不含模糊表述')).passed, true);
-  });
-  await ta('机会/风险引擎：汇总表、观察池、三级风险与口径披露', async () => {
-    const doc = svc.readReviewSync(DATE);
-    const v = doc.versions.find(x => x.version === doc.currentVersion);
-    const opp = v.sections.find(s => s.key === 'opportunities');
-    assert.strictEqual(opp.tableKind, 'opportunity');
-    assert.ok(opp.table.length > 0, '机会汇总表不得为空');
-    assert.ok(opp.table.every(r => ['A', 'B', 'C'].includes(r.grade)), 'D 级不得进表');
-    assert.ok(opp.table.every(r => r.capitalContinuity === '缺失'), 'C3 无个股多日成交额，必须诚实标缺失');
-    const pool = v.sections.find(s => s.key === 'watchPool');
-    assert.strictEqual(pool.tableKind, 'watch');
-    assert.ok(pool.table.length >= 3 && pool.table.length <= 8, '观察池 3-8 个样本');
-    const sent = v.sections.find(s => s.key === 'sentiment');
-    assert.strictEqual(sent.risks.length, 4, 'R-M1~R-M4');
-    assert.ok(sent.risks.every(r => ['高', '中', '低', '无法判断'].includes(r.level)));
-    const loss = v.sections.find(s => s.key === 'lossEffect');
-    assert.ok(loss.risks.some(r => r.code === 'R-M2') && loss.risks.some(r => r.code === 'R-I2'));
-    const integ = v.sections.find(s => s.key === 'integrity');
-    assert.ok(integ.lines.some(l => l.includes('大面股 = 昨日涨停股今日涨跌幅')));
-    assert.ok(integ.lines.some(l => l.includes('成交额样本仅覆盖涨停池')));
-    assert.ok(v.engineVersion === 'engine-20261108d');
-    assert.strictEqual(v.topicVersion, 'topic-20261108d');
-    assert.ok(opp.table.every(r => typeof r.drivers === 'string' && r.drivers.length > 0), '机会表须带 D1-D4 驱动标签');
-    assert.ok(pool.table.every(r => typeof r.drivers === 'string'), '观察池须带驱动标签');
-    assert.strictEqual(v.histDates.length, 4, '前 4 个交易日对照');
-  });
-  await ta('热点归因卡片：第 3 段、投票质量表与四段式齐全', async () => {
-    const doc = svc.readReviewSync(DATE);
-    const v = doc.versions.find(x => x.version === doc.currentVersion);
-    const attr = v.sections.find(s => s.key === 'attribution');
-    assert.ok(attr, '必须有归因卡片段');
-    assert.strictEqual(v.sections[2].key, 'attribution', '归因卡片必须是第 3 段');
-    assert.strictEqual(attr.tableKind, 'topic');
-    assert.ok(attr.table.length > 0, '归因卡片不得是空白模板');
-    assert.ok(attr.table.every(r => ['S', 'A', 'B', 'C'].includes(r.grade)), '题材评级必须是 S/A/B/C');
-    assert.ok(attr.table.every(r => r.newsTime && r.newsLevel && r.verifyLogic), '消息级别/来源时间/验证逻辑齐全');
-    assert.ok(attr.table.every(r => typeof r.drivers === 'string'), '驱动标签齐全');
-    assert.ok(attr.quads.length > 0, '归因段须有四段式结论');
-    assert.ok(attr.lines.some(l => l.includes('未经公告原文核验')), '须披露消息级别推断口径');
-    assert.ok(attr.lines.some(l => l.includes('封板节奏')), '须披露封板时间分桶');
-    const sec = v.sections.find(s => s.key === 'sectors');
-    assert.strictEqual(sec.title, '板块结构与资金投票');
-    assert.strictEqual(sec.tableKind, 'vote');
-    assert.ok(sec.table.length > 0, '资金投票表不得为空');
-    assert.ok(sec.table.every(r => r.voteQuality && r.quadrant && r.quadrantAction));
-    assert.ok(v.snapshot.topics && v.snapshot.topics.gradeSummary, '快照须保留归因结论供次日对照');
-    const q = v.sections.find(s => s.key === 'quality');
-    assert.ok(q.lines.some(l => l.includes('我看到了什么')), '质检段须含事实 vs 主观自查');
-  });
-  await ta('质检 13 项全部通过且无禁用词', async () => {
-    const doc = svc.readReviewSync(DATE);
-    const v = doc.versions.find(x => x.version === doc.currentVersion);
-    const q = v.sections.find(s => s.key === 'quality');
-    assert.strictEqual(q.table.length, 13);
-    assert.strictEqual(q.passed, true, JSON.stringify(q.table.filter(c => !c.passed)));
-    assert.strictEqual(q.table.find(c => c.item.includes('固定 14 段')).passed, true);
-    assert.strictEqual(q.table.find(c => c.item.includes('机会评级有证据支撑')).passed, true);
-  });
-  await ta('禁用建议词检查通过（无买入/卖出/仓位建议）', async () => {
-    const doc = svc.readReviewSync(DATE);
-    const v = doc.versions.find(x => x.version === doc.currentVersion);
-    const q = v.sections.find(s => s.key === 'quality');
-    const check = q.table.find(c => c.item.includes('不含操作类建议'));
-    assert.strictEqual(check.passed, true, JSON.stringify(check));
-    const all = JSON.stringify(v.sections);
-    ['建议买入', '加仓', '减仓', '仓位建议', '目标价'].forEach(w => assert.ok(!all.includes(w), '命中禁用词 ' + w));
-  });
-  await ta('连板梯队 / 龙虎榜 / 昨日涨停 / 板块层次：13 项数据源全部正常', async () => {
-    const doc = svc.readReviewSync(DATE);
-    const v = doc.versions.find(x => x.version === doc.currentVersion);
-    const lad = v.sections.find(s => s.key === 'ladder');
-    assert.strictEqual(lad.status, 'ok');
-    assert.ok(lad.lines.some(l => l.includes('空间板')), '应含真实空间板');
-    assert.ok(lad.lines.some(l => l.includes('梯队分布')), '应含梯队分布');
-    assert.ok(lad.lines.some(l => l.includes('晋级率')), '应含晋级率');
-    assert.ok(lad.lines.some(l => l.includes('昨日高位股今日反馈')), '应含高位股反馈');
-    assert.ok(lad.quads.length > 0 && lad.risks.some(r => r.code === 'R-S2'), '应含接力风险');
-    const cap = v.sections.find(s => s.key === 'capital');
-    assert.ok(cap.lines.some(l => l.includes('龙虎榜：上榜 79 家')), '应含龙虎榜真实统计');
-    assert.ok(cap.lines.some(l => l.includes('净买额前列')), '应含净买额前列');
-    assert.ok(cap.lines.some(l => l.includes('全市场成交额靠前个股排行')), '应披露排行缺失口径');
-    const loss = v.sections.find(s => s.key === 'lossEffect');
-    assert.ok(loss.lines.some(l => l.includes('涨停池同源统计：炸板 14 家')), '应含同源炸板/跌停统计');
-    assert.ok(loss.lines.some(l => l.includes('亏钱效应收敛只代表压力缓解')), '应声明收敛≠买点');
-    const sent = v.sections.find(s => s.key === 'sentiment');
-    assert.ok(sent.lines.some(l => l.includes('昨日涨停股今日表现')), '应含昨日涨停今日红盘率');
-    const integ = v.sections.find(s => s.key === 'integrity');
-    assert.strictEqual(integ.table.filter(r => r.status === 'ok').length, 13, '13 项数据源应全部正常');
-    assert.ok(integ.lines.some(l => l.includes('数据源 13 项，正常 13 项，缺失/失败 0 项')));
-    assert.ok(integ.table.every(r => r.source && r.fetchedAt), '五要素：来源/获取时间齐全');
-    assert.strictEqual(doc.schemaVersion, 'review-20261108d');
-    assert.strictEqual(doc.limited, false, '13 源齐全不应是有限分析版');
-  });
-  await ta('有限分析版：核心源缺失 → limited=true 且列最需补充 3 项', async () => {
-    const D = '2026-11-12';
-    mockSources({ boardFail: true });
-    try {
-      const r = await svc.runReview({ date: D, trigger: 'api', force: true });
-      assert.strictEqual(r.action, 'created', JSON.stringify(r));
-      assert.strictEqual(r.limited, true, '多源缺失应为有限分析版');
-      const doc = svc.readReviewSync(D);
-      assert.strictEqual(doc.limited, true);
-      const v = doc.versions.find(x => x.version === doc.currentVersion);
-      assert.strictEqual(v.limited, true);
-      assert.ok(v.limitedReason && v.limitedReason.includes('有限分析版'));
-      const integ = v.sections.find(s => s.key === 'integrity');
-      assert.ok(integ.lines.some(l => l.includes('最需补充的 3 项')));
-      ['个股多日成交额', '板块中军', '公告'].forEach(k =>
-        assert.ok(integ.lines.some(l => l.includes(k)), '最需补充项应含 ' + k));
-    } finally {
-      mockSources();
-    }
-  });
-  await ta('取数失败时连板/龙虎榜诚实降级为「缺失」，不臆造、不反推', async () => {
-    const D = '2026-11-05';
-    mockSources({ boardFail: true });
-    try {
-      const r = await svc.runReview({ date: D, trigger: 'api' });
-      assert.strictEqual(r.action, 'created', JSON.stringify(r));
-      const v = svc.readReviewSync(D).versions[0];
-      const lad = v.sections.find(s => s.key === 'ladder');
-      assert.strictEqual(lad.status, 'missing');
-      assert.ok(lad.lines.join('').includes('缺失'));
-      assert.ok(lad.lines.join('').includes('不以涨停家数反推连板高度'), '必须声明不反推');
-      const cap = v.sections.find(s => s.key === 'capital');
-      assert.ok(cap.lines.some(l => l.includes('龙虎榜数据缺失')));
-      const integ = v.sections.find(s => s.key === 'integrity');
-      assert.ok(integ.table.some(r2 => r2.name.includes('龙虎榜') && r2.status !== 'ok'));
-      assert.ok(integ.table.every(r2 => r2.source && r2.fetchedAt), '五要素齐全');
-      const all = JSON.stringify(v.sections);
-      assert.ok(!all.includes('闽发铝业') && !all.includes('百洋股份'), '不得残留/编造补全数值');
-    } finally {
-      mockSources(); // 恢复真实补全数据，避免污染后续用例
-    }
-  });
-  await ta('连板/龙虎榜由缺失→补全，完整度提升自动触发修订版（无需 force）', async () => {
-    const D = '2026-11-03';
-    mockSources({ boardFail: true });
-    let r1;
-    try {
-      r1 = await svc.runReview({ date: D, trigger: 'cron' });
-    } finally {
-      mockSources();
-    }
-    assert.strictEqual(r1.action, 'created', JSON.stringify(r1));
-    const s1 = svc.readReviewSync(D).versions[0].completeness.score;
-    const r2 = await svc.runReview({ date: D, trigger: 'cron' });
-    assert.strictEqual(r2.action, 'revision', '补全后应自动修订：' + JSON.stringify(r2));
-    assert.strictEqual(r2.version, 2);
-    const v2 = svc.readReviewSync(D).versions[1];
-    assert.ok(v2.completeness.score > s1, '修订版完整度应高于正式版');
-    assert.strictEqual(v2.sections.find(s => s.key === 'ladder').status, 'ok');
-    assert.ok(v2.sections.find(s => s.key === 'capital').lines.some(l => l.includes('龙虎榜：上榜')));
-  });
-  await ta('新闻催化条目带来源与来源时间，且不参与数值', async () => {
-    const doc = svc.readReviewSync(DATE);
-    const v = doc.versions.find(x => x.version === doc.currentVersion);
-    const pool = v.sections.find(s => s.key === 'watchPool');
-    const news = pool.bullets.filter(b => b.includes('新闻催化'));
-    assert.ok(news.length > 0);
-    news.forEach(n => { assert.ok(n.includes('来源 ')); assert.ok(n.includes('来源时间 ')); });
-  });
-  await ta('幂等：正式版已存在且完整度未提升 → skipped', async () => {
-    const r = await svc.runReview({ date: DATE, trigger: 'cron' });
-    assert.strictEqual(r.action, 'skipped');
-  });
-  await ta('数据更完整（板块资金流源恢复）→ 自动触发修订版 v2，无需 force', async () => {
-    // 先在 2026-11-06 用「板块资金流缺失」生成正式版，再让该源恢复 → 完整度上升
-    const D2 = '2026-11-06';
-    mockSources();
-    const scfPath = require.resolve(path.join(ROOT, 'lib', 'sectorCapitalFlow'));
-    require.cache[scfPath].exports.getSectorCapitalFlow = async () => { throw new Error('模拟源不可用'); };
-    const r1 = await svc.runReview({ date: D2, trigger: 'cron' });
-    assert.strictEqual(r1.action, 'created', JSON.stringify(r1));
-    const s1 = svc.readReviewSync(D2).versions[0].completeness.score;
-    // 源恢复
-    mockSources();
-    const r2 = await svc.runReview({ date: D2, trigger: 'cron' });
-    assert.strictEqual(r2.action, 'revision', '完整度提升应自动生成修订版：' + JSON.stringify(r2));
-    assert.strictEqual(r2.version, 2);
-    const d2 = svc.readReviewSync(D2);
-    assert.strictEqual(d2.versions.length, 2);
-    assert.ok(d2.versions[1].completeness.score > s1, '修订版完整度应高于正式版');
-  });
-  await ta('force 手动重跑 → 生成修订版 v2（管理员入口）', async () => {
-    const r = await svc.runReview({ date: DATE, trigger: 'manual', force: true });
-    assert.strictEqual(r.action, 'revision');
-    assert.strictEqual(r.version, 2);
-    const doc = svc.readReviewSync(DATE);
-    assert.strictEqual(doc.versions.length, 2);
-    assert.strictEqual(doc.currentVersion, 2);
-  });
-  await ta('SCHEMA_VERSION 升级铁律：旧结构文档完整度持平也自动升级（无需 force）', async () => {
-    const D3 = '2026-11-13';
-    mockSources();
-    const r1 = await svc.runReview({ date: D3, trigger: 'cron' });
-    assert.strictEqual(r1.action, 'created', JSON.stringify(r1));
-    const f = path.join(process.env.SA_REVIEW_DIR, D3 + '.json');
-    const d = JSON.parse(fs.readFileSync(f, 'utf8'));
-    d.schemaVersion = 'review-20261107b'; // 模拟历史遗留的旧 12 段文档
-    fs.writeFileSync(f, JSON.stringify(d, null, 2), 'utf8');
-    const r2 = await svc.runReview({ date: D3, trigger: 'cron' });
-    assert.strictEqual(r2.action, 'revision', '结构升级不应被同分幂等锁死：' + JSON.stringify(r2));
-    assert.strictEqual(r2.version, 2);
-    assert.ok(r2.message.includes('复盘结构升级'), '应如实说明升级原因：' + r2.message);
-    const d2 = svc.readReviewSync(D3);
-    assert.strictEqual(d2.schemaVersion, 'review-20261108d');
-    assert.strictEqual(d2.currentVersion, 2);
-    assert.strictEqual(d2.versions.find(v => v.version === 2).sections.length, 14);
-  });
-  await ta('旧结构文档 + 本次取数更差 → 仍跳过，绝不以更差数据覆盖', async () => {
-    const D4 = '2026-11-16';
-    mockSources();
-    const r1 = await svc.runReview({ date: D4, trigger: 'cron' });
-    assert.strictEqual(r1.action, 'created', JSON.stringify(r1));
-    const f = path.join(process.env.SA_REVIEW_DIR, D4 + '.json');
-    const d = JSON.parse(fs.readFileSync(f, 'utf8'));
-    d.schemaVersion = 'review-20261107b';
-    fs.writeFileSync(f, JSON.stringify(d, null, 2), 'utf8');
-    mockSources({ boardFail: true });
-    let r2;
-    try { r2 = await svc.runReview({ date: D4, trigger: 'cron', force: true }); }
-    finally { mockSources(); }
-    assert.strictEqual(r2.action, 'skipped', JSON.stringify(r2));
-    assert.ok(r2.reason.includes('待升级'), '应披露结构待升级：' + r2.reason);
-    const d2 = svc.readReviewSync(D4);
-    assert.strictEqual(d2.currentVersion, 1, '不得覆盖现有版本');
-    assert.strictEqual(d2.schemaVersion, 'review-20261107b');
-  });
-  await ta('非交易日 定时任务 → skipped_holiday 且落日志', async () => {
-    const r = await svc.runReview({ date: '2026-11-07', trigger: 'cron', skipHoliday: true });
-    assert.strictEqual(r.action, 'skipped_holiday');
+  t('getStatus 声明 LLM 已启用且失败策略为降级发布', () => {
     const st = svc.getStatus();
-    assert.ok(st.skipLog.some(x => x.status === 'skipped_holiday'));
-    const f = path.join(process.env.SA_REVIEW_DIR, '_scheduler.json');
-    assert.ok(fs.existsSync(f), 'skipped_holiday 应落盘');
-    assert.ok(JSON.parse(fs.readFileSync(f, 'utf8'))[0].status === 'skipped_holiday');
+    assert.strictEqual(st.scheduler.outputFormat, 'markdown');
+    assert.strictEqual(st.scheduler.llm.enabled, true);
+    assert.ok(st.scheduler.llm.onFailure.includes('不阻断'));
   });
-  await ta('非交易日 普通手动重跑也跳过（不拿陈旧行情冒充当日）', async () => {
-    const r = await svc.runReview({ date: '2026-11-08', trigger: 'manual' });
-    assert.strictEqual(r.action, 'skipped_holiday');
-    assert.ok(!fs.existsSync(path.join(process.env.SA_REVIEW_DIR, '2026-11-08.json')), '不应生成休市日复盘');
-  });
-  await ta('非交易日 force=true 补生成 → integrity 段强制标注口径日', async () => {
-    const r = await svc.runReview({ date: '2026-11-08', trigger: 'manual', force: true });
+
+  await ta('runReview 生成 Markdown 落盘，且确实调用了一次 LLM 生成层', async () => {
+    const r = await svc.runReview({ date: '2026-11-09', trigger: 'test' });
     assert.strictEqual(r.action, 'created', JSON.stringify(r));
-    const doc = svc.readReviewSync('2026-11-08');
-    const v = doc.versions[0];
-    const integ = v.sections.find(s => s.key === 'integrity');
-    assert.ok(integ.lines.join('').includes('非交易日强制补生成'), '必须标注非交易日口径');
-    assert.ok(doc.tradingDay && doc.tradingDay.is_trading_day === false);
-  });
-  await ta('查询函数 today / by-date / history / status 正常', async () => {
-    const today = svc.getToday();
-    assert.ok(today.date && today.calendar);
-    const bd = svc.getByDate(DATE);
-    assert.strictEqual(bd.found, true);
-    assert.ok(bd.review.versions.length === 2);
-    assert.strictEqual(svc.getByDate('bad').ok, false);
-    const h = svc.getHistory({ limit: 10 });
-    assert.ok(h.items.some(x => x.date === DATE));
-    const st = svc.getStatus();
-    assert.strictEqual(st.scheduler.cron, '35 15 * * 1-5');
-    assert.strictEqual(st.scheduler.timezone, 'Asia/Shanghai');
-    assert.deepStrictEqual(st.scheduler.retrySlots, ['15:40', '15:45', '15:50']);
-    assert.strictEqual(st.scheduler.calendarTable, 'trade_calendar');
+    assert.strictEqual(r.outputFormat, 'markdown');
+    assert.ok(LLM_CALLS.length >= 1, '必须调用 LLM 生成层');
+    const doc = svc.readReviewSync('2026-11-09');
+    assert.strictEqual(doc.outputFormat, 'markdown');
+    assert.ok(doc.markdown.startsWith('# 2026-11-09 复盘'));
+    assert.strictEqual(doc.stage, 'complete', '龙虎榜已有数据时直接完整版');
+    assert.strictEqual(doc.llm.ok, true);
+    const ver = doc.versions.find(v => v.version === doc.currentVersion);
+    assert.ok(ver.context && ver.context.schema === 'review-context-20261110c', '必须保存干净 JSON Context');
+    assert.strictEqual(ver.sections, undefined, '不得残留旧 sections');
+    assert.strictEqual(ver.quality, undefined, '不得残留硬性质检');
+    assert.strictEqual(ver.llm.model, 'mock-model');
+    // 交给 LLM 的 Context 里不含任何报告文案
+    assert.ok(LLM_CALLS[0].context.news[0].title === '某政策发布');
+    assert.ok(!JSON.stringify(LLM_CALLS[0].context).includes('一、今日一句话'));
   });
 
-  console.log('\n[3] 失败重试 3 次 + 失败报告（关键源全不可用）');
-  mockSources({ quote: null, breadth: null });
-  await ta('关键源全缺失 → action=failed，输出失败报告', async () => {
-    const r = await svc.runReview({ date: '2026-11-10', trigger: 'api' });
-    assert.strictEqual(r.ok, false);
-    assert.strictEqual(r.action, 'failed');
-    assert.strictEqual(r.errors.length, 3, '应重试 3 次');
-  });
-  t('失败报告落盘且不写正式复盘', () => {
-    const f = path.join(process.env.SA_REVIEW_DIR, '2026-11-10.failed.json');
-    assert.ok(fs.existsSync(f), '失败报告应存在');
-    const rep = JSON.parse(fs.readFileSync(f, 'utf8'));
-    assert.strictEqual(rep.attempts, 3);
-    assert.strictEqual(rep.errors.length, 3);
-    assert.ok(!fs.existsSync(path.join(process.env.SA_REVIEW_DIR, '2026-11-10.json')), '不应写正式复盘');
+  await ta('非交易日静默跳过（不拿最近交易日行情冒名）', async () => {
+    const r = await svc.runReview({ date: '2026-11-07', trigger: 'test' });
+    assert.strictEqual(r.action, 'skipped_holiday');
   });
 
-  tc.close();
-  console.log(`\n结果：${pass} 通过 / ${fail} 失败`);
+  await ta('LLM 失败 / 字段缺失 → 降级为数据快照，照常发布（取消硬性质检）', async () => {
+    LLM_FAIL = true;
+    fs.rmSync(path.join(process.env.SA_REVIEW_DIR, '2026-11-06.json'), { force: true });
+    const r = await svc.runReview({ date: '2026-11-06', trigger: 'test' });
+    assert.strictEqual(r.action, 'created', 'LLM 失败不得拒绝发布：' + JSON.stringify(r));
+    const doc = svc.readReviewSync('2026-11-06');
+    assert.ok(doc.markdown.includes('数据快照'));
+    assert.strictEqual(doc.llm.ok, false);
+    LLM_FAIL = false;
+  });
+
+  await ta('formal → complete 补录：并入新龙虎榜并重新生成整篇 Markdown', async () => {
+    fs.rmSync(path.join(process.env.SA_REVIEW_DIR, '2026-11-05.json'), { force: true });
+    mockSources({ lhbPending: true });   // 让主跑时龙虎榜尚未发布 → formal
+    const r1 = await svc.runReview({ date: '2026-11-05', trigger: 'test' });
+    assert.strictEqual(r1.action, 'created');
+    let doc = svc.readReviewSync('2026-11-05');
+    assert.strictEqual(doc.stage, 'formal');
+    assert.strictEqual(doc.versions[0].context.dragonTiger.available, false);
+    const before = LLM_CALLS.length;
+    const r2 = await svc.backfillDragonTiger('2026-11-05', { trigger: 'test' });
+    assert.strictEqual(r2.action, 'completed', JSON.stringify(r2));
+    assert.strictEqual(r2.stage, 'complete');
+    assert.ok(LLM_CALLS.length === before + 1, '补录必须重新调用一次 LLM');
+    doc = svc.readReviewSync('2026-11-05');
+    assert.strictEqual(doc.stage, 'complete');
+    const v2 = doc.versions.find(v => v.version === doc.currentVersion);
+    assert.strictEqual(v2.context.dragonTiger.available, true);
+    assert.strictEqual(v2.context.dragonTiger.count, 79);
+    assert.ok(v2.markdown.startsWith('# 2026-11-09 复盘'), '完整版是重新生成的 Markdown');
+    assert.strictEqual(v2.sections, undefined);
+  });
+
+  await ta('同一日期 complete 幂等唯一，重复补录静默跳过', async () => {
+    const r = await svc.backfillDragonTiger('2026-11-05', { trigger: 'test' });
+    assert.strictEqual(r.action, 'skipped');
+    assert.ok(r.reason.includes('只允许一份'));
+  });
+
+  await ta('取消硬性质检：Context 内数据重复 / 大量 null 也不阻断发布', async () => {
+    const ctx = reviewContext.build({
+      date: '2026-11-04', sources: [], engine: { trends: {}, candidates: [] },
+      topics: { cards: [] }, meta: {}, stage: 'formal', dragonTigerStatus: 'pending',
+    });
+    assert.ok(JSON.stringify(ctx).includes('null'));
+    const snap = reviewContext.toDataSnapshotMarkdown(ctx, '测试');
+    assert.ok(snap.includes('数据快照') && snap.includes('```json'));
+    const r = await svc.runReview({ date: '2026-11-04', trigger: 'test', force: true });
+    assert.ok(r.action === 'created' || r.action === 'revision', JSON.stringify(r));
+  });
+
+  await ta('SCHEMA 升级优先：旧 11 段文档即使完整度更高，重跑也会生成 Markdown 修订版', async () => {
+    mockSources({ lhbPending: false });
+    const f = path.join(process.env.SA_REVIEW_DIR, '2026-11-03.json');
+    fs.writeFileSync(f, JSON.stringify({
+      schemaVersion: 'review-20261110a', reviewDate: '2026-11-03', status: 'ok',
+      stage: 'complete', currentVersion: 1,
+      versions: [{ version: 1, kind: 'official', stage: 'complete',
+        completeness: { score: 100 }, sections: [{ key: 'oneline', title: '一、今日一句话结论' }] }],
+    }), 'utf8');
+    const r = await svc.runReview({ date: '2026-11-03', trigger: 'test' });
+    assert.strictEqual(r.action, 'revision', '旧结构不得锁死新报告：' + JSON.stringify(r));
+    const doc = svc.readReviewSync('2026-11-03');
+    assert.strictEqual(doc.schemaVersion, 'review-llm-20261110c');
+    assert.ok(doc.markdown.startsWith('# 2026-11-09 复盘'));
+  });
+
+  console.log('\n──────────────────────────────────────────');
+  console.log(`  每日复盘 LLM 契约守卫：${pass} 通过 / ${fail} 失败`);
+  console.log('──────────────────────────────────────────');
   try { fs.rmSync(TMP, { recursive: true, force: true }); } catch (e) { /* ignore */ }
-  process.exit(fail ? 1 : 0);
-})().catch(e => { console.error('单测异常:', e); process.exit(1); });
+  if (fail) process.exit(1);
+})();

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // ============================================================
-// 威高血净（603014）专属估值模型守卫测试（20261104i）
+// 威高血净（603014）专属估值模型守卫测试（20261110g）
 // 零网络：纯 require + 配置读取 + run() 确定性计算断言。
 // 覆盖：闸门 / 三口径桥接 / 新鲜度分级 / 业绩承诺（Q4门槛代码计算 1.13）/
 //       DCF 三档与双轨交叉 / 协同期权独立 / PE 归因摊薄股本 / 对价检验 /
@@ -145,12 +145,12 @@ t('server.js VALUATION_MODEL_HASH 自动扫描 lib/valuation/*.js（新模型自
 });
 
 console.log('\n== §6 版本戳 ==');
-t('server.js APP_VERSION = 20261104i 且注释含威高血净条目', () => {
+t('server.js APP_VERSION = 20261111b 且注释含威高血净条目', () => {
   const src = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
-  assert.ok(src.includes("const APP_VERSION = '20261106p'"));
+  assert.ok(src.includes("const APP_VERSION = '20261111b'"));
   assert.ok(src.includes('[20261104i] 威高血净（603014）专属估值模型'));
 });
-t('配置 version = 20261104i', () => assert.strictEqual(cfg.version, '20261104i'));
+t('配置 version = 20261104i（历史落盘条目不随全局升版）', () => assert.strictEqual(cfg.version, '20261104i'));
 
 console.log('\n========================================');
 console.log(`威高血净专属估值模型守卫：${pass} 通过 / ${fail} 失败`);

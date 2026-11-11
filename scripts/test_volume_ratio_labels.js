@@ -44,15 +44,15 @@ ok(cf.includes('const volumePriceRatio = avgDownVol > 0 ? avgUpVol / avgDownVol 
 ok(ve.includes('const ratio20 = avg20 > 0 ? volToday / avg20 : null;'), 'volumeEngine ratio20 公式原样保留（当日量 ÷ 20日均量）');
 ok(ve.includes('const health = (upVols.length && dnVols.length) ? _mean(upVols) / _mean(dnVols) : null;'), '⑤量价健康度公式原样保留');
 ok(app.includes('${vp.ratio != null ? vp.ratio') && app.includes('esc(vol.ratio20)'), '前端仍消费原字段 vp.ratio / vol.ratio20，未换数据源');
-ok(ve.includes("schema: 'volume-engine-20261106p'"), '引擎 schema 未升版（输出结构零变化）');
-ok(sjd.includes("const LAYOUT_VERSION = '20261106o'"), 'LAYOUT_VERSION 已升 20261106o（量价配合子信号输入 signal 值域与分值变化：涨跌判定与 135 格走势档同源，判断记录强制重算）');
+ok(ve.includes("schema: 'volume-engine-20261109c'"), '引擎 schema = volume-engine-20261109c（量能单一真值源）');
+ok(sjd.includes("const LAYOUT_VERSION = '20261109c'"), 'LAYOUT_VERSION 已升 20261106o（量价配合子信号输入 signal 值域与分值变化：涨跌判定与 135 格走势档同源，判断记录强制重算）');
 
 section('§4 版本戳与缓存破坏');
-ok(/const APP_VERSION = '20261106p'/.test(server), 'APP_VERSION = 20261106p');
+ok(/const APP_VERSION = '20261111b'/.test(server), 'APP_VERSION = 20261111b');
 ok(server.includes('[20261106b]'), 'server.js 存在 [20261106b] 独立变更日志条目');
 for (const f of ['index.html', 'accuracy.html', 'logic-model.html', 'notes.html', 'volume-map.html']) {
   const html = read('public/' + f);
-  ok(html.includes('?v=20261106p') && !html.includes('?v=20261106l'), `public/${f} 缓存戳全部对齐 20261106p`);
+  ok(html.includes('?v=20261111b') && !html.includes('?v=20261106l'), `public/${f} 缓存戳全部对齐 20261111b`);
 }
 
 console.log(`\n===== 汇总：通过 ${pass} / ${fail} 失败 =====`);

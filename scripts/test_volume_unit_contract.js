@@ -126,9 +126,9 @@ console.log('\n[6] 文案自洽：结论里的当日量与阈值倍数必须同�
   const item = contraU.shouldAmpNot;
   ok(!!item && /该放量未放量/.test(item.signal || ''), '拿到「该放量未放量」条目');
   if (item) {
-    ok(/20 日均量 1000 ×1\.5 = 1500（当日量 800）/.test(item.conclusion), '同屏展示 均值×1.5=阈值（当日量）');
-    ok(/当日量为阈值的 0\.53 倍/.test(item.conclusion), '同时给出「当日量 ÷ 阈值」倍数，用户可自行核对');
-    ok(/资金未跟上/.test(item.conclusion), '0.53 倍确实未达 → 文案说「资金未跟上」（20261106n 统一口径措辞）');
+    ok(/20 日均量 1000 ×1\.3 = 1300（当日量 800）/.test(item.conclusion), '同屏展示 均值×1.3=阈值（当日量）');
+    ok(/当日量为阈值的 0\.62 倍/.test(item.conclusion), '同时给出「当日量 ÷ 阈值」倍数，用户可自行核对');
+    ok(/资金未跟上/.test(item.conclusion), '0.62 倍确实未达 → 文案说「资金未跟上」（20261109c 统一口径措辞）');
   }
 }
 

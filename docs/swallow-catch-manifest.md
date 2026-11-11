@@ -2,28 +2,29 @@
 
 自动生成，勿手改。
 
-_总计 125 处空 catch；其中路由处理内 🔴 6 处（最高优先级）。_
+_总计 138 处空 catch；其中路由处理内 🔴 6 处（最高优先级）。_
 
 
-### server.js（空 catch 18 处）
-- L163  🟡 其他
-- L291  🔴 路由处理内
-- L327  🔴 路由处理内
-- L1067  🔴 路由处理内
-- L1125  🟡 其他
-- L1146  🟡 其他
-- L1255  🔴 路由处理内
-- L1682  🟡 其他
-- L1683  🟡 其他
-- L1684  🟡 其他
-- L1733  🔴 路由处理内
-- L2381  🟡 其他
-- L2478  🟡 其他
-- L2819  🟡 其他
-- L2960  🟡 其他
-- L2997  🟡 其他
-- L3067  🟡 其他
-- L3070  🟡 其他
+### server.js（空 catch 19 处）
+- L160  🟡 其他
+- L288  🔴 路由处理内
+- L324  🔴 路由处理内
+- L1030  🔴 路由处理内
+- L1088  🟡 其他
+- L1111  🟡 其他
+- L1220  🔴 路由处理内
+- L1647  🟡 其他
+- L1648  🟡 其他
+- L1649  🟡 其他
+- L1698  🔴 路由处理内
+- L2346  🟡 其他
+- L2683  🟡 其他
+- L3024  🟡 其他
+- L3165  🟡 其他
+- L3220  🟡 其他
+- L3228  🟡 其他
+- L3301  🟡 其他
+- L3304  🟡 其他
 
 ### lib\analysis.js（空 catch 2 处）
 - L26  🟡 其他
@@ -35,6 +36,9 @@ _总计 125 处空 catch；其中路由处理内 🔴 6 处（最高优先级）
 - L142  🟡 其他
 - L143  🟡 其他
 
+### lib\baselines.js（空 catch 1 处）
+- L74  🟡 其他
+
 ### lib\brokerSectorTurnover.js（空 catch 1 处）
 - L126  🟡 其他
 
@@ -45,7 +49,7 @@ _总计 125 处空 catch；其中路由处理内 🔴 6 处（最高优先级）
 - L84  🟡 其他
 
 ### lib\etfFlow.js（空 catch 1 处）
-- L796  🟡 其他
+- L851  🟡 其他
 
 ### lib\eventEngine.js（空 catch 4 处）
 - L298  🟡 其他
@@ -54,7 +58,7 @@ _总计 125 处空 catch；其中路由处理内 🔴 6 处（最高优先级）
 - L476  🟡 其他
 
 ### lib\f10Status.js（空 catch 1 处）
-- L126  🟡 其他
+- L125  🟡 其他
 
 ### lib\factStore.js（空 catch 5 处）
 - L80  🟡 其他
@@ -100,12 +104,12 @@ _总计 125 处空 catch；其中路由处理内 🔴 6 处（最高优先级）
 - L36  🟡 其他
 
 ### lib\manualZones.js（空 catch 1 处）
-- L30  🟡 其他
+- L31  🟡 其他
 
 ### lib\marketEmotionModel.js（空 catch 3 处）
-- L104  🟡 其他
-- L105  🟡 其他
 - L107  🟡 其他
+- L108  🟡 其他
+- L110  🟡 其他
 
 ### lib\marketLogDb.js（空 catch 1 处）
 - L231  🟡 其他
@@ -118,8 +122,8 @@ _总计 125 处空 catch；其中路由处理内 🔴 6 处（最高优先级）
 - L73  🟡 其他
 
 ### lib\marketTechJudgment.js（空 catch 2 处）
-- L58  🟡 其他
-- L162  🟡 其他
+- L60  🟡 其他
+- L164  🟡 其他
 
 ### lib\marketTechnical.js（空 catch 2 处）
 - L863  🟡 其他
@@ -161,18 +165,25 @@ _总计 125 处空 catch；其中路由处理内 🔴 6 处（最高优先级）
 - L218  🟡 其他
 - L310  🟡 其他
 
+### lib\reviewService.js（空 catch 5 处）
+- L383  🟡 其他
+- L397  🟡 其他
+- L732  🟡 其他
+- L752  🟡 其他
+- L754  🟡 其他
+
 ### lib\sameDayJudgment.js（空 catch 8 处）
-- L697  🟡 其他
-- L1198  🟡 其他
-- L1544  🟡 其他
-- L1603  🟡 其他
-- L1678  🟡 其他
-- L1840  🟡 其他
-- L1865  🟡 其他
-- L2185  🟡 其他
+- L700  🟡 其他
+- L1220  🟡 其他
+- L1566  🟡 其他
+- L1625  🟡 其他
+- L1700  🟡 其他
+- L1891  🟡 其他
+- L1916  🟡 其他
+- L2255  🟡 其他
 
 ### lib\sectorCapitalFlow.js（空 catch 1 处）
-- L319  🟡 其他
+- L316  🟡 其他
 
 ### lib\sectorCrowding.js（空 catch 1 处）
 - L66  🟡 其他
@@ -188,26 +199,34 @@ _总计 125 处空 catch；其中路由处理内 🔴 6 处（最高优先级）
 - L96  🟡 其他
 
 ### lib\sentimentAccuracy.js（空 catch 1 处）
-- L42  🟡 其他
+- L44  🟡 其他
 
 ### lib\sentimentTurningPoint.js（空 catch 1 处）
 - L64  🟡 其他
 
 ### lib\stockData.js（空 catch 4 处）
-- L1262  🟡 其他
-- L2206  🟡 其他
-- L2406  🟡 其他
-- L2430  🟡 其他
+- L1255  🟡 其他
+- L2199  🟡 其他
+- L2399  🟡 其他
+- L2423  🟡 其他
 
-### lib\strategyGenerator.js（空 catch 3 处）
-- L156  🟡 其他
-- L165  🟡 其他
-- L236  🟡 其他
+### lib\stockReview.js（空 catch 7 处）
+- L144  🟡 其他
+- L150  🟡 其他
+- L223  🟡 其他
+- L229  🟡 其他
+- L315  🟡 其他
+- L352  🟡 其他
+- L472  🟡 其他
 
 ### lib\techFaceJudgment.js（空 catch 3 处）
-- L54  🟡 其他
-- L242  🟡 其他
-- L310  🟡 其他
+- L59  🟡 其他
+- L262  🟡 其他
+- L337  🟡 其他
+
+### lib\tradeCalendar.js（空 catch 2 处）
+- L197  🟡 其他
+- L234  🟡 其他
 
 ### lib\usMacroCalendar.js（空 catch 1 处）
 - L109  🟡 其他

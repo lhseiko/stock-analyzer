@@ -85,7 +85,9 @@ function baseBundle(over = {}) {
     date: END,
     index: { code: 'sh000001', name: '上证指数', bars: mkBars(260) },
     breadth: { up: 3000, down: 1800, flat: 100, limitUp: 60, limitDown: 3, activePct: 60 },
-    margin: { latest: 18000, changePct: 0.3, change5Pct: 1.2 },
+    // [20261109a] 两融双栏夹具：融资 +1.2%（加仓=利好 +1）、融券 -1.2%（减少=利好 +1）
+    // → 两子项同向，本卡 score 仍为 +1，与旧版单因子口径等价，既有数值断言零影响。
+    margin: { latest: 18000, changePct: 0.3, change5Pct: 1.2, rqLatest: 300, rqChange5Pct: -1.2 },
     mainFund: { mainNetToday: 150, history: [] },
     capital: { totalAmount: 15000, turnoverAvg: 3, topDecileShare: 45 },
     fx: { usdcnh: 7.0, usdcnhChgPct: -0.3, usdcny: 7.0, usdcnyChgPct: -0.3 },
@@ -276,10 +278,13 @@ const withBars = (bars, over = {}) => baseBundle({ index: { code: 'sh000001', na
   console.log('\n[14] 权重=评分口径（20261025n）：总分 = Σ(满格方向×权重)，因子 contribution = 方向×权重');
   r = await computeMarketEmotion({ data: baseBundle(), macroFactors: [] });
   const dirOf = s => (s > 0 ? 1 : s < 0 ? -1 : 0);
-  const expectTotal = r.factors.reduce((a, f) => a + dirOf(f.score || 0) * (f.weight / 100), 0);
+  // [20261109a] 两融双栏因子 subScore=true：融资/融券各占半权重，按原始方向强度（±0.5）计入；
+  // 其余因子仍走 dirOf 满格方向。与 model 的 dirWeight 同源，避免把合法的半格误判为失败。
+  const dirVal = f => (f.subScore ? (f.score || 0) : dirOf(f.score || 0));
+  const expectTotal = r.factors.reduce((a, f) => a + dirVal(f) * (f.weight / 100), 0);
   ok(Math.abs(r.totalScore - expectTotal) < 0.001, `总分 = Σ(方向×权重)（${r.totalScore} vs ${expectTotal.toFixed(3)}）`);
-  ok(r.factors.every(f => Math.abs((f.contribution || 0) - dirOf(f.score || 0) * f.weight) < 0.011),
-    '每因子 contribution = 方向 × 权重（净权重=评分）');
+  ok(r.factors.every(f => Math.abs((f.contribution || 0) - dirVal(f) * f.weight) < 0.011),
+    '每因子 contribution = 方向 × 权重（净权重=评分；两融双栏按半格）');
 
   console.log(`\n===== 结果：通过 ${pass} / 失败 ${fail} =====`);
   try { fs.rmSync(TMP, { recursive: true, force: true }); } catch (e) {}

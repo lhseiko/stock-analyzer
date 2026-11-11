@@ -48,7 +48,10 @@ const MacroNews = (() => {
     const dtxt = (ind.delta != null)
       ? (ind.deltaUnit === 'pct' ? ind.delta.toFixed(1) + 'pct' : ind.delta.toFixed(1) + ' 点')
       : '';
-    return `<span class="mi-trend ${ind.trend}">${arrow}${dtxt ? ' ' + dtxt : ''}</span>`;
+    // [20261109b] 宏观指标「回升 / 回落」不等于利好 / 利空：
+    // CPI 上行、失业率上行、PPI 回升都可能对股市是负面，反之亦然（数值符号 ≠ 方向）。
+    // 后端 trend 只是数值方向，不含业务语义 → 趋势徽标统一中性灰，禁止染红绿；箭头仍保留以表达数值方向。
+    return `<span class="mi-trend neutral" title="数值方向（非利好/利空判断）">${arrow}${dtxt ? ' ' + dtxt : ''}</span>`;
   }
   function metricsHtml(ind) {
     if (!ind.metrics || !ind.metrics.length) return '';

@@ -111,14 +111,14 @@ ok(app.includes('<span class="cm-label">资金行为</span>') && app.includes('d
   '资金行为卡标签与数据源零改动（不与唯一结论冲突）');
 
 section('§5 判定逻辑 / 数值 / 判断记录零改动');
-ok(ve.includes('const ratio20 = pc.ratio20;') && ve.includes('if (ratio20 > 1.3)') && ve.includes('else if (ratio20 < 0.8)'),
-  '_volTier5 仍用 ratio20 且阈值 1.3 / 0.8 未变');
+ok(ve.includes('const ratio20 = pc.ratio20;') && ve.includes('if (isAmpRatio(ratio20))') && ve.includes('else if (isShrinkRatio(ratio20))'),
+  '_volTier5 仍用 ratio20，阈值改由 lib/volumeCaliber 单一真值源提供（20261109c）');
 ok(cf.includes('const dayVolRatio = priorAvgVol > 0') && cf.includes('const volumePriceRatio = avgDownVol > 0'),
   'capitalFlow 量价信号公式未变');
 ok(cf.includes("const ut = (opts && opts.unifiedTier) || null;"), 'unifiedTier 同源链路未变');
-ok(ve.includes("schema: 'volume-engine-20261106p'"), '引擎 schema 未升（输出结构未变）');
-ok(sjd.includes("const LAYOUT_VERSION = '20261106o'"), 'LAYOUT_VERSION 已升 20261106o（量价配合子信号输入 signal 值域与分值变化：涨跌判定与 135 格走势档同源，判断记录强制重算）');
-ok(!sjd.includes('cell.conclusion') && !sjd.includes('pj.cell'), 'sameDayJudgment 不消费 135 格 conclusion（改动无下游影响）');
+ok(ve.includes("schema: 'volume-engine-20261109c'"), '引擎 schema = volume-engine-20261109c（量能单一真值源）');
+ok(sjd.includes("const LAYOUT_VERSION = '20261109c'"), 'LAYOUT_VERSION 已升 20261106o（量价配合子信号输入 signal 值域与分值变化：涨跌判定与 135 格走势档同源，判断记录强制重算）');
+ok((sjd.match(/cell\.conclusion/g) || []).length === 1 && (sjd.match(/pj\.cell/g) || []).length === 1 && sjd.includes("conclusion: cell.conclusion || ''"), 'sameDayJudgment 仅在 pos135 判定记录摘取处引用 pj.cell/cell.conclusion（20261107a 回看字段，各恰 1 处），信号路径仍不消费 135 格 conclusion');
 ok(pmSrc.includes('module.exports = { ZONES, STRONG, DERIVED_KEYS, TIER5, volCell }'), 'posModel135 导出结构未变');
 
 section('§7 20261106n：m 轮「全模块综合总结（代码聚合）」行已删除（用户裁决：总结输出不理想，票型罗列冗长、与横幅信息重复、中性信息计票）');
@@ -129,12 +129,12 @@ ok(!chartsCode.includes('全模块综合总结（代码聚合）'), '聚合行�
 ok(!chartsCode.includes('20261106m（用户裁决'), 'm 轮聚合块注释已清理（留档注释除外）');
 
 section('§8 版本戳 / 缓存破坏');
-ok(/const APP_VERSION = '20261106p'/.test(server), 'APP_VERSION = 20261106p');
+ok(/const APP_VERSION = '20261111b'/.test(server), 'APP_VERSION = 20261111b');
 ok(server.includes('[20261106i]'), 'server.js 存在 [20261106i] 独立变更日志');
 ok(server.includes('[20261106h]') && server.includes('[20261106g]'), '功能引入版本号保留（铁律）');
 for (const f of ['index.html', 'accuracy.html', 'logic-model.html', 'notes.html', 'volume-map.html']) {
   const html = read('public/' + f);
-  ok(html.includes('?v=20261106p') && !html.includes('?v=20261106l'), `public/${f} 缓存戳全部对齐 20261106p`);
+  ok(html.includes('?v=20261111b') && !html.includes('?v=20261106l'), `public/${f} 缓存戳全部对齐 20261111b`);
 }
 
 console.log(`\n===== 汇总：通过 ${pass} / ${fail} 失败 =====`);

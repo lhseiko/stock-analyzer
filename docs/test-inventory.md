@@ -15,14 +15,28 @@
 | # | 脚本名 | 被测模块 | 断言数 | 退出码接线 | 环境依赖 | 超时风险 |
 |---|---------|----------|-------:|-----------|----------|----------|
 | 1 | `test_aspects_budget.js` | ai/llm | 50 | ✅ 失败即非零退出 | — | 无（零依赖秒级） |
-| 2 | `test_backtest_validator.js` | backtestValidator | 30 | ✅ 失败即非零退出 | — | 无（零依赖秒级） |
 | 3 | `test_broker_turnover.js` | brokerSectorTurnover.js | 19 | ✅ 失败即非零退出 | — | 无（零依赖秒级） |
 | 4 | `test_cache_bust_guard.js` | （纯静态/独立） | 3 | ✅ 失败即非零退出 | — | 无（零依赖秒级） |
 | 5 | `test_changjiang_matrix_render.js` | valuation/changjiang000783.js | 32 | ✅ 失败即非零退出 | — | 无（零依赖秒级） |
 | 6 | `test_changjiang_patchF.js` | valuation/changjiang000783.js | 32 | ✅ 失败即非零退出 | — | 无（零依赖秒级） |
 | 7 | `test_changjiang_patchFG.js` | valuation/changjiang000783.js | 69 | ✅ 失败即非零退出 | — | 无（零依赖秒级） |
 | 8 | `test_current_quote_refresh.js` | （纯静态/独立） | 21 | ✅ 失败即非零退出 | — | 无（零依赖秒级） |
-| 9 | `test_data_honesty.js` | dataHonesty | 17 | ✅ 失败即非零退出 | — | 无（零依赖秒级） |
+| 9 | `test_data_honesty.js` | dataHonesty | 48 | ✅ 失败即非零退出 | — | 无（零依赖秒级） |
+
+> 20261110g 更新：test_data_honesty 由 17 → 48 断言（P0-3 代理口径打标：PROXY_REGISTRY 六项契约 / 接线点静态扫描 / 前后端注册表一致性 / 颜色语义中性色守卫）。
+
+### 新增守卫（20261110g · 阶段 1 P0）
+
+| # | 脚本 | 被测模块 | 断言数 | 退出码 | 网络 | 依赖 |
+|---|------|----------|--------|--------|------|------|
+| 新1 | `test_lookahead_guard.js` | lookahead, sameDayJudgment, marketTechJudgment, techFaceJudgment, sentimentAccuracy, baselines | 26 | ✅ 失败即非零退出 | 否（夹具+真实落盘抽审） | 无（秒级，月表测试自清理） |
+| 新2 | `test_inflight.js` | inflight（P1-1 singleflight） | 17 | ✅ 失败即非零退出 | 否（内存夹具） | 无（秒级） |
+| 新3 | `test_single_source_taxonomy.js` | taxonomy（P1-3 常量单源）+ 全站合规词扫描 | 20 | ✅ 失败即非零退出 | 否（源码扫描） | 无（秒级） |
+| 新4 | `test_store.js` | store（P1-4 JSON 读写统一）+ 四类核心迁移扫描 | 16 | ✅ 失败即非零退出 | 否（临时目录自清理） | 无（秒级） |
+| 工具 | `bump_version.js` | P1-2 版本戳自动化（APP_VERSION + ?v= + 守卫语境行，幂等/dry-run） | 非测试（工具） | 失败即非零退出 | 否 | 无 |
+| 报告 | `accuracy_backtest_report.js` | 四链只读回算（裁决④） | 落盘 `docs/accuracy-backtest-report-20261110.md` | — | 是（腾讯日K） | 按需手动跑，非回归防线 |
+
+> 20261110g 补记（既有守卫更新）：`test_color_semantics.js` L3/L4b 随 20261110b「Markdown 直出版」重构更新——旧 dailyReview colorize/semanticText/renderCell/quads 逐字段着色体系已按用户裁决删除，守卫改为盯「方向着色不回潮（无着色函数/无 dr-up|dr-down/无红绿硬编码）」+「Markdown 来源不可信须走 esc 转义兜底（markdownHtml fallback / 空正文 dr-empty / legacySectionsToMarkdown 兼容还原）」；断言 148，全绿。归属判定：非本轮改动引入，属守卫过时需更新。
 | 10 | `test_event_frontrun.js` | eventEngine | 19 | ✅ 失败即非零退出 | — | 无（零依赖秒级） |
 | 11 | `test_event_weight_sentiment_acc.js` | eventEngine, sentimentAccuracy | 85 | ✅ 失败即非零退出 | — | 无（零依赖秒级） |
 | 12 | `test_factor_direction.js` | localDate, ruleCore, dedicatedFactor | 28 | ✅ 失败即非零退出 | — | 无（零依赖秒级） |
@@ -50,13 +64,12 @@
 | 34 | `test_shareholder_period.js` | shareholderData | 10 | ✅ 失败即非零退出 | — | 无（零依赖秒级） |
 | 35 | `test_shareholder_price_trend.js` | shareholderData | 9 | ✅ assert 抛错即非零退出 | — | 无（零依赖秒级） |
 | 36 | `test_start_vbs.js` | （纯静态/独立） | 7 | ✅ 失败即非零退出 | — | 无（零依赖秒级） |
-| 37 | `test_strategy_generator.js` | backtestValidator, strategyGenerator | 41 | ✅ 失败即非零退出 | — | 无（零依赖秒级） |
-| 38 | `test_strategy_nl.js` | strategyNL, backtestValidator | 27 | ✅ 失败即非零退出 | — | 无（零依赖秒级） |
 | 39 | `test_swallow_catch_guard.js` | （纯静态/独立） | 0 | ✅ 失败即非零退出 | — | 无（零依赖秒级） |
 | 40 | `test_tech_accuracy.js` | marketTechJudgment, techFaceJudgment | 83 | ✅ 失败即非零退出 | — | 无（零依赖秒级） |
 | 41 | `test_tech_face_overdue.js` | techFaceJudgment | 19 | ✅ 失败即非零退出 | — | 无（零依赖秒级） |
 | 42 | `test_tz_smoke.js` | localDate, sameDayJudgment, marketSentimentIndex | 8 | ✅ 失败即非零退出 | — | 无（零依赖秒级） |
 | 43 | `test_volume_price_signal_wiring.js` | （纯静态/独立） | 9 | ✅ 失败即非零退出 | — | 无（零依赖秒级） |
+| 44 | `test_stock_review.js` | stockReview（个股每日复盘） | 42 | ✅ 失败即非零退出 | — | 无（零依赖秒级，临时目录自清理） |
 
 ## 假阳性筛查（R5）
 
@@ -74,7 +87,6 @@
 | G2 | eventEngine | 事件权重分级常量：中度 `0.12 → 0.13` | pass(0) | FAIL(1) | ✅ 捕获 |
 | G3 | localDate | 时区常量 `Asia/Shanghai → Asia/Tokyo`（+1h） | pass(0) | FAIL(1) | ✅ 捕获 |
 | G4 | dataHonesty | 信封分类逻辑：`success:false` 不再判 `failed` | pass(0) | FAIL(1) | ✅ 捕获 |
-| G5 | backtestValidator | 指标数学回归：RSI 单调性被破坏（恒 = 50） | pass(0) | FAIL(1) | ✅ 捕获 |
 
 **结论：5/5 变异全部被对应测试捕获 → 目标测试非假阳性空转。**
 
@@ -89,3 +101,5 @@
 ## 备注
 
 - 「需网络」：脚本内出现 axios/http/https/fetch/request 等外呼；「起服务」：spawn/fork server.js 或引用 child_process；「重IO」：直接读写 `data/` 大目录。
+
+> 20261111a 补记：新增 `scripts/analyze_techface.js`（一次性只读归因诊断，非回归防线，按需手动跑）与 `scripts/migrate_techface_dir_schema.js`（一次性口径迁移，幂等，已完成迁移并留备份 `data/tech-face-backup-20261111a/`）。`test_tech_accuracy.js` 断言随 normalizeDir 口径变更同步（34/34）。

@@ -113,11 +113,11 @@ console.log('===== §4 CSS 样式接线 =====');
 console.log('===== §5 版本戳 =====');
 {
   const server = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
-  ok(server.includes("const APP_VERSION = '20261106p'"), 'server.js APP_VERSION=20261106p');
+  ok(server.includes("const APP_VERSION = '20261111b'"), 'server.js APP_VERSION=20261111b');
   ok(server.includes('[20261104h] 投资心得图片附件 + 标签分类'), 'server.js 含 20261104h 版本注释条目');
   ok(server.includes('[20261104g] 「回到顶部」点击无反应修复'), '前版 20261104g 条目保留');
   const idx = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
-  ok(idx.includes('?v=20261106p'), 'index.html 版本戳 ?v=20261106p');
+  ok(idx.includes('?v=20261111b'), 'index.html 版本戳 ?v=20261111b');
 }
 
 console.log(`\n===== 结果：通过 ${pass} / 失败 ${fail} =====`);

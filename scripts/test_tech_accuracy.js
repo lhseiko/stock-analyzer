@@ -27,8 +27,8 @@ console.log('\n=== 个股技术面 · 方向归一化（7 种技术面方向词�
 const tf = require('../lib/techFaceJudgment');
 t('上行 → 涨', () => assert.strictEqual(tf.normalizeDir('上行'), '涨'));
 t('下行 → 跌', () => assert.strictEqual(tf.normalizeDir('下行'), '跌'));
-t('震荡偏上 → 震荡（不构成明确方向）', () => assert.strictEqual(tf.normalizeDir('震荡偏上'), '震荡'));
-t('震荡偏下 → 震荡', () => assert.strictEqual(tf.normalizeDir('震荡偏下'), '震荡'));
+t('震荡偏上 → 涨（20261111a 归因裁决：dirScore>0 带方向符号，旧口径归震荡致 86.8% 预测震荡 vs 实际 0.5%）', () => assert.strictEqual(tf.normalizeDir('震荡偏上'), '涨'));
+t('震荡偏下 → 跌（同上）', () => assert.strictEqual(tf.normalizeDir('震荡偏下'), '跌'));
 t('冲高回落 → 跌', () => assert.strictEqual(tf.normalizeDir('冲高回落'), '跌'));
 t('超跌反弹 → 涨', () => assert.strictEqual(tf.normalizeDir('超跌反弹'), '涨'));
 t('震荡 → 震荡', () => assert.strictEqual(tf.normalizeDir('震荡'), '震荡'));

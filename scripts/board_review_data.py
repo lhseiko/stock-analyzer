@@ -279,7 +279,11 @@ def build_lhb(rows, date_str):
         'note': '',
     }
     if not rows:
-        block['note'] = '当日龙虎榜明细无数据（非交易日或接口不可用），本项标注「缺失」'
+        # 20261110a / ERR-20261110-001：龙虎榜是盘后延迟发布数据。15:35 抓不到空结果，
+        # 首要原因是「尚未发布」而不是「非交易日 / 接口故障」；旧文案把这个状态固化成
+        # 「缺失」并被幂等逻辑锁死，导致第二天仍看不到数据。此处如实标注等待补录。
+        block['note'] = ('龙虎榜为盘后延迟发布数据：当前时点尚未发布，或接口暂不可用；'
+                         '本项标注「待晚间补录」，由 20:30 / 次日 15:35 兜底重新抓取，不判为数据缺失')
         return block
     recs = []
     for r in rows:
@@ -657,6 +661,7 @@ def main():
     p.add_argument('--date', required=True, help='交易日 YYYYMMDD')
     p.add_argument('--prev-date', default='', help='上一交易日 YYYYMMDD（算晋级率）')
     p.add_argument('--hist-dates', default='', help='复盘日之前的前3-5个交易日，逗号分隔 YYYYMMDD（由 Node 侧传入）')
+    p.add_argument('--lhb-only', action='store_true', help='晚间龙虎榜补录：只抓当日龙虎榜明细，不跑涨停池/多日序列')
     a = p.parse_args()
     d, pd = a.date.strip(), a.prev_date.strip()
     hist_dates = [x.strip() for x in a.hist_dates.strip().split(',') if x.strip()]
@@ -666,10 +671,20 @@ def main():
         'source': 'akshare（东方财富涨停股池 / 炸板池 / 跌停池 / 龙虎榜明细）',
         'ladder': None, 'lhb': None,
         'prevPool': None, 'sectors': None, 'activity': None, 'historySeries': [],
+        'lhbOnly': bool(a.lhb_only),
         'issues': [],
     }
     try:
         import akshare as ak
+        # 20261110a：补录通道只请求龙虎榜明细。空结果也要把「尚未发布」的诚实 note 返回，
+        # 故 out['ok'] 保持 True（由 lhb.ok / lhb.note 表达状态），不再拿 ladder 或 lhb 反推整体成败。
+        if a.lhb_only:
+            lhb = _safe_call(lambda: ak.stock_lhb_detail_em(start_date=d, end_date=d), '龙虎榜明细', out)
+            out['lhb'] = build_lhb(_pool_rows(lhb), d)
+            out['ok'] = True
+            sys.stdout.write(json.dumps(out, ensure_ascii=False, default=str))
+            sys.stdout.write('\n')
+            return
         zt = _safe_call(lambda: ak.stock_zt_pool_em(date=d), '涨停池', out)
         zb = _safe_call(lambda: ak.stock_zt_pool_zbgc_em(date=d), '炸板池', out)
         dt = _safe_call(lambda: ak.stock_zt_pool_dtgc_em(date=d), '跌停池', out)

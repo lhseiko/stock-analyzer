@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>分析准确率检查 · 大盘技术分析 / 个股技术面 / 短期行情判断 / 市场情绪提醒</title>
-  <link rel="icon" type="image/x-icon" href="favicon.ico?v=20261106p">
-  <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=20261106p">
-  <link rel="stylesheet" href="css/style.css?v=20261106p">
+  <link rel="icon" type="image/x-icon" href="favicon.ico?v=20261111b">
+  <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=20261111b">
+  <link rel="stylesheet" href="css/style.css?v=20261111b">
   <!-- 本页是独立长页，覆盖主工作台全局的 html,body{overflow:hidden} 以恢复滚动。
        20261025f：页宽/工具条/tab 芯片/KPI/提示样式统一在 style.css「独立长页统一外壳」段（令牌取色）。 -->
   <style>
@@ -56,6 +56,7 @@
         命中＝方向一致，「震荡」以涨跌绝对值 ≤ <span id="flatTol">0.5</span>% 计。
       </div>
       <div class="acc-kpis" id="marketKpis"></div>
+      <div class="acc-hint bl-strip" id="marketBaselines"></div>
       <div class="acc-hint" id="marketCalib"></div>
       <section class="home-card">
         <div class="home-card-head"><h2>逐条记录（最新在前）</h2><span id="marketCount" class="mo-updated"></span></div>
@@ -72,6 +73,8 @@
         本页用 5 日累计验证<b>技术面模块自身</b>的方向，两者互不干扰。
       </div>
       <div class="acc-kpis" id="techKpis"></div>
+      <div class="acc-hint bl-strip" id="techBaselines"></div>
+      <div class="acc-hint bl-warn" id="techCaliberNote"></div>
       <section class="home-card" id="techBySymbolCard">
         <div class="home-card-head"><h2>各股技术面准确率</h2><span id="techCount" class="mo-updated"></span></div>
         <div id="techBySymbol" class="acc-body"></div>
@@ -91,6 +94,7 @@
         命中＝方向一致，「震荡」以涨跌绝对值 ≤ 1.0% 计。数据源与「个股页 · 短期行情判断」卡片同源，为本项目准确率统计的主口径。
       </div>
       <div class="acc-kpis" id="sdKpis"></div>
+      <div class="acc-hint bl-strip" id="sdBaselines"></div>
       <div class="acc-hint" id="sdCalib"></div>
       <section class="home-card" id="sdBySymbolCard">
         <div class="home-card-head"><h2>各股短期判断准确率</h2><span id="sdCount" class="mo-updated"></span></div>
@@ -127,6 +131,7 @@
         命中＝次日方向与预警方向一致；次日涨跌幅 ≤ <span id="sentFlatTol">0.5</span>% 视为震荡，此时方向性预警记为<b>未命中</b>。
       </div>
       <div class="acc-kpis" id="sentKpis"></div>
+      <div class="acc-hint bl-strip" id="sentBaselines"></div>
       <section class="home-card">
         <div class="home-card-head"><h2>逐条记录（最新在前）</h2><span id="sentCount" class="mo-updated"></span></div>
         <div id="sentRecords" class="acc-body"></div>
@@ -134,6 +139,6 @@
     </section>
   </div>
 
-  <script src="js/accuracy.js?v=20261106p"></script>
+  <script src="js/accuracy.js?v=20261111b"></script>
 </body>
 </html>

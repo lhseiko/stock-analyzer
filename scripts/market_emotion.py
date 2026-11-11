@@ -9,7 +9,8 @@
   "index":   { "code","name","bars":[{"date","close","vol"}] },   # 已迁出（20261018）：上证指数日线改由首页量能根 lib/marketTechnical.fetchIndexDailyBars 单一通道采集（lib/marketEmotionData.js 负责注入），本脚本不再输出 index
   "breadth": { "up","down","flat","limitUp","limitDown","activePct","date",
                "zbgcCount","zbgcBreaks","zbgcRate","zbgcNote" },   # 20261015j：zbgc*=炸板股池（炸板率=炸板/(涨停+炸板)）
-  "margin":  { "latest","prev","changePct","change5Pct","dates","series" },   # 沪深融资余额（亿元）
+  "margin":  { "latest","prev","changePct","change5Pct","date","base5Date","partialNote","source",
+               "rqLatest","rqChange5Pct","rqDate","rqPartialNote","rqSource" },# 沪深融资/融券余额（亿元，20261109a 增 rq*）
   "capital": { "mainNetToday","totalAmount","turnoverAvg","topDecileShare","sample","note" },  # 同花顺·市场资金
   "fx":      { "usdcnh","usdcny","chgPct" },
   "bond":    { "cn10y","prev","chgBp10" },
@@ -19,7 +20,7 @@
 设计原则：
   · 单一权威源：每个指标只取一个来源，失败则置 null 并记 warnings（不猜、不补零）。
   · 全部 try/catch：任一子项失败不影响其余；网络异常写 warnings。
-  · 单位统一：融资余额=亿元；资金=亿元；成交量=手；收益率=%。
+  · 单位统一：融资余额/融券余额=亿元；资金=亿元；成交量=手；收益率=%。
 """
 
 import sys, json, traceback, datetime
@@ -118,21 +119,31 @@ def fetch_breadth():
     return out
 
 
-# ---------- 3) 融资余额（沪深合计，亿元）----------
+# ---------- 3) 融资 / 融券余额（沪深合计，亿元）----------
 def fetch_margin():
     # 沪深交易所发布节奏不同：常出现「最新日期只有单边有数」（如沪已出 09-30、深仍停在 09-29）。
     # 若盲目按日期求和，最新日会被腰斩 → 5 日变动被算成虚假暴跌（实测曾算成 -50.47%）。
     # 修复：只用「沪深双边都有数」的完整日期，单边滞后的最新日不参与，并显式标注（不静默丢弃）。
+    #
+    # [20261109a] 用户指令「图二卡片修改：添加融券余额数据，余额增加判断为短期利空，
+    #   余额减少判断为短期利好，融券余额和融资余额共用平分卡片的权重」：
+    #   金十 fs_1.json / fs_2.json 同一份响应本来就含「融券余额」列（akshare 转成同名 DataFrame 列），
+    #   无需新增外呼、无需新数据源。融资侧字段名/口径/数值一律不变（隔离改动），
+    #   融券侧单独按同一套「双边完整日期」算 5 日变动，另出 rq* 字段。
+    #   实测 2026-11-05：融资 22709.8 亿、融券 288.11 亿；近 35 个双边日融券 5 日变动
+    #   -4.32%~+2.63%、中位 |1.52%|，无一日超 ±10% → 沿用融资异常闸门安全。
     sh = ak.macro_china_market_margin_sh()
     sz = ak.macro_china_market_margin_sz()
 
-    def _to_map(df):
+    def _to_map(df, val_name):
         m = {}
         if df is None or len(df) == 0:
             return m
         col = None
         for c in df.columns:
-            if "融资余额" in str(c):
+            # 精确匹配（20261109a）：列名「融资融券余额」含子串「融券余额」，
+            # 旧的 `if "融券余额" in str(c)` 模糊匹配会误取合计列，导致数值被放大一倍。
+            if str(c).strip() == val_name:
                 col = c
                 break
         dcol = None
@@ -151,39 +162,64 @@ def fetch_margin():
             m[ds] = v / 1e8  # 元 → 亿元
         return m
 
-    sh_map, sz_map = _to_map(sh), _to_map(sz)
-    # 只保留沪深双边都有数的完整日期（杜绝单边缺失导致的虚假变动）
-    dates = sorted(d for d in sh_map if d in sz_map)
-    if not dates:
+    def _series(sh_map, sz_map):
+        """沪深双边完整日 → 最新值 / 1日 / 5日变动 / 数据日 / 单边滞后说明。融资与融券共用同一口径。"""
+        # 只保留沪深双边都有数的完整日期（杜绝单边缺失导致的虚假变动）
+        dates = sorted(d for d in sh_map if d in sz_map)
+        if not dates:
+            return None
+        vals = [sh_map[d] + sz_map[d] for d in dates]
+        latest = vals[-1]
+        prev = vals[-2] if len(vals) >= 2 else None
+        idx5 = max(0, len(vals) - 6)
+        base5 = vals[idx5] if len(vals) >= 6 else None
+        chg1 = ((latest - prev) / prev * 100) if prev else None
+        chg5 = ((latest - base5) / base5 * 100) if base5 else None
+        # 单边滞后的最新日期（若有）：显式标注，供下游/界面说明
+        newest_any = max(list(sh_map) + list(sz_map))
+        partial_note = None
+        if newest_any != dates[-1]:
+            if newest_any in sh_map and newest_any not in sz_map:
+                side = "沪市已出、深市滞后"
+            elif newest_any in sz_map and newest_any not in sh_map:
+                side = "深市已出、沪市滞后"
+            else:
+                side = "单边缺失"
+            partial_note = f"最新单边日期 {newest_any}（{side}）未计入，采用最新双边完整日 {dates[-1]}"
+        return {
+            "latest": latest, "prev": prev, "chg1": chg1, "chg5": chg5,
+            "date": dates[-1], "base5Date": dates[idx5] if base5 is not None else None,
+            "partialNote": partial_note,
+        }
+
+    rz = _series(_to_map(sh, "融资余额"), _to_map(sz, "融资余额"))
+    if rz is None:
         raise RuntimeError("融资余额无沪深双边完整日期")
-    vals = [sh_map[d] + sz_map[d] for d in dates]
-    latest = vals[-1]
-    prev = vals[-2] if len(vals) >= 2 else None
-    idx5 = max(0, len(vals) - 6)
-    base5 = vals[idx5] if len(vals) >= 6 else None
-    chg1 = ((latest - prev) / prev * 100) if prev else None
-    chg5 = ((latest - base5) / base5 * 100) if base5 else None
-    # 单边滞后的最新日期（若有）：显式标注，供下游/界面说明
-    newest_any = max(list(sh_map) + list(sz_map))
-    partial_note = None
-    if newest_any != dates[-1]:
-        if newest_any in sh_map and newest_any not in sz_map:
-            side = "沪市已出、深市滞后"
-        elif newest_any in sz_map and newest_any not in sh_map:
-            side = "深市已出、沪市滞后"
-        else:
-            side = "单边缺失"
-        partial_note = f"最新单边日期 {newest_any}（{side}）未计入，采用最新双边完整日 {dates[-1]}"
-    return {
-        "latest": round(latest, 1),
-        "prev": round(prev, 1) if prev is not None else None,
-        "changePct": round(chg1, 3) if chg1 is not None else None,
-        "change5Pct": round(chg5, 3) if chg5 is not None else None,
-        "date": dates[-1],
-        "base5Date": dates[idx5] if base5 is not None else None,
-        "partialNote": partial_note,
+    out = {
+        # 融资字段：与 20261109a 之前逐字同口径，下游零改动
+        "latest": round(rz["latest"], 1),
+        "prev": round(rz["prev"], 1) if rz["prev"] is not None else None,
+        "changePct": round(rz["chg1"], 3) if rz["chg1"] is not None else None,
+        "change5Pct": round(rz["chg5"], 3) if rz["chg5"] is not None else None,
+        "date": rz["date"],
+        "base5Date": rz["base5Date"],
+        "partialNote": rz["partialNote"],
         "source": "沪深交易所·融资余额（仅计双边完整日期）",
     }
+    rq = _series(_to_map(sh, "融券余额"), _to_map(sz, "融券余额"))
+    if rq is None:
+        # 融券缺失不拖累整卡降级：下游按「半权重不计分」处理并如实标注
+        out["rqMissingNote"] = "融券余额无沪深双边完整日期（本子项不计分）"
+    else:
+        out.update({
+            "rqLatest": round(rq["latest"], 2),
+            "rqChange5Pct": round(rq["chg5"], 3) if rq["chg5"] is not None else None,
+            "rqDate": rq["date"],
+            "rqBase5Date": rq["base5Date"],
+            "rqPartialNote": rq["partialNote"],
+            "rqSource": "沪深交易所·融券余额（仅计双边完整日期）",
+        })
+    return out
 
 
 # ---------- 4a) 市场主力资金（东财 push2delay：大盘资金流，主力=超大单+大单）----------

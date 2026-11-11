@@ -245,3 +245,192 @@ render() 无条件 body.innerHTML 全量重建（状态条+KPI+20 行表格）�
 - Last-Seen: 2026-11-06
 
 ---
+
+## [ERR-20261109-001] akshare_import_pandas_dll_blocked
+
+**Logged**: 2026-11-09T12:51:54+08:00
+**Priority**: medium
+**Status**: pending
+**Area**: infra / tests
+
+### Summary
+在 Bash 工具里执行 `python -c "import akshare as ak; ..."` 失败：`pandas` 的 C 扩展 DLL 被「应用程序控制策略」拦截，无法 import。但 3005 服务能正常取到两融数据（卡片显示 22710 亿），说明服务进程使用的 Python/环境不受该策略影响 —— 是**工具沙箱环境问题，不是项目代码或数据源故障**。
+
+### Error
+```
+ImportError: DLL load failed while importing offsets: 应用程序控制策略已阻止此文件。
+  File "pandas/_libs/tslibs/conversion.pyx", line 1, in init pandas._libs.tslibs.conversion
+（触发链：akshare.__init__ → pandas → pandas._libs.tslibs）
+Python: C:\Users\16507\.workbuddy\binaries\python\versions\3.13.12\python.exe
+```
+
+### Context
+- 目的：实证 akshare `macro_china_market_margin_sh/sz()` 是否返回「融券余额」列（FEAT-20261109-002 前置数据可用性核查）。
+- 环境：WorkBuddy Bash 工具，非交互；`python` 解析到 WorkBuddy 自带 3.13.12。
+- 服务侧：`lib/marketEmotionData.js::runScript()` 通过 `findPythonForScript()` 选解释器，子进程方式调用 `scripts/market_emotion.py`，线上正常。
+
+### Suggested Fix
+不必修环境。改用**两步纯文本/HTTP 实证**绕过：① 直接读 akshare 源码取列名定义（`macro_china.py:900-907 / 931-939`）；② 用 Node `https` 直连上游 `cdn.jin10.com/data_center/reports/fs_1.json` / `fs_2.json` 拉真实数值校验。两步都已成功，结论：融券余额列存在且数值可用（2026-11-05 沪深合计 288.11 亿）。
+若将来确实需要在本工具内跑 Python 脚本，优先尝试服务侧解释器或让服务自身暴露诊断接口，不要在 Bash 里硬试。
+
+### Update（2026-11-09 / 20261109a，已找到纯标准库绕过法）
+本轮 FEAT-20261109-002 落地时需要**真正执行** `fetch_margin()` 的列解析逻辑，环境限制仍在，但已用不依赖 pandas 的方式完整实测：
+- `ast.parse()` 读 `scripts/market_emotion.py`，提取 `fetch_margin` 内的两个嵌套函数 `_to_map` / `_series`，`compile` 后在注入 `to_float` 的命名空间里 `exec`；
+- 用 `urllib.request` 直连 `cdn.jin10.com/data_center/reports/fs_1.json` / `fs_2.json`（沙箱允许），把 `values` 转成只有 `columns/iterrows/__len__` 的 stub DataFrame；
+- 结果：融资 22709.8 亿 / 5日 −3.33% / 2026-11-05，融券 288.11 亿 / 5日 +2.08% / 2026-11-05；并验证误取「融资融券余额」列会得到 11992.4 亿（陷阱可观测）。
+**结论**：pandas 被拦只影响 `import akshare`，不影响验证「本项目自己写的解析函数」。凡 Python 侧纯逻辑改动，优先用 ast 提取 + stub 依赖的方式做离线/半在线实测，不要因为环境报错就跳过验证。环境本身未修（服务端解释器正常，无需修）。
+
+### Metadata
+- Reproducible: yes
+- Related Files: scripts/market_emotion.py, lib/marketEmotionData.js:201-214
+- See Also: FEAT-20261109-002
+- Pattern-Key: infra.sandbox_python_dll_policy
+
+---
+
+## [ERR-20261110-001] 龙虎榜 T+1 仍显「缺失」：取数时点早于盘后发布 + 一次性落盘无回补
+
+**Logged**: 2026-11-10T11:49:18+08:00
+**Priority**: high
+**Status**: resolved（20261110a 已实施并通过 43 项守卫；用户裁决「晚间 + 次日双槽」并入每日复盘全量替换规格）
+**Area**: backend
+
+### Resolution（2026-11-10 12:50 实施）
+用户后续给出「每日复盘全量替换」长文本规格，第三部分把修复方案固化为 15:35 formal / 20:30 补录 / 次日 15:35 兜底，替代了本条目里的方案 A（T+1 早间 08:30 全量重跑）。实际落地：
+- `lib/reviewService.js` 新增 `backfillDragonTiger()` / `needsBackfill()` 与 `formal → complete` 状态机；补录只重抓当日龙虎榜（不重跑 13 源、不重算其余段落），只替换第八段与第十段，同一日期 complete 幂等唯一、接口抖动不降级。
+- `lib/boardReviewData.js` 新增 `getLhbOnly()`（不写缓存、补录前 `clearCache()`）；`scripts/board_review_data.py` 新增 `--lhb-only` 且空结果 `ok` 保持 True 以便把诚实 note 送回 Node。
+- `server.js` `REVIEW_SLOTS` 增加 20:30 补录槽；15:35 主跑前先检查昨日 `needsBackfill()`；`POST /api/review/backfill` 与 `task_type="dragon_tiger_update"` 两种触发入口。
+- 误导性 note 已改为「龙虎榜为盘后延迟发布数据：当前时点尚未发布…标注『待晚间补录』」；输出层把 15:35 未发布与「数据缺失」分开标注。
+- **反向实证**：`python scripts/board_review_data.py --date 20261109 --lhb-only` 返回 `lhb.ok=true, count=67`，证明 11-09 数据本就存在，只是 15:35 取早了。
+- 守卫 `scripts/test_daily_review.js` 新增 [2b] 6 个状态机用例（formal / pending / completed / 幂等 / task_type 路由 / 不降级），43 项全过。
+
+### Summary
+每日复盘在收盘后 15:35 抓龙虎榜，而东财龙虎榜明细是**盘后晚间才发布**；取到空结果后被写进当天复盘快照并判定为「完整正式版」，此后**既无次日回补、也无按源重取**，导致第二天打开工作台龙虎榜仍停在「缺失」。不是接口故障、不是计算错误。
+
+### Error
+```
+页面「数据源」表：龙虎榜模块 | 资金/龙虎榜模块 | 失败 | 缺失 | 数据时间=缺失
+获取时间 2026-11-09T07:35:56.226Z（= 北京 15:35:56）
+缺失原因：当日龙虎榜明细无数据（非交易日或接口不可用），本项标注「缺失」
+
+落盘 data/reviews/2026-11-09.json：
+generatedAt 2026-11-09T07:36:08.203Z（= 北京 15:36:08）
+completeness.score=94, limited=false, missing=[{key:'dragonTiger', reason:'当日龙虎榜明细无数据…'}]
+```
+
+### Context
+- 用户报障原话：「龙虎榜数据是当天晚上才更新，但是到了第二天工作台还没有数据，应该是获取数据的机制出现问题。」
+- **决定性对照实验**（2026-11-10 上午用工作台 Python `akshare 1.18.94` 实测）：
+  - `stock_lhb_detail_em(start_date='20261109', end_date='20261109')` → **67 行**
+  - `stock_lhb_detail_em(start_date='20261106', end_date='20261106')` → 79 行
+  - 即 11-09 数据已正常发布、接口可用。
+- **历史复盘对照**：`data/reviews/2026-11-06.json`（generatedAt 2026-11-08 16:45，隔日生成）dragonTiger=`ok`、完整度 100；`2026-11-09.json`（当天 15:36 生成）dragonTiger=`failed`、94。同一套代码，仅生成时刻不同 → 排除接口/算法故障，坐实「时点」问题。
+- 完整机制链（四段，缺一不可）：
+  1. `server.js:2510-2514` `REVIEW_SLOTS` = 15:35 主跑 + 15:40/45/50 补跑，**是唯一自动取数窗口**，且只传 `date: today`。
+  2. `scripts/board_review_data.py:679` `ak.stock_lhb_detail_em(start_date=d, end_date=d)` 只查复盘日当天；15:35 尚未发布 → 空 → `:282` `build_lhb` 返回 `ok:false` + 误导性 note「非交易日或接口不可用」（真实原因是「尚未发布」）。
+  3. `lib/reviewService.js:186` `block.ok === false` → throw → `collect` 标 `status:'failed'`；`runReview` 15:36 把整份快照 `writeReviewSync` 落盘（94 分 / limited:false）。
+  4. `server.js:2545-2552` 补跑判定 `completeness.score >= 90 && !limited` → **94 ≥ 90 直接跳过三个补跑槽**；即便跑，15:50 数据仍未发布。`getToday()/getByDate()` 纯读盘不重取；全代码库无按历史日期的 review 回补（grep `backfill|回补|T+1` 只命中板块拥挤度/ETF/分红，均非复盘）。
+- 次要因素：`lib/boardReviewData.js:23` `CACHE_TTL=10min` 只影响同进程内复用，不是跨天主因。
+- 违反项目三条底层规则之「数据最新性（按类型 TTL + 交易日感知 + 过期标注）」：龙虎榜属**盘后延迟发布型**数据源，却与涨停池共用 15:35 单一窗口；跨天后旧快照未标注「龙虎榜未在发布窗口内取到」。
+
+### Suggested Fix
+待用户确认后实施，勿擅改既有代码（用户铁律：修既有代码前必须核实）：
+- **方案 A（推荐，隔离/新增机制）**：新增 T+1 早间回补槽（如次日 08:30），扫前一交易日已落盘且 `dragonTiger.status==='failed'` 的复盘，仅对缺失源重取后走 `runReview` 修订版逻辑生成 v2。94→100 为升分，符合现有「不得用更差数据覆盖」保护（`reviewService.js:902-906`）。
+- 方案 B：把龙虎榜主跑后移到晚间 19:30 单独一次；会改变整份复盘生成时刻，影响面大。
+- 方案 C：路由层懒回补 —— 读档发现 `failed` 且已过发布窗口时按日期触发重取。
+- 方案 D：仅修正 note 文案与过期标注（诚实性），不解决数据缺失。
+- 无论选哪个，须把 note 从「非交易日或接口不可用」改为「盘后数据尚未发布」，并给龙虎榜单独的类型 TTL / 就绪时刻。
+
+### Metadata
+- Reproducible: yes（每个交易日 15:35 必现）
+- Related Files: server.js:2510-2562, lib/reviewService.js:117-133/182-191/794-805/846-905/1012-1030, lib/boardReviewData.js:23-106, scripts/board_review_data.py:272-283/655-702, data/reviews/2026-11-09.json
+- See Also: LRN-20261110-001
+- Tags: 盘后延迟发布, 取数时点, 一次性落盘, 无回补, 补跑阈值, 数据最新性, 按类型TTL, 诚实标注
+- Pattern-Key: data.late_publish_source_needs_t1_backfill
+- Recurrence-Count: 1
+- First-Seen: 2026-11-10
+- Last-Seen: 2026-11-10
+
+---
+## [ERR-20261110-001] stockReview LLM 超时降级
+
+**Logged**: 2026-11-10T21:45:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: backend
+
+### Summary
+个股每日复盘首次实测 LLM 180s 超时，降级为数据快照。
+
+### Error
+```
+AI 生成暂不可用（LLM 调用失败：大模型请求超时（180000ms 无响应））
+```
+
+### Context
+- 首版 Context 含 quoteHub.analysis/shortTerm 序列统计 + capital recent10Flow，体积偏大
+- 每日复盘同链路（reviewLlm.js）实测大 Context 会逼近 240s，已用 300s
+
+### Suggested Fix（已实施）
+Context 瘦身（hub 只留 latest 五要素；recent10Flow→recent5Flow 且只留 date+mainNet亿；news 12→10）→ 实测 Context ≈3.2KB；TIMEOUT_MS 180s→300s 对齐每日复盘。
+
+### Resolution
+- **Resolved**: 2026-11-10T21:50:00+08:00
+- **Notes**: test_stock_review.js 46/46；套件复跑 129/130
+
+---
+
+## [ERR-20261110-002] stockReview 数据单位/字段名三连错（快照表格数值错误）
+
+**Logged**: 2026-11-10T21:45:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: backend
+
+### Summary
+首版快照：成交额显示 raw 元（269790000 误标「亿」）、换手率「-」（字段名错）、前日成交额「-」（通道选错）。
+
+### Error
+```
+换手率/成交额(亿) → "- / 269790000"；前一交易日成交额(亿) → "-"
+```
+
+### Context
+- 实时行情（qt.gtimg.cn）字段实为 `turnover`（换手率%），不是 turnoverRate；`amount` 单位是**元**
+- `getHistory()` tencent 通道的 bar **没有 amount/turnover 字段**；含成交额的历史通道是 `fetchEastmoneyHistory`（bar = {date,open,close,high,low,volume,amount(元),turnover(%)}）
+
+### Suggested Fix（已实施）
+amount/1e8 转亿；换手率改读 q.turnover；前日成交额/换手率改从 fetchEastmoneyHistory(symbol,6) 取 date<今日 的最近一根。
+
+### Resolution
+- **Resolved**: 2026-11-10T21:50:00+08:00
+- **Notes**: 运行时实测 000783：amountYi=2.7、prev={2.55, 0.66%}
+
+---
+
+## [ERR-20261110-003] 快照 [object Object] 与板块 raw JSON dump
+
+**Logged**: 2026-11-10T21:45:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: backend
+
+### Summary
+资金摘要渲染出 "[object Object]"；板块联动整包 JSON 倾倒（含 ok:false 全 null 字段）。
+
+### Error
+```
+资金摘要 → [object Object]
+板块联动 → {"source":"东方财富涨跌停池 + 同花顺行业板块","ok":false,"industryName":null,...}
+```
+
+### Context
+- analyzeCapitalFlow 的 moneyFlow.summary 是**双层嵌套** { summary:{'5d':{mainNet,direction,...}}, recent5:[...] }
+- getSectorLimitStats 行业识别失败时不 throw，而是返回 ok:false + 全 null 字段
+
+### Suggested Fix（已实施）
+代码拆双层取 '5d'/'10d'/'20d' mainNet+direction 拼可读字符串（注意 direction 已含「净」字，勿再拼接）；sector 判 ok:false → `{missing:true, note}`，快照按字段渲染绝不 JSON.stringify 整包。
+
+### Resolution
+- **Resolved**: 2026-11-10T21:55:00+08:00
+- **Notes**: 实测 "5日主力净流出 0.69 亿；10日…；20日…"；守卫新增 4 条回归断言（无 [object Object]/无 {" dump/亿单位/换手率%）

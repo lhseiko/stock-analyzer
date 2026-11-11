@@ -73,17 +73,17 @@ ok(app.includes('<div class="ve-posj-chain">') && app.includes('运行状态 · 
 ok(app.includes('<th>参考锚点</th><th>状态</th><th>说明</th>'), '参考锚点表三列表头原样');
 ok(css.includes('.ve-posj-main.bull { border-left-color: var(--red); }')
   && css.includes('.ve-posj-main.bear { border-left-color: var(--green); }'), '主判方向色仍为红涨绿跌');
-ok(ve.includes("schema: 'volume-engine-20261106p'"), '引擎 schema 未升');
-ok(sjd.includes("const LAYOUT_VERSION = '20261106o'"), 'LAYOUT_VERSION 已升 20261106o（量价配合子信号输入 signal 值域与分值变化，判断记录强制重算）');
+ok(ve.includes("schema: 'volume-engine-20261109c'"), '引擎 schema = volume-engine-20261109c（量能单一真值源）');
+ok(sjd.includes("const LAYOUT_VERSION = '20261109c'"), 'LAYOUT_VERSION 已升 20261106o（量价配合子信号输入 signal 值域与分值变化，判断记录强制重算）');
 
 section('§5 版本戳 / 缓存破坏');
-ok(/const APP_VERSION = '20261106p'/.test(server), 'APP_VERSION = 20261106p');
+ok(/const APP_VERSION = '20261111b'/.test(server), 'APP_VERSION = 20261111b');
 ok(server.includes('[20261106i]'), 'server.js 存在 [20261106i] 独立变更日志条目');
 ok(server.includes('[20261106g]') && server.includes('[20261106f]'),
   '功能引入版本号保留，未随全局升版误改（铁律）');
 for (const f of ['index.html', 'accuracy.html', 'logic-model.html', 'notes.html', 'volume-map.html']) {
   const html = read('public/' + f);
-  ok(html.includes('?v=20261106p') && !html.includes('?v=20261106h'), `public/${f} 缓存戳全部对齐 20261106p`);
+  ok(html.includes('?v=20261111b') && !html.includes('?v=20261106h'), `public/${f} 缓存戳全部对齐 20261111b`);
 }
 
 console.log(`\n===== 汇总：通过 ${pass} / ${fail} 失败 =====`);

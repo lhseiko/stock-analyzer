@@ -168,14 +168,14 @@ ok(css.includes('color: var(--red)') && css.includes('color: var(--green)'), '�
 ok(app.includes('ve-cols-5') && css.includes('.ve-cols-5 { grid-template-columns: repeat(5, 1fr); }'), '五列等宽栅格未改动');
 
 section('§9 零后端改动 / 版本戳 / 缓存破坏');
-ok(ve.includes("schema: 'volume-engine-20261106p'"), '引擎 schema 未升（输出结构零变化）');
-ok(sjd.includes("const LAYOUT_VERSION = '20261106o'"), 'LAYOUT_VERSION 已升 20261106o（量价配合子信号输入 signal 值域与分值变化，判断记录强制重算）');
-ok(/const APP_VERSION = '20261106p'/.test(server), 'APP_VERSION = 20261106p');
+ok(ve.includes("schema: 'volume-engine-20261109c'"), '引擎 schema = volume-engine-20261109c（量能单一真值源）');
+ok(sjd.includes("const LAYOUT_VERSION = '20261109c'"), 'LAYOUT_VERSION 已升 20261106o（量价配合子信号输入 signal 值域与分值变化，判断记录强制重算）');
+ok(/const APP_VERSION = '20261111b'/.test(server), 'APP_VERSION = 20261111b');
 ok(server.includes('[20261106f]'), 'server.js 存在 [20261106f] 独立变更日志条目');
 ok(server.includes('[20261106e]') && server.includes('[20261106d]'), '功能引入版本号保留，未随全局升版误改（铁律）');
 for (const f of ['index.html', 'accuracy.html', 'logic-model.html', 'notes.html', 'volume-map.html']) {
   const html = read('public/' + f);
-  ok(html.includes('?v=20261106p') && !html.includes('?v=20261106h'), `public/${f} 缓存戳全部对齐 20261106p`);
+  ok(html.includes('?v=20261111b') && !html.includes('?v=20261106h'), `public/${f} 缓存戳全部对齐 20261111b`);
 }
 
 console.log(`\n===== 汇总：通过 ${pass} / ${fail} 失败 =====`);

@@ -42,7 +42,7 @@
 | 💹 资金量能·量价十口诀（郭睿体系 · 主判） | stock-13b-volume-ten-rules.md | 20261023d 新建（10 口诀 × 位置/量能/价格；既有 7.4/7.5/11.3 降为补充交叉验证） |
 | ⭐ 个股亮点雷点（日志 Tab） | stock-14-highlights-tab.md | 本次完成 |
 | 📁 资料库（F10） | stock-15-f10.md | 本次完成 |
-| 🎯 策略（虚拟盘风控） | stock-16-strategy.md | 本次完成 |
+| 📅 个股每日复盘 | stock-23-stock-review.md｜lib/stockReview.js + prompts/stock-review-system.md + public/js/stockReviewUI.js | 20261110e 落地 / 20261110f 双向联动+代码列+缓存键修复（替换原「策略」tab；四段式严禁买卖建议；与大盘复盘【明日核心观察池】双向联动；20:35 自动批量；历史追踪+连续3日放弃信号反查；守卫 test_stock_review.js） |
 | 📐 箱体区间判定（技术面②卡内·单箱体） | stock-17-range.md | 20261020j 重写（多窗口版已废） |
 | 📏 阻力/支撑区间（有效性检验 + 侵蚀收缩） | stock-18-zone-validity.md | 20261020i 新建 / m 增侵蚀 / 20261022b 删标准2（仅留标准1） |
 | 🧭 阻力/支撑「十种方法 + 共振合并」（区间是怎么算出来的） | stock-21-zone-methods.md | 20261022g 新建（10 方法 + 周线层 → 聚类 → 强度分级 → 失效位；前端紧凑清单+展开详情） |
@@ -188,7 +188,7 @@
 | CA2/CA3 | 资金量能 | 九项前后端两份独立实现漂移风险；任何 error 一律附「仅支持 A 股」一刀切（虚假归因） | stock-13 |
 | CA5 | 资金量能 | 热度注释「±15」实际显著放量+13 / 地量−10 | stock-13 |
 | K1/K2 | 资料库 | 标签「F10」实为 cninfo 抓取+可手动上传任意文件；时效标注弱 | stock-15 |
-| ST1/ST2 | 策略 | 标「全部由代码确定性计算」实际半联动 longTerm.verdict 未披露；verdict 前端无兜底映射 | stock-16 |
+| ~~ST1/ST2~~ | ~~策略~~ | **20261110e 模块已删除**（lib/strategyGenerator.js / strategyNL.js / backtestValidator.js / public/js/backtestUI.js + 守卫 + 本文档 stock-16 一并移除），原「策略」tab 由「个股每日复盘」替代 → 逻辑说明见 stock-23-stock-review.md | —（stock-16 已删） |
 
 > 统计：12 份文档共 **≈91 条审计项**（L1-L12 / H1-H8 / J1-J6 / P1-P6 / TE1-TE7 / F1-F8 / SH1-SH7 / DA1-DA8 / IA1-IA9 / CA1-CA8 / K1-K6 / ST1-ST8）、约 600+ 处 `file:line` 引用。完整清单见各文档第六节。
 

@@ -188,7 +188,8 @@ const ShareholderCharts = {
     if (showPrice) {
       series.push({
         name: '股价', type: 'line', yAxisIndex: 2, smooth: true, data: priceCloses,
-        lineStyle: { width: 2, color: '#F6465D', type: 'dashed' }, itemStyle: { color: '#F6465D' },
+        // [20261109b] 股价叠加线是「绝对价位序列」而非涨跌信号 → 中性蓝，不占用方向色
+        lineStyle: { width: 2, color: '#7fa8c9', type: 'dashed' }, itemStyle: { color: '#7fa8c9' },
       });
       legendData.push('股价');
     }
@@ -211,7 +212,8 @@ const ShareholderCharts = {
           },
           ...(showPrice ? [{
             name: '股价', type: 'line', yAxisIndex: 2, smooth: true, data: priceCloses,
-            lineStyle: { width: 2, color: '#F6465D', type: 'dashed' }, itemStyle: { color: '#F6465D' },
+            // [20261109b] 股价叠加线是「绝对价位序列」而非涨跌信号 → 中性蓝，不占用方向色
+        lineStyle: { width: 2, color: '#7fa8c9', type: 'dashed' }, itemStyle: { color: '#7fa8c9' },
           }] : []),
         ],
       });

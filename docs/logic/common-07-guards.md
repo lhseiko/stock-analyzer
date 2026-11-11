@@ -85,3 +85,28 @@
 | MAX_DEVIATION（异常拒收） | 0.5 | ruleCore.js:27 |
 | SCHEMA_VERSION/LAYOUT_VERSION | 仅 sameDayJudgment | sameDayJudgment.js:1196-1197 |
 | 评级三档 | 低估/合理/高估（禁用主观词） | prompts/valuation-system.md:40 |
+
+## 归一化审计规则（2026-11-11 新增，源自 techFace 归因教训）
+
+**规则**：任何 `normalize*` / `classify*` / `toTier*` / `map*` 函数，必须回答一句：
+**「输入里有没有方向 / 强度 / 来源信息被丢弃？」** 如果有，要么保留（如 techFace 20261111a 修法：
+震荡偏上→涨 / 偏下→跌），要么在函数注释里写明「刻意丢弃 X，因为 Y」并链接设计依据。
+**禁止「无注释的静默丢弃」。** 本规则对后续所有新审计与改动生效，不追溯改历史代码。
+
+**执行机制（20261111b 补）**：本规则通过 **code review 执行，不设自动化守卫**（「丢弃是否合理」
+无法静态判断，源码扫描会误报）。具体检查项：
+1. 新模块审计清单必含一项：「所有 normalize/classify/toTier/map 函数，逐个人工确认是否丢方向/强度/来源信息」；
+2. 改动上述函数时，汇报/提交描述必须写一句「本次改动是否影响方向/强度保留」；
+3. 标准动作（techFace 归因固化为惯例）：审计用「代码级 + 样本级」双证据——既读归一化实现与上游产词，也实测落盘记录的原始词分布。
+
+### 2026-11-11 横向审计四条链记录（techFace 归因后的横向排查）
+
+| 结算链 | 归一化实现 | 审计结论 |
+|---|---|---|
+| techFaceJudgment | normalizeDir（7 词→3 态） | **曾有缺陷**（震荡偏上/偏下归震荡丢 dirScore 方向符号），20261111a 已修（57.1% 回算） |
+| marketTechJudgment | normalizeDir（:77） | 无缺陷：上游 shortDir 只产三态硬编码词（marketTechnical.js:526-530）；落盘实测 shortRaw/midRaw/fusionSignal 无「偏X震荡」类词进结算；「强空/偏空→跌、反弹→涨」方向保留。**trendLabel 角色（20261111b 已确认）**：判定层辅助——midDir 判定消费其「上涨/下跌」子串（marketTechnical.js:521-522）；「偏强/偏弱震荡」不含该两子串，在 midDir 消费点不参与方向（保守设计：ADX 临界带不确认趋势）；midRaw 落盘词与 normalizeDir 词表一一对应，无归一化层信息损失，与 techFace 丢弃不同构。样本 n=33 不足，纳入前向观察 |
+| sentimentAccuracy | normalizeDir（:50） | 无缺陷：词表 看涨/看跌/震荡/中性 + includes 兜底，无「偏X」丢向；level 分档（强烈预警/预警/关注）是强度档位，方向由 impliedDir 独立携带，不参与方向归一 |
+| sentimentTurningPoint | 无归一化函数 | 无缺陷：方向由 overbought 布尔 + 动量 sign 独立计算；analysis.js rsiSignal「偏强/偏弱」以 ±0.5 分值进 trendScore（方向进分数不进词），无静默丢弃 |
+| sameDayJudgment（参照） | 方向加权映射（:1028） | 无缺陷：「震荡偏上:0.5 / 震荡偏下:-0.5」保留方向语义，未聚合为三档 |
+
+**结论**：仅 techFace 存在归一化丢方向问题（已修），其余三条链 + sameDayJudgment 参照链均无类似缺陷。

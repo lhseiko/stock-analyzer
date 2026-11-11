@@ -179,11 +179,11 @@ group('5. 零副作用：未传 unifiedTier 时退回本地 20 日口径', () =>
   const vi = computeVolumeIndicators(bars, null, null);
   const vp = vi.volumePrice;
   ok(vp.unified === null, '未接入引擎 → unified 为 null（前端退回 dayVolRatio 展示）');
-  ok(vp.signal === '巨量下跌', `本地口径仍生效：量比 1.5 → 巨量下跌（实际 ${vp.signal}）`); // 20261019e：本地 huge 档标签改名
+  ok(vp.signal === '放量下跌', `本地口径仍生效：量比 1.5 → 放量下跌（20261109c：显著放量线由 1.5 升至 2.5，与引擎 unifiedVolState 同源；实际 ${vp.signal}）`);
   // 注：本地 heatLevel 用「近3日均量 ÷ 近20日均量」= 1166.67/1000 ≈ 1.17 → 量能平稳。
   // 这正是旧口径的典型缺陷：当日量已达 20 日均量的 1.5 倍（显著放量），却因分子取近3日
   // 被前两日正常量稀释、且分子本身包含在分母内，最终判为「量能平稳」，与同卡
-  // 「巨量下跌」互斥。统一引自引擎档位后此分歧已消除（见第 4/6 组）。
+  // 「放量下跌」互斥。统一引自引擎档位后此分歧已消除（见第 4/6 组）。
   ok(vp.heatLevel === '量能平稳', `本地口径仍生效：heatLevel = 量能平稳（实际 ${vp.heatLevel}）`);
   ok(/量比1\.5/.test(vp.description), '本地口径描述保持原文案（含「量比x」）');
 
@@ -263,7 +263,7 @@ group('9. 引擎失败降级：unifiedTier 缺失时仍正常输出', () => {
   // 引擎失败 → volumeEngine 为 null → unifiedTier 不传
   const vi = computeVolumeIndicators(bars, null, null, undefined);
   ok(vi !== null && !!vi.volumePrice, 'unifiedTier 缺失时指标层正常返回');
-  ok(vi.volumePrice.signal === '巨量下跌', '降级后按本地 20 日口径输出（巨量下跌）'); // 20261019e：本地 huge 档标签改名
+  ok(vi.volumePrice.signal === '放量下跌', '降级后按本地 20 日口径输出（放量下跌，20261109c 阈值与引擎同源）');
   ok(vi.volumePrice.unified === null, '降级后 unified 为 null，前端据此退回原展示');
   ok(typeof vi.volumePrice.description === 'string' && vi.volumePrice.description.length > 0, '降级后描述文案完整');
 
@@ -630,7 +630,7 @@ group('13. 预期量能规则（20261019d：该放/该缩缺口补充，3 风险
   // 20261020d：11.3.1「该放量未放量」结论文案阈值具象化（均值×1.5=阈值 + 当日实际量同屏）→ schema 升至 20261020d
   // 20261023d：新增 tenRules 量价十口诀（郭睿体系）主判层；平量涨/跌方向 neutral→observe → schema 升至 20261023d
   // 20261101d：新增 posJudgment 位置感知量价判定主判（图片 24 格矩阵；十口诀降为补充辅助）→ schema 升至 20261101d
-  ok(e2e.schema === 'volume-engine-20261106p', `schema 已升 20261106j（实际 ${e2e.schema}）`);
+  ok(e2e.schema === 'volume-engine-20261109c', `schema = 20261109c（实际 ${e2e.schema}）`);
   ok(e2e.posJudgment && e2e.posJudgment.position && e2e.posJudgment.cell !== undefined && e2e.posJudgment.signals, '端到端输出含 posJudgment（位置 + 135 格主判 + 信号叠加层）');
   ok(expE2e.highVolumeDrop.matched === true && expE2e.highVolumeDrop.status === '命中', `端到端高位放量大跌命中（位置 ${e2e.position.label}）`);
   ok(e2e.riskTags.includes('高位放量大阴线派发风险'), '命中 → 风险标签「高位放量大阴线派发风险」同步输出');

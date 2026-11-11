@@ -2,13 +2,16 @@
  * Main Application Logic
  */
 
-// 20261025a：量能档位着色（放量系红 / 缩量系绿 / 平量与数据不足默认白，用户 2026-10-25 要求）。
+// 20261025a：量能档位视觉区分（放量系暖色 / 缩量系冷色 / 平量与数据不足默认白，用户 2026-10-25 要求）。
+// [20261109b] 全工作台颜色铁律修正：放量 ≠ 利好、缩量 ≠ 利空（放量下跌同样是利空），
+// 原先返回 cap-pos(红)/cap-neg(绿) 会把「量能状态」误读成方向结论。
+// 改为不改语义的暖/冷中性色，保留用户要的「一眼可分辨」，但不占用红绿方向色。
 // 档位真值源 lib/volumeEngine.js VOLUME_TIERS：极度缩量/温和缩量/平量/温和放量/大量/天量；
 // 60日确认：放量确认/缩量确认/平量。正则覆盖全部档位词，仅对量能语义字段使用。
 function volTierCls(s) {
   const t = String(s == null ? '' : s);
-  if (/放量|大量|天量/.test(t)) return 'cap-pos';
-  if (/缩量|地量/.test(t)) return 'cap-neg';
+  if (/放量|大量|天量/.test(t)) return 'tp-vol-active';
+  if (/缩量|地量/.test(t)) return 'tp-vol-quiet';
   return '';
 }
 
@@ -164,7 +167,14 @@ const App = {
       const symbolFromUrl = params.get('symbol');
       if (symbolFromUrl) {
         // 延迟到 init 完成后再加载，确保 DOM/事件已就绪
-        setTimeout(() => this.analyze(symbolFromUrl), 0);
+        // [20261110f B0-3] 大盘复盘【明日核心观察池】「个股复盘 →」入口带 #stockreview：
+        // 个股加载完成后自动切到「每日复盘」tab，形成大盘复盘 → 个股复盘的直达链路。
+        setTimeout(() => {
+          const p = this.analyze(symbolFromUrl);
+          if (location.hash === '#stockreview') {
+            Promise.resolve(p).then(() => this.switchTab('stockreview')).catch(() => {});
+          }
+        }, 0);
       }
     } catch (e) {}
     const marketRefreshBtn = document.getElementById('marketRefreshBtn');
@@ -718,13 +728,13 @@ const App = {
         this.loadCapitalFlow();
       } else if (activeTab === 'shareholders') {
         this.loadShareholders();
-      } else if (activeTab === 'backtest') {
-        // 修复「策略页不随个股切换」：切股时若正停留在策略 Tab，立即按新股重算
-        if (typeof BacktestUI !== 'undefined') BacktestUI.open(this.currentSymbol, this.currentData?.name);
       } else if (activeTab === 'journal') {
         if (typeof Notes !== 'undefined') Notes.renderStock(this.currentSymbol, this.currentData?.name);
       } else if (activeTab === 'docs') {
         if (typeof DocStore !== 'undefined') DocStore.onTabSwitch();
+      } else if (activeTab === 'stockreview') {
+        // 切换股票时若停在每日复盘 tab，立即重载为新股票的复盘（懒加载同口径）
+        if (typeof StockReviewUI !== 'undefined') StockReviewUI.onTabSwitch(this.currentSymbol, this.currentData && this.currentData.name);
       }
     } catch (e) {
       if (token !== this._reqToken) return; // 过期请求，不弹错误、不干扰新请求
@@ -1213,8 +1223,10 @@ const App = {
     html += line('短期倾向', `<b class="${dirCls}">${esc(data.tendency || '中性')}</b>`);
     html += line('核心驱动', this._dirColorize(data.coreDriver || '—'));
     html += line('量能状态', this._dirColorize(data.volumeState || '—'), volTierCls(data.volumeState));
-    html += line('操作建议', this._dirColorize(data.advice || '—'), data.circuit ? 'tp-emo-warn' : '');
-    html += line('风险提示', this._dirColorize(data.riskTip || '—'), 'tp-emo-risk');
+    // [20261109b] 操作建议 / 风险提示是「提示」而非方向信号，不着红绿，
+    // 否则会把 .tp-emo-warn / .tp-emo-risk 的琥珀警示色染成方向色（数值符号 ≠ 方向）。
+    html += line('操作建议', esc(data.advice || '—'), data.circuit ? 'tp-emo-warn' : '');
+    html += line('风险提示', esc(data.riskTip || '—'), 'tp-emo-risk');
     html += `</div>`;
 
     // 20261025p：删除「情绪因子明细 / 宽基 ETF 申赎」页签——ETF 明细改独立网页 /etf-flow.html，
@@ -1225,7 +1237,7 @@ const App = {
     // 因子网格（与后端同源，数值一致）
     const fs = Array.isArray(data.factors) ? data.factors : [];
     if (fs.length) {
-      html += `<div class="tp-block-title">因子明细（8 常驻 + 2 非常驻 · 净权重=评分，方向满格计入总分）</div>`;
+      html += `<div class="tp-block-title">因子明细（8 常驻 + 2 非常驻 · 净权重=评分，方向满格计入总分；两融双栏各按半格）</div>`;
       html += '<div class="tp-comp-grid">';
       fs.forEach(f => {
         // 20261025n：权重=评分（对齐个股短期判断模块）——大字显示「净权重 ±X%」（方向满格×权重），
@@ -1233,15 +1245,35 @@ const App = {
         const contrib = (typeof f.contribution === 'number') ? f.contribution : 0;
         const sigCls = contrib > 0 ? 'tp-sig-bull' : contrib < 0 ? 'tp-sig-bear' : 'tp-sig-flat';
         const signTxt = `净权重 ${contrib > 0 ? '+' : ''}${contrib.toFixed(2)}%`;
-        html += `<div class="tp-comp${f.degraded ? ' tp-comp-degraded' : ''}">`;
+        // [20261109a] 两融余额：一张卡内融资/融券双栏，各占本卡 50% 权重
+        const isDual = f.key === 'margin' && Array.isArray(f.subs) && f.subs.length === 2;
+        html += `<div class="tp-comp${f.degraded ? ' tp-comp-degraded' : ''}${isDual ? ' tp-comp-dual-card' : ''}">`;
         html += `<div class="tp-comp-label">${esc(f.name)}<span class="tp-comp-w">权重${f.weight != null ? f.weight.toFixed(2) : '—'}%</span></div>`;
         html += `<div class="tp-comp-sig ${sigCls}">${signTxt}</div>`;
-        html += `<div class="tp-comp-value">${this._dirColorize(f.value || '')}</div>`;
+        if (isDual) {
+          // 方向色按**语义**给（利好=红 / 利空=绿），不经过 _dirColorize：
+          // 融券余额「+2%」是增加=利空，若按数值符号染红就与本卡语义错位（用户铁律：禁止方向与颜色语义错位）。
+          html += '<div class="tp-comp-dual">';
+          f.subs.forEach(sub => {
+            const tCls = sub.tone === 'bull' ? 'tp-sig-bull' : sub.tone === 'bear' ? 'tp-sig-bear' : 'tp-sig-flat';
+            const dirTxt = sub.absent ? '不计分' : sub.dir > 0 ? '利好' : sub.dir < 0 ? '利空' : '中性';
+            html += `<div class="tp-comp-sub${sub.absent ? ' tp-comp-sub-absent' : ''}">`
+              + `<div class="tp-comp-sub-hd">${esc(sub.name)}<span>${esc(String(sub.weightPct != null ? sub.weightPct : 50))}%</span></div>`
+              + `<div class="tp-comp-sub-val ${tCls}">${esc(sub.value || '—')}</div>`
+              + `<div class="tp-comp-sub-dir ${tCls}" title="${esc(sub.label || '')}">${esc(dirTxt)}</div>`
+              + `<div class="tp-comp-sub-note">${esc(sub.note || '')}</div>`
+              + '</div>';
+          });
+          html += '</div>';
+        } else {
+          html += `<div class="tp-comp-value">${this._dirColorize(f.value || '')}</div>`;
+        }
         // 20261025p：ETF 明细改独立网页 /etf-flow.html（弹窗/页签废弃），卡片按钮新标签打开
         const detailTxt = f.key === 'etfFlow'
           ? '份额较上一收盘增加 → 折算净申赎额；口径说明、ETF 名单与逐股明细见独立页（点下方按钮新标签打开）。'
           : (f.detail || '');
-        html += `<div class="tp-comp-detail">${this._dirColorize(detailTxt)}</div>`;
+        html += `<div class="tp-comp-detail">${isDual ? esc(detailTxt) : this._dirColorize(detailTxt)}</div>`;
+        if (isDual && f.splitNote) html += `<div class="tp-comp-detail tp-emo-info">ℹ️ ${esc(f.splitNote)}</div>`;
         if (f.key === 'etfFlow') html += `<button type="button" class="tp-comp-more" data-action="open-etf-page">查看宽基ETF明细 →</button>`;
         // 20261023j：卡片补「数据日期」——原来只有结论没有日期，用户无法判断数据新旧（2026-10-23 截图报障）。
         //   优先用因子自带日期（ETF=份额披露日 20261022、讨论热度=热度时间），其余用模型基准日；
@@ -1252,6 +1284,10 @@ const App = {
           : (f.key === 'discussionHeat' && f.heatDate) ? String(f.heatDate).slice(0, 10)
             : fmtD(f.dataDate || data.date || data.baselineDate || '');
         if (!isMacroF && dateTxt) html += `<div class="tp-comp-date">数据日期 ${esc(dateTxt)}</div>`;
+        // 20261110g P0-3：代理口径「代理」角标（中性色，裁决③只做展示不进打分）
+        if (window.honestyBadge && window.honestyBadge.isProxy(f)) {
+          html += `<div class="tp-comp-detail">${window.honestyBadge.badgeHTML(f.honesty || f.proxyKeys)}</div>`;
+        }
         if (f.degraded) html += `<div class="tp-comp-detail tp-emo-warn">⚠ ${esc(f.reason || '数据不可用')} → 权重已归零并按比例分摊</div>`;
         else if (f.fallback) html += `<div class="tp-comp-detail tp-emo-warn">⊕ ${esc(f.reason || '节假日兜底：显示最近一次成功数据')}</div>`;
         else if (f.lagged) {
@@ -1664,27 +1700,37 @@ const App = {
     });
   },
 
-  // 20261026d：红涨绿跌文本着色（用户 2026-10-26 截图要求「表示涨和跌的文字和数据分别用红色和绿色标示」）。
-  // 对情绪/判断类纯文本做转义后着色：带符号数值 +0.19%=红 / -1.19%=绿；上涨/涨停 N=红、下跌/跌停 N=绿；
-  // 其余「涨/跌」方向字（量平价涨、量平价跌、缩量下跌等）也按语义着色。已包裹的片段不重复处理。
-  // 日期/时间中的连字符（2026-10-26、14:30-15:00）与 T+1 不受影响（前缀守卫排除数字/字母/%/.// 前导）。
-  _dirColorize(text) {
-    let s = this._escapeHtml(text == null ? '' : String(text));
-    // ① 带符号涨跌数值
-    s = s.replace(/(^|[^0-9A-Za-z%./])([+\-−]\d+(?:\.\d+)?%?)/g, (m, p, num) =>
-      /^[-−]/.test(num) ? `${p}<span class="down">${num}</span>` : `${p}<span class="up">${num}</span>`);
-    // ② 涨跌家数 / 涨跌停家数短语（保留原有空格）
-    s = s.replace(/(上涨)(\s*[\d,\.]+(?:\s*家)?)/g, '<span class="up">$1$2</span>');
-    s = s.replace(/(下跌)(\s*[\d,\.]+(?:\s*家)?)/g, '<span class="down">$1$2</span>');
-    s = s.replace(/(涨停)(\s*[\d,\.]+)/g, '<span class="up">$1$2</span>');
-    s = s.replace(/(跌停)(\s*[\d,\.]+)/g, '<span class="down">$1$2</span>');
-    // ③ 其余「涨/跌」方向字——已着色片段跳过
-    s = s.split(/(<span class="(?:up|down)">[\s\S]*?<\/span>)/)
-      .map(seg => (seg.startsWith('<span class="up"') || seg.startsWith('<span class="down"'))
-        ? seg
-        : seg.replace(/涨/g, '<span class="up">涨</span>').replace(/跌/g, '<span class="down">跌</span>'))
-      .join('');
-    return s;
+  // [20261109b] 全工作台颜色语义铁律（用户 2026-11-09 指令）：
+  //   只有「利好 / 正面」才能红色，只有「利空 / 负面」才能绿色；数值符号 ≠ 方向。
+  // 旧版对任意带符号数值机械染红/绿，会把「融券余额 +2.08%」「亏损扩大 +30%」这类
+  // 正数值但语义负面的内容误染成利好红，也会让风险提示里的数字覆盖琥珀警示色。
+  // 现在改为三级契约：
+  //   ① _dirColorize(text)                    自由文本：仅按【显式语义词】着色，不看数值符号
+  //   ② _dirColorize(text, { tone:'bull' })  调用方已有确定性语义方向：整段按 tone 着色
+  //   ③ _dirColorize(text, { numeric:true }) 仅限「语义与符号严格一致」的涨跌幅字段，显式 opt-in
+  // 纯文本着色统一用 tp-sig-* 语义类（不带 !important），避免 .up/.down 覆盖父级琥珀警示色。
+  _dirColorize(text, opts) {
+    const o = opts || {};
+    const s = this._escapeHtml(text == null ? '' : String(text));
+    if (o.tone === 'bull' || o.tone === 'bear' || o.tone === 'flat') {
+      const cls = o.tone === 'bull' ? 'tp-sig-bull' : o.tone === 'bear' ? 'tp-sig-bear' : 'tp-sig-flat';
+      return `<span class="${cls}">${s}</span>`;
+    }
+    if (o.numeric === true) {
+      return s.replace(/(^|[^0-9A-Za-z%./])([+\-−]\d+(?:\.\d+)?%?)/g, (m, p, num) =>
+        /^[-−]/.test(num) ? `${p}<span class="down">${num}</span>` : `${p}<span class="up">${num}</span>`);
+    }
+    // 长词优先；NEUTRAL 中的组合词整体跳过，避免「涨跌幅」被拆成红「涨」+绿「跌」
+    // NEUTRAL：组合词整体跳过（避免「涨跌幅」被拆成红涨+绿跌）；风险/状态词保持琥珀或灰，不染方向色
+    const NEUTRAL = '涨跌幅|涨跌家数|涨跌停|涨跌幅分布|风险|风控|压力|隐忧|承压|放缓|缺口|缺失|未核验|待验证|中性|震荡|持平|未通过';
+    const BULL = '上涨|涨停|增持|净流入|利好|偏多|看多|低估|超预期|改善|回升|向好|突破|站上|转正|新高|高增|亮眼|加速|涨';
+    const BEAR = '下跌|跌停|减持|净流出|利空|偏空|看空|高估|不及预期|低于预期|恶化|亏损|走弱|回落|下滑|收窄|转负|未站上|跌';
+    const bullRe = new RegExp('^(?:' + BULL + ')$');
+    const re = new RegExp('(' + NEUTRAL + '|' + BULL + '|' + BEAR + ')', 'g');
+    return s.replace(re, (w) => {
+      if (new RegExp('^(?:' + NEUTRAL + ')$').test(w)) return w;
+      return `<span class="${bullRe.test(w) ? 'tp-sig-bull' : 'tp-sig-bear'}">${w}</span>`;
+    });
   },
 
   _escapeHtml(s) {
@@ -2496,7 +2542,7 @@ const App = {
     // （铁律第一条：仅展示层过滤，API 输出格式零变化）。
 
     // 20261106k（用户裁决）：「生死位规则（五大）」独立卡删除，五规则融合进 135 格综合判定模块——
-    // 规则1-4（低位吸筹/高位派发/缩量假突破/放量破位）参考天量/地量「异常特例」特殊提醒样式，
+    // 规则1-4（低位吸筹/高位派发/假突破量能不确认/放量破位）参考天量/地量「异常特例」特殊提醒样式，
     // 命中才显示、带方向色、不挂起主判（与 pj.special 的「综合判定挂起」语义区分）；
     // 规则5「分时无量拉升」作为特殊判定并入信号叠加层（与背离/极端量能/弱方向异动并列）。
     // 引擎 ve.rules 输出与评分链（_classify noBull/observeOnly/forceBear + riskTags）零改动，
@@ -2594,7 +2640,9 @@ const App = {
       // 20261106i（用户裁决「只统一结论展示」）+ 20261106j（分母统一 ÷20）：同屏只保留一个「今日量价关系判定」结论，
       // 且全量价判定的分母已统一为 ÷20 日均量（与本卡 135 格推演图同源），故同屏结论不再互斥。
       // 20261106l：「5日量能比」「60日量能确认」均已退役，5 日均量口径由顶部「量比」继续展示。
-      const caliberHtml = `<div class="ve-posj-path">📐 口径说明：全量价判定（本卡 135 格综合判定 / 资金量能综合判断·今日量价关系判定 / 资金行为）已统一为 当日量 ÷ 20 日均量（与 135 格推演图同源：放量 >1.3 / 平量 0.8~1.3 / 缩量 <0.8），同屏结论不再互斥；「20日涨跌日量能比」（近20日涨日均量 ÷ 跌日均量）为显式标注分母的原始指标卡，仅作辅助参考，不承担量价判定结论；「5日量能比」「60日量能确认」已退役——20261106n 起 60 日均量口径整体退役，全量价判定与文字分析统一使用 20 日量能比（当日量 ÷ 20 日均量），5 日均量原始值由顶部「量比」（腾讯行情直采）继续展示。</div>`;
+      // 20261109c（用户裁决「工作台已统一 20 日量能比，不应出现其他标准」）：异常特例层已接入同一真值源，
+      // 口径说明必须把覆盖范围写全，不能再只声明 135 格 / 今日量价关系 / 资金行为三处。
+      const caliberHtml = `<div class="ve-posj-path">📐 口径说明：全量价判定（本卡 135 格综合判定 / 资金量能综合判断·今日量价关系判定 / 资金行为）已统一为 当日量 ÷ 20 日均量（与 135 格推演图同源：放量 >1.3 / 平量 0.8~1.3 / 缩量 <0.8），同屏结论不再互斥；「20日涨跌日量能比」（近20日涨日均量 ÷ 跌日均量）为显式标注分母的原始指标卡，仅作辅助参考，不承担量价判定结论；「5日量能比」「60日量能确认」已退役——20261106n 起 60 日均量口径整体退役，全量价判定与文字分析统一使用 20 日量能比（当日量 ÷ 20 日均量），5 日均量原始值由顶部「量比」（腾讯行情直采）继续展示。〔20261109c 覆盖补完〕异常特例层（生死位五规则）、11.3.1「该放量未放量」、口诀 4「连续低成交」、缩量止跌观察与资金卡回退分档，已全部接入唯一真值源 lib/volumeCaliber.js（放量 >1.3 / 平量 0.8~1.3 / 缩量 <0.8），引擎内不再存在 ×1.5 或「当日量必须超过前高量能」等第二套标准；前高对应量能改取「同价位带最近前高」并仅作展示参照、不参与判定。显式标注分母的原始指标（顶部量比、每日量比趋势图、20日涨跌日量能比、箱体放量穿越线）为 ÷前5日均量或独立口径，不承担量价判定结论，与 ÷20 统一口径分母不同，数值不应相等。</div>`;
       // 参考锚点表（唯一渲染处；仅参考提醒不参与判定）
       const refRows = (pos.refs || []).map(r =>
         `<tr><td>${esc(r.k)}</td><td><span class="ve-rule-badge ${r.available ? '' : 've-miss'}">${r.available ? '参考' : '未接入'}</span></td><td>${esc(r.v)}</td></tr>`).join('');
@@ -3370,7 +3418,7 @@ const App = {
         <div class="pa-sum-chip"><span class="psc-label">长期趋势</span><span class="psc-value ${this._paVerdictClass(longTerm.verdict)}">${longTerm.verdict}</span></div>
         <div class="pa-sum-chip"><span class="psc-label">短期动向</span><span class="psc-value ${this._paVerdictClass(shortTerm.direction)}">${shortTerm.direction}（概率${shortTerm.probability}）</span></div>
         <div class="pa-sum-chip"><span class="psc-label">推演场景</span><span class="psc-value side">${this.escapeHtml(coordination.scenario)}</span></div>
-        <div class="pa-sum-chip"><span class="psc-label">主导力量</span><span class="psc-value ${coordination.dominant.includes('长期') ? 'up' : 'down'}">${this.escapeHtml(coordination.dominant)}</span></div>
+        <div class="pa-sum-chip"><span class="psc-label">主导力量</span><span class="psc-value neutral">${this.escapeHtml(coordination.dominant)}</span></div>
       `;
     }
 
@@ -4049,6 +4097,11 @@ const App = {
       StockLog.setStock(this.currentSymbol, this.currentData && this.currentData.name);
     }
 
+    // 个股每日复盘（20261110e：替换原「策略」tab）
+    if (tabName === 'stockreview' && typeof StockReviewUI !== 'undefined') {
+      StockReviewUI.onTabSwitch(this.currentSymbol, this.currentData && this.currentData.name);
+    }
+
     // 行业分析（按当前股票追踪）
     if (tabName === 'industry') {
       if (this.currentSymbol && this.industryLoadedSymbol !== this.currentSymbol) {
@@ -4094,13 +4147,6 @@ const App = {
         DocStore.setStock(this.currentSymbol, name);
       }
       DocStore.onTabSwitch();
-    }
-
-    // 策略回测校验 tab（20260926a）
-    if (tabName === 'backtest') {
-      if (this.currentSymbol && typeof BacktestUI !== 'undefined') {
-        BacktestUI.open(this.currentSymbol, this.currentData?.name);
-      }
     }
   },
 
@@ -6005,7 +6051,7 @@ const App = {
       const ratingMap = { '低估': 'vd-rating-low', '买入': 'vd-rating-low', '合理': 'vd-rating-mid', '高估': 'vd-rating-high', '需人工复核': 'vd-rating-mid', '无法评级': 'vd-rating-mid' };
       const ratingCls = ratingMap[j.rating] || 'vd-rating-mid';
       const esc = (s) => this.escapeHtml(s == null ? '' : String(s));
-      const cfoStrip = j.cfoVeto ? '<div class="vd-note" style="color:#F6465D;border:1px solid #F6465D;border-radius:8px;padding:8px 10px;font-weight:600;background:rgba(246,70,93,0.08);">🔴 ' + esc(j.cfoVetoWarning || '现金流硬性否决已触发') + ' 置信度已锁定【低】，保守情景 E_TTM 下调系数强制加深至 0.82~0.84。</div>' : '';
+      const cfoStrip = j.cfoVeto ? '<div class="vd-note" style="color:#F0B97B;border:1px solid #F0B97B;border-radius:8px;padding:8px 10px;font-weight:600;background:rgba(240,185,123,0.08);">⚠️ ' + esc(j.cfoVetoWarning || '现金流硬性否决已触发') + ' 置信度已锁定【低】，保守情景 E_TTM 下调系数强制加深至 0.82~0.84。</div>' : '';
       const openingStrip = j.openingStatement ? '<div class="vd-note" style="border:1px solid var(--accent);border-radius:8px;padding:8px 10px;">📌 ' + esc(j.openingStatement) + '</div>' : '';
       const frStrip = (j.freshnessRows && j.freshnessRows.length) ? (() => {
         const stale = j.freshnessRows.filter(f => f.stale);
@@ -6411,9 +6457,10 @@ const App = {
       const matrixRows = (j.matrixRows || []).map(m => {
         const warn = !!m.emph;
         const cls = warn ? 'vd-mat-warn' : (m.method.indexOf('综合') === 0 ? 'vd-seg-total' : '');
-        const trSt = warn ? ' style="background:rgba(246,70,93,0.10);"' : '';
-        const cellSt = warn ? ' style="color:#F6465D;font-weight:700;"' : '';
-        const noteSt = warn ? ' style="text-align:left;color:#F6465D;font-weight:600;font-size:12px;"' : ' style="text-align:left;color:var(--text-secondary);font-size:12px;"';
+        // 20260922e 补丁F：矩阵行 emph 为「估值体系重构警告」→ 琥珀橙（风险/口径提示，非利好利空）
+        const trSt = warn ? ' style="background:rgba(240,185,123,0.10);"' : '';
+        const cellSt = warn ? ' style="color:#F0B97B;font-weight:700;"' : '';
+        const noteSt = warn ? ' style="text-align:left;color:#F0B97B;font-weight:600;font-size:12px;"' : ' style="text-align:left;color:var(--text-secondary);font-size:12px;"';
         return `<tr class="${cls}"${trSt}><td class="vd-label"${cellSt}>${esc(m.method)}</td><td class="vd-value"${cellSt}>${m.low == null ? '—' : '¥' + fmt(m.low)}</td><td class="vd-value"${cellSt}>${m.mid == null ? '—' : '¥' + fmt(m.mid)}</td><td class="vd-value"${cellSt}>${m.high == null ? '—' : '¥' + fmt(m.high)}</td><td${noteSt}>${esc(m.note)}</td></tr>`;
       }).join('');
       const sotpRows = (j.sotpRows || []).map(m => `
@@ -6427,7 +6474,7 @@ const App = {
       const rangeLabel = pF.boundaryFixed
         ? `目标价区间（动态锚基准 × ${Number(pF.downMult || 0.75).toFixed(2)} ~ × ${Number(pF.upMult || 1.2).toFixed(2)}，补丁F 强制外扩）`
         : '目标价区间（极端悲观 PB 10%分位 ~ 极端乐观 PB 90%分位）';
-      const fStrip = pF.anchorBreached ? '<div class="vd-note" style="color:#F6465D;font-weight:600;">🔴 估值体系重构警告：' + esc(pF.reframeNote || '') + '</div>' : '';
+      const fStrip = pF.anchorBreached ? '<div class="vd-note" style="color:#F0B97B;font-weight:600;">⚠️ 估值体系重构警告：' + esc(pF.reframeNote || '') + '</div>' : '';
       // 20260922f 补丁G：动态锚跌破历史50%分位 → 周期底部估值体系防御提示条
       const pG = j.patchG || {};
       const gStrip = pG.anchorFloorActive
@@ -6453,13 +6500,13 @@ const App = {
         const r2b = pI.rule2b || {};
         const r3 = pI.rule3 || {};
         if (r2b.floorBreached) {
-          parts.push('<div class="vd-note" style="color:#F6465D;font-weight:700;">🛑 补丁I·规则③边界常识校验：' + esc(r2b.floorBreachWarn || '') + '</div>');
+          parts.push('<div class="vd-note" style="color:#F0B97B;font-weight:700;">⚠️ 补丁I·规则③边界常识校验：' + esc(r2b.floorBreachWarn || '') + '</div>');
         } else if (r3.maxDownsidePct != null) {
           parts.push('<div class="vd-note" style="color:#F0B97B;font-weight:600;">📉 补丁I·规则③边界常识校验：极端悲观已锁历史铁底 ¥' + fmt(r3.extremeLowLocked) + ' → 潜在最大下行风险仅 ' + esc(r3.maxDownsidePct) + '%</div>');
         }
         const r4 = pI.rule4 || {};
         if (r4.ratingDowngraded) {
-          parts.push('<div class="vd-note" style="color:#5FD38D;font-weight:700;">🟢 补丁I·规则④戴维斯双杀预警 + 熔断降级（重大机会）：' + esc(r4.davisNote || '') + (r4.buyRange ? '　💡 买入区间建议：¥' + fmt(r4.buyRange[0]) + ' ~ ¥' + fmt(r4.buyRange[1]) : '') + '</div>');
+          parts.push('<div class="vd-note" style="color:#F0B97B;font-weight:700;">⚠️ 补丁I·规则④戴维斯双杀预警 + 熔断降级（重大机会）：' + esc(r4.davisNote || '') + (r4.buyRange ? '　💡 买入区间建议：¥' + fmt(r4.buyRange[0]) + ' ~ ¥' + fmt(r4.buyRange[1]) : '') + '</div>');
         }
         return parts.join('');
       })() : '';

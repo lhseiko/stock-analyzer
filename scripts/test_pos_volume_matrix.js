@@ -204,7 +204,7 @@ section('§7 前端接线（保留原布局风格 · 新标准展示）');
 section('§8 源码守卫（引擎接线与 schema）');
 {
   const src = fs.readFileSync(path.join(ROOT, 'lib', 'volumeEngine.js'), 'utf8');
-  ok(src.includes("schema: 'volume-engine-20261106p'"), '引擎 schema = volume-engine-20261106p');
+  ok(src.includes("schema: 'volume-engine-20261109c'"), '引擎 schema = volume-engine-20261109c（量能单一真值源）');
   ok(src.includes("schema: 'pos-model-135-1'"), '主判 schema = pos-model-135-1');
   ok(src.includes("require('./posModel135')"), '135 格知识表接线（posModel135 同源真值）');
   ok(/const posJudgment = _posVolumeMatrix\(pc, \{ \.\.\.ctxBase, rules, levels, position, currentSideways, band20, trend20, trendSegment: trendSeg \}, bars\);/.test(src), '主判调用传入 bars（ADX/道氏/信号层需要）');

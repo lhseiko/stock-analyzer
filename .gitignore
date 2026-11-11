@@ -32,3 +32,4 @@ Thumbs.db
 
 # 技能生成物（mx-finance-data 等外抓结果，非源码）
 miaoxiang/mx_finance_data/
+.learnings/

@@ -12,6 +12,9 @@
  *   - 每脚本独立子进程 + 120s 超时（超时仅标记失败，不阻塞后续）；
  *   - 退出码优先：子进程非零退出即判失败（全部测试均已确认 fail>0 → 非零退出）；
  *   - 结束写 docs/test-report.md 结论化报告；汇总行同时打印到控制台。
+ *   - [20261111c] 失败即落现场：任一测试失败，把失败测试的全量输出 + 环境（时间/git commit/node 版本/模式）
+ *     快照到 data/test-scenes/scene-<时间戳>/（每个失败测试一个 .log + index.json）；保留 3 天自动清理。
+ *     目的：间歇失败（如 test_stock_log / 600test.json safe-delete）不再「复跑自愈」，先查现场快照定位。
  */
 'use strict';
 const fs = require('fs');
@@ -55,7 +58,50 @@ function classify() {
   return listTests().map(f => ({ f, net: needsNetwork(fs.readFileSync(path.join(SCRIPTS, f), 'utf8')) }));
 }
 
+// [20261111c] 失败现场快照：保留 3 天，避免间歇失败「复跑自愈」后失去现场。
+const { execSync } = require('child_process');
+const SCENE_DIR = path.join(ROOT, 'data', 'test-scenes');
+const SCENE_TTL_MS = 3 * 24 * 3600 * 1000;
+
+function cleanupScenes() {
+  if (!fs.existsSync(SCENE_DIR)) return;
+  const now = Date.now();
+  for (const f of fs.readdirSync(SCENE_DIR)) {
+    const fp = path.join(SCENE_DIR, f);
+    try {
+      const st = fs.statSync(fp);
+      if (now - st.mtimeMs > SCENE_TTL_MS) fs.rmSync(fp, { recursive: true, force: true });
+    } catch (_) { /* 清理失败不阻断主流程 */ }
+  }
+}
+
+function dropScene(failed, mode, ts) {
+  if (!failed.length) return null;
+  fs.mkdirSync(SCENE_DIR, { recursive: true });
+  const stamp = ts.replace(/[:.]/g, '-');
+  const dir = path.join(SCENE_DIR, `scene-${stamp}`);
+  fs.mkdirSync(dir, { recursive: true });
+  let commit = '';
+  try { commit = execSync('git rev-parse --short HEAD', { cwd: ROOT }).toString().trim() || 'unknown'; } catch (_) { commit = 'unknown'; }
+  const index = {
+    timestamp: ts,
+    mode,
+    node: process.version,
+    commit,
+    failedCount: failed.length,
+    note: '下次遇到间歇失败，先看此快照目录，不要直接复跑自愈',
+    failed: failed.map(f => ({ file: f.file, code: f.code })),
+  };
+  for (const f of failed) {
+    const safe = f.file.replace(/[^a-zA-Z0-9_.-]/g, '_');
+    try { fs.writeFileSync(path.join(dir, safe + '.log'), f.out || '', 'utf8'); } catch (_) {}
+  }
+  try { fs.writeFileSync(path.join(dir, 'index.json'), JSON.stringify(index, null, 2), 'utf8'); } catch (_) {}
+  return dir;
+}
+
 (async () => {
+  cleanupScenes();              // [20261111c] 启动即清理过期快照
   const all = classify();
   const selected = QUICK ? all.filter(t => !t.net) : all;
   const skipped = QUICK ? all.filter(t => t.net) : [];
@@ -102,6 +148,8 @@ function classify() {
       const tail = (f.out || '').split('\n').filter(l => /✗|❌|FAIL|Error|throw/.test(l)).slice(-5).join('\n    ');
       if (tail) console.log('    ' + tail);
     }
+    const sceneDir = dropScene(failed, QUICK ? 'quick' : 'full', ts);
+    if (sceneDir) console.log(`\n📸 失败现场已落盘（保留 3 天）：${sceneDir}\n   ⚠️ 不要直接复跑自愈——先查该目录下的 index.json 与各 .log 定位间歇失败根因。`);
   } else {
     console.log('✅ 全部通过');
   }

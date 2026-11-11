@@ -75,8 +75,9 @@ const Charts = {
     bollMiddle: '#E6EDF3',
     bollLower: '#3B82F6',
     rsi: '#A855F7',
-    rsiOverbought: '#F6465D',
-    rsiOversold: '#0ECB81',
+    // [20261109b] RSI 70/30 是「阈值参考线」，不是利好/利空消息 → 琥珀橙，不占用方向色
+    rsiOverbought: '#F0B97B',
+    rsiOversold: '#D9A566',
     macdDif: '#E6EDF3',   // DIF 白线
     macdSignal: '#F0B90B',// DEA 黄线
     kdjK: '#E6EDF3',

@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>每日复盘 · 股票分析工作台</title>
-  <link rel="icon" type="image/x-icon" href="favicon.ico?v=20261108d">
-  <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=20261108d">
-  <link rel="stylesheet" href="css/style.css?v=20261108d">
+  <link rel="icon" type="image/x-icon" href="favicon.ico?v=20261111b">
+  <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=20261111b">
+  <link rel="stylesheet" href="css/style.css?v=20261111b">
   <!-- 独立长页：恢复滚动（与 notes.html / accuracy.html 同一外壳口径，html,body 须同时覆盖） -->
   <style>
     html, body { height: auto !important; overflow-y: auto !important; overflow-x: hidden; }
@@ -18,7 +18,7 @@
     <header class="jd-header">
       <div>
         <h1 class="jd-title">📋 每日复盘</h1>
-        <div class="dr-subtitle" id="drSubtitle">交易日 15:35 自动生成 · 固定 14 段结构 · 热点归因 · 机会/风险分级 · 数据缺失如实标注</div>
+        <div class="dr-subtitle" id="drSubtitle">交易日 15:35 生成正式版 · 20:30 补录龙虎榜升级完整版 · 大模型生成 Markdown 复盘 · 数据缺失如实说明</div>
       </div>
       <div class="jd-actions">
         <button id="drRerunBtn" class="btn-secondary" type="button" title="管理员手动重跑当日复盘">↻ 手动重跑</button>
@@ -37,12 +37,10 @@
       <span class="dr-meta" id="drMeta"></span>
     </div>
 
-    <!-- 工具条：历史检索 + 按日期查询 -->
+    <!-- 工具条：回到当日 + 日历选日期（历史复盘已由日历菜单完全替代，不再单独留 tab） -->
     <div class="jd-toolbar dr-toolbar">
       <button class="np-tab active" type="button" id="drTabToday">当日复盘</button>
-      <button class="np-tab" type="button" id="drTabHistory">历史复盘</button>
-      <input type="date" id="drDateInput" class="dr-input" title="按日期查询复盘">
-      <button class="btn-secondary dr-btn" type="button" id="drByDateBtn">按日期查看</button>
+      <input type="date" id="drDateInput" class="dr-input" title="点选任意日期即可自动显示该日复盘">
       <span class="dr-toolbar-note" id="drToolbarNote"></span>
     </div>
 
@@ -50,18 +48,11 @@
     <main class="dr-main" id="drMain">
       <div class="dr-loading">正在加载当日复盘…</div>
     </main>
-
-    <!-- 历史列表面板（默认隐藏） -->
-    <section class="dr-history hidden" id="drHistoryPanel">
-      <div class="dr-history-head">
-        <span class="dr-history-title">历史复盘</span>
-        <span class="dr-meta" id="drHistoryCount"></span>
-      </div>
-      <div id="drHistoryList"></div>
-    </section>
   </div>
 
-  <script src="js/dailyReview.js?v=20261108d"></script>
+  <!-- Markdown 渲染器本地随包（零 CDN 依赖）：必须在 dailyReview.js 之前加载 -->
+  <script src="js/markdown.js?v=20261111b"></script>
+  <script src="js/dailyReview.js?v=20261111b"></script>
   <script>
     // 页面组件入口：DailyReviewPage.init()（点击后自动加载当日复盘）
     document.addEventListener('DOMContentLoaded', function () {
