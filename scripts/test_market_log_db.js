@@ -159,17 +159,17 @@ async function main() {
     {
       const server = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
       ok(server.includes("require('./lib/marketLogDb')") && server.includes("app.get('/api/market-log'"), 'server.js：marketLogDb 接线 + /api/market-log 路由');
-      ok(/const APP_VERSION = '20261111d'/.test(server), "APP_VERSION = '20261111d'");
+      ok(/const APP_VERSION = '20261112a'/.test(server), "APP_VERSION = '20261112a'");
       const notesJs = fs.readFileSync(path.join(ROOT, 'public/js/notes.js'), 'utf8');
       ok(notesJs.includes('renderMarketDbPanel') && notesJs.includes('runMarketSearch') && notesJs.includes('mldbSearch'), 'notes.js：检索面板/检索执行函数齐备');
       ok(notesJs.includes("data-page-scope") && /renderMarketDbPanel\(\);\n/.test(notesJs), 'notes.js：面板按 market scope 注入（投资心得页零变化）');
       const css = fs.readFileSync(path.join(ROOT, 'public/css/style.css'), 'utf8');
       ok(css.includes('.mldb-panel') && css.includes('.mldb-dir.up') && css.includes('.mldb-dir.down'), 'style.css：检索面板与方向徽标样式齐备');
       const notesHtml = fs.readFileSync(path.join(ROOT, 'public/notes.html'), 'utf8');
-      ok(notesHtml.includes('js/notes.js?v=20261111d') && notesHtml.includes('css/style.css?v=20261111d'), 'notes.html：notes.js/style.css 版本戳已对齐');
+      ok(notesHtml.includes('js/notes.js?v=20261112a') && notesHtml.includes('css/style.css?v=20261112a'), 'notes.html：notes.js/style.css 版本戳已对齐');
       const idx = fs.readFileSync(path.join(ROOT, 'public/index.html'), 'utf8');
       const acc = fs.readFileSync(path.join(ROOT, 'public/accuracy.html'), 'utf8');
-      ok(idx.includes('?v=20261111d') && acc.includes('?v=20261111d'), 'index/accuracy 页面版本戳已对齐 20261111d');
+      ok(idx.includes('?v=20261112a') && acc.includes('?v=20261112a'), 'index/accuracy 页面版本戳已对齐 20261112a');
       const lib = fs.readFileSync(path.join(ROOT, 'lib/marketLogDb.js'), 'utf8');
       ok(lib.includes("require('node:sqlite')") && lib.includes('ensureSynced'), 'marketLogDb.js：node:sqlite + mtime 自动重建');
     }

@@ -65,10 +65,10 @@ ok(VEC.includes("riskTags.push('假突破量能不确认', 'K线骗线')"), '风
 ok(!/dayVolRatio\s*>=\s*1\.2/.test(CFS) && !/volRatio\s*>=\s*1\.2/.test(CFS) && !/breakoutVolRatio\s*>=\s*1\.2/.test(CFS), 'capitalFlow 的 ÷20 回退阈值不再有 1.2 第二套标准');
 ok(APP.includes('异常特例层') && APP.includes('同价位带最近前高') && APP.includes('lib/volumeCaliber.js'), 'app.js 口径说明补全覆盖范围（不再只声明三处）');
 ok(VEC.includes("schema: 'volume-engine-20261109c'"), '引擎 schema 已升 20261109c（强制重算旧判断）');
-ok(SVR.includes("const APP_VERSION = '20261111d'"), 'APP_VERSION 已升 20261111d（[20261111d] 删除策略回测模块：strategyGenerator/strategyNL/backtestValidator/backtestUI 及 3 测试，「策略」tab 移除）');
+ok(SVR.includes("const APP_VERSION = '20261112a'"), 'APP_VERSION 已升 20261112a（[20261112a] 删除策略回测模块：strategyGenerator/strategyNL/backtestValidator/backtestUI 及 3 测试，「策略」tab 移除）');
 ok(SJD.includes("const LAYOUT_VERSION = '20261109c'"), 'LAYOUT_VERSION 保持 20261109c（本轮未改判断结构，不强制重算当日判断记录）');
-ok(IDX.includes('js/app.js?v=20261111d') && IDX.includes('js/capitalCharts.js?v=20261111d') && IDX.includes('css/style.css?v=20261111d')
-  && ETF.includes('?v=20261111d') && DRV.includes('css/style.css?v=20261111d') && DRV.includes('js/markdown.js?v=20261111d') && DRV.includes('js/dailyReview.js?v=20261111d'), '各 HTML 的 ?v= 缓存戳同步（index 升 20261111d；etf-flow 保持 20261110b；daily-review 差异戳 markdown.js 20261110c / dailyReview.js 20261110d）');
+ok(IDX.includes('js/app.js?v=20261112a') && IDX.includes('js/capitalCharts.js?v=20261112a') && IDX.includes('css/style.css?v=20261112a')
+  && ETF.includes('?v=20261112a') && DRV.includes('css/style.css?v=20261112a') && DRV.includes('js/markdown.js?v=20261112a') && DRV.includes('js/dailyReview.js?v=20261112a'), '各 HTML 的 ?v= 缓存戳同步（index 升 20261112a；etf-flow 保持 20261110b；daily-review 差异戳 markdown.js 20261110c / dailyReview.js 20261110d）');
 ok(!VEC.includes("'603014'") && !VEC.includes('"603014"'), '引擎内无「威高血净 603014」单只特例（全个股统一）');
 
 // =====================================================================

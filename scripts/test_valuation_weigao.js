@@ -145,9 +145,9 @@ t('server.js VALUATION_MODEL_HASH 自动扫描 lib/valuation/*.js（新模型自
 });
 
 console.log('\n== §6 版本戳 ==');
-t('server.js APP_VERSION = 20261111d 且注释含威高血净条目', () => {
+t('server.js APP_VERSION = 20261112a 且注释含威高血净条目', () => {
   const src = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
-  assert.ok(src.includes("const APP_VERSION = '20261111d'"));
+  assert.ok(src.includes("const APP_VERSION = '20261112a'"));
   assert.ok(src.includes('[20261104i] 威高血净（603014）专属估值模型'));
 });
 t('配置 version = 20261104i（历史落盘条目不随全局升版）', () => assert.strictEqual(cfg.version, '20261104i'));

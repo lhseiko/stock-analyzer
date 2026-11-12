@@ -92,15 +92,15 @@ section('§3 引擎-页面同源（posModel135 文案 ⊆ volume-map.html）');
 section('§4 版本断言（20261106k）');
 {
   const server = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
-  ok(/const APP_VERSION = '20261111d'/.test(server), 'server.js APP_VERSION=20261111d');
+  ok(/const APP_VERSION = '20261112a'/.test(server), 'server.js APP_VERSION=20261112a');
   ok(server.includes('[20261103k] 量价判定第三步补「大涨 / 大跌」强形态') && server.includes('[20261104c] AI 解读生成失败修复') && server.includes('[20261104d] 融资融券 tile 文案歧义修复') && server.includes('[20261104e] 量价判定位置阶梯'), 'server.js 版本注释含 [20261103k]/[20261104c]/[20261104d]/[20261105b] 条目');
   for (const f of ['test_metric_analysis_vote', 'test_consistency_audit', 'test_etf_flow_holiday_guard', 'test_manual_zone_reversal', 'test_market_log_db']) {
     const src = fs.readFileSync(path.join(ROOT, 'scripts', `${f}.js`), 'utf8');
-    ok(src.includes('20261111d') && !src.includes('20261103j'), `${f}.js 版本断言同步至 20261111d`);
+    ok(src.includes('20261112a') && !src.includes('20261103j'), `${f}.js 版本断言同步至 20261112a`);
   }
   for (const f of ['index.html', 'accuracy.html', 'notes.html']) {
     const src = fs.readFileSync(path.join(ROOT, 'public', f), 'utf8');
-    ok(src.includes('20261111d') && !src.includes('20261103j'), `public/${f} 版本戳=20261111d`);
+    ok(src.includes('20261112a') && !src.includes('20261103j'), `public/${f} 版本戳=20261112a`);
   }
 }
 

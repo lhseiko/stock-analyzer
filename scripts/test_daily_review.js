@@ -96,13 +96,13 @@ t('前端 Markdown 直出：不再套卡片组件，渲染器本地随包、零 
   assert.ok(!/https?:\/\/[^"']*\.min\.js/.test(md), '不得引用外部 CDN');
   assert.ok(md.includes('escape') && md.includes('safeUrl'), '必须有 XSS 防护');
 });
-t('APP_VERSION 与各 HTML 的 ?v= 缓存戳同步 20261111d（bump_version 全站统一）', () => {
-  assert.ok(read('server.js').includes("const APP_VERSION = '20261111d'"));
-  assert.ok(read('public/daily-review.html').includes('js/dailyReview.js?v=20261111d'), 'daily-review 的 dailyReview.js 版本戳已对齐');
-  assert.ok(read('public/daily-review.html').includes('js/markdown.js?v=20261111d'), 'daily-review 的 markdown.js 版本戳已对齐');
+t('APP_VERSION 与各 HTML 的 ?v= 缓存戳同步 20261112a（bump_version 全站统一）', () => {
+  assert.ok(read('server.js').includes("const APP_VERSION = '20261112a'"));
+  assert.ok(read('public/daily-review.html').includes('js/dailyReview.js?v=20261112a'), 'daily-review 的 dailyReview.js 版本戳已对齐');
+  assert.ok(read('public/daily-review.html').includes('js/markdown.js?v=20261112a'), 'daily-review 的 markdown.js 版本戳已对齐');
   ['public/etf-flow.html', 'public/daily-review.html'].forEach(f =>
-    assert.ok(read(f).includes('?v=20261111d'), f + ' 其余资源缓存戳未升级'));
-  assert.ok(read('public/index.html').includes('?v=20261111d'), 'index.html 缓存戳已升 20261111d');
+    assert.ok(read(f).includes('?v=20261112a'), f + ' 其余资源缓存戳未升级'));
+  assert.ok(read('public/index.html').includes('?v=20261112a'), 'index.html 缓存戳已升 20261112a');
 });
 t('SCHEMA_VERSION 按铁律升级，旧落盘文档不会被幂等锁死', () => {
   const c = read('lib/reviewContext.js');

@@ -145,6 +145,11 @@ const App = {
       HomeRank.bind();
       HomeRank.load();
     }
+    // 首页「数据健康」卡片（P2-2 可观测性：近7日 API 统计，仅进入时加载 + 手动刷新，不参与轮询）
+    if (typeof HealthPanel !== 'undefined') {
+      HealthPanel.bind();
+      HealthPanel.load();
+    }
     // 首页「市场情绪拐点」全局预警条
     this.loadSentimentTurningPoint();
     // 首页「行业板块拥挤度」
@@ -4294,7 +4299,7 @@ const App = {
   // 首页卡片折叠（除实时大盘/左侧边栏外默认收起，localStorage 记忆用户选择）
   initHomeCollapsible() {
     const COLLAPSE_KEY = 'sa_home_collapsed_v1';
-    const defaultCollapsed = ['homeSentimentPanel', 'indexPeTrendCard', 'sectorCrowdingCard', 'homeNewsCard', 'homeHotTopicsCard', 'macroCard', 'rankCard', 'historyPanel'];
+    const defaultCollapsed = ['homeSentimentPanel', 'indexPeTrendCard', 'sectorCrowdingCard', 'homeNewsCard', 'homeHotTopicsCard', 'macroCard', 'rankCard', 'healthCard', 'historyPanel'];
     let state;
     try { state = JSON.parse(localStorage.getItem(COLLAPSE_KEY) || '{}'); } catch { state = {}; }
     const firstVisit = !localStorage.getItem(COLLAPSE_KEY);

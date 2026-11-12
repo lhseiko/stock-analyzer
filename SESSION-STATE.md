@@ -391,5 +391,82 @@
 - **commit / push**：`8cee751 20261111d 链路3...`（8 文件 +673/−115）；首次命令因工具重跑出现 `nothing to commit` + `ahead 1`，核对后确认 commit 已建、push 未执行，单独补推 `d2ae219..8cee751` 成功。本地 = `origin/master` = GitHub 远端 = `8cee75143af9abfef079e4b694182f71d3011650`，工作树干净。
 - **克隆端 ff**：`git -C "D:/ai agent/2026-09-05-13-22-15" fetch origin` + `merge --ff-only origin/master`，从 `611683e` 快进（57 files changed, +2700/−335，含新建 `lib/deepJobManager.js`、`scripts/test_deep_jobs_e2e.js`）；`refs/remotes/origin/master` 与 `HEAD` 均为 `8cee751`，本次**未复现 workspace loose ref 静默失败**。克隆端仅遗留历史未跟踪文件 `?? bal_all.txt`，未动。
 - **md5 双口径（如实，不把差异含糊带过）**：原始字节 md5 对全部 531 个跟踪文件比对**报大量差异**；根因不是内容漂移——两端 `core.autocrlf=true`，本地工作区文件为 LF（`public/js/homeMacro.js` 前 20KB 含 0 个 CR，AI 编辑器写出），克隆端为 git 检出转换的 CRLF（同段 222 个 CR）。权威校验：两端 `git rev-parse HEAD^{tree}` 同为 `51d06dc91b810d23d0cc9cac6188f872b7d28080`；**去 CR 规范化后 531/531 文件 md5 零差异**。故三端代码内容一致，同步仪式通过。
-- **未擅自修复**：没有为让「原始字节 md5 也全等」而批量重写工作区换行符或改 `autocrlf` / 加 `.gitattributes`（会触碰 531 个文件、风险大于收益）。如用户要求字面意义的字节级一致，需单独确认后统一换行符口径。
+- **未改动换行符口径**：两端 `core.autocrlf=true` 的配置与工作区字节保持原状；批量重写 531 个文件会引入超出链路 3 范围的副作用，故不做。三端内容一致性以 tree hash 与去 CR 规范化 md5 作为判定依据。
 - **同步通道故障与根治（实跑）**：WAL 补记提交后，克隆端 `fetch origin` 两次失败——先 `CONNECT tunnel failed, response 502`，再 `Failed to connect to github.com:443 (21158ms)`；`merge --ff-only` 因 remote ref 未更新而误报 `Already up to date`（**不是** workspace loose ref 静默失败）。用 `git fetch git@github.com:lhseiko/stock-analyzer.git master:refs/remotes/origin/master` 经 SSH 通道补齐并 ff 成功；随后把克隆端 `origin` 从 HTTPS 统一为 SSH（与本地一致），复跑 `fetch origin` 正常。后续「同步」指令不再依赖不稳定 HTTPS 代理。
+
+## 2026-11-11 21:5x · P2-1 批次 2 链路 4：复盘生成（mock LLM）E2E 落地
+
+- **触发**：用户「全绿 + 三端同步没问题就开始链路 4（复盘生成）」；三端同步已通过（HEAD `55aed54` / tree `2fbacec` / 规范化 md5 531 文件 0 差异），开工条件成立，本轮直接落地，未再反问授权。
+- **范围界定（如实）**：链路 4 = `reviewContext.build → reviewLlm.generate → degraded 数据快照 → reviewService 落盘守卫`。不重复链路 1（个股复盘 run 幂等）与 `test_daily_review.js`（schema 守卫）已覆盖的路由层；不拉起 `runReview` 的完整 `gatherSources`（需桩替换十余个网络数据层，与「mock LLM 验证生成层」目标无关），改以静态断言守住 `runReview` 的 `schemaOutdated` 复用侧。
+- **实现**：新建 `scripts/test_review_gen_e2e.js`（45/0）。`require.cache` 只替换 `lib/ai/config.js` 的 `loadConfig`、`lib/ai/llm.js` 的 `callLLM` / `pickModelFor`（其它导出用 `Object.assign` 保留真实，避免下游拿不到函数）；真实执行 `build` / `generate` / `degraded` 与真实提示词文件。
+  - §0 接线与 SCHEMA/CONTEXT 同源（`review-llm-20261111b` / `review-context-20261111b`；`reviewService.SCHEMA_VERSION` 同源）。
+  - §A Context：五要素随每个源进 Context、失败源如实列 `missing`、观察池 `gradeLabel`/`sectorPosition`/`trialGrade` 三字段在位、龙虎榜不被 `byCode` 污染、12000 字符预算、数值不被改写。
+  - §B 正常生成：markdown 只去围栏不改写（LLM 仅叙事、代码权威）、`contentChars`/`promptSha1`/`model`/`promptFile` 元信息、system 用真实提示词、user 原样注入完整 JSON Context、`webSearch:false`、`force` 双向透传。
+  - §C 五态降级：未配置密钥 / 配置抛错 / 无可用模型 / LLM 抛 HTTP 429 / 空返回，一律 `ok=false + degraded=true` 且照常出数据快照、原因如实写 `error`；另验证 `pick.model || cfg.modelLocal` 既有兜底不回归。
+  - §D 提示词 `gradeLabel` 与「退潮期严禁留空」约束、`runReview` 的 SCHEMA 复用侧守卫。
+  - §E `@test-scope: local` + `vm` 抽真实分类器求值，确保进 quick 集（防链路 3 那种假绿）。
+- **首跑红灯 41/2（测试桩场景错误，非产品缺陷）**：「无可用模型」只让 `pickModelFor` 返回空时，代码按既有兜底回退 `cfg.modelLocal`，属正确行为。修正为两者同空才触发降级，并补一条兜底回归断言；断言语义未放宽。修后 45/0。
+- **验证（实跑）**：`node --check` 通过；`test_review_gen_e2e.js 45/0`；`run_all_tests --quick 127/127`（跳过 13 需网络，链路 3 与链路 4 E2E 均真跑）；`test_swallow_catch_guard` 空 catch 137≤138 / 路由内 5≤6，基线未增。`docs/test-report.md` 自动更新。
+- **版本戳 / 服务**：本轮只新增测试文件，业务代码、服务端返回 JSON 结构、前端 UI 零改动 → APP_VERSION 不 bump、3005 服务无需重启（PID 2208 持续监听）。
+- **同步状态**：链路 4 属本轮新增工作；按「任务完成后不自动同步、等用户明确说同步」的默认纪律，本地改动已完成、尚未 commit / push / 三端同步。
+
+## 2026-11-11 22:1x · P2-1 批次 2 链路 5：数据源降级链（Fallback Chain）E2E + 新浪日K量纲 B2 修复 —— 批次 2 收官
+
+- **触发**：用户验收链路 3/4 后明确指令「直接推进链路 5」，给定完整规格：桩 `axios.get`（不桩 `getQuote` 本身）、验证切源 / `source` 如实标注 / 降级数据单位口径对齐 / 全挂必须明确空态不伪造 0 价格；完成后全量回归并标记 P2-1 批次 2 全部完成。
+- **真实探针实证（先查现状摆问题）**：`_probe_fallback.js` 实测腾讯 quote `volume=49,827,400`（股）、腾讯日K末根 `498,274`（手），ratio 恰 100 → 主链口径正确；`_probe_sina_unit.js` 实测新浪日K末根 `49,827,393`（**股**）→ **实锤新浪兜底 100 倍量纲错位**（B2 级：降级数据静默错位）。同时确认四个日K抓取通道均无来源标注。
+- **修复（lib/stockData.js，最小隔离）**：① `fetchSinaHistory` volume `/100` 归一手（注释含 2026-11-11 实测依据）；② 腾讯/腾讯按结束日期/东财 push2his/东财 multiHost/新浪 共 5 处返回数组附 `.meta = { source, volumeUnit: '手' }`（沿用 `getHistoryPeriod` 数组级 `.meta` 先例，不影响遍历/序列化消费方）。
+- **E2E**：新建 `scripts/test_fallback_chain_e2e.js`，require.cache 桩 axios（wrapped 函数 + Object.assign 保留真实 API），真实跑 `getQuote` / `getHistory` / `getQuoteHub`。§A 腾讯超时→东财接管+meta 标注+不浪费新浪兜底；§B 腾讯+东财全挂→新浪接管 + 49,827,400÷100=498,274 手断言；§B2 跨源同股数同手数；§C 三源全挂→getHistory 空数组 + getQuoteHub `ok:false` 明确空态不伪造价格；§D 静态守卫（÷100 固化、科创板归一保留、4 处 meta.source、三级顺序）；§E `@test-scope: local` 分类器自检。
+- **首跑红灯如实**：4/8（mock 只 2-3 根，低于 `length>5` 有效性门槛被正确拒绝——门槛逻辑在工作，补至 8 根）；21/2（`mkRes({data:{data:{klines}}})` 响应体多包一层致东财每次「成功返回 0 根」——mock 核心修正后 23/0）。
+- **修复后探针复验**：主链无回归（quote/日K ratio 仍 100）；两探针确认无进程依赖后删除。
+- **APP_VERSION bump 至 20261111e（32 处变更，有据 bump）**：生产日志实证腾讯 501 + 东财 hang up 频发、新浪兜底在生产真实命中过 → 按 APP_VERSION 门控的深度分析磁盘缓存可能存有量纲污染结论，bump 是清除污染缓存可靠手段。`test_cache_bust_guard.js` 3/0/0。
+- **最终回归**：`run_all_tests --quick` **128/128 通过，跳过 13 需网络**；`docs/整改方案-20261110.md` P2-1 行标记「✅ 批次 2 收官（2026-11-11）」（逐链 40/0、45/0、23/0；如实注明「analysis 接口」「切股链路」两条未单独固化及覆盖理由）。
+- **服务重启 + 线上冒烟（实跑）**：旧实例（后台任务 PYaWKe，PID 2208，d 版代码）taskkill 后端口释放，旧任务 failed 属良性；受管后台任务重启 `20261111e`：`GET /` → 302 `?v=20261111e`；`/api/deep-analysis/601318` → `{status:'running'}`（appVersion 门控生效，量纲污染缓存已被清除并重算）；quote 主链 volume 49,827,400 股 / 53.41 无回归。
+- **同步状态**：链路 4 + 链路 5 本地改动已完成、**尚未 commit / push / 三端同步**，等用户「同步」指令（用户原话「跑完汇报，我们准备封板」未含同步授权）。
+
+## 2026-11-11 23:0x · P2-2 可观测性落地：结构化请求日志 + 数据健康面板（版本 20261111f）
+
+- **触发**：用户验收链路 5 后明确指令启动 P2-2，六项规格：① 结构化日志中间件（logs/requests-YYYYMMDD.jsonl，ts/ReqId/路由/状态码/耗时，严禁 Response Body）；② 降级埋点 degraded:true；③ 启动清理 30 天旧日志；④ 首页「数据健康」卡片 + GET /api/health/dashboard 近 7 日聚合（总调用/异常率/各源降级次数/平均耗时）+ 固定脚注；⑤ 单测/实跑验证；⑥ 升版 20261111f。
+- **新建 lib/requestLogger.js**（唯一出口）：express 中间件（AsyncLocalStorage 请求上下文 + res finish 写 JSONL）+ `markDegraded(source)`（无请求上下文静默忽略，定时任务安全）+ `cleanupOldLogs(30)`（只匹配 requests-*.jsonl 命名，不碰 server.log 等）+ `aggregateDashboard(7)`（坏行计入 parseErrors 跳过不中断；窗口外行过滤；空态全 0 不伪造）。防泄露三道硬闸：route 只取 pathname（split('?')[0]）、零 req.body 引用、行字段白名单测试固化。
+- **新建 public/js/healthPanel.js**：KPI 四格（近7日调用/异常率/平均耗时/降级总数）+ 降级源表（腾讯/东财/新浪/Yahoo 中文名映射）+ 统计窗口元信息行 + 脚注（服务端 effectiveFrom 下发，前端静态兜底）。异常率 >5% 琥珀警示（健康面板无涨跌语义，不用红绿方向色）。
+- **stockData.js 埋点 7 处（真实回退语义）**：getHistory CN/HK 东财/新浪兜底、getHistory US 腾讯/Yahoo 兜底、getQuote Yahoo 兜底、getHistoryPeriod 60m 腾讯失败走东财（day 周期东财是主路径不算降级）、市场概览新浪整批兜底、getHistoryDeep 腾讯兜底。**口径裁决**：长窗口设计性主路径（>800 根 60m 走新浪，腾讯无该能力）不算降级不埋点，面板统计的是「主源失败→备源接管」的真实回退。
+- **接线**：server.js 挂载 `app.use('/api', requestLogger.middleware)`（静态资源不记）+ /api/health/dashboard 路由（days 参数 1-30 夹紧）+ 启动清理（失败不阻断）；index.html healthCard（rankCard 之后、可折叠、首次默认收起）+ healthPanel.js script；app.js init 接线 + defaultCollapsed 加 healthCard；style.css hp-* 系列。
+- **守卫 scripts/test_health_panel.js 34/34**（@test-scope: local）：§A mini express 真端口真跑（字段白名单/query 零落盘/同请求同源去重/500 记录）；§B 无上下文静默；§C 清理只删超期 requests-*；§D 聚合（窗口过滤/坏行/errorRate 40%/avgDurationMs/按源计数）；§E 接线静态断言 + requestLogger 源码防泄露硬守卫（零 req.body、query 剥离固化）。
+- **红灯如实 2 轮**：① Windows `utimesSync` 数字时间戳 EINVAL → 传 Date 对象（测试桩问题）；② 测试引用 healthPanel 闭包常量 ReferenceError → 改字面量断言；③ **吞错守卫红灯（空 catch +5）→ 根修不放宽**：requestLogger 五处静默空 catch 全部改为带 console.error 可观测或消除（markDegraded 去 try/catch），复跑 137≤138 基线恢复。
+- **升版**：`bump_version.js 20261111f`（32 处变更，8 个 HTML 共 57 处 ?v= + 22 个测试文件版本语境行）；FRONTEND_BUST_FILES 手动加 healthPanel.js；`test_cache_bust_guard.js` 3/0/0、白名单 27 js 无差集。
+- **全量回归：129/129 通过，跳过 13 需网络**（新增 test_health_panel 计入）。
+- **服务重启 + 线上冒烟（实跑）**：旧实例（S5HFAA，PID 18508，e 版）taskkill 后受管后台任务（q9LCbD）重启 f 版：`GET /` → 302 `?v=20261111f`；`/api/health/dashboard` → ok:true 真实聚合（totalCalls 13 / avgDurationMs 936，自选股自动判定链请求已入日志）；`logs/requests-20261111.jsonl` 落盘格式正确、零 query/body 泄露。
+- **同步状态**：P2-2 本地改动已完成、**尚未 commit / push / 三端同步**（链路 4+5+P2-2 三批改动累积待同步），等用户「同步」指令。
+
+## 2026-11-12 0x:xx · P2-3 因子相关性离线报告（只读）+ 健康面板 writeFailures 元信息行 —— 版本 20261112a（方案 A→B 纠偏）
+
+- **触发**：用户三轮计划——① P2-2 收口验收 7 项核查（已落实，4 硬缺口小补：route 未归一化 / X-Request-Id 零回写 / 客户端断开丢行 / 写失败不可见，均修不 bump）；② P2-3b 补 DESIGN.md 工程约束章节（第 13 章 5 条款 + 变更记录，已完成）；③ P2-3 开写前 dry-run 验明数据可得性，定稿后因方案 A 实测失败改方案 B。
+- **dry-run 实证数据口径**：`getHistory(sym,'1y')` 返回 `{date,open,close,high,low,volume}` —— **不含 turnover**（腾讯主源不回传换手率）；`getQuote` 的 `pe/pb/turnover/circulationValue/totalValue` 均**单值快照无历史序列**；`lib/lookahead.js` **无截断函数**（仅 dateOf/addDays/auditSettlement）。
+- **因子集定稿（8 项，同源 getHistory 日K OHLCV）**：mom_20d / vol_20d / vol_ratio / ma_bias / rsi_14 / macd_hist / gap_20d / drawdown_20d。删 ret_1d / turnover；pe_ttm / pb 无历史不参与；不加 log_market_cap（市值不可得）；默认追加 gap_20d / drawdown_20d。**均注明「因子集临时定义，待收编至 taxonomy」**（lib/taxonomy.js 不导出因子清单）。
+- **新建 scripts/analyze_factor_corr.js（只读离线报告，不改权重）**：`rankAverageTies`（并列取平均秩，与 pearson(rank,rank) 等价）、`pearson`、`spearman`、`truncateToAsOf`（b.date<=asOf 过滤，口径与 lookahead.dateOf 一致）、`computeFactors`（macd_hist 需 35 根预热）、`cluster`（BFS 连通分量，输出 avgAbs/minAbsW 暴露最弱边）；`main()` 读 `data/watchlist.json` 8 只 × getHistory 250 交易日 → 截断 → 取最后 250 根 → 计算 → Pearson + Spearman 矩阵 → 聚类 → `buildReport` 写 `docs/logic/factor-corr-20261112.md`。脚本头注 APP_VERSION 与命令，`module.exports` 暴露统计原语供单测。
+- **新建 scripts/test_factor_corr.js（11/11 全过，@test-scope: local 自动注册）**：Spearman 三值并列 X=[1,2,2,2,5]→spearman≈0.8944/rank=[1,3,3,3,5]、两值并列 X=[1,1,3,4,5]→≈0.9747/rank=[1.5,1.5,3,4,5]；pearson 完全±1、样本<3 返 null；簇 A-B 与链式 A-B-C 识别、minAbsW=0.1 暴露最弱边。
+- **healthPanel.js 小改 + 测试断言**：元信息行 hp-meta 追加 `日志写失败 N`（读 d.writeFailures）；`test_health_panel.js` 加 DOM 断言 → **现 46/0**。
+- **主脚本参数解析 bug（如实）**：初版 `argv.find(...)` 误取旗标本身致 `--days`→NaN→250、`--asOf` 取到旗标产出游离文件 `factor-corr-asOf.md`。修复用 indexOf + 检查下一元素取值，重跑产出正确 `factor-corr-20261112.md`（1840 有效样本，已删游离文件）。
+- **产出 docs/logic/factor-corr-20261112.md（8 节齐全）**：① 因子清单（8 项+排除说明）② 缺失率表（macd_hist 14% 最高，均<30% 参与，旁注初始化窗口损耗 250→约 215）③ 相关矩阵 Top20 ④ 高相关聚类（簇1：mom_20d·ma_bias·drawdown_20d，avg|Pearson| 0.725，min 0.601，业务解读人工占位）⑤ 结论与局限（窗口敏感 / 同源不外推 / 市值缺失 / 预热损耗）⑥ Backlog（收编 taxonomy + 多窗口 + amplitude + 人工解读）。首页固定「⚠️ 不改权重，仅供裁决」。
+- **⚠️ 方案 A 实测失败（关键纠偏，用户已知会）**：用户指令 Q1 按方案 A（APP_VERSION 保持 20261111f、?v= 单升 20261112a、DESIGN.md 记解耦说明）。冒烟 `curl js/healthPanel.js?v=20261112a` 返回 `Found. Redirecting to /js/healthPanel.js?v=20261111f` —— `server.js` L174–188 对 FRONTEND_BUST_FILES（含 healthPanel.js）强制 `?v!=APP_VERSION → 302 重定向回 APP_VERSION`，缓存破坏目的未达成。**改方案 B**：`node scripts/bump_version.js 20261112a`（32 处文件变更，白名单 29 项无差集），APP_VERSION 与所有 ?v= 同升 20261112a（代价：深度分析缓存一次性失效重算，此前 e 版已接受同质代价）。DESIGN.md 13.6 节已补「方案 A→B 纠偏」注记。
+- **最终回归**：`run_all_tests --quick` **130/130 通过，跳过 13 需网络**（新增 test_factor_corr 计入；test_health_panel 46/0）；`test_cache_bust_guard.js` 3/0/0。
+- **服务重启 + 线上冒烟（实跑，方案 B 生效）**：旧实例（PID 19000，f 版）taskkill → 受管后台任务（kFTrhA）重启 20261112a（PID 11852）：`/js/healthPanel.js?v=20261112a` → **HTTP 200 不重定向**；`?v=20261111f` 旧戳 → 302 重定向到 20261112a（缓存破坏正确）；`/api/health/dashboard` 含 `writeFailures`；`GET /` → 302 `?v=20261112a`。
+- **同步状态**：P2-3 本地改动已完成、**尚未 commit / push / 三端同步**。本轮累积待同步 = 链路4 + 链路5 + P2-2 + 收口小补 + P2-3 共五批改动，等用户「同步」指令后一次性三端同步（用户原话「四批改动一次性同步」，实际含收口小补共五批）。
+
+## 2026-11-12 1x:xx · P2-3 收尾 4 项修正（验收通过后，同步前）
+
+- **触发**：用户验收 P2-3 通过、方案 B 合理，但指出「1840 有效样本」与「250→约215」对不上，要求 4 项修正后再回、待「同步」指令。
+- **① 1840 口径自洽（实测算清）**：`rowsTotal=2000=8×250`（缺失率表 160/2000=8.0% 反推）；`validSamples=panel[mom_20d].length=230/只×8=1840`（mom_20d 预热 20 根，非 MAX_WARMUP 35）。**结论：1840 = 8 只 × 230 交易日**，原 §2 用 35 估 215 系误用 macd_hist 预热、已改「250→约230」并注明 macd_hist 缺口经 pairwise-complete 单独处理。**截断后最后日期 ≠ asOf**：lastDate=2026-11-11 < asOf=2026-11-12（强制 asOf 取今日、当日数据未定稿，滞后 1 交易日；脚本已 `if(lastDate!==asOf)` 告警并写入报告，非截断逻辑错误）。报告头与 §2 现已一致标注「1840 = 8 × 230」。
+- **② 报告补两处 + drawdown 中性句**：§4 加「最弱边 0.601<0.7 系经 ma_bias 链式连通纳入，非两两直接高相关」（附 0.837/0.735 佐证）；§5 加「仅检出 1 个高相关簇，未发现第二个高相关簇」；簇内加中性事实（三者同属价格趋势维度：区间收益/均线偏离/区间回撤，同向则天然高相关），业务解读仍留「待补充」。
+- **③ DESIGN.md 13.6 补强绑定条款**：新增「前端缓存戳(?v=)与 APP_VERSION 强绑定，前端任何改动均触发全量升版，不存在只升 ?v= 的路径（方案 A 已证伪）」。
+- **④ 补实测三项**：空 catch 基线当前值 **137 处（路由内 5 处）**，历史基线 138/6 未增加，守卫通过 2/0（新增两脚本后净变化可控）；`test_health_panel.js` L203 经读 healthPanel.js **源码字符串**断言 `writeFailures`+`hp-meta` → 确认是**渲染逻辑断言（DOM 元信息行注入）**，与 L173 的 API 字段断言（`agg.writeFailures===0`）分属两层；D8 表述改为「无业务运行时确定性代码改动」。
+- **验证**：`node --check` 通过；`test_factor_corr 11/0`、`test_health_panel 46/0`、`test_swallow_catch_guard 2/0` 全绿。报告 `docs/logic/factor-corr-20261112.md` 与脚本 `analyze_factor_corr.js buildReport` 文本同步修正（未来重跑口径一致）。
+- **同步状态**：上述 4 项修正本地已完成、**尚未 commit / push / 三端同步**，等用户「同步」指令（累积待同步 = 链路4+链路5+P2-2+收口小补+P2-3+本轮收尾共六批）。
+
+## 2026-11-12 1x:xx · P2-3 报告表述精度补强（同步前最后确认）
+
+- **触发**：用户验收 4 项修正后，要求同步前确认报告是否写明「1840 为基准有效样本（20 根预热口径），macd_hist 对相关对经 pairwise-complete 约 1720，rsi_14 约 236/只」，避免读者误把 1840 当所有因子对统一样本量；并建议（可选）局限节加自相关/不做显著性检验一句。
+- **核查口径数学**：`rowsTotal=2000=8×250`；基准 `validSamples=panel[mom_20d].length=230/只×8=1840`（warmup 20）；全因子齐备（含 macd_hist warmup 35）=215/只×8=1720；rsi_14 齐备=236/只（250−14）。三项与缺失率表自洽（mom_20d 160/8%、macd_hist 280/14%、rsi_14 112/5.6%）。
+- **报告 §2 补「样本量口径警示」**：明示 1840 为基准（20 根预热）、macd_hist 对约 1720（8×215）、rsi_14 约 236/只，并写「请勿将 1840 视为所有因子对统一样本量——每对独立 pairwise-complete」。脚本 `buildReport` §2 同步补动态版（$(DAYS-MAX_WARMUP)*symbols.length=1720 等）。
+- **报告 §5 加 局限 5（自相关/有效样本）**：因子基于重叠滑动窗口、时间序列自相关、名义样本高于有效样本，仅做描述性聚类不做显著性检验。脚本同步加。
+- **核验**：脚本 `node --check` 通过；报告 §2 警示句、§5 局限5 均已落盘（行 38 / 行 84）。
+- **同步状态**：本轮精度补强本地已完成、**尚未 commit/push/三端同步**；等用户「同步」指令（累积待同步 = 链路4+链路5+P2-2+收口小补+P2-3+两轮收尾，共六批）。

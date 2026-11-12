@@ -1,15 +1,15 @@
 # 测试回归报告（docs/test-report.md）
 
-> 生成时间：2026-11-11T13:10:02.221Z
+> 生成时间：2026-11-12T08:10:16.643Z
 > 模式：quick（跳过需网络测试）
 > 命令：`node scripts/run_all_tests.js --quick`
 
 ## 结论
 
-**✅ 126/126 全绿（另跳过 13 个需网络测试）**
+**✅ 130/130 全绿（另跳过 13 个需网络测试）**
 
-- 执行测试数：126
-- 通过：126　失败：0　跳过（需网络）：13
+- 执行测试数：130
+- 通过：130　失败：0　跳过（需网络）：13
 
 ## 明细
 
@@ -47,8 +47,11 @@
 | ✅ | `test_event_frontrun.js` | 0 |
 | ✅ | `test_event_guardrails.js` | 0 |
 | ✅ | `test_event_weight_sentiment_acc.js` | 0 |
+| ✅ | `test_factor_corr.js` | 0 |
 | ✅ | `test_factor_direction.js` | 0 |
 | ✅ | `test_factor_hash.js` | 0 |
+| ✅ | `test_fallback_chain_e2e.js` | 0 |
+| ✅ | `test_health_panel.js` | 0 |
 | ✅ | `test_holdings_forced_reduction.js` | 0 |
 | ✅ | `test_home_rank_scroll.js` | 0 |
 | ✅ | `test_hot_topics_consistency.js` | 0 |
@@ -93,6 +96,7 @@
 | ✅ | `test_posj_symmetry.js` | 0 |
 | ✅ | `test_range_detector.js` | 0 |
 | ✅ | `test_review_engines.js` | 0 |
+| ✅ | `test_review_gen_e2e.js` | 0 |
 | ✅ | `test_sanxi_selling_expense.js` | 0 |
 | ✅ | `test_schema_version_guard.js` | 0 |
 | ✅ | `test_sector_crowding.js` | 0 |
