@@ -81,7 +81,8 @@ const eventRoutes = require('./routes/eventRoutes'); // 20260907a：三联动·�
 const dedicatedFactorRoutes = require('./routes/dedicatedFactor'); // 20260911：专属因子路由
 const moduleSyncRoutes = require('./routes/moduleSyncRoutes'); // 20261024h：模块联动应答机制观测/触发
 const moduleSync = require('./lib/moduleSync'); // 20261024h：源模块变动 → 自动通知联动模块失效
-const requestLogger = require('./lib/requestLogger'); // [20261111f] P2-2 可观测性：结构化请求日志 + 降级埋点 + 健康面板聚合
+const requestLogger = require('./lib/requestLogger');
+const healthMetrics = require('./lib/healthMetrics'); // [② 健康指标] 缓存命中率/LLM 计数（仅内存，/api/health 与 dashboard 同源） // [20261111f] P2-2 可观测性：结构化请求日志 + 降级埋点 + 健康面板聚合
 // Python 解释器探测器移至 lib/pyRuntime.js（AI 行业指数 / 研报下载 / 板块拥挤度回补共用）
 const { findPython } = require('./lib/pyRuntime');
 // 20260917g：localDate 统一来自 lib/sameDayJudgment（其内部已委托 lib/localDate.js，按北京时区）。
@@ -221,6 +222,7 @@ app.get('/api/health', (req, res) => {
     uptime: Math.round(process.uptime()),
     mem: Math.round(process.memoryUsage().rss / 1024 / 1024),
     logWriteFailures: requestLogger.getWriteFailures(), // [20261111f 收口小补] 请求日志写失败累计（可观测）
+    metrics: healthMetrics.snapshot(), // [② 健康指标] 缓存命中率（分子分母同暴露）+ LLM 四类计数
   });
 });
 
@@ -230,7 +232,7 @@ app.get('/api/health', (req, res) => {
 app.get('/api/health/dashboard', (req, res) => {
   try {
     const days = Math.min(Math.max(parseInt(req.query.days, 10) || requestLogger.DASHBOARD_DAYS, 1), 30);
-    res.json({ ok: true, version: APP_VERSION, ...requestLogger.aggregateDashboard(days) });
+    res.json({ ok: true, version: APP_VERSION, metrics: healthMetrics.snapshot(), ...requestLogger.aggregateDashboard(days) });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
@@ -759,8 +761,16 @@ app.get('/api/analysis/:symbol', async (req, res) => {
     const cachedPayload = analysisWarm.getCached(symbol, range, isTradingDay);
     if (cachedPayload) {
       console.log(`[Analysis] cache hit for ${symbol} (age ${cachedPayload.cacheAgeSec}s)`);
+      healthMetrics.recordCacheHit('analysis'); // [② 健康指标] 命中以 analysisWarm 实际返回为准
       return res.json(cachedPayload);
     }
+    // [② 健康指标] 未命中：finish 只在响应完整发出时触发（aborted 不触发，由 requestLogger 归类）→
+    // 200 记 miss、>=400 记 error，错误/中止请求不计入命中率分母
+    res.once('finish', () => {
+      try {
+        if (res.statusCode < 400) healthMetrics.recordCacheMiss('analysis'); // 200-399 记 miss；>=400 由 requestLogger 单点记 error（防双计）
+      } catch (e) { console.error('[HealthMetrics] analysis finish 计数失败:', e && e.message); }
+    });
 
     console.log(`[Analysis] Fetching data for ${symbol}...`);
 
