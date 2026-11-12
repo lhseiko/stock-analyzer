@@ -15,6 +15,8 @@
  *   B1 analysis 命中/未命中：601001 两次（miss→hit）+ 404（error）+ aborted（601077）
  *      + 10 并发 601002（全 miss，getCached 同步判定于任何 setCached 之前）→
  *      hits=1 / misses=11 / errors=1 / aborted=1 / hitRate=1/12；
+ *      ⚠️ 并发窗口由 e2e_boot_analysis.js 的 601002 桩延迟（400ms 经验值）保证，
+ *      机器极慢可能仍抖动；若复现先加大桩延迟，禁止放宽本组精确断言。
  *   B2 面板与接口同源：/api/health 与 /api/health/dashboard 的 metrics 逐字段相等；
  *   B3 桩环境无 LLM 调用 → llm.total=0、四类结构齐全；
  *   B4 埋点接线源码断言（llm.js 四类/降级旗标、server/deepJobManager/requestLogger 接线存在）。

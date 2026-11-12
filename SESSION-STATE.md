@@ -626,3 +626,19 @@
 - **重启（部分完成，等用户双击）**：agent 侧重启通道实测不可靠——启动器 launch_hidden.js（1f7a49d，start.vbs 的 Node 等价物：PORT=3005/SA_NO_AUTO_OPEN=1/SA_NO_BG_AI=1/日志追加/detached 存活）两次启动均成功（PID 26348、HTTP 200、调度注册行落 server.log），但服务自身启动行情预热外呼（q.10jqka.com.cn）触发代理权限询问、用户拒绝后进程树被回收（两次实证；沙箱 Job Object 连带回收 + 权限拒绝杀请求方）。**最终重启交用户双击桌面快捷方式（18:24 实例的启动路径，不受代理权限限制）**。重启后验证清单：① 新 PID 启动时间晚于 1f7a49d；② logs/server.log 有「[每日复盘] 定时调度已启动…」注册行；③ /api/health 含 metrics.meta（window=since_process_start）；④ Ctrl+F5 硬刷新。
 - **⑤（推进半步）**：已出专家推荐卡（两位量化领域专家，卡片超时未选择）→ 待用户从卡片或左侧「专家中心」选择后复核 factor-corr-20261112.md §4 业务解读；复核通过后删「AI 草稿」标注、报告转「可归档」。
 - **状态**：**① 完成 / ② 完成（附三处确认）/ ③ 完成 / ⑤ 待领域人复核**；N4/N5 完成、N1 挂起、N3 待方案；重启验证挂起（等双击）；明日 15:30 后核验第 6 项。D3 = 按用户指示暂停同步。
+
+## 2026-11-12 21:0x · 用户验收 ③/② + 两句留痕 + 重启五点清单线上核验通过（本地 commit，未同步）
+
+- **③ 脚注验收：接受**（0.730 vs 0.725 与 0.611 vs 0.602 同因归入一条脚注；两数均为簇内平均、非口径变化、非相关性衰减；两分支动态生成 + 57 断言零改动复跑）——口径闭合。
+- **② 三处确认验收：接受，附两句留痕（用户要求）**：
+  1. **LLM 分类互斥优先级（防未来加旗标破坏互斥）**：「一次调用只计一类，优先级 **timeout > fail > degraded > ok**」。实现现状如实：异常路径只出 timeout/fail、成功路径只出 degraded/ok，两路径互斥不会同时命中；该顺序是未来新增旗标时的兜底裁决顺序，禁止一次调用写两类。
+  2. **launch_hidden.js 权限边界（防未来误用）**：「agent 侧启动会触发行情预热外呼（同花顺 q.10jqka.com.cn）网络权限询问，拒绝则进程树被回收；**生产重启仍以桌面 Stock Analyzer.lnk 为准**，agent 通道仅作已批准网络权限场景的备用」。
+- **10 并发 400ms 经验值留痕**：注释已写入 scripts/e2e_boot_analysis.js（桩延迟行）与 scripts/test_health_metrics_e2e.js（B1 段）——「依赖桩延迟保证并发窗口，机器极慢时可能仍抖动；若未来复现，优先加大延迟（如 800ms）而非放宽断言（禁止改 hits/misses 精确断言）」。纯注释，断言零改动。
+- **meta 严格 schema 小提醒（如实记录）**：metrics.meta 为纯增字段，若未来 /api/health 消费方做严格 schema 校验会受影响；当前无前端消费、不阻塞；重启后已确认旧字段未变（见下）。
+- **重启五点验证清单（固定，用户裁决）**：① 新 PID 启动时间晚于最新 commit；② logs/server.log 有「[每日复盘] 定时调度已启动…」注册行且含「15:30 自选股池批量」；③ /api/health 返回 metrics.meta.window=since_process_start 且 logWriteFailures:0；④ 前端 Ctrl+F5 硬刷新；⑤ /api/health/dashboard 与 /api/health 的 metrics 逐字段相等，且 otherHitRate 为 N/A 而非 0。
+- **线上核验结果（2026-11-12 21:04，核验时 HEAD=8d06c81，用户已双击 .lnk）**：**五点中四点服务端项全部通过**——① 新 PID **14552** 启动 **21:02:40** > 最新 commit 8d06c81（20:56:35）；② server.log:10 注册行含「15:30 自选股池批量」；③ metrics.meta.window=**since_process_start**、logWriteFailures=**0**；⑤ dashboard.metrics 与 health.metrics **逐字段相等**、otherHitRate=**"N/A" 字符串**（非 0/null）。④ Ctrl+F5 为用户侧动作，已在汇报提示。
+- **旧字段未变 + ② 线上生效硬证据**：/api/health 顶层 7 键 status/version/valuationModelHash/uptime/mem/logWriteFailures/metrics 与 server.js handler 源码一致，meta 仅增在 metrics 内；生产实例已有真实计数 analysis **hits=8 / misses=13 / hitRate=0.381 / 分母=21 / aborted=0 / errors=0**（分子分母同时暴露、排除项不进分母），证明 ② 埋点在真实流量下工作。
+- **时间线口径（防误读）**：五点核验在 HEAD=8d06c81 时完成；本节 WAL/注释 commit 为纯文档、不改运行时代码，PID 时序结论以运行时代码最新（9f15d47 + 1f7a49d）为准，文档 commit 不参与运行时比对。
+- **⑤ 状态 🟡 不变**：专家推荐卡已出、超时未选择，属流程推进半步、非复核完成；复核对象 factor-corr-20261112.md §4 价格趋势簇（mom_20d·ma_bias·drawdown_20d）相关事实与 H1/H2；验收标准 = 领域人书面复核通过 → 删「AI 草稿」→ 报告转「可归档」。
+- **状态**：原 backlog ④①③② **均完成**（② 本轮线上生效已实证）/ ⑤ 🟡 待复核；N1 挂起、N3 待方案、N4/N5 完成；15:30 第 6 项 ⏳ 待 2026-11-13 15:30。工程闸门 D12：重启验证部分完成，剩 15:30 cron 实证，仍 🟡。D3 = 按用户指示暂停同步。
+- **结论口径**：主线 backlog **4/5 完成**；不宣布 backlog 完成、不宣布 15:30 七项闭环；同步暂停不变。
