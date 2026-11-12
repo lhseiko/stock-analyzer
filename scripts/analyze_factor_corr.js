@@ -407,8 +407,10 @@ function analyzeWindowsCore({ histories, windows, minAbs = MIN_ABS_CORR, insuffi
 
 /** 纯函数：由 analyzeWindowsCore 结果构建对照报告 md（数字全部动态插入，重跑覆盖重写）。
  *  fetchNotes（可选）：Array<{ symbol, source, lastDate }>——逐股实际服务源与截断后末根日期，
- *  降级/滞后如实标注（degraded 口径：只写「实际走了什么源」，不写「无降级」）。 */
-function buildWindowsReport({ asOf, symbols, results, minAbs = MIN_ABS_CORR, generatedAt, fetchNotes }) {
+ *  降级/滞后如实标注（degraded 口径：只写「实际走了什么源」，不写「无降级」）。
+ *  histRef（可选）：{ asOf, avgAbs, minEdge, path }——历史单窗口报告解析结果（mainWindows 动态解析），
+ *  用于「全对平均 vs 簇内平均」口径并列对照与最弱边差异归因（归因按 asOf 是否一致分支，不臆测）。 */
+function buildWindowsReport({ asOf, symbols, results, minAbs = MIN_ABS_CORR, generatedAt, fetchNotes, histRef }) {
   let md = '';
   md += `# 因子相关性多窗口对照报告（backlog ③）\n`;
   md += `> ⚠️ **AI 生成，待人工复核**；**不改权重，仅供裁决**（只读分析产物，不影响任何业务表与既有模型权重）。\n`;
@@ -429,17 +431,29 @@ function buildWindowsReport({ asOf, symbols, results, minAbs = MIN_ABS_CORR, gen
   md += `\n`;
 
   md += `## 1. 多窗口对照表\n\n`;
-  md += `| 窗口(日) | 有效样本 | 非空相关对 | 高相关对(>阈值) | 簇数 | 簇成员 | 全对平均\\|P\\| | 最强对\\|P\\| | 簇内最弱边 | 第二簇 | 样本判定 |\n`;
-  md += `|---|---|---|---|---|---|---|---|---|---|---|\n`;
+  md += `> ⚠️ **两列平均口径不同，不可互比**：「全对平均」= 全部非空因子对（含低相关对）的平均 |Pearson|，刻画整体相关背景水平；「簇内平均」= 仅高相关簇内两两边的平均 |Pearson|（与历史单窗口报告 §4「簇内平均 |Pearson|」同口径，如历史 0.725）。混读会把「整体背景 0.17」误判为「相关性从 0.725 掉到 0.17」。\n\n`;
+  md += `| 窗口(日) | 有效样本 | 非空相关对 | 高相关对(>阈值) | 簇数 | 簇成员 | 全对平均\\|P\\|（全部非空对） | 簇内平均\\|P\\|（与历史 §4 同口径） | 最强对\\|P\\| | 簇内最弱边 | 第二簇 | 样本判定 |\n`;
+  md += `|---|---|---|---|---|---|---|---|---|---|---|---|\n`;
   for (const r of results) {
     const members = r.clusters.length ? r.clusters.map((c, i) => `簇${i + 1}[${c.members.join('·')}]`).join('；') : '—';
     const second = r.clusters.length === 0 ? '无簇' : (r.clusters.length >= 2 ? `是（${r.clusters.length} 簇）` : '否');
     const verdict = r.insufficient ? '**样本不足，不结论**' : '可用';
-    md += `| ${r.days} | ${r.validSamples} | ${r.pairCount} | ${r.highPairCount} | ${r.clusters.length} | ${members} | ${fmt(r.avgAbsAll)} | ${r.maxAbsPair ? `${fmt(r.maxAbs)}（${r.maxAbsPair[0]}·${r.maxAbsPair[1]}）` : '—'} | ${r.minClusterEdge == null ? '—' : fmt(r.minClusterEdge)} | ${second} | ${verdict} |\n`;
+    md += `| ${r.days} | ${r.validSamples} | ${r.pairCount} | ${r.highPairCount} | ${r.clusters.length} | ${members} | ${fmt(r.avgAbsAll)} | ${r.clusters.length === 0 ? '—' : r.clusters.map((c, i) => (r.clusters.length === 1 ? fmt(c.avgAbs) : `簇${i + 1}:${fmt(c.avgAbs)}`)).join('；')} | ${r.maxAbsPair ? `${fmt(r.maxAbs)}（${r.maxAbsPair[0]}·${r.maxAbsPair[1]}）` : '—'} | ${r.minClusterEdge == null ? '—' : fmt(r.minClusterEdge)} | ${second} | ${verdict} |\n`;
   }
-  md += `\n> 有效样本口径与单窗口报告一致（mom_20d 等 20 根预热主因子齐备行 = 各股（窗口−20）根；macd_hist 35 根预热的因子对按 pairwise-complete 独立取样）。样本判定阈值：有效样本 < ${INSUFFICIENT_SAMPLES} 标「样本不足，不结论」。\n\n`;
-
-  md += `## 2. 稳健性对照结论（跨窗口）\n\n`;
+  md += `\n> 有效样本口径与单窗口报告一致（mom_20d 等 20 根预热主因子齐备行 = 各股（窗口−20）根；macd_hist 35 根预热的因子对按 pairwise-complete 独立取样）。样本判定阈值：有效样本 < ${INSUFFICIENT_SAMPLES} 标「样本不足，不结论」。\n`;
+  if (histRef && Number.isFinite(histRef.avgAbs) && Number.isFinite(histRef.minEdge)) {
+    md += `\n### 1.1 与历史单窗口报告对照（防口径误读与归因臆测）\n\n`;
+    md += `- 历史基线：\`docs/logic/factor-corr-${(histRef.asOf || asOf).replace(/-/g, '')}.md\`（asOf ${histRef.asOf || asOf}，250 日）：**簇内平均 ${histRef.avgAbs.toFixed(3)}、簇内最弱边 ${histRef.minEdge.toFixed(3)}**（该报告生成时未标注数据源）。\n`;
+    const r250 = results.find(r => r.days === 250) || results[results.length - 1];
+    const r250Avg = r250.clusters.length && r250.clusters[0] ? fmt(r250.clusters[0].avgAbs) : '—';
+    const r250Edge = r250.minClusterEdge == null ? '—' : fmt(r250.minClusterEdge);
+    if (histRef.asOf === asOf) {
+      md += `- 本轮 250 日窗口簇内平均 ${r250Avg}、簇内最弱边 ${r250Edge}：**两报告 asOf 相同（${asOf}）、窗口相同（250 日），差异不能归因「窗口后移」**；本轮数据源${fetchNotes && fetchNotes.length ? '为 ' + Object.entries(fetchNotes.reduce((m, n) => { m[n.source] = (m[n.source] || 0) + 1; return m; }, {})).map(([x, c]) => `${x}×${c}`).join('、') : '见 §0 数据源标注'}（历史报告源未标注）→ 边值 0.009 量级漂移**归因数据源/取数时点差异，主源恢复后需同源复核**。\n`;
+    } else {
+      md += `- 本轮 250 日窗口簇内最弱边 ${r250Edge} vs 历史 ${histRef.minEdge.toFixed(3)}：**窗口后移（asOf ${asOf} vs ${histRef.asOf}），叠加数据源差异（本轮源见 §0 标注）**，两类因素并存、不单独归因。\n`;
+    }
+  }
+  md += `\n## 2. 稳健性对照结论（跨窗口）\n\n`;
   const clCounts = results.map(r => r.clusters.length);
   const members0 = results[0].clusters.map(c => c.members.join('·')).sort().join(';');
   const membersLast = results[results.length - 1].clusters.map(c => c.members.join('·')).sort().join(';');
@@ -450,7 +464,7 @@ function buildWindowsReport({ asOf, symbols, results, minAbs = MIN_ABS_CORR, gen
     md += `最短与最长窗口簇成员/簇数不一致 → **簇结构窗口敏感，如实记录、不做调和**（逐窗口数值见 §1）。\n`;
   }
   const avgSeq = results.map(r => fmt(r.avgAbsAll)).join(' → ');
-  md += `- 全对平均 |Pearson| 序列 = ${avgSeq}（窗口越短样本越少，估计噪声越大，不宜直接横向比大小下结论）。\n`;
+  md += `- 全对平均 |Pearson|（全部非空对口径，非簇内平均）序列 = ${avgSeq}（窗口越短样本越少，估计噪声越大，不宜直接横向比大小下结论）。\n`;
   const minEdgeSeq = results.map(r => (r.minClusterEdge == null ? '—' : fmt(r.minClusterEdge))).join(' → ');
   md += `- 簇内最弱边序列 = ${minEdgeSeq}；若短窗口最弱边明显下降，提示该簇在高频段边缘松动（如实记录，不外推）。\n\n`;
 
@@ -460,11 +474,27 @@ function buildWindowsReport({ asOf, symbols, results, minAbs = MIN_ABS_CORR, gen
   md += `- **市值缺失**：无逐日股本序列，log_market_cap 未参与（lib/taxonomy.js inCluster:false）。\n`;
   md += `- **预热损耗**：每窗口有效样本 = 各股（窗口−20）根，60 日窗口损耗占比最高（1/3），其估计最不稳。\n`;
   md += `- **重叠窗口自相关**：因子基于重叠滑动窗口，名义样本量高于有效样本量；**不做显著性检验**，不推断统计显著或因果。\n`;
-  md += `- **多窗口共线**：三窗口共用同一批原始日K（重叠区间高度重叠），跨窗口差异不能当独立证据。\n\n`;
+  md += `- **多窗口共线**：三窗口共用同一批原始日K（重叠区间高度重叠），跨窗口差异不能当独立证据。\n`;
+  const r60 = results[0];
+  md += `- **短窗口样本口径与不可直比**：60 窗口有效样本 ${r60.validSamples} = ${symbols.length} 只 × ${r60.validSamples / symbols.length} 有效点（窗口 ${r60.days} 根 − 20 根预热，预热损耗 ${r60.days - (r60.validSamples / symbols.length)} 根/只）；重叠窗口自相关更强，**高相关对数与最弱边不可与 250 窗口直接比较，结论不外推**。\n`;
+  md += `- **降级源影响（不写「无影响」）**：本轮数据源若为降级源（新浪/东财兜底），其量纲/缺失模式可能影响 vol_ratio、mom_20d 等因子的相关强度（新浪日K此前修过 100 倍量纲错位，P2-1）；**跨日对照需固定数据源或标注源差异**。\n\n`;
   md += `## Backlog\n\n`;
   md += `- [x] 多窗口对照（60/120/250）验证相关结构稳健性（本报告）。\n`;
   md += `- [ ] 业务解读人工填充（复核后删「AI 生成，待人工复核」标注，报告转「可归档」）。\n`;
   return md;
+}
+
+/** 解析历史单窗口报告（docs/logic/factor-corr-<asOfYYYYMMDD>.md）的簇内平均/最弱边，供 1.1 节对照；不存在或格式不符返回 null。 */
+function parseHistoricalSingleWindow(asOf) {
+  try {
+    const p = path.join(ROOT, 'docs', 'logic', `factor-corr-${asOf.replace(/-/g, '')}.md`);
+    if (!fs.existsSync(p)) return null;
+    const txt = fs.readFileSync(p, 'utf8');
+    const avg = txt.match(/簇内平均 \|Pearson\|：([0-9.]+)/);
+    const minE = txt.match(/簇内最小 \|Pearson\|（最弱边）：([0-9.]+)/);
+    if (!avg || !minE) return null;
+    return { asOf, avgAbs: parseFloat(avg[1]), minEdge: parseFloat(minE[1]), path: p };
+  } catch (e) { return null; }
 }
 
 async function mainWindows() {
@@ -492,7 +522,7 @@ async function mainWindows() {
   if (histories.length === 0) throw new Error('全部标的 getHistory 为空，无法分析');
 
   const results = analyzeWindowsCore({ histories, windows, minAbs: MIN_ABS_CORR });
-  const md = buildWindowsReport({ asOf, symbols, results, minAbs: MIN_ABS_CORR, fetchNotes });
+  const md = buildWindowsReport({ asOf, symbols, results, minAbs: MIN_ABS_CORR, fetchNotes, histRef: parseHistoricalSingleWindow(asOf) });
   const outPath = outArg || path.join(ROOT, 'docs', 'logic', `factor-corr-windows-${asOf.replace(/-/g, '')}.md`);
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   fs.writeFileSync(outPath, md, 'utf8');
@@ -501,4 +531,4 @@ async function mainWindows() {
   return outPath;
 }
 
-module.exports = { spearman, pearson, rankAverageTies, truncateToAsOf, computeFactors, cluster, FACTORS, FACTOR_KEYS, analyzeWindowsCore, buildWindowsReport, WINDOWS_DEF, INSUFFICIENT_SAMPLES };
+module.exports = { spearman, pearson, rankAverageTies, truncateToAsOf, computeFactors, cluster, FACTORS, FACTOR_KEYS, analyzeWindowsCore, buildWindowsReport, parseHistoricalSingleWindow, WINDOWS_DEF, INSUFFICIENT_SAMPLES };

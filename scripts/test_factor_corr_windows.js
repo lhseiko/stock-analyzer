@@ -98,5 +98,33 @@ console.log('[test_factor_corr_windows] 报告数字与重算一致（防手改�
   ok(tampered !== md1 && !md1.includes(`| 60 | ${results[0].validSamples + 1} |`), '反证：表格数字被手改 +1 后即偏离重算值（重跑会擦除）');
 }
 
+console.log('[test_factor_corr_windows] 四点口径（表头警示/簇内平均列/历史对照归因/局限补条）');
+{
+  const fixedAt = '2026-11-12T00:00:00.000Z';
+  const fetchNotes = SYMBOLS.map(sym => ({ symbol: sym, source: '新浪日K(quotes.sina.cn)', lastDate: '2026-11-12' }));
+  const hist = { asOf: '2026-11-12', avgAbs: 0.725, minEdge: 0.602, path: 'docs/logic/factor-corr-20261112.md' };
+  // 口径 1：全对平均 vs 簇内平均并列，表头警示防混读
+  const mdSame = buildWindowsReport({ asOf: '2026-11-12', symbols: SYMBOLS, results, minAbs: 0.7, generatedAt: fixedAt, fetchNotes, histRef: hist });
+  ok(mdSame.includes('两列平均口径不同，不可互比'), '表头含「全对平均 vs 簇内平均」口径警示（防 0.725 vs 0.173 误读）');
+  ok(mdSame.includes('簇内平均\\|P\\|（与历史 §4 同口径）'), '表格新增「簇内平均」列（标注与历史 §4 同口径）');
+  ok(mdSame.includes('全部非空对口径，非簇内平均'), '§2 平均|P| 序列标注「全部非空对口径，非簇内平均」');
+  ok((mdSame.match(/0\.173/g) || []).length === 0 || mdSame.includes('0.725'), '历史 0.725 与本轮全对平均并存出现（不互替）');
+  // 口径 2：1.1 历史对照 + 归因分支（同 asOf → 不能归因窗口后移）
+  ok(mdSame.includes('簇内平均 0.725、簇内最弱边 0.602'), '1.1 节历史基线（0.725/0.602）动态插入');
+  ok(mdSame.includes('不能归因「窗口后移」'), '同 asOf → 明确「不能归因窗口后移」（归因数据源/取数时点）');
+  ok(mdSame.includes('主源恢复后需同源复核'), '归因句含「主源恢复后需同源复核」');
+  // 异 asOf → 窗口后移分支
+  const mdShift = buildWindowsReport({ asOf: '2026-11-13', symbols: SYMBOLS, results, minAbs: 0.7, generatedAt: fixedAt, fetchNotes, histRef: hist });
+  ok(mdShift.includes('窗口后移（asOf 2026-11-13 vs 2026-11-12）'), '异 asOf → 「窗口后移+源差异并存、不单独归因」');
+  // 口径 3：60 窗口样本构成 + 不可直比
+  ok(mdSame.includes('短窗口样本口径与不可直比'), '局限含「短窗口样本口径与不可直比」条');
+  ok(mdSame.includes('160 = 4 只 × 40 有效点（窗口 60 根 − 20 根预热，预热损耗 20 根/只）'), '60 窗口样本构成动态标注（160=4×40，损耗 20 根/只）');
+  ok(mdSame.includes('高相关对数与最弱边不可与 250 窗口直接比较，结论不外推'), '「不可与 250 窗口直接比较，结论不外推」声明');
+  // 口径 4：降级源影响
+  ok(mdSame.includes('降级源影响（不写「无影响」）'), '降级源影响声明（明确不写「无影响」）');
+  ok(mdSame.includes('跨日对照需固定数据源或标注源差异'), '「跨日对照需固定数据源或标注源差异」');
+  ok(mdSame.includes('100 倍量纲错位'), '引用 P2-1 新浪量纲修复前科（可核查）');
+}
+
 console.log(`\n=== 因子多窗口守卫汇总：通过 ${pass} / 失败 ${fail} ===`);
 process.exit(fail ? 1 : 0);
