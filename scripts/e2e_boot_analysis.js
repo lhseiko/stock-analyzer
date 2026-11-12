@@ -107,6 +107,7 @@ stockData.getQuote = async (symbol) => {
   if (symbol === '601008') throw new Error('E2E 桩：上游行情持续失败');
   if (symbol === '601009' && quoteCalls[symbol] === 1) throw new Error('E2E 桩：上游行情首次失败');
   if (symbol === '601077') await new Promise(r => setTimeout(r, 400)); // D3 aborted 场景
+  if (symbol === '601002') await new Promise(r => setTimeout(r, 400)); // 健康指标 E2E ④：10 并发全 miss 需确定性——无延迟时首请求可同步算完 setCached，后续并发变 hit（runner 负载下实证 hits=2/misses=10 间歇失败）；400ms 保证 10 个请求全部先进入处理器再完成
   if (!FIX[symbol]) throw new Error('E2E 桩：未知标的 ' + symbol + '（桩只覆盖 FIX 表内 symbol）');
   return quoteFor(symbol);
 };

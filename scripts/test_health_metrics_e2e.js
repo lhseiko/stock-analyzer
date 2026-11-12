@@ -100,6 +100,16 @@ console.log('[test_health_metrics] A6 快照隔离');
   ok(s2.interfaces.analysis.hits === hitsBefore && s2.llm.ok === okBefore, 'snapshot 深拷贝：外部改动不污染内部计数');
 }
 
+console.log('[test_health_metrics] A7 文案口径（meta）');
+{
+  const s = healthMetrics.snapshot();
+  ok(s.meta && s.meta.window === 'since_process_start', 'meta.window = since_process_start（本进程启动以来，重启清零）');
+  ok(s.meta && s.meta.otherHitRate === 'N/A', 'meta.otherHitRate = N/A（other 接口无缓存语义，hitRate 恒 null）');
+  ok(s.meta && s.meta.excludedFromDenominator === 'aborted/errors', 'meta.excludedFromDenominator = aborted/errors（排除项口径）');
+  const other = s.interfaces.other;
+  ok(!other || other.hitRate === null, 'other 接口 hitRate 为 null（无 hits/misses 埋点，不捏造 0/1）');
+}
+
 console.log('[test_health_metrics] B4 埋点接线源码断言');
 {
   const llmSrc = fs.readFileSync(path.join(ROOT, 'lib', 'ai', 'llm.js'), 'utf8');

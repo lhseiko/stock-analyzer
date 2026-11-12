@@ -449,8 +449,10 @@ function buildWindowsReport({ asOf, symbols, results, minAbs = MIN_ABS_CORR, gen
     const r250Edge = r250.minClusterEdge == null ? '—' : fmt(r250.minClusterEdge);
     if (histRef.asOf === asOf) {
       md += `- 本轮 250 日窗口簇内平均 ${r250Avg}、簇内最弱边 ${r250Edge}：**两报告 asOf 相同（${asOf}）、窗口相同（250 日），差异不能归因「窗口后移」**；本轮数据源${fetchNotes && fetchNotes.length ? '为 ' + Object.entries(fetchNotes.reduce((m, n) => { m[n.source] = (m[n.source] || 0) + 1; return m; }, {})).map(([x, c]) => `${x}×${c}`).join('、') : '见 §0 数据源标注'}（历史报告源未标注）→ 边值 0.009 量级漂移**归因数据源/取数时点差异，主源恢复后需同源复核**。\n`;
+      md += `- 簇内平均同因脚注：本轮 ${r250Avg} vs 历史 ${histRef.avgAbs.toFixed(3)}（差 ${Math.abs(parseFloat(r250Avg) - histRef.avgAbs).toFixed(3)}）与最弱边漂移（${r250Edge} vs ${histRef.minEdge.toFixed(3)}）**同因——同 asOf 同窗口下归因数据源/取数时点差异**；两数口径一致（均为簇内平均），非口径变化、非相关性衰减。\n`;
     } else {
       md += `- 本轮 250 日窗口簇内最弱边 ${r250Edge} vs 历史 ${histRef.minEdge.toFixed(3)}：**窗口后移（asOf ${asOf} vs ${histRef.asOf}），叠加数据源差异（本轮源见 §0 标注）**，两类因素并存、不单独归因。\n`;
+      md += `- 簇内平均同因脚注：本轮 ${r250Avg} vs 历史 ${histRef.avgAbs.toFixed(3)} 与最弱边漂移（${r250Edge} vs ${histRef.minEdge.toFixed(3)}）**同因——窗口后移+数据源差异并存，不单独归因**；两数口径一致（均为簇内平均），非口径变化。\n`;
     }
   }
   md += `\n## 2. 稳健性对照结论（跨窗口）\n\n`;
