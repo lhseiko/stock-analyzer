@@ -652,3 +652,13 @@
 - **不参与运行时比对（逐笔核实）**：`1f7a49d`（`scripts/launch_hidden.js`，备用启动通道，服务进程不 require）、`9e44e34` / `8d06c81`（`SESSION-STATE.md` 纯文档）、`6f2dbb9`（`SESSION-STATE.md` + 两个测试脚手架注释）均不改运行时服务代码。D11「核验在 8d06c81 为 HEAD 时完成、文档 commit 不参与运行时比对」方向成立。
 - **真实计数口径收窄**：`analysis hits=8 / misses=13 / hitRate=0.381 / 分母=21 / aborted=0 / errors=0` 一律记为「**生产实例计数（含本轮核验请求）**」，不写「纯用户流量」。逐项核实「是否包含」：本轮 agent 的 `curl /api/health` 与 `curl /api/health/dashboard` **打到 3005 生产实例**，但两路由只调 `healthMetrics.snapshot()`，归 `other` 接口且 200 成功不记 aborted/errors，**不贡献 `analysis` 的 hits/misses**（埋点仅在 `server.js:764/771` 的 `/api/analysis/:symbol` 处理器）；E2E 四组桩服务器为 `39200 + 随机(0~599)` 独立端口 + 独立 logs/settings/warm 路径 + 死代理，**不打到 3005**。故计数窗口 `since_process_start`（21:02:40 起）覆盖核验时段、请求进入过生产实例，但 21 次分母无法逐条归因到用户浏览器 → 按用户裁决不收窄为「纯用户流量」。② 线上生效结论只依赖「埋点在真实 HTTP 请求下被触发」，不依赖流量来源纯净性 → **结论不变**。
 - **范围与状态**：仅本 WAL + 工作日志两个文档，断言零改动、运行时代码零改动；旧字段 7 键未变、`meta` 只增在 `metrics` 内不变；⑤ 🟡、N1/N3 挂起、15:30 第 6 项 ⏳ 待 2026-11-13 15:30、D3 暂停同步，均不变；主线 backlog **4/5**，不宣布 backlog 完成、不宣布 15:30 七项闭环。
+
+## 2026-11-12 21:4x · S12 流程固化 + 同步指令归属（用户裁决；纯文档，不单独 commit）
+
+- **S12 流程固化**：21:1x 轮「开头 stamp 加载 + 结尾补加载」形态已如实自我披露、用户接受且本轮不返工；此后固化为「实质工作开始前不加载交付闸门技能、交付前一次性加载并对整条待发消息逐项过闸」，不重复该形态。
+- **同步指令归属**：同步默认继续暂停（用户此前「之后的任务先不同步」），agent 不主动发起、不催促、不以「等待您的同步指令」收尾；一旦出现明确的「同步」指令，由 agent 执行 `commit → push → 克隆端 fetch+reset → 三端 hash 全等` 整套仪式；在此之前本地 commit 累积、D3 ⏸。
+
+## 2026-11-12 23:1x · D1 裁决：选项 A（单文件本地 commit 恢复干净工作区）
+
+- **裁决 + 实证**：采纳选项 A——21:4x 节 5 行追加单独本地 commit（纯文档、不改运行时、不 bump APP_VERSION）。实跑 `git status --short` 原文仅 ` M SESSION-STATE.md`，`git diff --stat` 为 `SESSION-STATE.md | 5 +++++`；提交后 status 无输出 → 工作区干净、**D1 回 ✅**；同步仪式启动后直接 push 现有本地 commit 链，不夹带未提交改动，仪式内不再多一步 git add/commit，避免与「三端 hash 全等」比对对象混淆；选项 B（D1 标 🟡 + 同步时先补 commit）不采纳。`.workbuddy/memory/2026-11-12.md` 经 `git check-ignore -v` 命中 `.gitignore:27:.workbuddy/`、`git ls-files --error-unmatch` 报 not tracked → 未被 git 跟踪，工作日志不计入工作区，「仅一个未提交文件」成立。
+- **范围与状态**：本轮仅 WAL + 工作日志（后者被忽略）+ 一次单文件本地 commit，代码/断言/运行时零改动；D4 沿用 21:1x 轮实测 136/136 文件 / 158 断言，下次跑全量时刷新；同步归属按 21:4x 节不变，本轮不 push / 不 fetch / 不做三端校验，D3 ⏸；⑤ 🟡、N1/N3 挂起、15:30 第 6 项 ⏳、主线 backlog **4/5**，均不变；不宣布 backlog 完成、不宣布 15:30 七项闭环。
