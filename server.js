@@ -2490,6 +2490,7 @@ app.post('/api/stock-review/:symbol/run', async (req, res) => {
 //   每次主跑 / 补录都会实际调用一次大模型（复盘 System Prompt + JSON Context）。
 // 非交易日静默跳过并记录 skipped_holiday。触发前必须先查 trade_calendar 表。
 const REVIEW_SLOTS = [
+  { h: 15, m: 30, kind: 'stock_watchlist' }, // [20261112h] 开盘日 15:30 自选股池个股自动复盘
   { h: 15, m: 35, kind: 'main' },
   { h: 15, m: 40, kind: 'retry' },
   { h: 15, m: 45, kind: 'retry' },
@@ -2532,6 +2533,14 @@ function startDailyReviewScheduler() {
         stockReview.runPoolBatch(today)
           .then(s => console.log(`  [个股复盘] ${today} 20:35 观察池批量：生成 ${s.generated} · 降级 ${s.degraded} · 跳过 ${s.skipped} · 失败 ${s.failed}${s.errors && s.errors.length ? '（' + JSON.stringify(s.errors.slice(0, 2)) + '）' : ''}`))
           .catch(e => console.error('  [个股复盘] 观察池批量失败:', e && e.message));
+        return;
+      }
+
+      // 15:30 自选股池个股复盘批量：遍历 data/watchlist.json 全部标的（与 20:45 观察池批量并存、互不覆盖）
+      if (slot.kind === 'stock_watchlist') {
+        stockReview.runWatchlistBatch(today)
+          .then(s => console.log(`  [个股复盘] ${today} 15:30 自选股池批量：生成 ${s.generated} · 降级 ${s.degraded} · 跳过 ${s.skipped} · 失败 ${s.failed}${s.errors && s.errors.length ? '（' + JSON.stringify(s.errors.slice(0, 2)) + '）' : ''}`))
+          .catch(e => console.error('  [个股复盘] 自选股池批量失败:', e && e.message));
         return;
       }
 
@@ -2582,7 +2591,7 @@ function startDailyReviewScheduler() {
       console.error('  [每日复盘] 调度器异常:', e && e.message);
     }
   }, 60 * 1000);
-  console.log('  [每日复盘] 定时调度已启动：15:35 主跑 + 15:40/45/50 补跑 + 20:30 龙虎榜补录 + 20:45 观察池个股复盘批量 + 次日兜底（Asia/Shanghai，先查 trade_calendar 表）');
+  console.log('  [每日复盘] 定时调度已启动：15:30 自选股池批量 + 15:35 主跑 + 15:40/45/50 补跑 + 20:30 龙虎榜补录 + 20:45 观察池个股复盘批量 + 次日兜底（Asia/Shanghai，先查 trade_calendar 表）');
 }
 
 // Serve index.html for all other routes

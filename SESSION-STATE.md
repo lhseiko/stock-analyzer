@@ -470,3 +470,60 @@
 - **报告 §5 加 局限 5（自相关/有效样本）**：因子基于重叠滑动窗口、时间序列自相关、名义样本高于有效样本，仅做描述性聚类不做显著性检验。脚本同步加。
 - **核验**：脚本 `node --check` 通过；报告 §2 警示句、§5 局限5 均已落盘（行 38 / 行 84）。
 - **同步状态**：本轮精度补强本地已完成、**尚未 commit/push/三端同步**；等用户「同步」指令（累积待同步 = 链路4+链路5+P2-2+收口小补+P2-3+两轮收尾，共六批）。
+
+## 2026-11-12 16:xx · 三端同步（六批一次性）完成 + P2-3 落地复测
+
+- **触发**：用户验收通过、明确「六批可同步」，授予「同步」指令；要求执行三端同步 + 同步前 3 检查点 + 同步后 4 复测。
+- **同步前 3 检查点（全过）**：① 版本三处一致——`APP_VERSION=20261112a`（server.js L166）、57 处 HTML `?v=20261112a` 全一致、DESIGN.md 13.6 记录 20261112a；`test_cache_bust_guard.js 3/0/0`。② 测试注册齐全——`test_factor_corr.js` 带 `@test-scope: local`（quick 集）、`test_health_panel 46/0`、`test_swallow_catch 2/0`、全量 `run_all_tests --quick 130/130`（跳过 13）。③ 六批 git status 逐批核对——无 `_probe_/_tmp_/_diag_` 临时文件、无 `.log`、`.workbuddy/memory` 被正确 gitignore（不在 status）；密钥扫描 0 命中。
+- **三端同步执行**：本地 `git add -A` → commit `1bfb932`（47 文件 / 1843 插入 / 149 删除，多节中文提交含六批）；`git push origin master` → `55aed54..1bfb932`；克隆端 `git fetch "D:/stock analyzer/stock-analyzer" master && git reset --hard FETCH_HEAD`（HTTPS 沙箱被拦，走本地 fetch 路径）。
+- **三端 hash 终裁**：`LOCAL=REMOTE=CLONE=1bfb93253c6a8dc22be94cf4975279148688dac4`，三方全等 ✅。
+- **同步后 4 复测（全过，P2-3 真正落地）**：① `js/healthPanel.js?v=20261112a` → HTTP 200 不重定向；② `?v=20261111f` 旧戳 → 302 重定向到 20261112a；③ `/api/health/dashboard` 返回含 `writeFailures`；④ 首页 → 302 `?v=20261112a`。服务 PID 11852 持续监听（运行代码与提交代码一致，无需重启）。
+- **收官状态**：整改方案正文（P0/P2-1 批次1+2/P2-2/P2-3）全线收官；本地改动已 commit/push/三端同步完成（与用户铁律「任务完成不自动同步」——本轮用户已明确授予同步指令，故执行）。剩余仅 Backlog：analysis 接口/切股链路补测、健康面板缓存命中与 LLM 计数、多窗口因子对照、因子集收编 taxonomy、簇业务解读人工补。
+
+## 2026-11-12 16:1x · 收官确认（用户确认关闭，无返工）
+
+- **用户确认**：本轮无返工点，可以关闭。整改方案正文收官证据链完整——三端 hash 全等（1bfb932）、2 检查点全过、同步后 4 复测全过（4/4）、测试线全绿（130/130）、服务 PID 11852 运行代码与提交代码一致（同步仅 git 操作未动工作区，无需重启，判断正确）。
+- **Backlog 建议优先级（用户给定）**：④ 因子集收编 taxonomy（文档债，半自动，先做成本最低，摘掉“临时定义”标签）→ ⑤ 簇业务解读人工补（人工判断不可自动化，脚本留占位正确，不要自动生成）→ ① analysis 接口/切股链路补测（E2E 完整性，中优先非紧急）→ ③ 多窗口因子对照（60/120/250，低优先等裁决需求）→ ② 健康面板缓存命中与 LLM 计数（可观测性增强，低优先当前已够用）。④+⑤ 做完即清掉“临时定义/待补充”两尾巴，报告从“可裁决”变“可归档”。
+- **开工纪律（用户提醒，后续轮次遵守）**：① 任何 backlog 项开工前先 `git status` 确认工作区干净，避免多轮改动叠在一起同步；② 若 ④ 收编改了 lib/taxonomy.js，记得跑 `test_single_source_taxonomy.js` + 全量回归；③ ⑤ 人工补解读只改报告 md，不触发版本 bump。
+
+## 2026-11-12 17:xx · ④⑤ 执行完成（本地改动落地，待「同步」指令）
+
+- **④ 因子集收编 taxonomy（行为不变）**：
+  - `lib/taxonomy.js` 新增 `FACTOR_LIST`（12 项 = 8 主因子 `inCluster:true` + 4 快照因子 `inCluster:false`；`Object.freeze` 数组+元素）；warmup 取 `computeFactors` 实际阈值（20/20/19/20/14/35/1/20），保证数值不变。
+  - `scripts/analyze_factor_corr.js` 改 `require('../lib/taxonomy')` 引用；聚类集 = `FACTOR_LIST.filter(f=>f.inCluster)`（仅 8 项，不进相关性矩阵）；`computeFactors` 阈值保持硬编码不动；`buildReport` 补「最弱边注记（链式连通）」+「结构结论：未发现第二个高相关簇」并标记为可复现（此前仅手改 md，首次重跑被静默擦除，本次 bake 进 buildReport 修复）。
+  - 新增守卫 `test_single_source_taxonomy.js §五`（该文件 P1-3 已建，本次追加段落）：校验 `FACTOR_LIST` 冻结/脚本引用/集合 → 27/0。
+  - 重跑数值验证：`1840` 精确一致，`1720`/`236` 一致；簇成员一致；簇小数因实时数据较首跑滑 1 交易日略移（avg 0.724→0.725、min 0.601→0.602、ma_bias·drawdown 0.735→0.737、mom_20d·ma_bias 0.837 不变）——属数据重取非代码改动。
+  - `test_factor_corr.js 11/0`、`run_all_tests --quick 130/130`（跳过 13）。**不升 APP_VERSION**（纯 lib 常量单源化）。
+- **⑤ 簇业务解读补录（只改 md 不 bump）**：再生报告 §4 簇下 `【业务解读：待补充】` 按模板补录（相关性事实/事实描述/可检验假设 H1 H2/待验证/局限/补录人日期），标注「AI 草稿，待领域人复核」；未改任何数值。
+- **DESIGN.md 13.7** 补「20261112a 补：taxonomy 因子清单收编，行为不变」+ 报告可复现性教训。
+- **同步状态**：本地 7 文件已改（`DESIGN.md`/`SESSION-STATE.md`/`docs/logic/factor-corr-20261112.md`/`docs/test-report.md`/`lib/taxonomy.js`/`scripts/analyze_factor_corr.js`/`scripts/test_single_source_taxonomy.js`），**尚未 commit/push/三端同步**。运行 server (PID 11852) 未重启——④ 无运行时模块消费 `FACTOR_LIST`，行为零变化，服役中服务不受影响；重启沿用用户 .lnk 仪式。等用户「同步」指令后一次性三端同步（按 ④ 计划：taxonomy 守卫 + factor_corr 测试 + 全量 --quick；前端不复测）。
+
+## 2026-11-12 17:2x · 同步前 3 件钉死（用户裁决：先确认再同步）
+
+- **① 数值微移归因（已查清，纠正自我矛盾）**：
+  - 首跑（已提交 1bfb932）报告头部：`⚠️ 最后一根 2026-11-11 < asOf 2026-11-12（数据滞后）` → **首跑 lastDate = 2026-11-11**。
+  - 重跑（当前工作区）报告头部：`截断后最后一根日期 = asOf，数据新鲜` → **重跑 lastDate = 2026-11-12**。
+  - 结论：两次 lastDate 相差 1 交易日 → **窗口后移 1 天**（重跑时 11-12 当日数据已出炉，250 日窗口整体前移），**非「数据滞后滑 1 天」**。簇小数 0.724→0.725 / 0.601→0.602 / 0.735→0.737 系窗口后移所致，确定性计算未变 → 良性、数据驱动，无需查腾讯修订或缓存差异。汇报措辞已改为「窗口后移 1 天」。
+- **② buildReport 无手写数字（已验证）**：`analyze_factor_corr.js` L299-302/310 仅用动态变量 `${fmt(c.avgAbs)}`/`${fmt(c.minAbsW)}`/`${clusters.length}`/`${MIN_ABS_CORR}`，**无硬编码 0.601/0.724/0.837/0.735**；「最弱边 0.601」旧手写注记已随 bake-into-buildReport 改为 `${fmt(c.minAbsW)}`（报告文字与簇表 0.602 同源生成、完全一致）。
+- **③ ⑤ 补录 §4 数字（已改为不重复列数）**：⑤ `相关性事实` 段改为「数值见上方 §4 簇表（mom_20d·ma_bias 最强、ma_bias·drawdown_20d 次之、mom_20d·drawdown_20d 最弱边经链式连通）…具体小数随数据窗口漂移，以簇表为准，此处不重复列数」→ 今后重跑报告不再与新数矛盾。
+- **taxonomy warmup 与 computeFactors 阈值对应关系（已注明）**：`FACTOR_LIST.warmup`（20/20/19/20/14/35/1/20）**仅用于报告披露**（§1 预热列 / §2 样本量口径），**不参与计算**；实际计算口径是 `computeFactors` 内 `if (i>=N)` 阈值，与 warmup 严格一一对应但独立硬编码。已在 `computeFactors` 注释写明「改阈值须同步改 taxonomy warmup」，避免披露与计算口径漂移。
+- **grep 佐证（运行时零消费，未重启判断成立）**：`grep -rn "FACTOR_LIST" --include=*.js . | grep -v taxonomy.js | grep -v analyze_factor_corr.js | grep -v test_` 输出**为空** → 无任何运行时模块消费 `FACTOR_LIST`，④ 行为零变化、未重启合理。
+
+## 2026-11-12 17:3x · 新需求：个股每日复盘 15:30 自动（@skill:proactive-agent）
+
+- **探查结论**：项目已有每日复盘调度（`server.js:2503 startDailyReviewScheduler`，`setInterval` 每分钟查槽）：15:35 主跑+15:40/45/50 补跑+20:30 龙虎榜补录+**20:45 观察池个股批量**+次日兜底；且**已查 trade_calendar 跳过非交易日**（L2517-2528）。即「开盘日自动、跳过非交易日」已具备。
+- **缺口**：个股复盘自动仅覆盖**观察池**（`stockReview.runPoolBatch` 解析【明日核心观察池】表，≤12 行，L964），非全自选股池；且触发在 **20:45** 非 15:30。
+- **依赖澄清**：`getPool()` 取的是 **D-1 大盘复盘**的观察池（B0-3：D-1 池即 D 日观察名单），故 15:30 跑个股复盘时 D-1 池已就绪 → 观察池联动无碍，时间可行。
+- **LLM 计费**：每日 AI 复盘本就调 LLM（15:35 大盘复盘有独立总开关 `SA_NO_DAILY_AI_REVIEW=1`，L2894；`SA_NO_BG_AI=1` 仅关事件扫描+专属因子月度，不关每日复盘）→ 新增 15:30 全池个股批量（8 只×各 1 次 LLM）与现有模式一致，且受同一总开关管控。
+- **拟定方案（待用户确认范围后再实现，不阻塞 ④+⑤ 同步）**：① `server.js` `REVIEW_SLOTS` 增 `{h:15,m:30,kind:'stock_watchlist'}`；② `stockReview` 新增 `runWatchlistBatch(date)`（遍历 `data/watchlist.json` 8 只，复用 generateReview/buildContext，幂等跳过当日已有）；③ 调度器加 handler 调 `runWatchlistBatch`；④ 需重启（server.js 改动）→ 用户 .lnk 仪式。
+- **待确认（AskUserQuestion）**：① 15:30 覆盖范围=全自选股池 8 只 / 仅观察池 / 并集；② 与现有 20:45 观察池批量关系=保留并存 / 合并为 15:30 单次。
+
+## 2026-11-12 17:5x · 15:30 自选股池自动复盘 已实现（独立 changeset，不阻塞 ④+⑤）
+
+- **范围确认（AskUserQuestion 已答）**：① 覆盖 = 全自选股池 8 只（`data/watchlist.json`：601318/600909/000783/600460/688289/603288/000902/603014）；② 与 20:45 观察池批量 **并存保留**（二者来源不同：自选股池 vs 大盘观察池），互不覆盖。
+- **改动文件（与 ④+⑤ 零重叠）**：`lib/stockReview.js`（新增 `runWatchlistBatch`，导出已加）、`server.js`（`REVIEW_SLOTS` 增 `{h:15,m:30,kind:'stock_watchlist'}` + handler + 启动日志）。
+- **实现要点**：`runWatchlistBatch` 与已稳定运行的 `runPoolBatch`（20:45）严格同构——遍历 watchlist、串行、`resolveSymbol` 标准化键、幂等跳过（当日已有且 `schemaVersion` 未过期则不调 LLM）、单只失败不阻塞、LLM 降级计入 `degraded`、错误进 `errors`。
+- **正确性核查**：`buildContext` 对大盘观察池联动走 `getPool()`（取最新已有大盘复盘，缺当日则回退上一交易日），**无对当日 15:35 大盘复盘的硬依赖** → 15:30 先于 15:35 主跑安全；自选股未必在观察池，`poolEntry` 为 null 属正常。
+- **验证**：`node -c` 两文件语法 OK；`require('./lib/stockReview').runWatchlistBatch` 为 function；watchlist.json 解析 8 只正常。
+- **生效条件（关键）**：`server.js` 改动需**重启服务**（用户 .lnk 仪式）后，新 15:30 槽才激活；下个开盘日 15:30 自动跑全自选股池 8 只。
+- **状态**：本需求为**独立于 ④+⑤ 的新 changeset**，本地改动已完成、未 commit/push，**不自动同步**，等用户「同步」指令（届时 ④+⑤ 与本需求可一并或分两次提交）。

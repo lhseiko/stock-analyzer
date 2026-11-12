@@ -10,7 +10,7 @@
  * 边界（用户裁决）：
  *   - 只读：仅调既有取数函数（stockData.getHistory / cnTradingCalendar），不写任何业务表/落盘数据；
  *   - 取数可能触发既有取数缓存写入，但绝不改变业务数据；
- *   - 因子集为 P2-3 分析专用、临时定义，待收编至 lib/taxonomy.js 单源（见报告与 backlog 注记）；
+ *   - 因子集已收编至 lib/taxonomy.js 单源（FACTOR_LIST 导出，20261112）；本脚本仅引用，不再自造定义（见报告 §1 与 Backlog 勾选）；
  *   - 全部因子同源 getHistory 日K OHLCV，结论不外推至其他数据源。
  *
  * 输出：docs/logic/factor-corr-YYYYMMDD.md（YYYYMMDD = asOf 日期）
@@ -38,22 +38,14 @@ const DAYS = _daysIdx >= 0 && process.argv[_daysIdx + 1] ? (parseInt(process.arg
 const MIN_ABS_CORR = _minIdx >= 0 && process.argv[_minIdx + 1] ? (parseFloat(process.argv[_minIdx + 1]) || 0.7) : 0.7;
 const FORCED_ASOF = _asOfIdx >= 0 && process.argv[_asOfIdx + 1] ? process.argv[_asOfIdx + 1] : null;
 
-// 因子集（临时定义，待收编至 lib/taxonomy.js 单源 — P2-3 backlog）
-// dry-run 实证：ret_1d / turnover 经 getHistory 取不到 250 日序列（腾讯主源不回传换手率）、
-// pe_ttm / pb 仅 getQuote 快照无历史序列 → 不参与聚类；log_market_cap 无逐日股本序列 → 不加。
-// 默认追加 gap_20d / drawdown_20d（均来自 getHistory，0% 缺失），不加 amplitude_20d。
-const FACTORS = [
-  { key: 'mom_20d',      label: '20日动量',         src: 'getHistory.close',            warmup: 20 },
-  { key: 'vol_20d',      label: '20日收益波动率',   src: 'getHistory.close 日收益',     warmup: 20 },
-  { key: 'vol_ratio',    label: '量比',             src: 'getHistory.volume',           warmup: 19 },
-  { key: 'ma_bias',      label: '均线偏离',         src: 'getHistory.close/MA20',       warmup: 20 },
-  { key: 'rsi_14',       label: '14日RSI',          src: 'getHistory.close',            warmup: 14 },
-  { key: 'macd_hist',    label: 'MACD柱',           src: 'getHistory.close',            warmup: 35 },
-  { key: 'gap_20d',      label: '隔夜跳空',         src: 'getHistory.open/prevClose',   warmup: 1 },
-  { key: 'drawdown_20d', label: '20日回撤',         src: 'getHistory.close',            warmup: 20 },
-];
-const FACTOR_KEYS = FACTORS.map(f => f.key);
-const MAX_WARMUP = Math.max(...FACTORS.map(f => f.warmup));
+// 因子集：20261112 收编至 lib/taxonomy.js 单源（FACTOR_LIST 导出），本脚本不再自造定义。
+// dry-run 实证（见 taxonomy 注释）：ret_1d / turnover 经 getHistory 取不到 250 日序列、
+// pe_ttm/pb 仅 getQuote 快照无历史序列、log_market_cap 无逐日股本序列 → 不参与聚类（inCluster:false）。
+// gap_20d / drawdown_20d 同源 getHistory（0% 缺失）纳入主因子集（inCluster:true）。
+const { FACTOR_LIST } = require('../lib/taxonomy');
+const FACTORS = FACTOR_LIST;                 // 全部 12 项（含 4 快照因子），供 §1 因子清单渲染
+const FACTOR_KEYS = FACTOR_LIST.filter(f => f.inCluster).map(f => f.key); // 仅 8 主因子：相关性矩阵/面板/§2/validSamples
+const MAX_WARMUP = Math.max(...FACTOR_LIST.map(f => f.warmup)); // 35（macd_hist 预热）
 
 // ---- 统计原语 ----
 function mean(a) { return a.reduce((s, x) => s + x, 0) / a.length; }
@@ -125,7 +117,10 @@ function truncateToAsOf(bars, asOf) {
   return bars.filter(b => String(b.date) <= asOf);
 }
 
-/** 对单只股票的窗口（已截断、已取最后 DAYS 根）计算 8 因子序列，返回 [{date, factors:{...}}]。 */
+/** 对单只股票的窗口（已截断、已取最后 DAYS 根）计算 8 因子序列，返回 [{date, factors:{...}}]。
+ *  注意：下方各因子 `if (i >= N)` 阈值是**实际计算口径**，与文件顶部 FACTOR_LIST（引自 lib/taxonomy.js）的 warmup 字段严格一一对应；
+ *  但 warmup 字段**仅用于报告披露**（§1「预热(根)」列、§2 样本量口径注释），**不参与此处计算**。
+ *  若调整某因子阈值，须同步改 taxonomy 的 warmup，否则报告披露与实际计算口径会不一致。 */
 function computeFactors(window) {
   const closes = window.map(b => b.close);
   const opens = window.map(b => b.open);
@@ -266,13 +261,13 @@ function buildReport({ asOf, symbols, rowsTotal, validSamples, P, S, clusters, p
   md += `- **数据截止日（asOf）**：${asOf}（最近完整交易日，lookahead 口径截断；${lastDateStaleNote ? '⚠️ ' + lastDateStaleNote : '截断后最后一根日期 = asOf，数据新鲜'}）\n`;
   md += `- **样本**：自选股池 ${symbols.length} 只（${symbols.join('、')}） × 近 ${DAYS} 交易日；有效样本（mom_20d 等主因子齐备行，即面板序列长度）**${validSamples}** = ${symbols.length} 只 × ${Math.round(validSamples / symbols.length)} 交易日\n`;
   md += `- **代码版本**：APP_VERSION ${APP_VERSION}；命令 \`node scripts/analyze_factor_corr.js --asOf ${asOf} --days ${DAYS} --minAbs ${MIN_ABS_CORR}\`\n`;
-  md += `- **因子集注明**：本因子集为 P2-3 分析**临时定义**，待收编至 \`lib/taxonomy.js\` 单源（见文末 Backlog）。\n\n`;
+  md += `- **因子集注明**：本因子集已收编至 \`lib/taxonomy.js\` 单源（\`FACTOR_LIST\` 导出，20261112）；本脚本仅引用，数值与 P2-3 报告一致。\n\n`;
 
   // 1. 因子清单
-  md += `## 1. 因子清单（同源 getHistory，临时定义待收编）\n\n`;
-  md += `| 因子 key | 含义 | 数据来源 | 预热(根) |\n|---|---|---|---|\n`;
-  for (const f of FACTORS) md += `| \`${f.key}\` | ${f.label} | ${f.src} | ${f.warmup} |\n`;
-  md += `\n> dry-run 实证排除：ret_1d（与 mom/vol 冗余）、turnover（getHistory 主源不回传换手率，无 250 日序列）、pe_ttm/pb（仅 getQuote 快照，无历史序列 → 不参与聚类）、log_market_cap（无逐日股本序列 → 不加，局限节注明）。\n\n`;
+  md += `## 1. 因子清单（引自 lib/taxonomy.js · FACTOR_LIST 单源，20261112 收编）\n\n`;
+  md += `| 因子 key | 含义 | 数据来源 | 预热(根) | 是否参与聚类 |\n|---|---|---|---|---|\n`;
+  for (const f of FACTOR_LIST) md += `| \`${f.key}\` | ${f.label} | ${f.src} | ${f.warmup} | ${f.inCluster ? '✅ 参与' : '❌ 不参与（无历史序列）'} |\n`;
+  md += `\n> 主因子集（inCluster:true，8 项）同源 getHistory 日K OHLCV，参与相关性聚类；快照因子（pe_ttm/pb/turnover/log_market_cap，inCluster:false）仅 getQuote 快照/无逐日序列，不参与聚类。ret_1d / amplitude_20d 经 dry-run 实证排除（冗余或主源不回传）。\n\n`;
 
   // 2. 缺失率
   md += `## 2. 缺失率表\n\n`;
@@ -307,6 +302,7 @@ function buildReport({ asOf, symbols, rowsTotal, validSamples, P, S, clusters, p
       md += `- 簇内平均 |Pearson|：${fmt(c.avgAbs)}\n`;
       md += `- 簇内最小 |Pearson|（最弱边）：${fmt(c.minAbsW)}\n`;
       md += `- 特性注记：连通分量可能因高相关因子成链而形成**链式大簇**（多因子两两高相关但非全连通成团），最小 |corr| 暴露簇内最弱边，防被平均掩盖。\n`;
+      md += `- 最弱边注记：簇内最小 |Pearson|（${fmt(c.minAbsW)}）可能 < ${MIN_ABS_CORR}，此时该边系经簇内其他高相关因子**链式连通**纳入同一簇（非该因子对两两直接高相关）；不应据此误判最弱边因子对本身高度相关。\n`;
       md += `- 【业务解读：待补充】\n\n`;
     });
   }
@@ -314,6 +310,7 @@ function buildReport({ asOf, symbols, rowsTotal, validSamples, P, S, clusters, p
   // 5. 结论与局限
   md += `## 5. 结论与局限\n\n`;
   md += `- **结论**：（由数值矩阵与上述聚类得出，待人工结合业务解读填充；本报告仅提供相关结构，不替代因子重要性裁决。）\n`;
+  md += `- **结构结论**：本次在阈值 |Pearson| > ${MIN_ABS_CORR} 下仅检出 **${clusters.length}** 个高相关簇${clusters.length === 1 ? '（未发现第二个高相关簇）' : ''}；其余因子对 |Pearson| 均 < ${MIN_ABS_CORR}，不构成独立高相关簇（详见 §3 Top20）。\n`;
   md += `- **局限 1（窗口敏感）**：单一 ${DAYS} 日窗口对牛/熊段敏感，结论可能随窗口漂移；多窗口（60/120/${DAYS}）对照已列入 Backlog，本轮未实现。\n`;
   md += `- **局限 2（同源）**：全部因子同源 getHistory 日K OHLCV，结论**仅限该数据源，不外推至其他数据源**（如财务/资金流/情绪）。\n`;
   md += `- **局限 3（市值序列缺失）**：市值仅 getQuote 快照可得（circulationValue/totalValue），无逐日股本序列，未构造 log_market_cap 时间序列。\n`;
@@ -321,7 +318,7 @@ function buildReport({ asOf, symbols, rowsTotal, validSamples, P, S, clusters, p
   md += `- **局限 5（自相关/有效样本）**：因子基于重叠滑动窗口，序列存在时间序列自相关，名义样本量高于真实有效样本量；本报告**仅做描述性聚类，不做显著性检验**，相关结构结论不宜直接推断因果或统计显著。\n\n`;
 
   md += `## Backlog（P2-3 后续）\n\n`;
-  md += `- [ ] 因子集临时定义，待收编至 \`lib/taxonomy.js\` 单源（本报告及本 backlog 各记一条）。\n`;
+  md += `- [x] 因子集已收编至 \`lib/taxonomy.js\` 单源（\`FACTOR_LIST\` 导出，20261112）；本脚本不再自造定义。\n`;
   md += `- [ ] 多窗口对照（60/120/${DAYS}）验证相关结构稳健性。\n`;
   md += `- [ ] 补充 amplitude_20d 等更多同源因子以丰满矩阵（用户本轮决定不加）。\n`;
   md += `- [ ] 业务解读人工填充（簇级一句话）。\n`;

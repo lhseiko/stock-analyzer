@@ -108,5 +108,24 @@ if (violations.length) {
 console.log(`  ℹ 需审查词（看好/看空/低估/高估）出现 ${reviewHits} 处——仅告警，估值/判断模块必然使用，不拦截`);
 ok(violations.length === 0, '全站合规词扫描通过（禁用级）');
 
+console.log('\n===== 五、FACTOR_LIST 单源（factor-corr 因子集收编 20261112） =====');
+// 收编目标：因子集定义从 scripts/analyze_factor_corr.js 内联移入 lib/taxonomy.js 单源，
+// 脚本仅 require 引用，不再自造定义；聚类仅用 inCluster:true 的 8 主因子。
+ok(Array.isArray(TAX.FACTOR_LIST) && TAX.FACTOR_LIST.length === 12, `FACTOR_LIST 导出 12 项（8 主因子 + 4 快照）`);
+ok(Object.isFrozen(TAX.FACTOR_LIST) && TAX.FACTOR_LIST.every(f => Object.isFrozen(f)), 'FACTOR_LIST 及其元素均 Object.freeze（防运行时改写）');
+const _inCluster = TAX.FACTOR_LIST.filter(f => f.inCluster).map(f => f.key);
+ok(JSON.stringify(_inCluster) === JSON.stringify(['mom_20d', 'vol_20d', 'vol_ratio', 'ma_bias', 'rsi_14', 'macd_hist', 'gap_20d', 'drawdown_20d']),
+  `inCluster:true 恰为 8 主因子且顺序一致：${_inCluster.join(',')}`);
+ok(TAX.FACTOR_LIST.filter(f => !f.inCluster).map(f => f.key).join(',') === 'pe_ttm,pb,turnover,log_market_cap',
+  'inCluster:false 恰为 4 快照因子（无历史序列）');
+// 数值约束：warmup 非负整数、src 非空（保证脚本计算口径可被校验）
+ok(TAX.FACTOR_LIST.every(f => Number.isInteger(f.warmup) && f.warmup >= 0 && typeof f.src === 'string' && f.src.length > 0),
+  'FACTOR_LIST 每项 warmup 为非负整数、src 非空');
+// 脚本侧：不得自造定义，必须引自 taxonomy
+const _scriptSrc = read('scripts/analyze_factor_corr.js');
+ok(_scriptSrc.includes("require('../lib/taxonomy')") && /FACTOR_KEYS\s*=\s*FACTOR_LIST/.test(_scriptSrc),
+  'analyze_factor_corr.js 引自 taxonomy 且聚类集 = FACTOR_LIST.filter(inCluster)');
+ok(!/const\s+FACTORS\s*=\s*\[/.test(_scriptSrc), 'analyze_factor_corr.js 不再自造 FACTORS 数组字面量');
+
 console.log(`\n===== test_single_source_taxonomy 结果：通过 ${pass} / 失败 ${fail} =====`);
 process.exit(fail === 0 ? 0 : 1);

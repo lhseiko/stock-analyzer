@@ -1,25 +1,29 @@
 # 因子相关性离线分析报告（P2-3）
 > ⚠️ **不改权重，仅供裁决**（本报告为只读分析产物，不影响任何业务表与既有模型权重）
 
-- **数据截止日（asOf）**：2026-11-12（最近完整交易日，lookahead 口径截断；⚠️ 最后一根 2026-11-11 < asOf 2026-11-12（数据滞后））
+- **数据截止日（asOf）**：2026-11-12（最近完整交易日，lookahead 口径截断；截断后最后一根日期 = asOf，数据新鲜）
 - **样本**：自选股池 8 只（601318、600909、000783、600460、688289、603288、000902、603014） × 近 250 交易日；有效样本（mom_20d 等主因子齐备行，即面板序列长度）**1840** = 8 只 × 230 交易日
-- **代码版本**：APP_VERSION 20261112a（分析脚本 `scripts/analyze_factor_corr.js` 在 20261111f→20261112a 两戳间逻辑零变更，本报告于 bump 前生成、结论同等有效）；命令 `node scripts/analyze_factor_corr.js --asOf 2026-11-12 --days 250 --minAbs 0.7`
-- **因子集注明**：本因子集为 P2-3 分析**临时定义**，待收编至 `lib/taxonomy.js` 单源（见文末 Backlog）。
+- **代码版本**：APP_VERSION 20261112a；命令 `node scripts/analyze_factor_corr.js --asOf 2026-11-12 --days 250 --minAbs 0.7`
+- **因子集注明**：本因子集已收编至 `lib/taxonomy.js` 单源（`FACTOR_LIST` 导出，20261112）；本脚本仅引用，数值与 P2-3 报告一致。
 
-## 1. 因子清单（同源 getHistory，临时定义待收编）
+## 1. 因子清单（引自 lib/taxonomy.js · FACTOR_LIST 单源，20261112 收编）
 
-| 因子 key | 含义 | 数据来源 | 预热(根) |
-|---|---|---|---|
-| `mom_20d` | 20日动量 | getHistory.close | 20 |
-| `vol_20d` | 20日收益波动率 | getHistory.close 日收益 | 20 |
-| `vol_ratio` | 量比 | getHistory.volume | 19 |
-| `ma_bias` | 均线偏离 | getHistory.close/MA20 | 20 |
-| `rsi_14` | 14日RSI | getHistory.close | 14 |
-| `macd_hist` | MACD柱 | getHistory.close | 35 |
-| `gap_20d` | 隔夜跳空 | getHistory.open/prevClose | 1 |
-| `drawdown_20d` | 20日回撤 | getHistory.close | 20 |
+| 因子 key | 含义 | 数据来源 | 预热(根) | 是否参与聚类 |
+|---|---|---|---|---|
+| `mom_20d` | 20日动量 | getHistory.close | 20 | ✅ 参与 |
+| `vol_20d` | 20日收益波动率 | getHistory.close 日收益 | 20 | ✅ 参与 |
+| `vol_ratio` | 量比 | getHistory.volume | 19 | ✅ 参与 |
+| `ma_bias` | 均线偏离 | getHistory.close/MA20 | 20 | ✅ 参与 |
+| `rsi_14` | 14日RSI | getHistory.close | 14 | ✅ 参与 |
+| `macd_hist` | MACD柱 | getHistory.close | 35 | ✅ 参与 |
+| `gap_20d` | 隔夜跳空 | getHistory.open/prevClose | 1 | ✅ 参与 |
+| `drawdown_20d` | 20日回撤 | getHistory.close | 20 | ✅ 参与 |
+| `pe_ttm` | 市盈率TTM | getQuote 快照 | 0 | ❌ 不参与（无历史序列） |
+| `pb` | 市净率 | getQuote 快照 | 0 | ❌ 不参与（无历史序列） |
+| `turnover` | 换手率 | getQuote 快照 | 0 | ❌ 不参与（无历史序列） |
+| `log_market_cap` | 对数市值 | getQuote 快照 | 0 | ❌ 不参与（无历史序列） |
 
-> dry-run 实证排除：ret_1d（与 mom/vol 冗余）、turnover（getHistory 主源不回传换手率，无 250 日序列）、pe_ttm/pb（仅 getQuote 快照，无历史序列 → 不参与聚类）、log_market_cap（无逐日股本序列 → 不加，局限节注明）。
+> 主因子集（inCluster:true，8 项）同源 getHistory 日K OHLCV，参与相关性聚类；快照因子（pe_ttm/pb/turnover/log_market_cap，inCluster:false）仅 getQuote 快照/无逐日序列，不参与聚类。ret_1d / amplitude_20d 经 dry-run 实证排除（冗余或主源不回传）。
 
 ## 2. 缺失率表
 
@@ -34,7 +38,7 @@
 | `gap_20d` | 8 | 0.4% |
 | `drawdown_20d` | 160 | 8.0% |
 
-> **初始化窗口损耗**：每只请求 250 交易日，主因子（mom_20d/vol_20d/ma_bias/drawdown_20d 等）需 ~20 根预热，单只有效样本约 230（250−20）；8 只合计 **1840 = 8 × 230**。macd_hist 需 35 根预热，其缺失经 pearson 的 pairwise-complete 单独处理，不计入有效样本基数损耗（缺失率表 macd_hist 14% 即其独立预热缺口）。缺失率均 <30%，全部因子参与聚类。
+> **初始化窗口损耗**：每只请求 250 交易日，主因子（mom_20d 等）需 ~20 根预热，单只有效样本约 230（250−20）；8 只合计 **1840 = 8 × 230**。macd_hist 需 35 根预热，其缺失经 pearson 的 pairwise-complete 单独处理，不计入有效样本基数损耗（缺失率表 macd_hist 14% 即其独立预热缺口）。缺失率均 <30%，全部因子参与聚类。
 > **样本量口径警示**：**1840 为基准有效样本（20 根预热口径，即 mom_20d 等主因子齐备行）**；凡涉及 macd_hist 的因子对经 pearson 的 pairwise-complete 仅取两因子均齐备行，约 **1720（8×215，215=250−35）**；rsi_14 齐备约 **236/只（250−14）**。请勿将 1840 视为所有因子对的统一样本量——每个相关系数按因子对独立做 pairwise-complete，样本量随预热与数据缺口浮动。
 
 ## 3. 相关矩阵摘要（Top 20 |corr| 对，Pearson / Spearman）
@@ -42,41 +46,46 @@
 | 因子 A | 因子 B | Pearson | Spearman |
 |---|---|---|---|
 | `mom_20d` | `ma_bias` | 0.837 | 0.816 |
-| `ma_bias` | `drawdown_20d` | 0.735 | 0.848 |
-| `mom_20d` | `drawdown_20d` | 0.601 | 0.730 |
-| `vol_20d` | `drawdown_20d` | -0.436 | -0.264 |
-| `vol_ratio` | `ma_bias` | 0.325 | 0.286 |
-| `mom_20d` | `vol_ratio` | 0.298 | 0.279 |
-| `vol_20d` | `rsi_14` | 0.241 | 0.188 |
-| `mom_20d` | `vol_20d` | 0.235 | 0.147 |
-| `vol_ratio` | `drawdown_20d` | 0.170 | 0.223 |
-| `mom_20d` | `rsi_14` | 0.124 | 0.119 |
-| `vol_20d` | `vol_ratio` | 0.122 | 0.063 |
-| `rsi_14` | `drawdown_20d` | -0.120 | -0.054 |
-| `vol_20d` | `ma_bias` | 0.096 | 0.085 |
-| `mom_20d` | `macd_hist` | -0.079 | -0.100 |
-| `ma_bias` | `macd_hist` | -0.074 | -0.106 |
-| `macd_hist` | `drawdown_20d` | -0.063 | -0.087 |
-| `rsi_14` | `gap_20d` | 0.047 | 0.026 |
-| `vol_20d` | `gap_20d` | 0.044 | 0.016 |
-| `macd_hist` | `gap_20d` | -0.035 | -0.040 |
-| `vol_ratio` | `gap_20d` | -0.026 | 0.003 |
+| `ma_bias` | `drawdown_20d` | 0.737 | 0.850 |
+| `mom_20d` | `drawdown_20d` | 0.602 | 0.730 |
+| `vol_20d` | `drawdown_20d` | -0.437 | -0.267 |
+| `vol_ratio` | `ma_bias` | 0.325 | 0.285 |
+| `mom_20d` | `vol_ratio` | 0.298 | 0.278 |
+| `vol_20d` | `rsi_14` | 0.241 | 0.192 |
+| `mom_20d` | `vol_20d` | 0.234 | 0.148 |
+| `vol_ratio` | `drawdown_20d` | 0.170 | 0.221 |
+| `mom_20d` | `rsi_14` | 0.124 | 0.116 |
+| `vol_20d` | `vol_ratio` | 0.121 | 0.063 |
+| `rsi_14` | `drawdown_20d` | -0.120 | -0.058 |
+| `vol_20d` | `ma_bias` | 0.094 | 0.082 |
+| `mom_20d` | `macd_hist` | -0.079 | -0.099 |
+| `ma_bias` | `macd_hist` | -0.076 | -0.111 |
+| `macd_hist` | `drawdown_20d` | -0.065 | -0.093 |
+| `rsi_14` | `gap_20d` | 0.045 | 0.023 |
+| `vol_20d` | `gap_20d` | 0.045 | 0.020 |
+| `macd_hist` | `gap_20d` | -0.033 | -0.037 |
+| `gap_20d` | `drawdown_20d` | -0.027 | 0.005 |
 
 ## 4. 高相关聚类清单（|Pearson| > 0.7）
 
 ### 簇 1：mom_20d · ma_bias · drawdown_20d
 - 成员数：3
-- 簇内平均 |Pearson|：0.724
-- 簇内最小 |Pearson|（最弱边）：0.601
+- 簇内平均 |Pearson|：0.725
+- 簇内最小 |Pearson|（最弱边）：0.602
 - 特性注记：连通分量可能因高相关因子成链而形成**链式大簇**（多因子两两高相关但非全连通成团），最小 |corr| 暴露簇内最弱边，防被平均掩盖。
-- 最弱边注记：mom_20d·drawdown_20d 的 |Pearson|=0.601 < 0.7，系经 ma_bias 链式连通（mom_20d·ma_bias 0.837、ma_bias·drawdown_20d 0.735 均 >0.7）被 BFS 连通分量纳入同一簇，**并非 mom_20d 与 drawdown_20d 两两直接高相关**。
-- 中性事实描述：三者同属「价格趋势维度」——mom_20d 为 20 日区间收益率、ma_bias 为价格相对 20 日均线的偏离、drawdown_20d 为 20 日区间回撤幅度；价格上涨时三者同向变化，故天然高相关。
-- 【业务解读：待补充】
+- 最弱边注记：簇内最小 |Pearson|（0.602）可能 < 0.7，此时该边系经簇内其他高相关因子**链式连通**纳入同一簇（非该因子对两两直接高相关）；不应据此误判最弱边因子对本身高度相关。
+- 【业务解读（AI 草稿，待领域人复核；仅文字、未改任何数值）】：
+  - **相关性事实**：三者两两 |Pearson| 数值见上方 §4 簇表（mom_20d·ma_bias 为最强边、ma_bias·drawdown_20d 次之、mom_20d·drawdown_20d 为最弱边并经 ma_bias 链式连通纳入同一簇，非两两直接高相关）。三者均派生自 close 序列，属同一「价格趋势」语义域，高相关属预期内——具体小数随数据窗口漂移，以簇表为准，此处不重复列数。
+  - **事实描述**：三者均衡量价格趋势的强弱与方向——20日动量刻中期涨跌方向与幅度，均线偏离刻价格相对 MA20 的位置，20日回撤刻自区间高点的回落幅度。高相关属预期内，不构成独立信息增益；最弱边仅 0.602 说明动量与回撤并非简单线性叠加，回撤还受「区间高点位置」调制。
+  - **可检验假设**：H1——当 mom_20d 与 ma_bias 同号且强（趋势确立）时，drawdown_20d 通常同步走阔（回撤随上涨放大），三者联动增强；H2——该簇可压缩为单一「趋势强度」潜因子，经降维（主成分/因子旋转）后替代三因子，降低后续建模的多重共线性干扰。
+  - **待验证**：① 多窗口（60/120/250）下簇结构是否稳健；② 牛/熊段切换时相关性是否漂移；③ H1/H2 需样本外回测，本报告仅描述性结论、未做显著性检验。
+  - **局限**：仅同源 getHistory 日K，结论不外推其他数据源；相关≠因果。
+  - **补录**：AI 草稿（2026-11-12），待领域人确认/修正。
 
 ## 5. 结论与局限
 
 - **结论**：（由数值矩阵与上述聚类得出，待人工结合业务解读填充；本报告仅提供相关结构，不替代因子重要性裁决。）
-- **结构结论**：仅检出 1 个高相关簇（mom_20d·ma_bias·drawdown_20d），**未发现第二个高相关簇**；其余因子对 |Pearson| 均 < 0.7（矩阵 Top20 已列示，最高为 mom_20d·ma_bias 0.837）。
+- **结构结论**：本次在阈值 |Pearson| > 0.7 下仅检出 **1** 个高相关簇（未发现第二个高相关簇）；其余因子对 |Pearson| 均 < 0.7，不构成独立高相关簇（详见 §3 Top20）。
 - **局限 1（窗口敏感）**：单一 250 日窗口对牛/熊段敏感，结论可能随窗口漂移；多窗口（60/120/250）对照已列入 Backlog，本轮未实现。
 - **局限 2（同源）**：全部因子同源 getHistory 日K OHLCV，结论**仅限该数据源，不外推至其他数据源**（如财务/资金流/情绪）。
 - **局限 3（市值序列缺失）**：市值仅 getQuote 快照可得（circulationValue/totalValue），无逐日股本序列，未构造 log_market_cap 时间序列。
@@ -85,7 +94,7 @@
 
 ## Backlog（P2-3 后续）
 
-- [ ] 因子集临时定义，待收编至 `lib/taxonomy.js` 单源（本报告及本 backlog 各记一条）。
+- [x] 因子集已收编至 `lib/taxonomy.js` 单源（`FACTOR_LIST` 导出，20261112）；本脚本不再自造定义。
 - [ ] 多窗口对照（60/120/250）验证相关结构稳健性。
 - [ ] 补充 amplitude_20d 等更多同源因子以丰满矩阵（用户本轮决定不加）。
 - [ ] 业务解读人工填充（簇级一句话）。

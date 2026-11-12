@@ -1,6 +1,6 @@
 # 测试回归报告（docs/test-report.md）
 
-> 生成时间：2026-11-12T08:10:16.643Z
+> 生成时间：2026-11-12T09:12:39.144Z
 > 模式：quick（跳过需网络测试）
 > 命令：`node scripts/run_all_tests.js --quick`
 
