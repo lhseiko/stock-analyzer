@@ -242,15 +242,59 @@ async function main() {
 
   // ---- 生成报告 ----
   const outPath = path.join(ROOT, 'docs', 'logic', `factor-corr-${asOf.replace(/-/g, '')}.md`);
-  const md = buildReport({ asOf, symbols, rowsTotal, validSamples, P, S, clusters, perSymbolMissing, lastDateStaleNote });
+  const generated = buildReport({ asOf, symbols, rowsTotal, validSamples, P, S, clusters, perSymbolMissing, lastDateStaleNote });
+  // ⑤ 整改 4（2026-11-13）：重跑前保留既有【业务解读】块（领域人 / AI 草稿文字）；数字段仍由 buildReport 重算
+  const existingMd = fs.existsSync(outPath) ? fs.readFileSync(outPath, 'utf8') : '';
+  const md = preserveBusinessBlocks(generated, existingMd);
+  const keptBlocks = extractBusinessBlocks(existingMd).length;
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   fs.writeFileSync(outPath, md, 'utf8');
+  console.log(`[P2-3] 业务解读块保留：${keptBlocks} 个（重跑不覆盖）`);
   console.log(`[P2-3] 报告已写出: ${outPath}`);
   console.log(`  有效样本(全因子齐备行)=${validSamples} · 高相关簇=${clusters.length}`);
   return outPath;
 }
 
 function fmt(x, d = 3) { return (x == null || !Number.isFinite(x)) ? '—' : x.toFixed(d); }
+
+// ---- ⑤ 整改 4（2026-11-13）：业务解读块重跑防覆盖 ----------------------------------
+// 背景：§4【业务解读】整块由领域人/人工维护，buildReport() 只输出占位符；main() 每次
+//       fs.writeFileSync 整文件覆盖 → 重跑会静默丢失该块（复核意见 ITEM 8）。
+// 方案：纯函数按出现顺序，把既有报告里的【业务解读】块回填到新生成 md 的占位符处。
+//       数字与结构仍全部来自 buildReport() 重算；业务解读文字原样保留，
+//       不固化业务断言进代码（守「业务裁决归领域人」边界）。零 IO / 零网络，守卫可注入。
+const BIZ_PLACEHOLDER = '- 【业务解读：待补充】';
+
+/** 从既有报告 md 中按出现顺序提取每个簇的【业务解读】整块（含缩进子项）。 */
+function extractBusinessBlocks(existingMd) {
+  if (typeof existingMd !== 'string' || !existingMd) return [];
+  const blocks = [];
+  let cur = null;
+  const flush = () => { if (cur) { blocks.push(cur.join('\n').replace(/\s+$/, '')); cur = null; } };
+  for (const line of existingMd.split('\n')) {
+    if (/^- 【业务解读/.test(line)) {
+      // 脚本模板生成的占位符不是业务解读块，跳过（否则首次生成后重跑会把它当内容回填）。
+      if (line.trim() === BIZ_PLACEHOLDER) { flush(); continue; }
+      flush(); cur = [line]; continue;
+    }
+    if (!cur) continue;
+    // 块内允许空行与缩进子项；遇到下一标题或非缩进的顶层列表项即结束。
+    if (/^(## |### 簇 )/.test(line) || (line.trim() !== '' && !/^\s/.test(line))) { flush(); continue; }
+    cur.push(line);
+  }
+  flush();
+  return blocks;
+}
+
+/** 把既有业务解读块按序回填到新生成 md 的占位符；块不足时多余占位符原样保留（不伪造业务结论）。 */
+function preserveBusinessBlocks(generatedMd, existingMd) {
+  const blocks = extractBusinessBlocks(existingMd);
+  if (!blocks.length) return generatedMd;
+  let i = 0;
+  return generatedMd.split('\n')
+    .map(line => (line === BIZ_PLACEHOLDER && i < blocks.length ? blocks[i++] : line))
+    .join('\n');
+}
 
 function buildReport({ asOf, symbols, rowsTotal, validSamples, P, S, clusters, perSymbolMissing, lastDateStaleNote }) {
   const n = FACTOR_KEYS.length;
@@ -262,6 +306,7 @@ function buildReport({ asOf, symbols, rowsTotal, validSamples, P, S, clusters, p
   md += `- **样本**：自选股池 ${symbols.length} 只（${symbols.join('、')}） × 近 ${DAYS} 交易日；有效样本（mom_20d 等主因子齐备行，即面板序列长度）**${validSamples}** = ${symbols.length} 只 × ${Math.round(validSamples / symbols.length)} 交易日\n`;
   md += `- **代码版本**：APP_VERSION ${APP_VERSION}；命令 \`node scripts/analyze_factor_corr.js --asOf ${asOf} --days ${DAYS} --minAbs ${MIN_ABS_CORR}\`\n`;
   md += `- **因子集注明**：本因子集已收编至 \`lib/taxonomy.js\` 单源（\`FACTOR_LIST\` 导出，20261112）；本脚本仅引用，数值与 P2-3 报告一致。\n\n`;
+  md += `- **实际数据源标注**：⚠️ **取数源未记录，待补**——单窗口 main() 生成时未采集逐股 hist.meta.source（truncateToAsOf 的 filter 会丢弃挂在数组上的 .meta），无法从产物反推当时走的是腾讯主源还是新浪/东财降级源；多窗口报告 docs/logic/factor-corr-windows-${asOf.replace(/-/g, '')}.md §1.1 已把 0.725 vs 0.730 边值漂移归因为「数据源 / 取数时点差异，主源恢复后需同源复核」；多窗口标注的降级源属另一轮独立取数，**不可等同于本报告**（见复核意见 ITEM 7）。\n`;
 
   // 1. 因子清单
   md += `## 1. 因子清单（引自 lib/taxonomy.js · FACTOR_LIST 单源，20261112 收编）\n\n`;
@@ -303,7 +348,7 @@ function buildReport({ asOf, symbols, rowsTotal, validSamples, P, S, clusters, p
       md += `- 簇内最小 |Pearson|（最弱边）：${fmt(c.minAbsW)}\n`;
       md += `- 特性注记：连通分量可能因高相关因子成链而形成**链式大簇**（多因子两两高相关但非全连通成团），最小 |corr| 暴露簇内最弱边，防被平均掩盖。\n`;
       md += `- 最弱边注记：簇内最小 |Pearson|（${fmt(c.minAbsW)}）可能 < ${MIN_ABS_CORR}，此时该边系经簇内其他高相关因子**链式连通**纳入同一簇（非该因子对两两直接高相关）；不应据此误判最弱边因子对本身高度相关。\n`;
-      md += `- 【业务解读：待补充】\n\n`;
+      md += `${BIZ_PLACEHOLDER}\n\n`;
     });
   }
 
@@ -311,7 +356,7 @@ function buildReport({ asOf, symbols, rowsTotal, validSamples, P, S, clusters, p
   md += `## 5. 结论与局限\n\n`;
   md += `- **结论**：（由数值矩阵与上述聚类得出，待人工结合业务解读填充；本报告仅提供相关结构，不替代因子重要性裁决。）\n`;
   md += `- **结构结论**：本次在阈值 |Pearson| > ${MIN_ABS_CORR} 下仅检出 **${clusters.length}** 个高相关簇${clusters.length === 1 ? '（未发现第二个高相关簇）' : ''}；其余因子对 |Pearson| 均 < ${MIN_ABS_CORR}，不构成独立高相关簇（详见 §3 Top20）。\n`;
-  md += `- **局限 1（窗口敏感）**：单一 ${DAYS} 日窗口对牛/熊段敏感，结论可能随窗口漂移；多窗口（60/120/${DAYS}）对照已列入 Backlog，本轮未实现。\n`;
+  md += `- **局限 1（窗口敏感）**：单一 ${DAYS} 日窗口对牛/熊段敏感，结论可能随窗口漂移；多窗口（60/120/${DAYS}）对照**已完成**，见 docs/logic/factor-corr-windows-${asOf.replace(/-/g, '')}.md §2（簇结构跨窗口稳健）；本报告 ${DAYS} 日结论不外推至其他窗口。\n`;
   md += `- **局限 2（同源）**：全部因子同源 getHistory 日K OHLCV，结论**仅限该数据源，不外推至其他数据源**（如财务/资金流/情绪）。\n`;
   md += `- **局限 3（市值序列缺失）**：市值仅 getQuote 快照可得（circulationValue/totalValue），无逐日股本序列，未构造 log_market_cap 时间序列。\n`;
   md += `- **局限 4（预热损耗）**：初始化窗口损耗使有效样本约 ${validSamples}（见 §2）。\n`;
@@ -319,7 +364,7 @@ function buildReport({ asOf, symbols, rowsTotal, validSamples, P, S, clusters, p
 
   md += `## Backlog（P2-3 后续）\n\n`;
   md += `- [x] 因子集已收编至 \`lib/taxonomy.js\` 单源（\`FACTOR_LIST\` 导出，20261112）；本脚本不再自造定义。\n`;
-  md += `- [ ] 多窗口对照（60/120/${DAYS}）验证相关结构稳健性。\n`;
+  md += `- [x] 多窗口对照（60/120/${DAYS}）验证相关结构稳健性（已完成，见 docs/logic/factor-corr-windows-${asOf.replace(/-/g, '')}.md §2）。\n`;
   md += `- [ ] 补充 amplitude_20d 等更多同源因子以丰满矩阵（用户本轮决定不加）。\n`;
   md += `- [ ] 业务解读人工填充（簇级一句话）。\n`;
   return md;
@@ -533,4 +578,4 @@ async function mainWindows() {
   return outPath;
 }
 
-module.exports = { spearman, pearson, rankAverageTies, truncateToAsOf, computeFactors, cluster, FACTORS, FACTOR_KEYS, analyzeWindowsCore, buildWindowsReport, parseHistoricalSingleWindow, WINDOWS_DEF, INSUFFICIENT_SAMPLES };
+module.exports = { spearman, pearson, rankAverageTies, truncateToAsOf, computeFactors, cluster, FACTORS, FACTOR_KEYS, analyzeWindowsCore, buildWindowsReport, parseHistoricalSingleWindow, WINDOWS_DEF, INSUFFICIENT_SAMPLES, buildReport, BIZ_PLACEHOLDER, extractBusinessBlocks, preserveBusinessBlocks };
