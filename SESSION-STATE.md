@@ -642,3 +642,13 @@
 - **⑤ 状态 🟡 不变**：专家推荐卡已出、超时未选择，属流程推进半步、非复核完成；复核对象 factor-corr-20261112.md §4 价格趋势簇（mom_20d·ma_bias·drawdown_20d）相关事实与 H1/H2；验收标准 = 领域人书面复核通过 → 删「AI 草稿」→ 报告转「可归档」。
 - **状态**：原 backlog ④①③② **均完成**（② 本轮线上生效已实证）/ ⑤ 🟡 待复核；N1 挂起、N3 待方案、N4/N5 完成；15:30 第 6 项 ⏳ 待 2026-11-13 15:30。工程闸门 D12：重启验证部分完成，剩 15:30 cron 实证，仍 🟡。D3 = 按用户指示暂停同步。
 - **结论口径**：主线 backlog **4/5 完成**；不宣布 backlog 完成、不宣布 15:30 七项闭环；同步暂停不变。
+
+## 2026-11-12 21:1x · 五点核验第 ① 项比对对象订正 + 真实计数口径收窄（用户裁决；纯文档，断言零改动）
+
+> 本节订正 21:0x 条目第 ① 项与「真实流量」两处表述，**以本节为准**；历史条目按 WAL 语义保留原貌不回改。
+
+- **① 比对对象 = 运行时最后代码 commit，不是 HEAD 最新 commit**：用「PID 14552 启动 21:02:40 > 最新 commit 8d06c81（20:56:35）」证明加载了新运行时代码，逻辑不严——8d06c81 是纯 WAL/文档 commit，不参与运行时加载；且 6f2dbb9（21:12:33）提交时间**晚于** PID 启动，更反证「晚于最新 commit」不成立。
+- **逐笔核实（`git show --stat`）**：② 主体落地 = **a62d875（20:13:47）** → `server.js` / `lib/healthMetrics.js` / `lib/ai/llm.js` / `lib/requestLogger.js` / `lib/deepJobManager.js`；**运行时服务代码最后一次改动 = 9f15d47（20:41:50）** → 该 commit 除 ③ 脚注与离线脚本外**还改了 `lib/healthMetrics.js`（+10/-1）**，即 `meta.window` / `otherHitRate` / `excludedFromDenominator` 的落地来源，也正是第 ③ 项核验点 `meta.window=since_process_start` 能读到的原因，**不能归为「不改运行时服务代码」**。PID 21:02:40 同时晚于 a62d875 与 9f15d47。
+- **不参与运行时比对（逐笔核实）**：`1f7a49d`（`scripts/launch_hidden.js`，备用启动通道，服务进程不 require）、`9e44e34` / `8d06c81`（`SESSION-STATE.md` 纯文档）、`6f2dbb9`（`SESSION-STATE.md` + 两个测试脚手架注释）均不改运行时服务代码。D11「核验在 8d06c81 为 HEAD 时完成、文档 commit 不参与运行时比对」方向成立。
+- **真实计数口径收窄**：`analysis hits=8 / misses=13 / hitRate=0.381 / 分母=21 / aborted=0 / errors=0` 一律记为「**生产实例计数（含本轮核验请求）**」，不写「纯用户流量」。逐项核实「是否包含」：本轮 agent 的 `curl /api/health` 与 `curl /api/health/dashboard` **打到 3005 生产实例**，但两路由只调 `healthMetrics.snapshot()`，归 `other` 接口且 200 成功不记 aborted/errors，**不贡献 `analysis` 的 hits/misses**（埋点仅在 `server.js:764/771` 的 `/api/analysis/:symbol` 处理器）；E2E 四组桩服务器为 `39200 + 随机(0~599)` 独立端口 + 独立 logs/settings/warm 路径 + 死代理，**不打到 3005**。故计数窗口 `since_process_start`（21:02:40 起）覆盖核验时段、请求进入过生产实例，但 21 次分母无法逐条归因到用户浏览器 → 按用户裁决不收窄为「纯用户流量」。② 线上生效结论只依赖「埋点在真实 HTTP 请求下被触发」，不依赖流量来源纯净性 → **结论不变**。
+- **范围与状态**：仅本 WAL + 工作日志两个文档，断言零改动、运行时代码零改动；旧字段 7 键未变、`meta` 只增在 `metrics` 内不变；⑤ 🟡、N1/N3 挂起、15:30 第 6 项 ⏳ 待 2026-11-13 15:30、D3 暂停同步，均不变；主线 backlog **4/5**，不宣布 backlog 完成、不宣布 15:30 七项闭环。
