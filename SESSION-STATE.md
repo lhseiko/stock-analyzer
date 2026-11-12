@@ -617,3 +617,12 @@
 - **前端决策（按用户要求确认）**：本轮**不动前端**——dashboard JSON 已含 metrics 供核对，前端健康卡片展示属 UI 改动需全量 bump+?v= 同步，留待下次前端改版一并上线；无前端改动不 bump（APP_VERSION 保持 20261112a）。
 - **生效提醒**：运行实例（PID 12808，18:24 启动）仍是旧代码，**新指标需重启 Stock Analyzer 后生效**（桌面快捷方式 + Ctrl+F5）。
 - **状态**：**① 完成 / ③ 完成 / ② 完成 / ⑤ 待领域人复核**；N4/N5 完成、N1 挂起、N3 待方案；断言总数 72+43+39=154。D3 = 按用户指示暂停同步。明日 15:30 后核验第 6 项。
+
+## 2026-11-12 20:5x · ③ 簇内平均同因脚注 + ② 三处风险确认与 meta 文案 + 重启通道（本地 commit 9f15d47/1f7a49d，未同步）
+
+- **③ 脚注（9f15d47）**：§1.1 补「簇内平均 0.730 vs 历史 0.725（差 0.005）与最弱边漂移（0.611 vs 0.602）同因——同 asOf 同窗口下归因数据源/取数时点差异；两数口径一致（均为簇内平均），非口径变化、非相关性衰减」，两分支（同/异 asOf）动态生成；报告重生成，守卫断言零改动（57/0 复跑通过）。
+- **② 三处风险确认（实证）**：① 旗标互斥/优先级——llm.js callLLM 单变量单赋值：成功路径 `mctx.fallback ? 'degraded' : 'ok'`（降级优先于成功）、异常路径 `(e.timeout||e.budgetExhausted) ? 'timeout' : 'fail'`（超时优先于失败）、finally 单点单次记录、未知 outcome 归 fail 防丢计数；② 异常隔离——四处埋点（llm.js:220/requestLogger:131-137/server.js finish 钩子/deepJobManager:196）全部 try-catch 包裹，计数失败仅 console.error 不影响主流程；③ 10 并发构造——守卫构造本身正确但**时序敏感**：runner 负载下 601002 首请求同步算完 setCached 后续并发变 hit（实跑实证 hits=2/misses=10 间歇失败）→ 根治：601002 桩加 400ms 延迟保证 10 请求全部先进入处理器再完成，连跑 3 次稳定全绿。
+- **② meta 文案口径（9f15d47）**：snapshot() 增 meta——`window=since_process_start`（统计窗口=本进程启动以来，重启清零）、`otherHitRate=N/A`（other 接口无缓存语义，仅 aborted/errors 计数，hitRate 恒 null 不捏造 0/1）、`excludedFromDenominator=aborted/errors`；守卫 39→43 断言（A7 文案口径节）；quick **136/136 全部通过**；断言总数 72+43+43=**158**。
+- **重启（部分完成，等用户双击）**：agent 侧重启通道实测不可靠——启动器 launch_hidden.js（1f7a49d，start.vbs 的 Node 等价物：PORT=3005/SA_NO_AUTO_OPEN=1/SA_NO_BG_AI=1/日志追加/detached 存活）两次启动均成功（PID 26348、HTTP 200、调度注册行落 server.log），但服务自身启动行情预热外呼（q.10jqka.com.cn）触发代理权限询问、用户拒绝后进程树被回收（两次实证；沙箱 Job Object 连带回收 + 权限拒绝杀请求方）。**最终重启交用户双击桌面快捷方式（18:24 实例的启动路径，不受代理权限限制）**。重启后验证清单：① 新 PID 启动时间晚于 1f7a49d；② logs/server.log 有「[每日复盘] 定时调度已启动…」注册行；③ /api/health 含 metrics.meta（window=since_process_start）；④ Ctrl+F5 硬刷新。
+- **⑤（推进半步）**：已出专家推荐卡（两位量化领域专家，卡片超时未选择）→ 待用户从卡片或左侧「专家中心」选择后复核 factor-corr-20261112.md §4 业务解读；复核通过后删「AI 草稿」标注、报告转「可归档」。
+- **状态**：**① 完成 / ② 完成（附三处确认）/ ③ 完成 / ⑤ 待领域人复核**；N4/N5 完成、N1 挂起、N3 待方案；重启验证挂起（等双击）；明日 15:30 后核验第 6 项。D3 = 按用户指示暂停同步。
