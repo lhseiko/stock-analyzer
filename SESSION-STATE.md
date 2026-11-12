@@ -605,3 +605,15 @@
 - **口径 3（短窗口不可直比）**：局限新增「短窗口样本口径与不可直比」条：320 = 8 只 × 40 有效点（窗口 60 根 − 20 根预热，损耗 20 根/只）；重叠窗口自相关更强，高相关对数与最弱边不可与 250 窗口直接比较，结论不外推。
 - **口径 4（降级源影响）**：局限新增「降级源影响（不写『无影响』）」条：降级源量纲/缺失模式可能影响 vol_ratio、mom_20d 等因子相关强度（引用 P2-1 新浪 100 倍量纲错位修复前科）；跨日对照需固定数据源或标注源差异。
 - **实现口径**：四点全部由 buildWindowsReport 动态插入（parseHistoricalSingleWindow 解析历史单窗口报告的簇内平均/最弱边作基线），非手改 md；报告重跑两次数值稳定。守卫 43→57 断言（新增四点口径 + 归因两分支 + 反证），test_factor_corr 11/0 不受影响；quick **135/135 维持**。
+
+## 2026-11-12 20:1x · backlog ② 健康面板缓存命中与 LLM 计数落地（本地 commit a62d875，未同步）
+
+- **指标定义（按用户裁决落死）**：缓存命中率按接口维度（analysis / deep-analysis / other）= hits/(hits+misses)，**分子分母同时暴露**（hitRate + hitRateDenominator 字段），aborted/错误请求单独计数、**不计入分母**；analysis 命中判定以 analysisWarm.getCached 实际返回为准；LLM 四类（ok/fail/degraded/timeout）互斥 1:1 分区、按调用点分桶，total=四类之和，与 stockData 数据源降级埋点完全独立。
+- **实现边界**：计数器仅内存（lib/healthMetrics.js，零落盘、零新增写盘失败面）；Node 单线程同步自增（100 并发注入实测不丢不重）；/api/health 与 /api/health/dashboard 同源暴露 snapshot()（逐字段相等，禁前端二次计算）。
+- **埋点接线**：LLM = lib/ai/llm.js callLLM 单点出口（caller 取自调用栈首帧，零侵入调用方；超时=err.timeout|budgetExhausted；degraded=三个降级点旗标——妙想回退/外部搜索失败纯推理/400 去参重试；singleflight 合并等待不计，未实际发起上游调用）；analysis = server.js 处理器（hit 即记，miss 经 finish 钩子 200-399 记，aborted 不触发 finish）；deep-analysis = deepJobManager 磁盘缓存命中分支（fromCache:true 为准；**running 轮询计入 miss，口径如实未做轮询去重**）；aborted/error = requestLogger emit 全 /api 单点归类。
+- **首跑实证修正（防双计）**：finish 钩子最初同时记 error → 与 requestLogger 双计（errors=2 实测）→ 修正为 error 归 requestLogger 单点、finish 只记 miss → errors=1 复跑通过。
+- **空 catch 铁律**：新增 2 处注释型 catch（server.js L772/requestLogger L137）触发空 catch 守卫失败（+1）→ 已改实质 console.error 处理 → 守卫复跑通过（137 ≤ 138 基线）。
+- **守卫**：scripts/test_health_metrics_e2e.js（39 断言，@test-scope: local）：0.75 命中率计算/排除项/LLM 四类注入/未知 outcome 归 fail 不丢计数/100 并发/接口归一/快照深拷贝隔离/源码接线断言/桩服务器 E2E（miss→hit→404→aborted→10 并发 → hits=1/misses=11/errors=1/aborted=1/hitRate=1/12；dashboard 与 health metrics 逐字段相等；桩环境 llm.total=0 结构齐全）。run_all_tests --quick **基线 135→136（+1 文件）全部通过**。
+- **前端决策（按用户要求确认）**：本轮**不动前端**——dashboard JSON 已含 metrics 供核对，前端健康卡片展示属 UI 改动需全量 bump+?v= 同步，留待下次前端改版一并上线；无前端改动不 bump（APP_VERSION 保持 20261112a）。
+- **生效提醒**：运行实例（PID 12808，18:24 启动）仍是旧代码，**新指标需重启 Stock Analyzer 后生效**（桌面快捷方式 + Ctrl+F5）。
+- **状态**：**① 完成 / ③ 完成 / ② 完成 / ⑤ 待领域人复核**；N4/N5 完成、N1 挂起、N3 待方案；断言总数 72+43+39=154。D3 = 按用户指示暂停同步。明日 15:30 后核验第 6 项。
