@@ -326,7 +326,179 @@ function buildReport({ asOf, symbols, rowsTotal, validSamples, P, S, clusters, p
 }
 
 if (require.main === module) {
-  main().then(() => process.exit(0)).catch(e => { console.error('[P2-3] 失败:', e && e.message); process.exit(1); });
+  const _winIdx = process.argv.indexOf('--windows');
+  const hasWindows = _winIdx >= 0 && process.argv[_winIdx + 1];
+  (hasWindows ? mainWindows() : main()).then(() => process.exit(0)).catch(e => { console.error('[P2-3] 失败:', e && e.message); process.exit(1); });
 }
 
-module.exports = { spearman, pearson, rankAverageTies, truncateToAsOf, computeFactors, cluster, FACTORS, FACTOR_KEYS };
+// ============================================================================
+// 多窗口对照模式（backlog ③，2026-11-12）：--windows 60,120,250 [--out <path>]
+// ----------------------------------------------------------------------------
+// 与单窗口 main() 完全隔离（不改其任何逻辑，既有 factor_corr 11/0 守卫不受影响）；
+// 复用同一套统计原语（computeFactors / pearson / spearman / cluster）与
+// lib/taxonomy.js FACTOR_LIST 单源，保证口径一致。
+// 取数一次（每只 1 次 getHistory('1y')），三个窗口共用截断后序列再各自切片。
+
+const WINDOWS_DEF = [60, 120, 250];
+const INSUFFICIENT_SAMPLES = 100; // 有效样本低于此值 → 标「样本不足，不结论」
+
+function parseWindowsArg() {
+  const idx = process.argv.indexOf('--windows');
+  if (idx < 0 || !process.argv[idx + 1]) return null;
+  const arr = process.argv[idx + 1].split(',').map(s => parseInt(s.trim(), 10)).filter(n => Number.isFinite(n) && n > 0);
+  return arr.length ? arr.sort((a, b) => a - b) : null;
+}
+function parseOutArg() {
+  const idx = process.argv.indexOf('--out');
+  return (idx >= 0 && process.argv[idx + 1]) ? process.argv[idx + 1] : null;
+}
+
+/** 纯函数：对已截断的各股日K序列按多窗口分别算相关结构（零网络、零落盘，供守卫注入）。
+ *  historiesBySymbol: Array<{ symbol, bars }>（bars 已截断至 asOf，内部再按窗口 slice(-days)） */
+function analyzeWindowsCore({ histories, windows, minAbs = MIN_ABS_CORR, insufficientThreshold = INSUFFICIENT_SAMPLES }) {
+  const nKeys = FACTOR_KEYS.length;
+  const results = [];
+  for (const days of windows) {
+    const panel = {}; for (const k of FACTOR_KEYS) panel[k] = [];
+    let rowsTotal = 0;
+    const perSymbolMissing = {};
+    for (const { bars } of histories) {
+      const window = bars.slice(-days);
+      const rows = computeFactors(window);
+      for (const r of rows) {
+        rowsTotal++;
+        for (const k of FACTOR_KEYS) {
+          if (Number.isFinite(r.factors[k])) panel[k].push(r.factors[k]);
+          else perSymbolMissing[k] = (perSymbolMissing[k] || 0) + 1;
+        }
+      }
+    }
+    const P = Array.from({ length: nKeys }, () => new Array(nKeys).fill(null));
+    const S = Array.from({ length: nKeys }, () => new Array(nKeys).fill(null));
+    let pairCount = 0, highPairCount = 0, absSum = 0, maxAbs = 0, maxAbsPair = null;
+    for (let i = 0; i < nKeys; i++) {
+      P[i][i] = 1; S[i][i] = 1;
+      for (let j = i + 1; j < nKeys; j++) {
+        const p = pearson(panel[FACTOR_KEYS[i]], panel[FACTOR_KEYS[j]]);
+        const s = spearman(panel[FACTOR_KEYS[i]], panel[FACTOR_KEYS[j]]);
+        P[i][j] = P[j][i] = p; S[i][j] = S[j][i] = s;
+        if (p != null && Number.isFinite(p)) {
+          pairCount++; absSum += Math.abs(p);
+          if (Math.abs(p) > maxAbs) { maxAbs = Math.abs(p); maxAbsPair = [FACTOR_KEYS[i], FACTOR_KEYS[j]]; }
+          if (Math.abs(p) > minAbs) highPairCount++;
+        }
+      }
+    }
+    const clusters = cluster(FACTOR_KEYS, P, minAbs);
+    const validSamples = panel[FACTOR_KEYS[0]].length;
+    // 簇内最弱边（所有簇合并计）：连通分量口径下最薄弱的一环
+    let minClusterEdge = null;
+    for (const c of clusters) if (c.minAbsW != null && (minClusterEdge == null || c.minAbsW < minClusterEdge)) minClusterEdge = c.minAbsW;
+    results.push({
+      days, validSamples, rowsTotal, pairCount, highPairCount,
+      avgAbsAll: pairCount ? absSum / pairCount : null,
+      maxAbs, maxAbsPair, clusters, minClusterEdge,
+      insufficient: validSamples < insufficientThreshold,
+      perSymbolMissing,
+    });
+  }
+  return results;
+}
+
+/** 纯函数：由 analyzeWindowsCore 结果构建对照报告 md（数字全部动态插入，重跑覆盖重写）。
+ *  fetchNotes（可选）：Array<{ symbol, source, lastDate }>——逐股实际服务源与截断后末根日期，
+ *  降级/滞后如实标注（degraded 口径：只写「实际走了什么源」，不写「无降级」）。 */
+function buildWindowsReport({ asOf, symbols, results, minAbs = MIN_ABS_CORR, generatedAt, fetchNotes }) {
+  let md = '';
+  md += `# 因子相关性多窗口对照报告（backlog ③）\n`;
+  md += `> ⚠️ **AI 生成，待人工复核**；**不改权重，仅供裁决**（只读分析产物，不影响任何业务表与既有模型权重）。\n`;
+  md += `> ⚠️ **数字由脚本动态插入（analyzeWindowsCore 重算），禁止手改**——手改内容会在下次重跑时被擦除。\n\n`;
+  md += `- **数据截止日（asOf）**：${asOf}（最近完整交易日，lookahead 口径截断；取数一次、三窗口共用）\n`;
+  md += `- **样本**：自选股池 ${symbols.length} 只（${symbols.join('、')}）\n`;
+  md += `- **窗口**：${results.map(r => r.days).join(' / ')} 交易日；聚类阈值 |Pearson| > ${minAbs}（与单窗口报告一致）\n`;
+  md += `- **代码版本**：APP_VERSION ${APP_VERSION}；命令 \`node scripts/analyze_factor_corr.js --windows ${results.map(r => r.days).join(',')}\`\n`;
+  md += `- **生成时间**：${generatedAt || new Date().toISOString()}\n`;
+  if (Array.isArray(fetchNotes) && fetchNotes.length) {
+    const srcCount = {};
+    for (const n of fetchNotes) srcCount[n.source] = (srcCount[n.source] || 0) + 1;
+    const srcStr = Object.entries(srcCount).map(([s, c]) => `${s} ×${c}`).join('；');
+    md += `- **实际数据源（逐股如实标注，降级链结果）**：${srcStr}；若非主源腾讯日K，则本报告数值基于降级源（新浪/东财）日K，重跑时主源恢复将得到主源口径数值。\n`;
+    const stale = fetchNotes.filter(n => n.lastDate && n.lastDate !== asOf);
+    md += `- **截断末根核验**：${stale.length ? stale.map(n => `${n.symbol} 末根 ${n.lastDate} ≠ asOf（滞后）`).join('；') : `${fetchNotes.length}/${fetchNotes.length} 只末根 = asOf，无滞后`}\n`;
+  }
+  md += `\n`;
+
+  md += `## 1. 多窗口对照表\n\n`;
+  md += `| 窗口(日) | 有效样本 | 非空相关对 | 高相关对(>阈值) | 簇数 | 簇成员 | 全对平均\\|P\\| | 最强对\\|P\\| | 簇内最弱边 | 第二簇 | 样本判定 |\n`;
+  md += `|---|---|---|---|---|---|---|---|---|---|---|\n`;
+  for (const r of results) {
+    const members = r.clusters.length ? r.clusters.map((c, i) => `簇${i + 1}[${c.members.join('·')}]`).join('；') : '—';
+    const second = r.clusters.length === 0 ? '无簇' : (r.clusters.length >= 2 ? `是（${r.clusters.length} 簇）` : '否');
+    const verdict = r.insufficient ? '**样本不足，不结论**' : '可用';
+    md += `| ${r.days} | ${r.validSamples} | ${r.pairCount} | ${r.highPairCount} | ${r.clusters.length} | ${members} | ${fmt(r.avgAbsAll)} | ${r.maxAbsPair ? `${fmt(r.maxAbs)}（${r.maxAbsPair[0]}·${r.maxAbsPair[1]}）` : '—'} | ${r.minClusterEdge == null ? '—' : fmt(r.minClusterEdge)} | ${second} | ${verdict} |\n`;
+  }
+  md += `\n> 有效样本口径与单窗口报告一致（mom_20d 等 20 根预热主因子齐备行 = 各股（窗口−20）根；macd_hist 35 根预热的因子对按 pairwise-complete 独立取样）。样本判定阈值：有效样本 < ${INSUFFICIENT_SAMPLES} 标「样本不足，不结论」。\n\n`;
+
+  md += `## 2. 稳健性对照结论（跨窗口）\n\n`;
+  const clCounts = results.map(r => r.clusters.length);
+  const members0 = results[0].clusters.map(c => c.members.join('·')).sort().join(';');
+  const membersLast = results[results.length - 1].clusters.map(c => c.members.join('·')).sort().join(';');
+  md += `- 簇数序列（${results.map(r => r.days).join('→')}）= ${clCounts.join(' → ')}；`;
+  if (results.length >= 2 && members0 === membersLast && clCounts[0] === clCounts[clCounts.length - 1]) {
+    md += `最短与最长窗口簇成员一致 → **簇结构跨窗口稳健**。\n`;
+  } else {
+    md += `最短与最长窗口簇成员/簇数不一致 → **簇结构窗口敏感，如实记录、不做调和**（逐窗口数值见 §1）。\n`;
+  }
+  const avgSeq = results.map(r => fmt(r.avgAbsAll)).join(' → ');
+  md += `- 全对平均 |Pearson| 序列 = ${avgSeq}（窗口越短样本越少，估计噪声越大，不宜直接横向比大小下结论）。\n`;
+  const minEdgeSeq = results.map(r => (r.minClusterEdge == null ? '—' : fmt(r.minClusterEdge))).join(' → ');
+  md += `- 簇内最弱边序列 = ${minEdgeSeq}；若短窗口最弱边明显下降，提示该簇在高频段边缘松动（如实记录，不外推）。\n\n`;
+
+  md += `## 3. 局限（逐条如实声明）\n\n`;
+  md += `- **窗口敏感**：60/120/250 结果可能随牛/熊段漂移，本报告为描述性对照，不构成任一窗口的优选结论。\n`;
+  md += `- **同源不外推**：全部因子同源 getHistory 日K OHLCV，结论仅限该数据源。\n`;
+  md += `- **市值缺失**：无逐日股本序列，log_market_cap 未参与（lib/taxonomy.js inCluster:false）。\n`;
+  md += `- **预热损耗**：每窗口有效样本 = 各股（窗口−20）根，60 日窗口损耗占比最高（1/3），其估计最不稳。\n`;
+  md += `- **重叠窗口自相关**：因子基于重叠滑动窗口，名义样本量高于有效样本量；**不做显著性检验**，不推断统计显著或因果。\n`;
+  md += `- **多窗口共线**：三窗口共用同一批原始日K（重叠区间高度重叠），跨窗口差异不能当独立证据。\n\n`;
+  md += `## Backlog\n\n`;
+  md += `- [x] 多窗口对照（60/120/250）验证相关结构稳健性（本报告）。\n`;
+  md += `- [ ] 业务解读人工填充（复核后删「AI 生成，待人工复核」标注，报告转「可归档」）。\n`;
+  return md;
+}
+
+async function mainWindows() {
+  const asOf = FORCED_ASOF || asOfTradingDate();
+  const windows = parseWindowsArg() || WINDOWS_DEF;
+  const outArg = parseOutArg();
+  const watchlist = JSON.parse(fs.readFileSync(path.join(ROOT, 'data', 'watchlist.json'), 'utf8'));
+  const symbols = watchlist.map(w => w.symbol);
+
+  console.log(`[P2-3 windows] asOf=${asOf} · 自选股 ${symbols.length} 只 · 窗口 ${windows.join('/')} · 阈值 |corr|>${MIN_ABS_CORR}`);
+
+  // 取数一次，三窗口共用（截断至 asOf 后传纯函数）；逐股记录实际服务源（降级如实标注）
+  const histories = [];
+  const fetchNotes = [];
+  for (const sym of symbols) {
+    const hist = await sd.getHistory(sym, '1y');
+    if (!Array.isArray(hist) || hist.length === 0) { console.warn(`  [跳过] ${sym} getHistory 空`); continue; }
+    const trunc = truncateToAsOf(hist, asOf);
+    trunc.meta = hist.meta; // Array.filter 会丢掉挂在数组对象上的 .meta（数据源标注），手动补挂
+    const lastDate = trunc.length ? trunc[trunc.length - 1].date : null;
+    if (lastDate !== asOf) console.warn(`  [${sym}] 最后一根 ${lastDate} < asOf ${asOf}（数据滞后）`);
+    histories.push({ symbol: sym, bars: trunc });
+    fetchNotes.push({ symbol: sym, source: (trunc.meta && trunc.meta.source) || '未知', lastDate });
+  }
+  if (histories.length === 0) throw new Error('全部标的 getHistory 为空，无法分析');
+
+  const results = analyzeWindowsCore({ histories, windows, minAbs: MIN_ABS_CORR });
+  const md = buildWindowsReport({ asOf, symbols, results, minAbs: MIN_ABS_CORR, fetchNotes });
+  const outPath = outArg || path.join(ROOT, 'docs', 'logic', `factor-corr-windows-${asOf.replace(/-/g, '')}.md`);
+  fs.mkdirSync(path.dirname(outPath), { recursive: true });
+  fs.writeFileSync(outPath, md, 'utf8');
+  console.log(`[P2-3 windows] 报告已写出: ${outPath}`);
+  for (const r of results) console.log(`  窗口 ${r.days}: 有效样本=${r.validSamples} · 簇=${r.clusters.length} · 平均|P|=${fmt(r.avgAbsAll)}${r.insufficient ? ' · ⚠️ 样本不足，不结论' : ''}`);
+  return outPath;
+}
+
+module.exports = { spearman, pearson, rankAverageTies, truncateToAsOf, computeFactors, cluster, FACTORS, FACTOR_KEYS, analyzeWindowsCore, buildWindowsReport, WINDOWS_DEF, INSUFFICIENT_SAMPLES };

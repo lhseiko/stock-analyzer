@@ -89,6 +89,7 @@ function lastClose(body) { return body.history[body.history.length - 1].close; }
           PORT: String(port2), SA_NO_BG_AI: '1', SA_NO_DAILY_AI_REVIEW: '1', SA_NO_AUTO_OPEN: '1',
           SA_LOGS_DIR: blocker, // ← 注入点：日志目录是一个已存在的文件
           SA_SETTINGS_FILE: path.join(tmp2, 'settings.json'),
+          SA_WARM_PERSIST_FILE: path.join(tmp2, 'analysis-warm.json'), // N5：C5 子进程手工 spawn，env 需自带 warm 隔离（漏了会写真实 data/，靠第二道快照恢复兜底）
           HTTP_PROXY: 'http://127.0.0.1:9', HTTPS_PROXY: 'http://127.0.0.1:9', NO_PROXY: '127.0.0.1,localhost',
         }),
         stdio: ['ignore', 'pipe', 'pipe'],

@@ -11,6 +11,11 @@
  *    服务器仍正常监听 127.0.0.1:PORT 并服务请求，但上述副作用永不执行——
  *    测试进程不写生产结算/判定数据、不触调度网络调用。
  *
+ *    ⚠️ 此前提已固化（2026-11-12）：本包装器的安全性完全依赖「server.js 启动副作用
+ *    全部挂在 app.listen 回调」这一代码结构。若未来 server.js 重构把任何副作用
+ *    移到顶层（require 时刻即执行），本包装器不会拦截，测试将静默触碰真实 data/——
+ *    重构 server.js 启动序列时必须同步检查本前提，否则先停用四组 E2E。
+ *
  * 2) 原地替换 require 缓存里的桩函数（server.js 解构发生在 require 时刻，
  *    先改 module.exports 再 require server 即可生效）：
  *      - lib/stockData.getQuote / getHistory → 按 symbol 的确定性零网络桩；
