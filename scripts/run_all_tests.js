@@ -11,7 +11,9 @@
  *   - child_process.spawn 串行执行每个 test_*.js，避免端口/临时目录冲突；
  *   - 每脚本独立子进程 + 120s 超时（超时仅标记失败，不阻塞后续）；
  *   - 退出码优先：子进程非零退出即判失败（全部测试均已确认 fail>0 → 非零退出）；
- *   - 结束写 docs/test-report.md 结论化报告；汇总行同时打印到控制台。
+ *   - 结束写 tmp/test-report.md 结论化报告（[N4] 原为 docs/test-report.md：每次跑测试自动重写
+ *     含生成时间戳，弄脏工作区成为同步预检的「第四文件」（2026-11-12 同步插曲实锤）。改到
+ *     tmp/（.gitignore 内）后：证据仍留存本地（D4 语义不变），git status 恒干净）；汇总行同时打印到控制台。
  *   - [20261111c] 失败即落现场：任一测试失败，把失败测试的全量输出 + 环境（时间/git commit/node 版本/模式）
  *     快照到 data/test-scenes/scene-<时间戳>/（每个失败测试一个 .log + index.json）；保留 3 天自动清理。
  *     目的：间歇失败（如 test_stock_log / 600test.json safe-delete）不再「复跑自愈」，先查现场快照定位。
@@ -167,7 +169,7 @@ function dropScene(failed, mode, ts) {
 
   // 写结论化报告
   const lines = [];
-  lines.push('# 测试回归报告（docs/test-report.md）');
+  lines.push('# 测试回归报告（tmp/test-report.md）');
   lines.push('');
   lines.push(`> 生成时间：${ts}`);
   lines.push(`> 模式：${QUICK ? 'quick（跳过需网络测试）' : 'full'}`);
@@ -191,9 +193,9 @@ function dropScene(failed, mode, ts) {
   }
   lines.push('');
   try {
-    fs.mkdirSync(path.join(ROOT, 'docs'), { recursive: true });
-    fs.writeFileSync(path.join(ROOT, 'docs', 'test-report.md'), lines.join('\n'), 'utf8');
-    console.log(`\n📄 报告已写入 docs/test-report.md`);
+    fs.mkdirSync(path.join(ROOT, 'tmp'), { recursive: true });
+    fs.writeFileSync(path.join(ROOT, 'tmp', 'test-report.md'), lines.join('\n'), 'utf8');
+    console.log(`\n📄 报告已写入 tmp/test-report.md（不入库，工作区保持干净）`);
   } catch (e) {
     console.log('\n⚠️ 报告写入失败：' + e.message);
   }
