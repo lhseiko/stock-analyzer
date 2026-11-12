@@ -566,3 +566,18 @@
   3. `tradeCalendar.isTradingDay('2026-11-13') === true`——否则本就不该触发，第 6 项**顺延下一交易日**；
   4. degraded 数需说明复盘路径是否走 stockData 降级埋点；不走则只能写「未观测到降级」，不得写「无降级」。
 - **待办清单修正（"你无待办"说法作废，AI 侧待办）**：① 明日 15:30 后按上表核验第 6 项（已建一次性自动化 15:40 触发）；② bal_all.txt 处置（本轮完成）；③ ⑤ 领域人复核推进（复核通过后删「AI 草稿」标注、报告转「可归档」）；④ 开 ①（analysis 接口/切股链路 E2E 补测）前先确认 git status 干净（当前 ✅），③② 按 WAL 顺序跟进，N3/N4 穿插。
+
+## 2026-11-12 19:2x · N4 落地 + backlog ① analysis 接口/切股链路 E2E 四组全绿（本地 commit，未同步）
+
+- **N4 落地（f2f4a11）**：run_all_tests 报告输出 docs/test-report.md → tmp/test-report.md（.gitignore 加 tmp/），跑测试不再弄脏工作区；D4 证据留存本地 tmp/。选 tmp/ 而非 .git/（按用户当日首选方案）。实测：--quick 130/130 后 git status 干净。
+- **backlog ① 落地（a271180，6 文件 +651 行）**：四组 E2E 全绿——A 契约 test_analysis_api_contract_e2e.js **24/0**、B 切股 test_analysis_switch_e2e.js **14/0**、C 缓存 test_analysis_cache_e2e.js **18/0**、D 可观测 test_analysis_observability_e2e.js **16/0**；全量 **--quick 134/134（基线变更：新增 4 文件，130→134）**；空 catch 基线未增（守卫在全量内通过）；无前端改动不 bump（APP_VERSION 保持 20261112a）。
+- **零运行时改动实现（测试脚手架）**：e2e_boot_analysis.js 吞 app.listen 启动回调（runAutoReview/自动判定/调度器/预热/.server-ready 全部不执行——它们全挂 listen 回调）+ require 缓存原地桩 stockData.getQuote/getHistory、shareholderData.getCompanyProfile（确定性 7 标的 + 失败注入 601008 持续失败/601009 首次失败/601077 延迟 400ms）；e2e_analysis_harness.js 环境隔离（SA_LOGS_DIR/SA_SETTINGS_FILE 重定向 + 死代理 127.0.0.1:9 拒连漏网外呼）+ data/analysis-warm.json 快照恢复（finally + process exit 双兜底）。
+- **实测口径修正（对运行中 3005 实测，断言不臆测）**：① 真实契约顶层字段 = symbol/name/market/exchange/quote/history/technical/fundamental/signals/comparison/metricAnalysis/opProfit/insuranceNBV/companyType/companyProfile/timestamp（缓存命中附 cachedAt/cacheAgeSec），**无 asOf/factors/summary/degraded 字段**——A1 按真实契约断言；② 非法 range → **200**（getHistory 回退默认，无 400 路径）；③ 非法标的 → 404 无堆栈/路径泄露。
+- **C2 现状记录（规格中最易写错条）**：analysis 缓存键 = symbol|range（lib/analysisWarm.js 源码核验无 APP_VERSION），「升版使 analysis 缓存失效」**当前不存在该路径**——断言只记现状；与前端 ?v=302 强制对齐（FRONTEND_BUST_FILES）是两套机制，cache_bust_guard 已覆盖不重复断言。
+- **C5 注入成功**：SA_LOGS_DIR 指向已存在文件 → requestLogger.ensureStream mkdir ENOTDIR → logWriteFailures 如实 +1（业务请求仍 200）——纯环境变量注入，零运行时改动。
+- **D4 降级口径（按用户裁决原文执行）**：analysis 路由 getQuote/getHistory 来自 lib/stockData.js（内含 8 处 markDegraded，AsyncLocalStorage 关联）→ 生产路径**经过降级埋点、计数可查**（dashboard.degradedBySource 断言存在）；本组桩替代 stockData 故 jsonl **「未观测到降级」**（不写「无降级」）；stockData 降级链语义由链路 5 E2E 覆盖，不重复断言。
+- **B4 按用户裁决落法**：前端 _reqToken 为 app.js 内联逻辑不可导入 → 「复用 common-08 前端守卫覆盖，本组只测 HTTP 层并发」，不引入 jsdom。
+- **插曲与加固**：首跑 D 组客户端未挂 error 监听 → ECONNRESET 未捕获崩溃 → finally 跳过 → 桩写入凝固在 data/analysis-warm.json（savedAt 19:14:27 实证）；已修 req.on('error') + harness 增 process exit 兜底恢复（guardedRestore），并清理残留（recents 移除 601001/601002/601003/601005/601077/ZZZZ99，保留真实浏览记录）。全量复跑后 grep 零残留。
+- **生产探针痕迹（如实）**：核验期间对 3005 的只读 GET 探针（601318/ZZZZ99/600000）计入生产 requests jsonl 与 recents（ZZZZ99 404 计入当日 errorCount 1 次）——属真实请求流量，未回滚。
+- **commit 绑定**：f2f4a11（N4）+ a271180（① 四组 E2E），本地未同步；D3 口径 = 按用户指示暂停同步。
+- **状态**：**① 完成** / ③ 进行中（未开工，复用 analyze_factor_corr.js 计划窗口 60/120/250）/ ② 未开工 / ⑤ 待领域人复核；N1 挂起、N2 已结案、N3 待方案、N4 完成。
