@@ -751,6 +751,18 @@
   - 现状核实：`data/` 由 `.gitignore:24` 排除，同段注释明确「运行时数据 / 缓存 / 用户上传 PDF / 密钥（含 apiKey/volcApiKey/baiduApiKey，严禁入库）」；`du -sh data/` = **1.3G**；含 `ai_config.json*`、`*.db`、`.server-port` / `.server-ready` 等配置与运行时状态文件。
   - **落地口径（agent 定，写死防泄密）**：`data/` 同步走 **git 链路之外的带外文件级拷贝**，只覆盖「本地 ↔ 工作空间克隆」两端；**GitHub 云端继续保持不含 `data/`**（禁止 `git add -f data/`、禁止 push 任何 data 文件，否则密钥进入公开仓库 `lhseiko/stock-analyzer`）。同步仪式在现有「commit → push → 克隆端 fetch+reset → 三端 hash 全等校验」之外**增加一步带外拷贝 + 文件清单 md5 校验**；三端 hash 全等校验对象仍是 git commit 链，`data/` 一致性另列为文件级清单比对，不与 commit 基线混淆。`.gitignore` 保持不动。
   - 首次执行时按实际文件复核排除项：运行时锁文件（`*.db-shm` / `*.db-wal`）、实例状态（`.server-*`）、含密钥配置（`ai_config.json*`）；`data/companies/` 等估值测试依赖数据必须包含。1.3G 量级在仪式汇报中单独列出拷贝耗时与校验结果。
+
+## 2026-11-13 16:4x · 15:30 第 6 项核验通过：七项闭环达成（cron 实证）
+
+- **时间与执行方式**：实跑 2026-11-13 16:47（周五，15:30 已过）；核验由当前会话手动执行。**15:40 一次性自动化未见触发产物**（automation list 仍 ACTIVE、无运行记录，疑似未随宿主启动）→ 已手动完成核验，并删除该自动化防重复触发。
+- **四条清单逐项核验（全部满足）**：
+  1. **日志结果行 ✅**：`logs/server.log` L4428 `[个股复盘] 2026-11-13 15:30 自选股池批量：生成 8 · 降级 0 · 跳过 0 · 失败 0`（紧邻 15:35 main 主跑生成 formal 版，属调度序列而非手动触发）。
+  2. **skip 记录校验 ✅**：跳过 0 → 条件空满足；对 8 只 generated 逐只校验 `data/stock-reviews/<symbol>/2026-11-13.json` 内 `date === "2026-11-13"`、`schemaVersion = stock-review-20261111d`，全部一致。
+  3. **交易日 ✅**：批量于 15:30 实际触发即 `tradeCalendar.isTradingDay('2026-11-13')` 通过的实证（调度器先查 trade_calendar 才触发）；2026-11-13 为周五交易日。
+  4. **degraded 口径 ✅**：降级 0 → 如实写「**未观测到降级**」（不写「无降级」）；`/api/health` metrics 实证 `llm.byCaller["lib/stockReview.js"] = ok 8 / fail 0 / degraded 0`。
+- **运行时加载说明**：当前实例 PID 12696 启动 11:24:31（< 15:30）；今日 4 个 commit（7f860cb / 18acc5c / 5d5a036 / 09f9ca3）均为 docs/守卫/离线脚本（5d5a036 明确「离线脚本不进运行时不重启不 bump」）→ 运行时代码与 07325d2 一致，实例加载有效。
+- **结论（状态跃迁）**：**第 6 项 = ✅（cron 实证）；15:30 七项闭环达成**——代码（07325d2 含 [20261112h]）/ 加载 / 注册 / 交易日历 / 时区（Asia/Shanghai）/ 三端一致（eb682d9 起、a25ec9d/09f9ca3 文档链延续）/ 实际触发，全部 ✅。**D10、D12 由 🟡 转 ✅**。
+- **推送积压核实**：实跑 `git log origin/master..HEAD` = **0**（11:4x WAL 中「ahead 24」已被上午会话同步消化，origin/master 已至 09f9ca3）；本轮仅追加本段 WAL 后 commit → push → 克隆端 fetch+reset → 三端 hash 全等复测。
   - **N3 状态：方案已定、待首次同步仪式执行**（从「待方案」升级）；当前 D3 ⏸ 暂停不变，本轮未执行 `git fetch` / push / 任何拷贝。
 - **③ N1 查清（挂起 → ✅ 已归因结案，无代码缺陷、无需修复）**：
   - N1 原文：跳过 4 只复盘记录的真实触发源不明（mtime 16:09–16:44、`date=2026-11-12` 有效今日记录，非 20:45 观察池）。
