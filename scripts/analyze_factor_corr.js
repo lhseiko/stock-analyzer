@@ -413,7 +413,7 @@ function buildReport({ asOf, symbols, rowsTotal, validSamples, P, S, clusters, p
 
   // 5. 结论与局限
   md += `## 5. 结论与局限\n\n`;
-  md += `- **结论**：（由数值矩阵与上述聚类得出，待人工结合业务解读填充；本报告仅提供相关结构，不替代因子重要性裁决。）\n`;
+  md += `- **结论**：结论已由领域人 2026-11-13 书面裁决，见 §4【业务解读】块；本报告仅提供相关结构，不替代因子重要性裁决。\n`;
   md += `- **结构结论**：本次在阈值 |Pearson| > ${MIN_ABS_CORR} 下仅检出 **${clusters.length}** 个高相关簇${clusters.length === 1 ? '（未发现第二个高相关簇）' : ''}；其余因子对 |Pearson| 均 < ${MIN_ABS_CORR}，不构成独立高相关簇（详见 §3 Top20）。\n`;
   md += `- **局限 1（窗口敏感）**：单一 ${DAYS} 日窗口对牛/熊段敏感，结论可能随窗口漂移；多窗口（60/120/${DAYS}）对照**已完成**，见 docs/logic/factor-corr-windows-${asOf.replace(/-/g, '')}.md §2（簇结构跨窗口稳健）；本报告 ${DAYS} 日结论不外推至其他窗口。\n`;
   md += `- **局限 2（同源）**：全部因子同源 getHistory 日K OHLCV，结论**仅限该数据源，不外推至其他数据源**（如财务/资金流/情绪）。\n`;
@@ -425,7 +425,7 @@ function buildReport({ asOf, symbols, rowsTotal, validSamples, P, S, clusters, p
   md += `- [x] 因子集已收编至 \`lib/taxonomy.js\` 单源（\`FACTOR_LIST\` 导出，20261112）；本脚本不再自造定义。\n`;
   md += `- [x] 多窗口对照（60/120/${DAYS}）验证相关结构稳健性（已完成，见 docs/logic/factor-corr-windows-${asOf.replace(/-/g, '')}.md §2）。\n`;
   md += `- [ ] 补充 amplitude_20d 等更多同源因子以丰满矩阵（用户本轮决定不加）。\n`;
-  md += `- [ ] 业务解读人工填充（簇级一句话）。\n`;
+  md += `- [x] 业务解读人工填充（簇级一句话）。\n`;
   md += `\n${REVIEW_PLACEHOLDER}\n`;
   return md;
 }
