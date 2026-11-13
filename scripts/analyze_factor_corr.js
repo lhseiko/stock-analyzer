@@ -264,6 +264,12 @@ function fmt(x, d = 3) { return (x == null || !Number.isFinite(x)) ? '—' : x.t
 //       数字与结构仍全部来自 buildReport() 重算；业务解读文字原样保留，
 //       不固化业务断言进代码（守「业务裁决归领域人」边界）。零 IO / 零网络，守卫可注入。
 const BIZ_PLACEHOLDER = '- 【业务解读：待补充】';
+// ⑤ 补充整改（2026-11-13 10:4x）：复核存疑旁注 / H2 建议门槛 / 整改留痕移出 §4 正文，
+//      改置于报告末尾「附：复核意见摘要（非报告原文）」独立区块，避免领域人阅读业务断言时
+//      被 agent 批注影响判断独立性。该区块同样需重跑防覆盖，故复用同一套回填机制；
+//      区块文字（含复核意见与整改留痕）不固化进代码，仍只存在于 md 产物中。
+const REVIEW_SECTION_HEAD = '## 附：复核意见摘要（非报告原文）';
+const REVIEW_PLACEHOLDER = '<!-- REVIEW_NOTES_PLACEHOLDER -->';
 
 /** 从既有报告 md 中按出现顺序提取每个簇的【业务解读】整块（含缩进子项）。 */
 function extractBusinessBlocks(existingMd) {
@@ -286,13 +292,28 @@ function extractBusinessBlocks(existingMd) {
   return blocks;
 }
 
-/** 把既有业务解读块按序回填到新生成 md 的占位符；块不足时多余占位符原样保留（不伪造业务结论）。 */
+/** 提取报告末尾「附：复核意见摘要」独立区块（含标题、来源说明与全部子项）。
+ *  前置约定：该区块须为报告最后一节；无此节返回 null（首次生成）。零 IO / 零网络。 */
+function extractReviewNotesBlock(existingMd) {
+  if (typeof existingMd !== 'string' || !existingMd) return null;
+  const lines = existingMd.split('\n');
+  const at = lines.findIndex(l => l.trim() === REVIEW_SECTION_HEAD);
+  if (at < 0) return null;
+  return lines.slice(at).join('\n').replace(/\s+$/, '');
+}
+
+/** 把既有【业务解读】块按序回填到占位符，并把末尾复核意见摘要独立区块整段回填；
+ *  块不足时多余占位符原样保留（不伪造业务结论 / 复核结论）；数字段仍全部来自 buildReport() 重算。 */
 function preserveBusinessBlocks(generatedMd, existingMd) {
   const blocks = extractBusinessBlocks(existingMd);
-  if (!blocks.length) return generatedMd;
+  const review = extractReviewNotesBlock(existingMd);
   let i = 0;
   return generatedMd.split('\n')
-    .map(line => (line === BIZ_PLACEHOLDER && i < blocks.length ? blocks[i++] : line))
+    .map(line => {
+      if (line === BIZ_PLACEHOLDER && i < blocks.length) return blocks[i++];
+      if (line === REVIEW_PLACEHOLDER && review) return review;
+      return line;
+    })
     .join('\n');
 }
 
@@ -367,6 +388,7 @@ function buildReport({ asOf, symbols, rowsTotal, validSamples, P, S, clusters, p
   md += `- [x] 多窗口对照（60/120/${DAYS}）验证相关结构稳健性（已完成，见 docs/logic/factor-corr-windows-${asOf.replace(/-/g, '')}.md §2）。\n`;
   md += `- [ ] 补充 amplitude_20d 等更多同源因子以丰满矩阵（用户本轮决定不加）。\n`;
   md += `- [ ] 业务解读人工填充（簇级一句话）。\n`;
+  md += `\n${REVIEW_PLACEHOLDER}\n`;
   return md;
 }
 
@@ -578,4 +600,4 @@ async function mainWindows() {
   return outPath;
 }
 
-module.exports = { spearman, pearson, rankAverageTies, truncateToAsOf, computeFactors, cluster, FACTORS, FACTOR_KEYS, analyzeWindowsCore, buildWindowsReport, parseHistoricalSingleWindow, WINDOWS_DEF, INSUFFICIENT_SAMPLES, buildReport, BIZ_PLACEHOLDER, extractBusinessBlocks, preserveBusinessBlocks };
+module.exports = { spearman, pearson, rankAverageTies, truncateToAsOf, computeFactors, cluster, FACTORS, FACTOR_KEYS, analyzeWindowsCore, buildWindowsReport, parseHistoricalSingleWindow, WINDOWS_DEF, INSUFFICIENT_SAMPLES, buildReport, BIZ_PLACEHOLDER, extractBusinessBlocks, preserveBusinessBlocks, REVIEW_SECTION_HEAD, REVIEW_PLACEHOLDER, extractReviewNotesBlock };

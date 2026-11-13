@@ -23,6 +23,7 @@ const REVIEW = fs.readFileSync(path.join(ROOT, 'docs', 'logic', 'factor-corr-202
 const {
   buildReport, FACTOR_KEYS, BIZ_PLACEHOLDER,
   extractBusinessBlocks, preserveBusinessBlocks,
+  REVIEW_SECTION_HEAD, REVIEW_PLACEHOLDER, extractReviewNotesBlock,
 } = require('./analyze_factor_corr');
 
 // ---- 构造 buildReport 的确定性输入（零网络，不取真实行情） ----
@@ -49,7 +50,8 @@ console.log('[test_factor_corr_preserve] 重跑不丢业务解读块');
 const blocks = extractBusinessBlocks(REPORT);
 ok(blocks.length === 1, `从现行报告提取到 ${blocks.length} 个业务解读块（期望 1）`);
 ok(blocks[0].includes('AI 草稿') && blocks[0].includes('补录'), '业务解读块含「AI 草稿」与「补录」');
-ok(blocks[0].includes('H1') && blocks[0].includes('复核存疑') && blocks[0].includes('整改留痕'), '业务解读块含整改后的 H1 / 存疑旁注 / 整改留痕');
+ok(blocks[0].includes('H1') && blocks[0].includes('① **已验证**') && blocks[0].includes('补录'), '业务解读块含整改后的 H1 / ① 已验证 / 补录');
+ok(!blocks[0].includes('复核存疑') && !blocks[0].includes('H2 门槛') && !blocks[0].includes('整改留痕'), '业务解读块内无 agent 旁注（领域人判断独立性不受影响）');
 const merged = preserveBusinessBlocks(generated, REPORT);
 ok(!merged.includes(BIZ_PLACEHOLDER), '回填后占位符消失（1 簇 1 块）');
 ok(merged.includes(blocks[0]), '业务解读块逐字保留（重跑不擦除）');
@@ -59,6 +61,20 @@ const numericPart = generated.slice(generated.indexOf('## 3.'), generated.indexO
 ok(merged.includes(numericPart), '§3 数字区与脚本重算逐字一致（业务文字未污染数值段）');
 ok(merged.includes('簇内平均 |Pearson|：0.725') && merged.includes('簇内最小 |Pearson|（最弱边）：0.602'), '§4 簇表数值由脚本重算（0.725 / 0.602）');
 ok(preserveBusinessBlocks(generated, merged) === merged, '幂等：以回填结果作既有报告再重跑一次，输出不变');
+
+console.log('[test_factor_corr_preserve] 复核意见摘要独立区块（10:4x 旁注移出正文）');
+ok(generated.includes(REVIEW_PLACEHOLDER), '模板末尾输出复核意见区块占位符');
+const reviewBlock = extractReviewNotesBlock(REPORT);
+ok(!!reviewBlock && reviewBlock.startsWith(REVIEW_SECTION_HEAD), `现行报告末尾存在独立区块（${reviewBlock ? reviewBlock.length : 0} 字符）`);
+ok(!!reviewBlock && reviewBlock.includes('非报告原文') && reviewBlock.includes('待领域人裁决'), '独立区块标注「非报告原文 / 待领域人裁决」');
+ok(!!reviewBlock && reviewBlock.includes('9631f759114758ad214d34fc44b25a5f'), '独立区块标注复核档案来源与 md5');
+ok(!!reviewBlock && reviewBlock.includes('复核存疑') && reviewBlock.includes('ITEM 3') && reviewBlock.includes('ITEM 4'), '独立区块含两处业务断言存疑理由与 ITEM 编号');
+ok(!!reviewBlock && reviewBlock.includes('方差解释率 ≥ 70%') && reviewBlock.includes('供领域人定夺'), '独立区块含 H2 建议门槛且明确由领域人定夺');
+ok(!!reviewBlock && reviewBlock.includes('整改留痕') && reviewBlock.includes('移至本独立区块'), '独立区块含整改留痕与旁注移出说明');
+ok(!merged.includes(REVIEW_PLACEHOLDER) && !!reviewBlock && merged.includes(reviewBlock), '重跑回填复核意见区块全文，占位符消失');
+ok(merged.indexOf('## 4.') < merged.indexOf(REVIEW_SECTION_HEAD), '独立区块位于 §4 之后（正文与批注物理分离）');
+ok(preserveBusinessBlocks(generated, merged) === merged, '幂等：含复核意见区块再重跑一次输出不变');
+ok(extractReviewNotesBlock(generated) === null, '模板占位符不被误判为既有复核意见区块');
 
 console.log('[test_factor_corr_preserve] 保留边界（不伪造业务结论）');
 ok(extractBusinessBlocks(generated).length === 0, '模板占位符不被误判为业务解读块');
