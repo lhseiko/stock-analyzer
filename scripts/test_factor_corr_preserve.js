@@ -7,7 +7,9 @@
  *   2. preserveBusinessBlocks() 重跑不丢【业务解读】块：逐字保留、占位符消失、数字区仍来自脚本重算；
  *   3. 保留边界：占位符不当业务结论、占位符多于块时不伪造、多簇按序回填、幂等；
  *   4. 报告整改结果：H1 方向订正、① 已验证、两处业务断言按领域人裁决改写、删草稿标记转「可归档」；
- *   5. 复核档案一字不改（md5 钉死历史记录）。
+ *   5. 复核档案一字不改（md5 钉死历史记录）；
+ *   6. N6（2026-11-13）：truncateToAsOf 保留 .meta.source、buildReport 逐股写出实际取数源、
+ *      数值计算零影响、历史报告「取数源未记录，待补」不被冒充。
  * 边界：零网络；只读本地文件，不写盘。
  */
 'use strict';
@@ -24,7 +26,9 @@ const {
   buildReport, FACTOR_KEYS, BIZ_PLACEHOLDER,
   extractBusinessBlocks, preserveBusinessBlocks,
   REVIEW_SECTION_HEAD, REVIEW_PLACEHOLDER, extractReviewNotesBlock,
+  truncateToAsOf, computeFactors,
 } = require('./analyze_factor_corr');
+const SRC = fs.readFileSync(path.join(ROOT, 'scripts', 'analyze_factor_corr.js'), 'utf8');
 // 报告正文（§1–Backlog），不含末尾「附：复核意见摘要」独立区块；
 // 逐字摘录 A 段引用了历史错误原文，正文状态类断言须按此范围扫描，避免语义误判。
 // 须放在解构之后：REVIEW_SECTION_HEAD 为 const，提前引用会触发暂时性死区。
@@ -118,6 +122,48 @@ ok(REPORT.includes('领域人裁决（2026-11-13，书面）') && REPORT.include
 ok(REPORT.includes('不设 70% 门槛') && REPORT.includes('未采纳'), 'H2 门槛按裁决不设 70%、agent 建议未采纳');
 ok(!BODY.includes('AI 草稿') && BODY.includes('可归档') && !BODY.includes('待领域人确认/修正'), '正文已删草稿标记、转「可归档」（A 段历史摘录不在 BODY 内）');
 ok(REPORT.includes('整改留痕（2026-11-13') && REPORT.includes('非领域人签字') && REPORT.includes('路径 A') && REPORT.includes('归档后补项'), '报告内留痕「谁改、依据哪条复核意见」+ 领域人取 N6 路径 A');
+
+console.log('[test_factor_corr_preserve] N6 · 取数源可追溯（2026-11-13）');
+// 构造带 .meta 的桩 bars（模拟 getHistory 返回），验证纯函数不再丢数据源标注
+const bars = [
+  { date: '2026-11-10', open: 9, close: 10, volume: 100 },
+  { date: '2026-11-11', open: 10, close: 11, volume: 120 },
+  { date: '2026-11-12', open: 11, close: 12, volume: 130 },
+  { date: '2026-11-13', open: 12, close: 13, volume: 140 },
+];
+bars.meta = { source: '腾讯日K(ifzq.gtimg.cn)', volumeUnit: '手' };
+const truncBars = truncateToAsOf(bars, '2026-11-12');
+const plainBars = bars.slice(0, 3);
+ok(truncBars.length === 3 && truncBars[2].date === '2026-11-12', 'truncateToAsOf 截断口径不变（元素与顺序不变）');
+ok(!!truncBars.meta && truncBars.meta === bars.meta && truncBars.meta.source === '腾讯日K(ifzq.gtimg.cn)', 'N6 根因修复：截断后仍带原 .meta.source（逐股取数源不丢）');
+ok(truncateToAsOf(plainBars, '2026-11-12').meta === undefined, '无 .meta 输入时不伪造数据源（诚实兜底）');
+ok(JSON.stringify(computeFactors(truncBars)) === JSON.stringify(computeFactors(plainBars)), '带 .meta 与不带 .meta 的因子计算逐字相同（数值零影响）');
+
+const baseArgs = {
+  asOf: '2026-11-12', symbols: ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8'],
+  rowsTotal: 1840, validSamples: 1840, P, S, clusters,
+  perSymbolMissing: {}, lastDateStaleNote: '',
+};
+const notes = [
+  { symbol: 'S1', source: '腾讯日K(ifzq.gtimg.cn)', lastDate: '2026-11-12' },
+  { symbol: 'S2', source: '腾讯日K(ifzq.gtimg.cn)', lastDate: '2026-11-12' },
+  { symbol: 'S3', source: '腾讯日K(ifzq.gtimg.cn)', lastDate: '2026-11-12' },
+  { symbol: 'S4', source: '新浪日K(quotes.sina.cn)', lastDate: '2026-11-12' },
+  { symbol: 'S5', source: '新浪日K(quotes.sina.cn)', lastDate: '2026-11-12' },
+  { symbol: 'S6', source: '新浪日K(quotes.sina.cn)', lastDate: '2026-11-12' },
+  { symbol: 'S7', source: '新浪日K(quotes.sina.cn)', lastDate: '2026-11-12' },
+  { symbol: 'S8', source: '新浪日K(quotes.sina.cn)', lastDate: '2026-11-12' },
+];
+const withSources = buildReport({ ...baseArgs, fetchNotes: notes });
+ok(withSources.includes('腾讯日K(ifzq.gtimg.cn) ×3') && withSources.includes('新浪日K(quotes.sina.cn) ×5'), '有 fetchNotes → 逐股实际源按源计数如实写出（腾讯 ×3；新浪 ×5）');
+ok(!withSources.includes('取数源未记录，待补') && !withSources.includes('未知 ×'), '有 fetchNotes → 不再写「待补」、不写「未知」占位');
+ok(withSources.includes('**截断末根核验**') && withSources.includes('8/8 只末根 = asOf，无滞后'), '有 fetchNotes → 截断末根核验行（8/8 无滞后）');
+const withStale = buildReport({ ...baseArgs, fetchNotes: [...notes.slice(0, 7), { symbol: 'S8', source: '新浪日K(quotes.sina.cn)', lastDate: '2026-11-11' }] });
+ok(withStale.includes('S8 末根 2026-11-11 ≠ asOf（滞后）') && !withStale.includes('8/8 只末根'), '存在滞后 → 逐股如实标注、不掩盖');
+ok(generated.includes('取数源未记录，待补') && !generated.includes('腾讯日K(ifzq.gtimg.cn) ×'), '无 fetchNotes（守卫直调）→ 保留历史「待补」兜底分支');
+ok(SRC.includes('fetchNotes.push(') && SRC.includes('lastDateStaleNote, fetchNotes') && SRC.includes('if (bars && bars.meta !== undefined) trunc.meta = bars.meta;'), '源码接线：main() 采集逐股源并传入 buildReport，纯函数统一补挂 .meta');
+ok(!SRC.includes('trunc.meta = hist.meta;') && SRC.includes('const outPath = parseOutArg() || canonicalPath') && SRC.includes('fs.readFileSync(canonicalPath'), '源码接线：多窗口不再手动补挂；单窗口支持 --out 且既有报告仍从正式路径读取');
+ok(BODY.includes('取数源未记录，待补') && !BODY.includes('腾讯日K(ifzq.gtimg.cn) ×') && !BODY.includes('新浪日K(quotes.sina.cn) ×'), '现行已归档报告仍保留历史「待补」标注，不用新取数源冒充 11-12 轮');
 
 console.log('[test_factor_corr_preserve] 复核档案一字不改（历史记录钉死）');
 const md5 = crypto.createHash('md5').update(REVIEW).digest('hex');

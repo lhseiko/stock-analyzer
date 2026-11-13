@@ -112,9 +112,15 @@ function spearman(a, b) {
   return pearson(ra, rb);
 }
 
-/** 截断到 asOf（ISO 日期字符串比较，与 lookahead.dateOf 的 UTC 日历日口径一致）。 */
+/** 截断到 asOf（ISO 日期字符串比较，与 lookahead.dateOf 的 UTC 日历日口径一致）。
+ *  N6（2026-11-13）：Array.filter 返回新数组，会丢掉挂在原数组对象上的自定义属性；
+ *  getHistory 返回的 bars 带 .meta = { source, volumeUnit }（逐股实际取数源）。
+ *  此处统一补挂，单窗口 / 多窗口调用方都无需各自手动补挂；数组元素与顺序不变，
+ *  computeFactors / 相关矩阵的计算口径不受影响。 */
 function truncateToAsOf(bars, asOf) {
-  return bars.filter(b => String(b.date) <= asOf);
+  const trunc = bars.filter(b => String(b.date) <= asOf);
+  if (bars && bars.meta !== undefined) trunc.meta = bars.meta;
+  return trunc;
 }
 
 /** 对单只股票的窗口（已截断、已取最后 DAYS 根）计算 8 因子序列，返回 [{date, factors:{...}}]。
@@ -199,6 +205,7 @@ async function main() {
   for (const k of FACTOR_KEYS) panel[k] = [];
   let rowsTotal = 0, lastDateStaleNote = '';
   const perSymbolMissing = {}; // key -> 缺失计数
+  const fetchNotes = []; // N6（2026-11-13）：逐股实际取数源 + 截断末根日期，供报告如实标注
 
   for (const sym of symbols) {
     const hist = await sd.getHistory(sym, '1y');
@@ -210,6 +217,8 @@ async function main() {
       if (!lastDateStaleNote) lastDateStaleNote = note;
       console.warn(`  [${sym}] ${note}`);
     }
+    // N6（2026-11-13）：truncateToAsOf 已在纯函数内保留 .meta，此处逐股采集实际服务源（降级如实标注，不写「无降级」）
+    fetchNotes.push({ symbol: sym, source: (trunc.meta && trunc.meta.source) || '未知', lastDate });
     const window = trunc.slice(-DAYS);
     const rows = computeFactors(window);
     for (const r of rows) {
@@ -241,15 +250,21 @@ async function main() {
   const validSamples = panel[FACTOR_KEYS[0]].length;
 
   // ---- 生成报告 ----
-  const outPath = path.join(ROOT, 'docs', 'logic', `factor-corr-${asOf.replace(/-/g, '')}.md`);
-  const generated = buildReport({ asOf, symbols, rowsTotal, validSamples, P, S, clusters, perSymbolMissing, lastDateStaleNote });
+  const canonicalPath = path.join(ROOT, 'docs', 'logic', `factor-corr-${asOf.replace(/-/g, '')}.md`);
+  // N6（2026-11-13）：支持 --out 定向输出（与多窗口模式一致），便于真实取数验证落到 tmp/ 而不覆盖已归档报告；
+  // 既有报告始终从正式路径读取，保证业务解读块 / 复核意见区块在任何输出路径下都能回填。
+  const outPath = parseOutArg() || canonicalPath;
+  const generated = buildReport({ asOf, symbols, rowsTotal, validSamples, P, S, clusters, perSymbolMissing, lastDateStaleNote, fetchNotes });
   // ⑤ 整改 4（2026-11-13）：重跑前保留既有【业务解读】块（领域人 / AI 草稿文字）；数字段仍由 buildReport 重算
-  const existingMd = fs.existsSync(outPath) ? fs.readFileSync(outPath, 'utf8') : '';
+  const existingMd = fs.existsSync(canonicalPath) ? fs.readFileSync(canonicalPath, 'utf8') : '';
   const md = preserveBusinessBlocks(generated, existingMd);
   const keptBlocks = extractBusinessBlocks(existingMd).length;
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   fs.writeFileSync(outPath, md, 'utf8');
   console.log(`[P2-3] 业务解读块保留：${keptBlocks} 个（重跑不覆盖）`);
+  const srcCount = {};
+  for (const nte of fetchNotes) { const s = nte.source || '未知'; srcCount[s] = (srcCount[s] || 0) + 1; }
+  console.log(`[P2-3] 实际取数源（逐股）：${Object.entries(srcCount).map(([s, c]) => `${s} ×${c}`).join('；') || '无'}`);
   console.log(`[P2-3] 报告已写出: ${outPath}`);
   console.log(`  有效样本(全因子齐备行)=${validSamples} · 高相关簇=${clusters.length}`);
   return outPath;
@@ -328,7 +343,7 @@ function preserveBusinessBlocks(generatedMd, existingMd) {
     .join('\n');
 }
 
-function buildReport({ asOf, symbols, rowsTotal, validSamples, P, S, clusters, perSymbolMissing, lastDateStaleNote }) {
+function buildReport({ asOf, symbols, rowsTotal, validSamples, P, S, clusters, perSymbolMissing, lastDateStaleNote, fetchNotes }) {
   const n = FACTOR_KEYS.length;
   const startDate = asOf; // 窗口起点在脚本内为动态取最后 DAYS 根；报告注明窗口口径
   let md = '';
@@ -338,7 +353,19 @@ function buildReport({ asOf, symbols, rowsTotal, validSamples, P, S, clusters, p
   md += `- **样本**：自选股池 ${symbols.length} 只（${symbols.join('、')}） × 近 ${DAYS} 交易日；有效样本（mom_20d 等主因子齐备行，即面板序列长度）**${validSamples}** = ${symbols.length} 只 × ${Math.round(validSamples / symbols.length)} 交易日\n`;
   md += `- **代码版本**：APP_VERSION ${APP_VERSION}；命令 \`node scripts/analyze_factor_corr.js --asOf ${asOf} --days ${DAYS} --minAbs ${MIN_ABS_CORR}\`\n`;
   md += `- **因子集注明**：本因子集已收编至 \`lib/taxonomy.js\` 单源（\`FACTOR_LIST\` 导出，20261112）；本脚本仅引用，数值与 P2-3 报告一致。\n\n`;
-  md += `- **实际数据源标注**：⚠️ **取数源未记录，待补**——单窗口 main() 生成时未采集逐股 hist.meta.source（truncateToAsOf 的 filter 会丢弃挂在数组上的 .meta），无法从产物反推当时走的是腾讯主源还是新浪/东财降级源；多窗口报告 docs/logic/factor-corr-windows-${asOf.replace(/-/g, '')}.md §1.1 已把 0.725 vs 0.730 边值漂移归因为「数据源 / 取数时点差异，主源恢复后需同源复核」；多窗口标注的降级源属另一轮独立取数，**不可等同于本报告**（见复核意见 ITEM 7）。\n`;
+  if (Array.isArray(fetchNotes) && fetchNotes.length) {
+    // N6（2026-11-13）：main() 已采集逐股实际取数源 → 如实写出降级链结果（与多窗口报告同口径），不再写「待补」。
+    const srcCount = {};
+    for (const nte of fetchNotes) { const s = nte.source || '未知'; srcCount[s] = (srcCount[s] || 0) + 1; }
+    const srcStr = Object.entries(srcCount).map(([s, c]) => `${s} ×${c}`).join('；');
+    md += `- **实际数据源标注**：${srcStr}（逐股如实标注，取自 \`hist.meta.source\`）；若非主源腾讯日K，则本报告数值基于降级源（新浪/东财）日K，重跑时主源恢复将得到主源口径数值。\n`;
+    const stale = fetchNotes.filter(nte => nte.lastDate && nte.lastDate !== asOf);
+    md += `- **截断末根核验**：${stale.length ? stale.map(nte => `${nte.symbol} 末根 ${nte.lastDate} ≠ asOf（滞后）`).join('；') : `${fetchNotes.length}/${fetchNotes.length} 只末根 = asOf，无滞后`}\n`;
+  } else {
+    // 历史 / 离线兜底：该轮生成时未采集取数源，无法从产物反推；N6 修复后 main() 总会传 fetchNotes，
+    // 此分支仅用于纯函数直调（守卫 / 离线重跑），文案保持历史口径，不得冒充任何一轮实际取数源。
+    md += `- **实际数据源标注**：⚠️ **取数源未记录，待补**——该轮生成时未采集逐股 hist.meta.source（N6 修复前 truncateToAsOf 的 filter 会丢弃挂在数组上的 .meta），无法从产物反推当时走的是腾讯主源还是新浪/东财降级源；多窗口报告 docs/logic/factor-corr-windows-${asOf.replace(/-/g, '')}.md §1.1 已把 0.725 vs 0.730 边值漂移归因为「数据源 / 取数时点差异，主源恢复后需同源复核」；多窗口标注的降级源属另一轮独立取数，**不可等同于本报告**（见复核意见 ITEM 7）。\n`;
+  }
 
   // 1. 因子清单
   md += `## 1. 因子清单（引自 lib/taxonomy.js · FACTOR_LIST 单源，20261112 收编）\n\n`;
@@ -592,8 +619,7 @@ async function mainWindows() {
   for (const sym of symbols) {
     const hist = await sd.getHistory(sym, '1y');
     if (!Array.isArray(hist) || hist.length === 0) { console.warn(`  [跳过] ${sym} getHistory 空`); continue; }
-    const trunc = truncateToAsOf(hist, asOf);
-    trunc.meta = hist.meta; // Array.filter 会丢掉挂在数组对象上的 .meta（数据源标注），手动补挂
+    const trunc = truncateToAsOf(hist, asOf); // N6（2026-11-13）：纯函数内已统一保留 .meta，不再需要手动补挂
     const lastDate = trunc.length ? trunc[trunc.length - 1].date : null;
     if (lastDate !== asOf) console.warn(`  [${sym}] 最后一根 ${lastDate} < asOf ${asOf}（数据滞后）`);
     histories.push({ symbol: sym, bars: trunc });
