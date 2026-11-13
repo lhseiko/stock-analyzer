@@ -25,6 +25,10 @@ const {
   extractBusinessBlocks, preserveBusinessBlocks,
   REVIEW_SECTION_HEAD, REVIEW_PLACEHOLDER, extractReviewNotesBlock,
 } = require('./analyze_factor_corr');
+// 报告正文（§1–Backlog），不含末尾「附：复核意见摘要」独立区块；
+// 逐字摘录 A 段引用了历史错误原文，正文状态类断言须按此范围扫描，避免语义误判。
+// 须放在解构之后：REVIEW_SECTION_HEAD 为 const，提前引用会触发暂时性死区。
+const BODY = REPORT.slice(0, REPORT.indexOf('\n' + REVIEW_SECTION_HEAD));
 
 // ---- 构造 buildReport 的确定性输入（零网络，不取真实行情） ----
 const n = FACTOR_KEYS.length;
@@ -76,6 +80,15 @@ ok(merged.indexOf('## 4.') < merged.indexOf(REVIEW_SECTION_HEAD), '独立区块�
 ok(preserveBusinessBlocks(generated, merged) === merged, '幂等：含复核意见区块再重跑一次输出不变');
 ok(extractReviewNotesBlock(generated) === null, '模板占位符不被误判为既有复核意见区块');
 
+console.log('[test_factor_corr_preserve] 复核意见 A 段逐字摘录（11:1x 去二次概括）');
+ok(!!reviewBlock && reviewBlock.includes('<!-- REVIEW_VERBATIM_BEGIN -->') && reviewBlock.includes('<!-- REVIEW_VERBATIM_END -->'), 'A 段带逐字摘录起止标记');
+const vbRaw = (reviewBlock || '').split('<!-- REVIEW_VERBATIM_BEGIN -->\n~~~markdown\n')[1];
+const verbatim = vbRaw ? vbRaw.split('\n~~~\n<!-- REVIEW_VERBATIM_END -->')[0] : null;
+ok(!!verbatim && verbatim.replace(/\s+$/, '') === REVIEW.replace(/\s+$/, ''), 'A 段与复核档案全文逐字相等（未改写、未浓缩，机器可验）');
+ok(!!reviewBlock && reviewBlock.includes('结论：不放行') && reviewBlock.includes('VERDICT:') && reviewBlock.includes('ITEM 3 ·'), 'A 段含「不放行」结论原文与 8 项判定');
+ok(!!reviewBlock && reviewBlock.includes('### B. agent 整改留痕与建议（非复核意见）'), 'B 段明确标注 agent 产出、与复核意见分离');
+ok(!!reviewBlock && reviewBlock.includes('路径 A（接受「待补」可归档）') && reviewBlock.includes('路径 B（不接受，要求先补）'), 'N6 送审两分支已写入 B 段');
+
 console.log('[test_factor_corr_preserve] 保留边界（不伪造业务结论）');
 ok(extractBusinessBlocks(generated).length === 0, '模板占位符不被误判为业务解读块');
 ok(preserveBusinessBlocks(generated, '') === generated, '既有报告为空 → 原样返回生成内容（首次生成）');
@@ -88,15 +101,18 @@ const both = preserveBusinessBlocks(twoSlots, twoBlocks);
 ok(!both.includes(BIZ_PLACEHOLDER) && both.includes('AI 草稿（簇2）'), '2 占位符 / 2 既有块 → 按出现顺序一一回填');
 
 console.log('[test_factor_corr_preserve] 报告整改结果（1–3 已改 / 5–6 原文保留）');
-ok(!REPORT.includes('回撤随上涨放大'), 'H1 旧错误方向「回撤随上涨放大」已消除');
-ok(REPORT.includes('drawdown_20d 数值趋近 0（回撤幅度收窄'), 'H1 已订正为「数值趋近 0 / 回撤幅度收窄」');
-ok(REPORT.includes('与 §3 的 +0.602 / +0.737 正相关一致'), 'H1 订正附 §3 实证符号依据');
-ok(REPORT.includes('① **已验证**') && REPORT.includes('簇数 1→1→1'), '待验证 ① 改为「已验证」并引用多窗口 §2');
-ok(REPORT.includes('局限 1（窗口敏感）') && REPORT.includes('**已完成**') && !REPORT.includes('本轮未实现'), '§5 局限 1 状态同步');
-ok(REPORT.includes('- [x] 多窗口对照') && !REPORT.includes('- [ ] 多窗口对照'), 'Backlog 多窗口条勾 [x]');
-ok(REPORT.includes('取数源未记录，待补') && !REPORT.includes('新浪日K(quotes.sina.cn) ×8'), '数据源如实写「未记录待补」，未冒充多窗口轮次的新浪源');
-ok(REPORT.includes('不构成独立信息增益'), '业务断言「不构成独立信息增益」原文保留（未擅自收敛）');
-ok(REPORT.includes('可压缩为单一「趋势强度」潜因子'), 'H2「可压缩为单一潜因子」原文保留（未擅自收敛）');
+ok(BODY.length > 0 && BODY.includes('## 5. 结论与局限') && !BODY.includes('### A.'), 'BODY 界定为报告正文（不含末尾独立区块）');
+ok(!!reviewBlock && reviewBlock.includes('回撤随上涨放大') && !BODY.includes('回撤随上涨放大'), 'A 段引用的历史错误原文不构成正文旧状态残留（扫描范围按语义隔离）');
+
+ok(!BODY.includes('回撤随上涨放大'), 'H1 旧错误方向「回撤随上涨放大」已消除');
+ok(BODY.includes('drawdown_20d 数值趋近 0（回撤幅度收窄'), 'H1 已订正为「数值趋近 0 / 回撤幅度收窄」');
+ok(BODY.includes('与 §3 的 +0.602 / +0.737 正相关一致'), 'H1 订正附 §3 实证符号依据');
+ok(BODY.includes('① **已验证**') && BODY.includes('簇数 1→1→1'), '待验证 ① 改为「已验证」并引用多窗口 §2');
+ok(BODY.includes('局限 1（窗口敏感）') && BODY.includes('**已完成**') && !BODY.includes('本轮未实现'), '§5 局限 1 状态同步');
+ok(BODY.includes('- [x] 多窗口对照') && !BODY.includes('- [ ] 多窗口对照'), 'Backlog 多窗口条勾 [x]');
+ok(BODY.includes('取数源未记录，待补') && !BODY.includes('新浪日K(quotes.sina.cn) ×8'), '数据源如实写「未记录待补」，未冒充多窗口轮次的新浪源');
+ok(BODY.includes('不构成独立信息增益'), '业务断言「不构成独立信息增益」原文保留（未擅自收敛）');
+ok(BODY.includes('可压缩为单一「趋势强度」潜因子'), 'H2「可压缩为单一潜因子」原文保留（未擅自收敛）');
 ok(REPORT.includes('复核存疑（待领域人裁决') && REPORT.includes('R²≈0.70') && REPORT.includes('30% 方差'), '两处业务断言加「复核存疑，待领域人裁决」旁注（附 R²/方差依据）');
 ok(REPORT.includes('方差解释率 ≥ 70%') && REPORT.includes('agent 建议，供领域人定夺'), 'H2 门槛为 agent 建议、明确由领域人定夺');
 ok(REPORT.includes('AI 草稿，待领域人复核') && REPORT.includes('待领域人确认/修正'), '仍标「AI 草稿，待领域人确认/修正」（未删、未转可归档）');
