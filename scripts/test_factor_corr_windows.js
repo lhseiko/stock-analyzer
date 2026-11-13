@@ -79,7 +79,10 @@ console.log('[test_factor_corr_windows] 报告数字与重算一致（防手改�
   const md1 = buildWindowsReport({ asOf: '2026-11-12', symbols: SYMBOLS, results, minAbs: 0.7, generatedAt: fixedAt, fetchNotes });
   const md2 = buildWindowsReport({ asOf: '2026-11-12', symbols: SYMBOLS, results, minAbs: 0.7, generatedAt: fixedAt, fetchNotes });
   ok(md1 === md2, '同输入两次构建 md 逐字节一致（确定性，无隐藏时间戳）');
-  ok(md1.includes('AI 生成，待人工复核'), '报告含「AI 生成，待人工复核」标注');
+  const headLine = md1.split('\n').slice(0, 3).join('\n'); // 仅页首前三行，Backlog 引述旧标注不计入
+  ok(headLine.includes('已归档') && !headLine.includes('待人工复核'), '页首已转「已归档」，不再标「待人工复核」（2026-11-13）');
+  ok(md1.includes('- [x] 删「AI 生成，待人工复核」标注'), 'Backlog 归档项已勾 [x]');
+  ok(md1.includes('- [ ] 业务解读人工填充'), '业务解读未填充如实保留 [ ]（不冒充完成）');
   ok(md1.includes('禁止手改'), '报告含「禁止手改」声明');
   ok(md1.includes('不做显著性检验') && md1.includes('同源不外推') && md1.includes('窗口敏感'), '局限声明齐全（窗口敏感/同源不外推/显著性）');
   ok(md1.includes('新浪日K(quotes.sina.cn) ×4'), '降级口径：实际数据源逐股计数动态标注（新浪 ×4）');
@@ -96,6 +99,20 @@ console.log('[test_factor_corr_windows] 报告数字与重算一致（防手改�
   // 防手改反证：篡改一个数字后 md 与重算不一致（守卫逻辑本身对得上）
   const tampered = md1.replace(`| 60 | ${results[0].validSamples} |`, `| 60 | ${results[0].validSamples + 1} |`);
   ok(tampered !== md1 && !md1.includes(`| 60 | ${results[0].validSamples + 1} |`), '反证：表格数字被手改 +1 后即偏离重算值（重跑会擦除）');
+}
+
+console.log('[test_factor_corr_windows] 链式连通最弱边脚注（2026-11-13 用户指令 + Trea ITEM 9）');
+{
+  const fixedAt = '2026-11-12T00:00:00.000Z';
+  const fetchNotes = SYMBOLS.map(sym => ({ symbol: sym, source: '新浪日K(quotes.sina.cn)', lastDate: '2026-11-12' }));
+  // 注入 120 窗口最弱边 0.576（< 阈值 0.7）→ 必须逐窗口标注链式连通；60 窗口 0.865 达阈值不标注
+  const forced = results.map(r => ({ ...r, minClusterEdge: r.days === 120 ? 0.576 : 0.865 }));
+  const md = buildWindowsReport({ asOf: '2026-11-12', symbols: SYMBOLS, results: forced, minAbs: 0.7, generatedAt: fixedAt, fetchNotes });
+  ok(md.includes('注：120 窗口 0.576 为链式连通最弱边，非直接两两相关，簇判定基于连通性。'), '120 窗口 0.576 补「链式连通最弱边」脚注（非直接两两相关）');
+  ok(!md.includes('注：60 窗口'), '最弱边达阈值的窗口不加该脚注（60 窗口 0.865）');
+  const allHigh = results.map(r => ({ ...r, minClusterEdge: 0.9 }));
+  const mdHigh = buildWindowsReport({ asOf: '2026-11-12', symbols: SYMBOLS, results: allHigh, minAbs: 0.7, generatedAt: fixedAt, fetchNotes });
+  ok(!mdHigh.includes('为链式连通最弱边'), '全部窗口达阈值时脚注整体不出现（条件生成，非硬编码）');
 }
 
 console.log('[test_factor_corr_windows] 四点口径（表头警示/簇内平均列/历史对照归因/局限补条）');

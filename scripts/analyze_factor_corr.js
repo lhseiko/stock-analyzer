@@ -518,7 +518,7 @@ function analyzeWindowsCore({ histories, windows, minAbs = MIN_ABS_CORR, insuffi
 function buildWindowsReport({ asOf, symbols, results, minAbs = MIN_ABS_CORR, generatedAt, fetchNotes, histRef }) {
   let md = '';
   md += `# 因子相关性多窗口对照报告（backlog ③）\n`;
-  md += `> ⚠️ **AI 生成，待人工复核**；**不改权重，仅供裁决**（只读分析产物，不影响任何业务表与既有模型权重）。\n`;
+  md += `> ✅ **已归档，仅供裁决**（2026-11-13 领域人确认归档；不改权重，只读分析产物，不影响任何业务表与既有模型权重）。\n`;
   md += `> ⚠️ **数字由脚本动态插入（analyzeWindowsCore 重算），禁止手改**——手改内容会在下次重跑时被擦除。\n\n`;
   md += `- **数据截止日（asOf）**：${asOf}（最近完整交易日，lookahead 口径截断；取数一次、三窗口共用）\n`;
   md += `- **样本**：自选股池 ${symbols.length} 只（${symbols.join('、')}）\n`;
@@ -546,6 +546,13 @@ function buildWindowsReport({ asOf, symbols, results, minAbs = MIN_ABS_CORR, gen
     md += `| ${r.days} | ${r.validSamples} | ${r.pairCount} | ${r.highPairCount} | ${r.clusters.length} | ${members} | ${fmt(r.avgAbsAll)} | ${r.clusters.length === 0 ? '—' : r.clusters.map((c, i) => (r.clusters.length === 1 ? fmt(c.avgAbs) : `簇${i + 1}:${fmt(c.avgAbs)}`)).join('；')} | ${r.maxAbsPair ? `${fmt(r.maxAbs)}（${r.maxAbsPair[0]}·${r.maxAbsPair[1]}）` : '—'} | ${r.minClusterEdge == null ? '—' : fmt(r.minClusterEdge)} | ${second} | ${verdict} |\n`;
   }
   md += `\n> 有效样本口径与单窗口报告一致（mom_20d 等 20 根预热主因子齐备行 = 各股（窗口−20）根；macd_hist 35 根预热的因子对按 pairwise-complete 独立取样）。样本判定阈值：有效样本 < ${INSUFFICIENT_SAMPLES} 标「样本不足，不结论」。\n`;
+  // 2026-11-13（用户指令 + Trea 审计 ITEM 9）：簇内最弱边低于阈值的窗口，逐窗口标注「链式连通最弱边」，
+  // 防止把 <阈值的边误读为该因子对直接两两相关。数字由 results 动态取，不写死。
+  const chainEdgeResults = results.filter(r => r.minClusterEdge != null && r.minClusterEdge < minAbs);
+  if (chainEdgeResults.length) {
+    md += `\n`;
+    for (const r of chainEdgeResults) md += `> 注：${r.days} 窗口 ${fmt(r.minClusterEdge)} 为链式连通最弱边，非直接两两相关，簇判定基于连通性。\n`;
+  }
   if (histRef && Number.isFinite(histRef.avgAbs) && Number.isFinite(histRef.minEdge)) {
     md += `\n### 1.1 与历史单窗口报告对照（防口径误读与归因臆测）\n\n`;
     md += `- 历史基线：\`docs/logic/factor-corr-${(histRef.asOf || asOf).replace(/-/g, '')}.md\`（asOf ${histRef.asOf || asOf}，250 日）：**簇内平均 ${histRef.avgAbs.toFixed(3)}、簇内最弱边 ${histRef.minEdge.toFixed(3)}**（该报告生成时未标注数据源）。\n`;
@@ -587,7 +594,8 @@ function buildWindowsReport({ asOf, symbols, results, minAbs = MIN_ABS_CORR, gen
   md += `- **降级源影响（不写「无影响」）**：本轮数据源若为降级源（新浪/东财兜底），其量纲/缺失模式可能影响 vol_ratio、mom_20d 等因子的相关强度（新浪日K此前修过 100 倍量纲错位，P2-1）；**跨日对照需固定数据源或标注源差异**。\n\n`;
   md += `## Backlog\n\n`;
   md += `- [x] 多窗口对照（60/120/250）验证相关结构稳健性（本报告）。\n`;
-  md += `- [ ] 业务解读人工填充（复核后删「AI 生成，待人工复核」标注，报告转「可归档」）。\n`;
+  md += `- [x] 删「AI 生成，待人工复核」标注、报告转「可归档」（2026-11-13 用户指令完成）。\n`;
+  md += `- [ ] 业务解读人工填充（簇级一句话；本报告暂无业务解读块）。\n`;
   return md;
 }
 
