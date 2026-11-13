@@ -6,7 +6,7 @@
  *   1. buildReport() 模板状态同步：数据源标注、局限 1「已完成」、Backlog [x]（防重跑写回旧状态）；
  *   2. preserveBusinessBlocks() 重跑不丢【业务解读】块：逐字保留、占位符消失、数字区仍来自脚本重算；
  *   3. 保留边界：占位符不当业务结论、占位符多于块时不伪造、多簇按序回填、幂等；
- *   4. 报告整改结果：H1 方向订正、① 已验证、两处业务断言原文保留 + 复核存疑旁注、仍标 AI 草稿；
+ *   4. 报告整改结果：H1 方向订正、① 已验证、两处业务断言按领域人裁决改写、删草稿标记转「可归档」；
  *   5. 复核档案一字不改（md5 钉死历史记录）。
  * 边界：零网络；只读本地文件，不写盘。
  */
@@ -53,7 +53,7 @@ ok((generated.split(BIZ_PLACEHOLDER).length - 1) === 1, '单簇场景恰好 1 �
 console.log('[test_factor_corr_preserve] 重跑不丢业务解读块');
 const blocks = extractBusinessBlocks(REPORT);
 ok(blocks.length === 1, `从现行报告提取到 ${blocks.length} 个业务解读块（期望 1）`);
-ok(blocks[0].includes('AI 草稿') && blocks[0].includes('补录'), '业务解读块含「AI 草稿」与「补录」');
+ok(blocks[0].includes('可归档') && blocks[0].includes('补录'), '业务解读块含「可归档」与「补录」');
 ok(blocks[0].includes('H1') && blocks[0].includes('① **已验证**') && blocks[0].includes('补录'), '业务解读块含整改后的 H1 / ① 已验证 / 补录');
 ok(!blocks[0].includes('复核存疑') && !blocks[0].includes('H2 门槛') && !blocks[0].includes('整改留痕'), '业务解读块内无 agent 旁注（领域人判断独立性不受影响）');
 const merged = preserveBusinessBlocks(generated, REPORT);
@@ -70,10 +70,10 @@ console.log('[test_factor_corr_preserve] 复核意见摘要独立区块（10:4x 
 ok(generated.includes(REVIEW_PLACEHOLDER), '模板末尾输出复核意见区块占位符');
 const reviewBlock = extractReviewNotesBlock(REPORT);
 ok(!!reviewBlock && reviewBlock.startsWith(REVIEW_SECTION_HEAD), `现行报告末尾存在独立区块（${reviewBlock ? reviewBlock.length : 0} 字符）`);
-ok(!!reviewBlock && reviewBlock.includes('非报告原文') && reviewBlock.includes('待领域人裁决'), '独立区块标注「非报告原文 / 待领域人裁决」');
+ok(!!reviewBlock && reviewBlock.includes('非报告原文') && reviewBlock.includes('领域人书面裁决「有条件通过」') && reviewBlock.includes('已转「可归档」'), '独立区块标注「非报告原文 / 领域人裁决有条件通过 / 已转可归档」');
 ok(!!reviewBlock && reviewBlock.includes('9631f759114758ad214d34fc44b25a5f'), '独立区块标注复核档案来源与 md5');
-ok(!!reviewBlock && reviewBlock.includes('复核存疑') && reviewBlock.includes('ITEM 3') && reviewBlock.includes('ITEM 4'), '独立区块含两处业务断言存疑理由与 ITEM 编号');
-ok(!!reviewBlock && reviewBlock.includes('方差解释率 ≥ 70%') && reviewBlock.includes('供领域人定夺'), '独立区块含 H2 建议门槛且明确由领域人定夺');
+ok(!!reviewBlock && reviewBlock.includes('领域人裁决（2026-11-13，书面）') && reviewBlock.includes('ITEM 3') && reviewBlock.includes('ITEM 4'), '独立区块含领域人书面裁决与 ITEM 3/4 逐字依据');
+ok(!!reviewBlock && reviewBlock.includes('不设 70% 门槛') && reviewBlock.includes('未采纳'), '独立区块载明裁决不设门槛、agent 建议未采纳');
 ok(!!reviewBlock && reviewBlock.includes('整改留痕') && reviewBlock.includes('移至本独立区块'), '独立区块含整改留痕与旁注移出说明');
 ok(!merged.includes(REVIEW_PLACEHOLDER) && !!reviewBlock && merged.includes(reviewBlock), '重跑回填复核意见区块全文，占位符消失');
 ok(merged.indexOf('## 4.') < merged.indexOf(REVIEW_SECTION_HEAD), '独立区块位于 §4 之后（正文与批注物理分离）');
@@ -97,9 +97,9 @@ ok(preserveBusinessBlocks(generated, generated) === generated, '既有报告仅�
 const twoSlots = generated.replace(BIZ_PLACEHOLDER, BIZ_PLACEHOLDER + '\n\n### 簇 2：a · b\n' + BIZ_PLACEHOLDER);
 const partial = preserveBusinessBlocks(twoSlots, REPORT);
 ok(partial.includes(blocks[0]) && partial.includes(BIZ_PLACEHOLDER), '2 占位符 / 1 既有块 → 按序回填第 1 个，多余占位符保留');
-const twoBlocks = blocks[0] + '\n\n### 簇 2：a · b\n' + blocks[0].replace('AI 草稿', 'AI 草稿（簇2）');
+const twoBlocks = blocks[0] + '\n\n### 簇 2：a · b\n' + blocks[0].replace('可归档', '可归档（簇2）');
 const both = preserveBusinessBlocks(twoSlots, twoBlocks);
-ok(!both.includes(BIZ_PLACEHOLDER) && both.includes('AI 草稿（簇2）'), '2 占位符 / 2 既有块 → 按出现顺序一一回填');
+ok(!both.includes(BIZ_PLACEHOLDER) && both.includes('可归档（簇2）'), '2 占位符 / 2 既有块 → 按出现顺序一一回填');
 
 console.log('[test_factor_corr_preserve] 报告整改结果（1–3 已改 / 5–6 原文保留）');
 ok(BODY.length > 0 && BODY.includes('## 5. 结论与局限') && !BODY.includes('### A.'), 'BODY 界定为报告正文（不含末尾独立区块）');
@@ -112,12 +112,12 @@ ok(BODY.includes('① **已验证**') && BODY.includes('簇数 1→1→1'), '待
 ok(BODY.includes('局限 1（窗口敏感）') && BODY.includes('**已完成**') && !BODY.includes('本轮未实现'), '§5 局限 1 状态同步');
 ok(BODY.includes('- [x] 多窗口对照') && !BODY.includes('- [ ] 多窗口对照'), 'Backlog 多窗口条勾 [x]');
 ok(BODY.includes('取数源未记录，待补') && !BODY.includes('新浪日K(quotes.sina.cn) ×8'), '数据源如实写「未记录待补」，未冒充多窗口轮次的新浪源');
-ok(BODY.includes('不构成独立信息增益'), '业务断言「不构成独立信息增益」原文保留（未擅自收敛）');
-ok(BODY.includes('可压缩为单一「趋势强度」潜因子'), 'H2「可压缩为单一潜因子」原文保留（未擅自收敛）');
-ok(REPORT.includes('复核存疑（待领域人裁决') && REPORT.includes('R²≈0.70') && REPORT.includes('30% 方差'), '两处业务断言加「复核存疑，待领域人裁决」旁注（附 R²/方差依据）');
-ok(REPORT.includes('方差解释率 ≥ 70%') && REPORT.includes('agent 建议，供领域人定夺'), 'H2 门槛为 agent 建议、明确由领域人定夺');
-ok(REPORT.includes('AI 草稿，待领域人复核') && REPORT.includes('待领域人确认/修正'), '仍标「AI 草稿，待领域人确认/修正」（未删、未转可归档）');
-ok(REPORT.includes('整改留痕（2026-11-13') && REPORT.includes('非领域人签字'), '报告内留痕「谁改、改了什么、依据哪条复核意见」');
+ok(BODY.includes('相关性高，是否独立待验证') && !BODY.includes('不构成独立信息增益'), '第5项按领域人裁决改为「相关性高，是否独立待验证」');
+ok(BODY.includes('是否可压缩为单一潜因子待验证') && !BODY.includes('该簇可压缩为单一'), '第6项 H2 按裁决改为「是否可压缩为单一潜因子待验证」');
+ok(REPORT.includes('领域人裁决（2026-11-13，书面）') && REPORT.includes('有条件通过') && REPORT.includes('R²≈0.70'), 'B 段留痕领域人书面裁决、有条件通过结论与逐字依据');
+ok(REPORT.includes('不设 70% 门槛') && REPORT.includes('未采纳'), 'H2 门槛按裁决不设 70%、agent 建议未采纳');
+ok(!BODY.includes('AI 草稿') && BODY.includes('可归档') && !BODY.includes('待领域人确认/修正'), '正文已删草稿标记、转「可归档」（A 段历史摘录不在 BODY 内）');
+ok(REPORT.includes('整改留痕（2026-11-13') && REPORT.includes('非领域人签字') && REPORT.includes('路径 A') && REPORT.includes('归档后补项'), '报告内留痕「谁改、依据哪条复核意见」+ 领域人取 N6 路径 A');
 
 console.log('[test_factor_corr_preserve] 复核档案一字不改（历史记录钉死）');
 const md5 = crypto.createHash('md5').update(REVIEW).digest('hex');
