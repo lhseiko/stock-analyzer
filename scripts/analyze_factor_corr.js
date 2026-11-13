@@ -293,7 +293,18 @@ function extractBusinessBlocks(existingMd) {
 }
 
 /** 提取报告末尾「附：复核意见摘要」独立区块（含标题、来源说明与全部子项）。
- *  前置约定：该区块须为报告最后一节；无此节返回 null（首次生成）。零 IO / 零网络。 */
+ *  前置约定：该区块须为报告最后一节；无此节返回 null（首次生成）。零 IO / 零网络。
+ *
+ *  N7 区块更新规则（2026-11-13 11:3x 用户裁决；本轮只记注释、不改函数逻辑，
+ *  第二次书面复核时按此执行）：
+ *   - 采用「替换」，不采用「追加」：A 段每次只放最新一次复核档案全文，报告只承载最终结论链；
+ *     历史复核按日期另存 docs/logic/factor-corr-20261112-review-<date>.md 归档为审计材料，
+ *     报告只链最新一次。
+ *   - 不采用「追加」的理由：A 段累积多次复核会让报告越滚越长，且「放行」与「不放行」并存，
+ *     读者需自行判断哪条有效，属状态失真；报告是交付物，历史复核属审计材料。
+ *   - 执行时须同步更新区块来源标注、md5 与「A 段逐字相等」守卫的比对基准，
+ *     勿留旧「不放行」区块与新结论并存。
+ */
 function extractReviewNotesBlock(existingMd) {
   if (typeof existingMd !== 'string' || !existingMd) return null;
   const lines = existingMd.split('\n');

@@ -82,7 +82,8 @@ ok(extractReviewNotesBlock(generated) === null, '模板占位符不被误判为�
 
 console.log('[test_factor_corr_preserve] 复核意见 A 段逐字摘录（11:1x 去二次概括）');
 ok(!!reviewBlock && reviewBlock.includes('<!-- REVIEW_VERBATIM_BEGIN -->') && reviewBlock.includes('<!-- REVIEW_VERBATIM_END -->'), 'A 段带逐字摘录起止标记');
-const vbRaw = (reviewBlock || '').split('<!-- REVIEW_VERBATIM_BEGIN -->\n~~~markdown\n')[1];
+// 隔离说明位于 BEGIN 之后、围栏之前，故按 ~~~markdown 围栏定位逐字区，不按 BEGIN 拼接。
+const vbRaw = (reviewBlock || '').split('~~~markdown\n')[1];
 const verbatim = vbRaw ? vbRaw.split('\n~~~\n<!-- REVIEW_VERBATIM_END -->')[0] : null;
 ok(!!verbatim && verbatim.replace(/\s+$/, '') === REVIEW.replace(/\s+$/, ''), 'A 段与复核档案全文逐字相等（未改写、未浓缩，机器可验）');
 ok(!!reviewBlock && reviewBlock.includes('结论：不放行') && reviewBlock.includes('VERDICT:') && reviewBlock.includes('ITEM 3 ·'), 'A 段含「不放行」结论原文与 8 项判定');
