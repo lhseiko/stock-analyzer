@@ -39,6 +39,11 @@ const HomeHotTopics = (() => {
     if (r.C) sub.push(`韭菜C ${r.C.raw}(${r.C.n == null ? '--' : r.C.n})`);
     sub.push(`舆情看多 ${r.D == null ? '--' : r.D + '%'}`);
     if (r.E != null) sub.push(`社区看多 ${r.E}%`);
+    // 20261114c 雪球热度：板块分 + 榜内最热成分股（让板块热度可落到个股）
+    if (r.xq && r.xq.score != null) {
+      const xqStock = r.xq.topStock ? `(${r.xq.topStock} 第${r.xq.topRank}名)` : '';
+      sub.push(`雪球 ${r.xq.score}${xqStock}${r.xq.soloHot ? '·雪球单源热' : ''}`);
+    }
     const maxStock = r.maxStock ? `<span class="htw-stock" title="5日主力净流入最大股">${escapeHtml(r.maxStock)}</span>` : '';
     return `
       <div class="htw-item${r.alarm ? ' htw-alarm-row' : ''}">
@@ -99,6 +104,7 @@ const HomeHotTopics = (() => {
       `<span class="htw-chip">舆情快讯: ${escapeHtml(src.news || '--')}</span>`,
       `<span class="htw-chip">社区讨论: 东财股吧 ${escapeHtml(src.gubaEm || '--')}（${escapeHtml(src.gubaEmBoards || '--')}）· 同花顺 ${escapeHtml(src.guba || '--')}（${escapeHtml(src.gubaBoards || '--')}）</span>`,
       `<span class="htw-chip">5日资金流: ${escapeHtml(src.market || '--')}</span>`,
+      `<span class="htw-chip">雪球热度: ${escapeHtml(src.xq || '--')}（${escapeHtml(src.xqBoards || '--')} 板块 / 榜内 ${escapeHtml(src.xqRows || '--')} 只）</span>`,
     ].join('');
     const foot = ((data.footnotes || []).map(f => `<div class="htw-foot-line">${escapeHtml(f)}</div>`)).join('');
     const more = data.rowsTotal > rows.length ? `<div class="htw-foot-line">共 ${data.rowsTotal} 个板块有数据，当前显示前 ${rows.length} 名。</div>` : '';

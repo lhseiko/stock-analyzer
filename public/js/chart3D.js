@@ -73,8 +73,8 @@
         barSize: s.barSize || [14, 14],
         bevelSize: 0.6,
         bevelSmoothness: 2,
-        itemStyle: { color: itemColor || '#7fa8c9', opacity: 0.92 },
-        emphasis: { itemStyle: { color: itemColor || '#7fa8c9', opacity: 1 } },
+        itemStyle: { color: itemColor || '#3B82F6', opacity: 0.92 },
+        emphasis: { itemStyle: { color: itemColor || '#3B82F6', opacity: 1 } },
       };
     });
 
@@ -157,7 +157,7 @@
   // opt = { centerText, data: [{name,value,itemStyle}], radius:[a,b], palette }
   function donut(opt) {
     var r = opt.radius || ['38%', '62%'];
-    var palette = opt.palette || ['#7fa8c9', '#cf8e8e', '#8fb89a', '#cdab74', '#a99bc4', '#6fb0a4', '#9aa7b0', '#b0a08c'];
+    var palette = opt.palette || ['#3B82F6', '#F5A524', '#A855F7', '#38BDF8', '#E8D44D', '#8B7FE8', '#8A9BB0', '#E8D44D'];
     var data = (opt.data || []).map(function (d, i) {
       return {
         name: d.name,
@@ -272,7 +272,7 @@
   // 视觉升级不动任何数据与坐标换算（20261003g，参照参考图等轴测立体柱样式）。
   // opt = { xData, series: [{ name, data: [值 或 {value,color}], color }], unit, depth, noTooltip }
   function bar25D(opt) {
-    var palette = opt.palette || ['#7fa8c9', '#cf8e8e', '#8fb89a', '#cdab74', '#a99bc4', '#6fb0a4', '#9aa7b0', '#b0a08c'];
+    var palette = opt.palette || ['#3B82F6', '#F5A524', '#A855F7', '#38BDF8', '#E8D44D', '#8B7FE8', '#8A9BB0', '#E8D44D'];
     var unit = opt.unit || '';
     var horizontal = !!opt.horizontal;
     var depthFixed = opt.depth != null ? opt.depth : 8;
@@ -280,7 +280,7 @@
     // 颜色解析：#hex / rgb() / rgba()（半透明筹码光带需保留 alpha）
     function hexToRgb(c) {
       var s = String(c || '').trim();
-      if (!s) return { r: 127, g: 168, b: 201, a: 1 };
+      if (!s) return { r: 59, g: 130, b: 246, a: 1 };
       if (s.charAt(0) === '#') {
         var h = s.slice(1);
         if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
@@ -288,7 +288,7 @@
           var n = parseInt(h, 16);
           return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255, a: 1 };
         }
-        return { r: 127, g: 168, b: 201, a: 1 };
+        return { r: 59, g: 130, b: 246, a: 1 };
       }
       var m = s.match(/rgba?\(([^)]+)\)/i);
       if (m) {
@@ -297,7 +297,7 @@
           return { r: parts[0], g: parts[1], b: parts[2], a: parts.length >= 4 && !isNaN(parts[3]) ? parts[3] : 1 };
         }
       }
-      return { r: 127, g: 168, b: 201, a: 1 };
+      return { r: 59, g: 130, b: 246, a: 1 };
     }
     function mix(col, t, target) {
       var o = target || { r: 255, g: 255, b: 255 };

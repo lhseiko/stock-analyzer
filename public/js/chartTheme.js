@@ -11,6 +11,15 @@
  *   3. SA_CHART.attach(chart)：包装 setOption，模块在 init 处调用一次即全模块生效。
  *   4. SA_CHART.grad / rgba：渐变面积与透明色助手，供各图表现代化视觉使用。
  *
+ * [20261114a] 图例「颜色 + 形状」双编码改造（用户裁决：除主图模块外全站图表）
+ *   - 分类配色统一为方案 A（6 色跨色系 + 钢灰），图例与图表数据系列禁用红绿；
+ *     文字分析中表示涨跌 / 利好 / 利空的红绿不受影响，按涨跌方向上色的 series 颜色保持不动。
+ *   - 图例图标按该组数据在图中的表达方式生成：柱→圆角方块、实线→实线横线、
+ *     虚线→虚线横线、点线→点线横线、饼 / 散点→圆点，不再一律方块（WCAG 1.4.1）。
+ *   - 主图模块（charts.js：K 线蜡烛 / 分时 / MACD / KDJ / BOLL / 期货对比）整体豁免：
+ *     attach(chart, { legendSemantics: false }) 让该实例跳过色板注入与图例语义，
+ *     继续继承 THEME.legend.icon='roundRect' 与 THEME.color，视觉零变化。
+ *
  * 加载顺序：必须在 echarts 之后、其他图表模块（charts.js 等）之前。
  */
 (function () {
@@ -31,7 +40,23 @@
     tooltipBg: 'rgba(22,27,34,0.97)',
     tooltipBorder: 'rgba(255,255,255,0.10)',
     // 既有柔和调色板（保持不变，避免改变未显式指定颜色的序列的观感）
+    // 旧柔和色板：仅保留给主图模块（豁免实例继承 THEME.color 时原样使用，视觉零变化）
     palette: ['#7fa8c9', '#cf8e8e', '#8fb89a', '#cdab74', '#a99bc4', '#6fb0a4', '#9aa7b0', '#b0a08c'],
+  };
+
+  // [20261114a] 分类配色方案 A（用户 2026-11-14 裁决）：同一张图前 6 组强制跨色系。
+  // 色相依次为 217° / 38° / 271° / 199° / 55° / 250°，避开红（340°–20°）与绿（80°–160°）。
+  var PALETTE_A = ['#3B82F6', '#F5A524', '#A855F7', '#38BDF8', '#E8D44D', '#8B7FE8'];
+  var NEUTRAL_A = '#8A9BB0';   // 钢灰：基准线 / 均值线
+
+  // [20261114a] 图例形状：ECharts path:// 图标，路径坐标系 24×8（会被缩放到 itemWidth×itemHeight）。
+  // 实线 / 虚线 / 点线用「横线」而非方块，使图例形状直接对应图中的线条表达方式。
+  var LEGEND_ICONS = {
+    bar: 'roundRect',
+    line: 'path://M0,3.2 L24,3.2 L24,5.2 L0,5.2 Z',
+    dashed: 'path://M0,3.2 L6,3.2 L6,5.2 L0,5.2 Z M9,3.2 L15,3.2 L15,5.2 L9,5.2 Z M18,3.2 L24,3.2 L24,5.2 L18,5.2 Z',
+    dotted: 'path://M0,3.2 L2,3.2 L2,5.2 L0,5.2 Z M4.4,3.2 L6.4,3.2 L6.4,5.2 L4.4,5.2 Z M8.8,3.2 L10.8,3.2 L10.8,5.2 L8.8,5.2 Z M13.2,3.2 L15.2,3.2 L15.2,5.2 L13.2,5.2 Z M17.6,3.2 L19.6,3.2 L19.6,5.2 L17.6,5.2 Z M22,3.2 L24,3.2 L24,5.2 L22,5.2 Z',
+    point: 'circle',
   };
 
   var TT_SHELL_CSS = 'border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,0.55);backdrop-filter:blur(6px);';
@@ -53,6 +78,8 @@
     textStyle: { color: '#C9D1D9' },
     title: { textStyle: { color: '#C9D1D9', fontWeight: 600 }, subtextStyle: { color: C.textDim } },
     legend: {
+      // [20261114a] 主题级默认方块只服务于「主图模块豁免实例」（charts.js，视觉零变化）。
+      // 其余模块由 polish() 对 legend.data 逐项写入语义图标，优先级高于此处。
       icon: 'roundRect',
       itemWidth: 12,
       itemHeight: 8,
@@ -124,8 +151,111 @@
     return { color: rgba(color, topAlpha) };
   }
 
-  // 外壳级修补：统一 tooltip 外壳与图例图标；不动 formatter/trigger/series 等业务字段
-  function polish(opt) {
+  // [20261114a] 按 series 在图中的表达方式返回图例图标（纯函数，供守卫单测）
+  function legendIconFor(s) {
+    if (!s || typeof s !== 'object') return LEGEND_ICONS.bar;
+    var t = s.type;
+    if (t === 'pie' || t === 'scatter' || t === 'effectScatter') return LEGEND_ICONS.point;
+    if (t === 'line') {
+      var lt = s.lineStyle && s.lineStyle.type;
+      if (lt === 'dashed') return LEGEND_ICONS.dashed;
+      if (lt === 'dotted') return LEGEND_ICONS.dotted;
+      return LEGEND_ICONS.line;   // 面积图同样用横线
+    }
+    // bar / custom（2.5D 立体柱）/ candlestick / 其余 → 圆角方块
+    return LEGEND_ICONS.bar;
+  }
+
+  // [20261114b] 方向着色识别：数据项上出现涨红跌绿（含旧版暗红/暗绿）时，该 series 颜色保持不动
+  var DIRECTION_COLORS = ['#F6465D', '#0ECB81', '#CF8E8E', '#8FB89A'];
+  function isDirectionColor(c) {
+    if (typeof c !== 'string') return false;
+    var u = c.toUpperCase();
+    for (var k = 0; k < DIRECTION_COLORS.length; k++) if (u === DIRECTION_COLORS[k]) return true;
+    return u.indexOf('RGBA(207,142,142') === 0 || u.indexOf('RGBA(143,184,154') === 0;
+  }
+  function hasDirectionColors(s) {
+    var d = s && s.data;
+    if (!Array.isArray(d)) return false;
+    for (var i = 0; i < d.length && i < 40; i++) {
+      var it = d[i];
+      if (!it || typeof it !== 'object') continue;
+      var c = it.color || (it.itemStyle && it.itemStyle.color);
+      if (isDirectionColor(c)) return true;
+    }
+    return false;
+  }
+
+  // [20261114b] 按 series 索引给「完全没写颜色」的序列补显式分类色（纯函数，供守卫单测）。
+  // 根因：ECharts 对无显式色的 series 依赖主题色板隐式分色；SA3D.bar25D 把柱改写成 custom 且
+  // data 项自带颜色时，隐式分色结果不稳定——「机构持仓变化」卡片实测出现柱与折线同为亮蓝、
+  // 图例两项颜色无法区分。显式写入后，曲线与图例颜色都由代码锁定，不再受 ECharts 分色策略影响。
+  function normalizeSeriesColors(opt) {
+    var series = Array.isArray(opt.series) ? opt.series : null;
+    if (!series) return opt;
+    series.forEach(function (s, i) {
+      if (!s || typeof s !== 'object') return;
+      // 方向着色（函数色 / 数据项条件色）一律跳过，红涨绿跌语义不变
+      if (typeof s.color === 'function' ||
+          (s.itemStyle && typeof s.itemStyle.color === 'function') ||
+          (s.lineStyle && typeof s.lineStyle.color === 'function') ||
+          hasDirectionColors(s)) return;
+      var explicit = s.color || (s.itemStyle && s.itemStyle.color) || (s.lineStyle && s.lineStyle.color);
+      if (typeof explicit === 'string' && explicit) return;   // 已有显式色，不改
+      var c = PALETTE_A[i % PALETTE_A.length];
+      s.itemStyle = Object.assign({}, s.itemStyle, { color: c });
+      if (s.type === 'line') s.lineStyle = Object.assign({}, s.lineStyle, { color: c });
+    });
+    return opt;
+  }
+
+  // 图例项颜色：优先取同名 series 的显式分类色；无显式色或为方向色时按图例序号取方案 A
+  function legendColor(s, i) {
+    if (s && typeof s === 'object') {
+      var c = s.color || (s.itemStyle && s.itemStyle.color) || (s.lineStyle && s.lineStyle.color);
+      if (typeof c === 'string' && c.charAt(0) === '#' && !isDirectionColor(c)) return c;
+    }
+    return PALETTE_A[i % PALETTE_A.length];
+  }
+
+  // [20261114a/b] 给非豁免实例的图例逐项写入语义图标 + 显式颜色；
+  // 不改 formatter/trigger/series 数据等业务字段。
+  function applyLegendSemantics(opt) {
+    if (!opt || typeof opt !== 'object') return opt;
+    var series = Array.isArray(opt.series) ? opt.series : (opt.series ? [opt.series] : []);
+    var legends = Array.isArray(opt.legend) ? opt.legend : (opt.legend ? [opt.legend] : []);
+    var byName = {};
+    series.forEach(function (s) { if (s && s.name != null) byName[String(s.name)] = s; });
+    legends.forEach(function (lg) {
+      if (!lg || typeof lg !== 'object' || lg.show === false) return;
+      var data = lg.data;
+      if (Array.isArray(data) && data.length) {
+        // 逐项按同名 series 推断；找不到同名则按位置回退（饼图扇区名 → 唯一的 pie series → 圆点）
+        lg.data = data.map(function (item, i) {
+          var name = (item && typeof item === 'object') ? item.name : item;
+          var s = byName[String(name)] || series[i];
+          var out = (item && typeof item === 'object') ? item : { name: item };
+          out.icon = legendIconFor(s);
+          if (!out.itemStyle || typeof out.itemStyle !== 'object' || !out.itemStyle.color) {
+            out.itemStyle = Object.assign({}, out.itemStyle, { color: legendColor(s, i) });
+          }
+          return out;
+        });
+      } else if (series.length >= 2) {
+        // 未显式给 legend.data 的混合图：按 series 顺序生成，避免退化成「一律同形」
+        lg.data = series.filter(function (s) { return s && s.name != null; })
+          .map(function (s, i) {
+            return { name: s.name, icon: legendIconFor(s), itemStyle: { color: legendColor(s, i) } };
+          });
+      } else if (series.length === 1) {
+        lg.icon = legendIconFor(series[0]);
+      }
+    });
+    return opt;
+  }
+
+  // 外壳级修补：统一 tooltip 外壳 + 非豁免实例的方案 A 色板与图例语义图标
+  function polish(opt, opts) {
     if (!opt || typeof opt !== 'object') return opt;
     var t = opt.tooltip;
     if (t && typeof t === 'object') {
@@ -138,17 +268,28 @@
         t.extraCssText = TT_SHELL_CSS + (t.extraCssText || '');
       }
     }
-    var lg = opt.legend;
-    if (lg && typeof lg === 'object' && !lg.icon) lg.icon = 'roundRect';
+    // 主图豁免实例：跳过色板注入与图例语义，保持 THEME 原样（用户裁决 4）
+    if (!(opts && opts.exempt)) {
+      opt.color = PALETTE_A.slice();
+      normalizeSeriesColors(opt);
+      applyLegendSemantics(opt);
+    }
     return opt;
   }
 
   // 包装实例：setOption 自动过 polish；模块在 echarts.init 之后调用一次即可全模块生效
-  function attach(chart) {
-    if (!chart || chart.__saPolished) return chart;
+  // opts.legendSemantics === false → 主图豁免（charts.js 唯一使用点）
+  function attach(chart, opts) {
+    if (!chart) return chart;
+    var exempt = !!(opts && opts.legendSemantics === false);
+    if (chart.__saPolished) {
+      if (exempt) chart.__saLegendExempt = true;
+      return chart;
+    }
     var raw = chart.setOption.bind(chart);
+    chart.__saLegendExempt = exempt;
     chart.setOption = function (opt) {
-      try { polish(opt); } catch (_) { /* 视觉修补失败不影响渲染 */ }
+      try { polish(opt, { exempt: chart.__saLegendExempt }); } catch (_) { /* 视觉修补失败不影响渲染 */ }
       return raw.apply(chart, arguments);
     };
     chart.__saPolished = true;
@@ -169,6 +310,13 @@
 
   window.SA_CHART = {
     colors: C,
+    paletteA: PALETTE_A,
+    neutralA: NEUTRAL_A,
+    legendIcons: LEGEND_ICONS,
+    legendIconFor: legendIconFor,
+    normalizeSeriesColors: normalizeSeriesColors,
+    legendColor: legendColor,
+    applyLegendSemantics: applyLegendSemantics,
     grad: grad,
     rgba: rgba,
     polish: polish,

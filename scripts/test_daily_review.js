@@ -96,13 +96,17 @@ t('前端 Markdown 直出：不再套卡片组件，渲染器本地随包、零 
   assert.ok(!/https?:\/\/[^"']*\.min\.js/.test(md), '不得引用外部 CDN');
   assert.ok(md.includes('escape') && md.includes('safeUrl'), '必须有 XSS 防护');
 });
-t('APP_VERSION 与各 HTML 的 ?v= 缓存戳同步 20261112a（bump_version 全站统一）', () => {
-  assert.ok(read('server.js').includes("const APP_VERSION = '20261112a'"));
-  assert.ok(read('public/daily-review.html').includes('js/dailyReview.js?v=20261112a'), 'daily-review 的 dailyReview.js 版本戳已对齐');
-  assert.ok(read('public/daily-review.html').includes('js/markdown.js?v=20261112a'), 'daily-review 的 markdown.js 版本戳已对齐');
-  ['public/etf-flow.html', 'public/daily-review.html'].forEach(f =>
-    assert.ok(read(f).includes('?v=20261112a'), f + ' 其余资源缓存戳未升级'));
-  assert.ok(read('public/index.html').includes('?v=20261112a'), 'index.html 缓存戳已升 20261112a');
+t('APP_VERSION 与各 HTML 的 ?v= 缓存戳同步（随 server.js 版本动态校验，不再写死日期）', () => {
+  // [20261113b] 原断言写死 20261112a，每次升版都要改测试；改为从 server.js 读取当前版本再逐页比对。
+  const svv = read('server.js').match(/const APP_VERSION = '(\d{8}[a-z])'/);
+  assert.ok(svv && svv[1], 'server.js 存在 APP_VERSION');
+  const ver = svv[1];
+  assert.ok(read('public/daily-review.html').includes('js/dailyReview.js?v=' + ver), 'daily-review 的 dailyReview.js 版本戳已对齐 ' + ver);
+  assert.ok(read('public/daily-review.html').includes('js/markdown.js?v=' + ver), 'daily-review 的 markdown.js 版本戳已对齐 ' + ver);
+  ['public/etf-flow.html', 'public/daily-review.html', 'public/index.html', 'public/accuracy.html',
+    'public/judgments.html', 'public/notes.html', 'public/logic-model.html', 'public/volume-map.html'].forEach(f =>
+      assert.ok(!/\?v=20\d{6}[a-z]/.test(read(f).replace(new RegExp('\\?v=' + ver, 'g'), '')), f + ' 存在未对齐的缓存戳'));
+  assert.ok(read('public/index.html').includes('js/stockReviewUI.js?v=' + ver), 'index.html 的 stockReviewUI.js 缓存戳已升 ' + ver);
 });
 t('SCHEMA_VERSION 按铁律升级，旧落盘文档不会被幂等锁死', () => {
   const c = read('lib/reviewContext.js');

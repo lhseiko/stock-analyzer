@@ -54,7 +54,7 @@ const Charts = {
     if (!el) return null;
     if (this.instances[id]) { try { this.instances[id].dispose(); } catch {} }
     let chart = echarts.init(el, 'softDark', { renderer: 'canvas' });
-    if (window.SA_CHART) chart = SA_CHART.attach(chart); // setOption 自动过视觉修补
+    if (window.SA_CHART) chart = SA_CHART.attach(chart, { legendSemantics: false }); // [20261114a] 主图豁免：图例与配色保持原样（用户裁决 4），仅 tooltip 外壳仍走 polish
     // 20261003f：必须注册实例。此前缺失导致隐藏 tab（display:none）中初始化的图表
     // 退化为 200px 宽后，switchTab/window resize 遍历 Charts.instances 触达不到 → 切回 tab 仍压缩。
     this.instances[id] = chart;

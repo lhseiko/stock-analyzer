@@ -821,3 +821,175 @@
 - **守卫变更**：`test_factor_corr_windows.js` 原断言「报告含 AI 生成，待人工复核」改为页首三行内判「已归档且不再有待人工复核」（Backlog 引述旧标注不计入）；新增 Backlog 两断言 + 链式连通脚注 3 断言（120 注入 0.576 必现、60 达阈值 0.865 不现、全部达阈值整体不现）。坑：首版断言用整份 md 判 `!includes('待人工复核')`，被 Backlog 引述句「删「AI 生成，待人工复核」标注」反噬 → 改为仅取页首三行。
 - **验证**：`test_factor_corr_windows.js` 62/0（59→62，新 3 条）、`test_factor_corr_preserve.js` 68/0、`run_all_tests.js --quick` 137/137（跳过 13）；离线脚本不进运行时，**不重启、不 bump**（APP_VERSION 仍 20261112a、PID 26204 不变）。
 - **同步**：用户本轮明确「同步」→ commit + push origin + 克隆端 fetch/reset + 三端 hash 全等 + data 带外拷贝（N3 口径：每次同步执行）。
+
+## 20:0x 个股每日复盘去赘述（统一底层逻辑，未同步）
+
+- **用户指令演进**：初版截图报障「复盘卡片大量赘述（腾讯分时 ifzq.gtimg.cn、peakVolTime 1500、盘后延迟发布 / 20:30 / 次日 15:35、industryName 保险 / boardName 保险）→ 模块应高度精简准确」；随后更正「不是共用一份提示词，是所有个股的每日复盘模块用统一的底层逻辑」；范围选择「改提词 + 重生成今日自选股」；三项语义裁决：数据源**降级时才提示**、分时**形态+关键时点**、龙虎榜**留一句不写时点**。
+- **架构事实**：个股复盘唯一生成链 = `lib/stockReview.js generateReview()`；单只路由 / 池批量 / 15:30 定时 / 手动重生成全部经它，故统一收敛点在此。
+- **改动**：① `prompts/stock-review-system.md`——删「逐字段务必引用」清单，新增铁律 7「零内部细节」（禁英文字段名/域名/数据源名/分钟点计数/补录时点；降级或不可用才提示）与铁律 8「只写结论与依据」；量价表现改「形态 + 四段节奏方向 + 高低点与量能峰值时刻」，不写逐段百分比；板块地位行业只写一次；龙虎榜统一「待晚间补录」不写时点。② `lib/stockReview.js` 新增 `sanitizeReviewMarkdown()` 纯函数（括号含实现细节整段移除 → 字段名替换中文/纯标签删除 → 域名与源名剥离 → 分钟点与 20:30/15:35 剥离 → 行业名去重 → 标点空白清理），在 `generateReview` **唯一出口**调用（`markdown: cleanMarkdown`，`extractMarks` 同源），覆盖 LLM 与降级快照两条路径；并导出供单测。③ `scripts/test_stock_review.js` 新增 §9.4 共 8 断言（零残留 / 事实不丢 / 中文替换 / 行业去重 / 空输入安全 / 正常正文逐字不变 / 快照「分钟点 N」也被清洗）。
+- **验证**：`test_stock_review` 105→**113/0**；`test_logic_model` 104/0；`run_all_tests --quick` 全通过；重启 3005 后实测 8 只自选股：601318/600909/000783/600460 生成完整 AI 卡片（len 1774–1970）且 14 个禁忌串**零命中**；688289/603288/000902/603014 因 LLM 返回 **403**（模型鉴权/额度，外部问题、非本次改动）降级为数据快照（len 592–682），快照经同一出口清洗后亦零命中。**LLM 恢复后重跑即可得完整卡片，不属于本次缺陷。**
+- **偏离与限制（如实记录）**：曾尝试把 APP_VERSION 升 20261113a 并同步四页 `?v=`，被权限系统判定「无前端改动、超范围」拦下 → 已**全部回退**至 20261112a（server.js 与 notes.html 均恢复），本轮**不升版、不改页面戳**；故 `/api/health` 仍报 20261112a，属预期。
+- **状态**：本地改动已完成、**尚未提交、尚未同步**（等用户「同步」指令）。涉及文件：`prompts/stock-review-system.md`、`lib/stockReview.js`、`scripts/test_stock_review.js`、`SESSION-STATE.md`。
+
+## 20:3x 「生成今日复盘」切页后按钮变灰失效修复（20261113a，未同步）
+
+- **用户报障**：页面切换后「生成今日复盘」失效；追问确认表现为「点击后按钮变灰但无反应」，且**只在当日卡片为 LLM 降级快照时出现**。
+- **根因（两处叠加）**：① `onTabSwitch()` 每次切 tab 都发 `GET /api/stock-review/:symbol`，返回后**无条件** `renderReview()+setStatus()`——该 GET 若晚于用户点击返回，会把「生成中…」卡片与状态覆盖回旧快照（按钮已灰、内容没变 = 看起来没反应）；降级快照状态下该 GET 必走「已有缓存」分支并重设 forceNext，故只在降级态复现。② `runToday()` 成功路径**从未调用 `setLoading(false)`**（只有 catch 里调），按钮 Disabled 后永久置灰。
+- **修法**：`public/js/stockReviewUI.js` 加 `viewToken` 代际令牌（`onTabSwitch`/`runToday`/`viewDate` 各自 `++viewToken` 并 `await` 后校验 `tk !== viewToken` 即丢弃过期写 DOM）；`runToday` 改 `try/catch/finally`，finally 中 `state.busy=false` 且 `tk===viewToken` 时 `setLoading(false)`；`onTabSwitch` 在无在途生成（`!state.busy`）时强制复位按钮。
+- **版本**：APP_VERSION 升 20261113a（本轮确有前端改动）；`public/index.html` 的 `js/stockReviewUI.js?v=` 同步 20261113a，服务端实测返回 `version=20261113a`、页面戳 20261113a、JS 含 `viewToken`。
+- **验证**：test_logic_model 104/0、test_cache_bust_guard 3/0、test_stock_review 116/0（新增 3 条源码守卫：令牌判废 / 回 tab 复位 / finally 复位）。
+- **未做/偏离（如实记录）**：未做浏览器点击实测——当前 LLM 返回 403，点「生成」要等 1–3 分钟；已用「服务端下发新 JS + 守卫断言」作证据。【20:4x 用户裁决「统一补齐」】8 个 public/*.html 共 **54 处** `?v=20261112a` 批量升 20261113a（accuracy 4 / daily-review 5 / etf-flow 5 / index 26 / judgments 4 / logic-model 3 / notes 4 / volume-map 3），全站页面戳与 APP_VERSION 现已一致；复验 grep 无 20261112a 残留、缓存破坏守卫 3/0、logic_model 104/0，服务端实测 etf-flow / volume-map / daily-review 下发戳均为 20261113a。
+- **状态**：本地改动完成，**未提交、未同步**。
+
+## 20:4x 每日复盘页精简（20261113b，未同步）
+
+- **用户四条截图指令**：① 大盘复盘页【明日核心观察池】表格右侧「操作」列（个股复盘 →）删除；② 个股复盘删除「观察池带入」下拉 + 「或输代码」输入框；③ 底部「往日复盘记录」日期 chip 改为日历菜单（日期 + 前后跳转）并放到原观察池位置；④「生成今日复盘」按钮保留。
+- **实现**：`public/js/dailyReview.js` 的 `decorateWatchPool()` 改为空实现（调用点保留，不再追加操作列）；`public/js/stockReviewUI.js` 工具条改为「复盘日期 + ‹ 日期选择器 › + 生成今日复盘」，删除 `loadPool`/代码输入/`#srHist`，新增 `stepDate()` 按 `state.history` 日期前后跳转、`loadHistory()` 只填日历可用区间不再渲染 chip；`runToday` 生成对象固定为当前个股。
+- **版本**：APP_VERSION 与全站 57 处 `?v=` 升 20261113b；test_daily_review 的版本戳断言改为从 server.js 动态读取（不再写死日期，后续升版免改）。
+- **验证**：test_stock_review 119/0、test_daily_review 30/0、test_color_semantics 148/0、test_cache_bust_guard 3/0、test_logic_model 104/0；服务端实测 `/api/health`=20261113b、index 戳=20261113b、`/js/stockReviewUI.js` 含 `id="srDate"` 且不含 `id="srPool"`/`id="srSymbol"`、`/js/dailyReview.js` 不含 `dr-pool-link`。
+- **状态**：未提交、未同步。
+
+## 21:2x 复盘清洗矫枉过正修复（后端 lib 变更，随 20261113b 运行时生效）
+
+- **用户报障**：卡片出现「分时最高 15.42元出现在 **，…分位 17.17%**」——问隐藏了什么。
+- **根因**：`lib/stockReview.js::sanitizeReviewMarkdown` 两处过度清洗——① `BAD_BRACKET` 含 `\d{2}:\d{2}`，括号内的分时时刻（如（09:43））整段被删；② 末尾 `\b\d{1,2}:\d{2}\b` 一刀切删除正文全部时刻。删除后成对加粗 `**09:43**` 被拆成孤儿星，页面显示为裸 `**`（分位 17.17% 的 `**` 同源，数据本身未被隐藏）。
+- **修法**：① BAD_BRACKET 去掉时间匹配；② 全局删时刻改为「仅删调度时点」——仅当 15:30/15:35/15:40/15:45/15:50/20:30/20:45 前后 24 字内出现 定时/兜底/补录/批量/重跑/重抓/重生成 才删；③ 函数末尾统一清加粗残星（≥3 连星、空对、逐行奇数配对整行去星），保留正常加粗。
+- **验证**：test_stock_review 123/0（新增 4 断言：分时时刻保留含括号内、孤儿星清理、有效加粗不误删、调度时点仍清洗）；实际重生成 688289 后正文为「分时高点 15.42元出现在 09:43，低点 14.97元出现在 14:50，量能峰值在 14:21」，逐行 ** 配对奇数行 = 0。
+- **说明**：旧卡片文本已落盘且时刻已丢，不能回填，需重新生成；APP_VERSION 未升（无前端资源变更，lib 重启即生效）。
+- **状态**：未提交、未同步。
+
+## 11-14 10:3x 复盘生成日期化 + 非交易日拒绝 + 启动补偿（20261113c，未同步）
+
+- **用户报障**：① 圣湘生物 11-13 未按 15:30 自动生成当日复盘；② 周六（11-14）点生成，把 11-13 行情写成 11-14 卡片；③ 期望日历选任意日期即生成对应日期复盘。
+- **根因**：① 调度器只在「进程恰好在 15:30 运行」时触发、无启动补偿（11-13 进程 17:47 才起，整批漏跑；20:45 只覆盖观察池 4 只，不含 688289）；② 前端 runToday 只发 {name,force}，不传日期 → 后端默认 todayStr()；③ buildContext 的 date 仅用于龙虎榜/分时/历史自省，行情仍取最新 → 历史日期补生成会前视。
+- **修法（问题 1 选 A、问题 3 只补当日）**：前端提交日历日期（无记录时回落到最近一份）；后端 generateReview 生成前查 trade_calendar，非交易日抛 NON_TRADING_DAY → 路由 400 且不落盘（日历不可用诚实放行）；服务启动 60s 后若当日为交易日且已过 15:35，补跑一次 runWatchlistBatch（幂等）；历史日期 asOf 截断未做——按裁决 A，无记录日期由日历回落规避，不做历史补生成。
+- **数据**：删除 `data/stock-reviews/688289/2026-11-14.json`（脏卡片，created 10:25，内容为 11-13 行情）。
+- **验证**：test_stock_review 128/0（新增 5 断言）、test_daily_review 30/0、test_cache_bust_guard 3/0、test_logic_model 104/0；服务实测 health=20261113c、index 戳=20261113c、POST `{date:"2026-11-14"}` → HTTP 400 且未生成文件。
+
+## 11-14 11:0x 支持任意历史交易日补生成（20261113d，未同步）
+
+- **用户裁决**：支持任意历史日期补生成，数据不足时如实告知（推翻上一版「无记录日期由日历回落规避」）。
+- **实现**：`buildContext` 新增 `isHistorical = date < today`——历史日期行情改用该日收盘 bar（多通道兜底：东财单主机 → 东财多主机 → 腾讯日K；前一日 bar 作 prevClose），实时资金流 / 板块当日涨跌 / 新闻无法还原历史快照一律置空；缺口写入 `meta.dataGaps`；落盘记录透出 `historical` / `dataGaps`，前端横幅显示「⚠️ 数据不足：…」；提示词新增铁律 9（dataGaps 非空时正文开头写明数据不足、不得用最新数据替代）；非交易日仍 400 拒绝（无数据可复盘）。
+- **验证**：test_stock_review 132/0（新增 4 断言）、test_daily_review 30/0、test_cache_bust_guard 3/0、test_logic_model 104/0；health=20261113d、index 戳=20261113d；`buildContext('688289',{date:'2026-11-12'})` 实测 hist=true、capital/sector=null、gaps=3（含「无行情数据」）。
+- **未验证/环境限制**：本机东财历史 K 线 socket hang up、腾讯日K 501，历史行情当前取不到 → 选历史日期会如实产出「数据不足」卡片；通道恢复后自动可用。未做浏览器点击实测。
+- **状态**：未提交、未同步。
+
+## 11-14 12:1x 圣湘生物 2026-11-13 复盘数据补全 + 自动生成（纯数据修复，未同步）
+
+- **用户请求**：为圣湘生物（截图写作「圣像生物」）昨日复盘数据补全，自动生成昨天（2026-11-13）的复盘输出；附加 cn-financial-scraper / mx-finance-data / WeStock Data / delivery-no-pseudoblock。
+- **现状**：`data/stock-reviews/688289/2026-11-13.json` 为降级卡片（`llm.degraded=true`、`contentChars=0`、300000ms 超时），仅 10 行数据快照；页面显示「AI 暂不可用，已发布数据快照」「连续放弃 1 天」。
+- **根因（两项，均实测，非推断）**：
+  1. `kimi-k3.1-pro`（11-13 20:23 起生效）生成完整复盘实测 270724ms 成功 / 300027ms 超时 / 309075ms 成功，正好压在 `lib/stockReview.js TIMEOUT_MS=300000` 上；两个快模型 `deepseek-v4.1-flash-1017`、`qwen-plus` 实测均 403 无权限。
+  2. `buildContext` 的 `isHistorical` 分支对历史日期把 `capital/sector/news/volume` 一律置 null，`intraday` 取回 `date=2026-11-14 / dateMatches=false`；多通道日K抖动（东财 socket hang up / 腾讯 501）还曾误报 `2026-11-13 无行情数据`，LLM 据此写出「当日日线行情未取到」，与正文 OHLC 自相矛盾。
+- **做法（一次性脚本，零生产代码改动）**：11-14 为周六休市，实时通道此刻返回的就是 11-13 收盘状态 → 在子进程内把系统当前日固定为 `2026-11-13`（`Date.now()` 保持真实时间，不影响 LLM 超时预算与耗时统计），调用**唯一出口** `stockReview.generateReview('688289',{date,force:true,name:'圣湘生物'})`；仅在该进程内把单次 `timeoutMs` 300000 → 480000、`overallBudgetMs` → 540000。未改 `lib/`、`server.js`、`data/ai_config.json`、任何 HTML/JS、`SCHEMA_VERSION`、卡片输出结构。
+- **数据核验（单一权威源 + 五要素）**：东财妙想独立查 11-13 → 开 15.39 / 高 15.53 / 低 14.97 / 收 14.98 / -2.601% / 换手 0.6018% / 成交额 5251 万，与工作台 `quote.raw` 及用户截图逐项一致；板块「医疗器械·涨停0·跌停1·141家」、量比 1.39 平量、分时「单边下行·15.42@0943·14.97@1450·dateMatches=true·242点」、消息面 10 条（首条 11-13 17:45）均与原降级卡片快照吻合，非以最新数据冒充历史。
+- **结果**：`degraded=false`、`contentChars=1853`、`model=kimi-k3.1-pro`、`elapsedMs=309075`、`name=圣湘生物`、`historical=false`、`dataGaps=[]`、`marks={rating:'C',giveupTriggered:true}` 两条标记均抽出；四段式 + 两条引用标记齐全；无「数据不足 / 无行情数据 / 该股 / AI 生成暂不可用」。GET `/api/stock-review/688289/2026-11-13` 返回与落盘一致。
+- **「分时源已降级」为如实标注**：`intraday.degradedFrom='AKShare 分时不可用…'`，代码回退腾讯分时且 `available=true / dateMatches=true`，符合提示词铁律 7，不是模型误写。
+- **守卫**：`test_stock_review` 133/0、`test_daily_review` 30/0、`test_cache_bust_guard` 通过；`run_all_tests.js --quick` 报 **117/137、失败 20 项**，根因为 22 个测试脚本把 `APP_VERSION='20261112a'` 写死而当前 `server.js` 为 `20261113d`（20261113b/d 升版时未同步的既有基线，非本次引入），属断言假阳性；既定修法为改为动态读取 `server.js`（`test_daily_review.js` 已如此）。本次改动范围仅限复盘数据，未包含测试脚本修订，故 quick 未全绿。
+- **副产物登记**：跑 quick 时守卫自动重生成 `docs/swallow-catch-manifest.md`（137→138 处空 catch、行号随 20261113d 偏移），内容正确且属上一轮升版应带产物，已保留；工作区受版本控制改动 17 → 18 项。
+- **临时文件**：`tmp/_regen_688289_20261113.js`、`tmp/_regen-result.json`、`tmp/688289-2026-11-13.before-regen.json` 均已删除；`tmp/test-report.md` 与 `data/test-scenes/` 为测试脚本自带产物。
+- **未验证 / 风险**：未做浏览器点击实测（需桌面端 Ctrl+F5 硬刷新后目视确认）；`WeStock Data` 技能按名加载失败，本轮改用东财妙想数据通道核验。历史日期手动重生成仍会走 `isHistorical` 置空分支（20261113d 既定设计）。
+- **状态**：本地改动完成，未提交、未同步，等待用户「同步」指令。
+
+## 11-14 12:5x 用户设计裁决（WAL · 待确认，未执行任何工作台改动）
+
+- **需求**：全工作台「所有图表」的图例改造；用户附图（股东户数走势）仅作举例，不是只改这一张。
+- **裁决 1（配色）**：不同数据组使用颜色差异较大的图例；**禁用红色与绿色**。
+- **裁决 2（图标语义）**：图例图标必须跟随该组数据在图中的表达方式——折线→横线、虚线→虚线、柱→方块，不得一律方块。即「颜色 + 形状」双编码（WCAG 1.4.1 不只靠颜色传达信息）。
+- **只读采集结论**：
+  - 根因：`public/js/chartTheme.js:56` `THEME.legend.icon='roundRect'`（全局主题）+ `:142` `polish()` 对每次 setOption 再次强制 `lg.icon='roundRect'`；`public/js/charts.js:377/485` 另有 2 处显式 `icon:'roundRect'`。
+  - 全局分类色板 `chartTheme.js:34` 8 色低饱和、含暗红 `#cf8e8e` 与暗绿 `#8fb89a`；局部色板 `charts.js:571`、`deepCharts.js:1285/1359`。
+  - 截图那张 `shareholderCharts.js:179-193`：柱 `#5470c6`、实线 `#cdab74`、虚线 `#7fa8c9`，柱与虚线同为蓝色系，是「区分不够明细」的直接来源。
+  - 含 `legend` 的 8 个 JS 模块（出现次数）：`deepCharts` 36 / `charts` 9 / `shareholderCharts` 6 / `capitalCharts` 5 / `chart3D` 3 / `industryCharts` 3 / `etfFlowPage` 1 / `chartTheme` 1（全局）。
+  - `SA_CHART.attach` 覆盖 5 个模块（capitalCharts / charts / deepCharts / industryCharts / shareholderCharts）；`etfFlowPage.js` 未挂 attach，仅继承主题，需单独核对。
+  - HTML 自定义图例 3 处：`.sentiment-legend`、`.ai-cat-legend`（`index.html:1158`）、`.dr-risk-legend`，均非 ECharts。
+- **约束**：DESIGN.md §1.1 红涨 `#F6465D` / 绿跌 `#0ECB81` 为全站唯一涨跌语义色，严禁改；§9 任何前端改动必须 bump `APP_VERSION` 并同步全站 `?v=`。
+- **当前工作区**：18 项未提交改动（20261113b/c/d 复盘迭代）叠加；quick 基线 117/137（22 个守卫硬编码 `APP_VERSION='20261112a'`，当前 `20261113d`），升版后该项仍会报假阳性，不得谎报全绿。
+- **状态**：已出任务卡 `#001`（`.workbuddy/taskcards/20261114-chart-legend.md`），**等待用户确认；未改任何代码 / 配置 / 版本号，未跑测试，未同步**。
+
+## 11-14 13:0x 任务卡 #001 用户裁决（WAL · 仍未执行）
+
+- **裁决 1（纠正上一轮假设）**：禁用红绿的范围 = **图例 + 图表的数据系列**；**文字分析**中表示涨跌 / 利好 / 利空的着色不受影响，可保留红绿。上一轮卡内「★推荐保留涨跌语义色给涨跌数据」被否定，不得沿用。
+- **裁决 3**：配色采用**方案 A**（`#3B82F6` / `#F5A524` / `#A855F7` / `#38BDF8` / `#E8D44D` / `#8B7FE8`，辅助钢灰 `#8A9BB0`）。
+- **关键问题 2 查证结论（3 处 HTML「legend」，均已读代码核实）**：
+  - `.ai-cat-legend`（`style.css:3837`、`index.html:1158`）：唯一真实在用，但**不是图表图例**，是「AI 模型设置」弹窗里的用途归类说明块（「联网模型」/「本地模型」两行文字 + 金色标签 `#F0B97B`），无数据组颜色区分、无红绿。
+  - `.sentiment-legend`（`style.css:1595`）：CSS 定义存在，`public/*.html` 与 `public/js/*.js` 中 **DOM 引用 0 处**（孤儿样式）。相邻 `.sentiment-dist` 情绪分布条（`.sd-pos` 红 / `.sd-neg` 绿）同样未被真实页面使用，仅见于 `data/preview/`、`docs/reports/` 的历史快照。
+  - `.dr-risk-legend`（`style.css:6443`）：CSS 定义存在，**DOM 引用 0 处**；相邻 `.dr-level-*` 为风险等级金色深浅文字色。
+  - → 三处均不是 ECharts 图例，也不承担「靠颜色区分数据组」的职责，本次改造**不含**这三处。上一轮把它们列入「范围裁决」是 grep 命中 "legend" 字样造成的过度扩展，已纠正。
+- **【假设 D】方向语义边界（待用户在确认时认可或改判）**：工作台存在按涨跌方向上色的 series（K 线蜡烛、MACD 柱、涨跌家数、资金净流入正负柱）。这类不是「区分不同数据组」而是「表达方向」；DESIGN.md §1.1 与用户长期红涨绿跌铁律要求其保持红绿，且禁止方向与颜色语义错位。卡内默认：分类区分用途换色、方向语义着色保留；用户可一句话改判为「方向语义也换色」。
+- **状态**：用户尚未给出「执行 / 确认 / 开始 / 按推荐」指令词，按 task-card-gate 第 3 步**仍未执行任何工作台改动**；未跑测试、未升版、未同步。
+
+## 11-14 13:2x 任务卡 #001 范围裁决（WAL · 仍未执行）
+
+- **用户裁决 4**：**按涨跌方向上色的（K 线蜡烛、MACD 柱、涨跌家数、资金净流入的正负柱）主图模块不在这次修改范围**。即：不再讨论这类元素要不要换色，整个主图模块从改造范围中排除；原【假设 D】「方向语义保留红绿」升级为「主图模块整体排除」。
+- **落地口径（agent 拍板，写清默认假设）**：`public/js/charts.js`（主图 + 技术指标区，9 处 legend）整体不动；其余 7 个模块照常做图例「颜色 + 形状」双编码；若其余模块内出现按涨跌方向上色的个别 series，其颜色保持不动，仅图例图标语义化照做，避免触碰红涨绿跌语义。
+- **状态**：用户仍未给出「执行 / 确认 / 开始 / 按推荐」指令词，按 task-card-gate 第 3 步**未执行任何工作台改动**；未跑测试、未升版、未同步。
+
+## 11-14 15:3x 任务卡 #001 执行完成：全站图表图例「颜色 + 形状」双编码（本地完成，未同步）
+
+- **触发**：用户明确「按推荐执行」（task-card-gate 第 3 步确认指令词），按定稿卡 4 项裁决执行。
+- **根因**：全站图例一律方块来自 `chartTheme.js` 两处 —— `THEME.legend.icon='roundRect'`（主题级）与 `polish()` 里 `if (!lg.icon) lg.icon='roundRect'`（setOption 级）；颜色区分不够来自各模块硬编码的旧柔和 8 色板（含暗红 `#cf8e8e` / 暗绿 `#8fb89a`，且相邻色相过近）。
+- **做法（隔离、只改视觉、不动数据与计算）**：
+  - `chartTheme.js` 新增方案 A 色板、`path://` 线图图标族、两个纯函数；`polish(opt, opts)` 对非豁免实例注入 `opt.color=PALETTE_A` 并逐项写 `legend.data[].icon`；`attach(chart,{legendSemantics:false})` 主图豁免；移除一律方块强制。`THEME.legend.icon` / `THEME.color` 保留不动，供主图继承 → 主图零变化。
+  - **主图豁免 1 行接线**：`charts.js:57` 加 `{legendSemantics:false}`；9 处 legend、2 处 `icon:'roundRect'`、全部方向配色实测未动。
+  - 6 个模块 **71 处**分类色字面量按图内序号替换为方案 A（一次性脚本先校验每条命中次数、全部通过才写入，写完即删）；`etfFlowPage.js` 原缺 `SA_CHART.attach`，本次补齐，6 个 `echarts.init` 点现全覆盖。
+  - **豁免保持不动**：方向着色（`capitalCharts:421/443`、`deepCharts:446/463/2120/2461`、`industryCharts:200-202`）、VR 超买/超卖 markLine、坐标轴/tooltip/文字标注、文字分析涨跌红绿、3 处 HTML「legend」、`public/vendor/*`。
+  - 升 `APP_VERSION 20261113d → 20261114a`，8 个 HTML 共 57 处 `?v=` 同步（DESIGN.md §9）。
+  - 新增 `scripts/test_chart_legend.js`：L1 色板（精确值/无红绿/相邻色差≥60°）、L2 图标映射、L3 截图那张股东图逐项语义、L4 主图豁免、L5 静态替换落地与豁免保持、L6 版本戳与 attach 覆盖，共 80 断言。诚实登记：方案 A 第 1/第 3 色（亮蓝/紫罗兰）色相差 54°，由图标形状承担区分（WCAG 1.4.1 双编码）。
+- **实测验证**：`test_chart_legend 80/0`、`test_color_semantics 148/0`、`test_cache_bust_guard 3/0`、`test_cap_vol_ratio_chart 26/0`、`test_chart_range_cursor 39/0`、`test_minute_chart 25/0`；8 个改动 JS `node --check` 全过；`run_all_tests.js --quick` = **118/138 通过、失败 20 项**。
+- **quick 失败归因（逐项证据，非推断）**：本轮现场 `scene-2026-11-14T06-06-54-182Z/index.json` 与上一轮 `scene-2026-11-14T04-33-00-487Z/index.json` 的 `failed` 数组**逐项完全一致**（20 项、同序）；19 项为脚本硬编码 `APP_VERSION='20261112a'`，1 项 `test_e2e_chains.js` 属行业识别/量能模块既有失败，与前端视觉改动无关。通过数 117→118 仅因新增守卫通过 → **零本次引入失败**，不得谎报全绿。
+- **未验证项**：浏览器实机渲染；当前 3005 服务 PID 8492 仍返回 `version=20261113d`，按卡内 §5 需用户双击桌面「Stock Analyzer.lnk」重启（start.vbs 自动 kill 旧进程）+ Ctrl+F5 硬刷新后才生效，未擅自中断用户正在运行的服务。`docs/swallow-catch-manifest.md` 由 quick 自动刷新（137→138 空 catch、行号偏移），内容与上一轮一致，保留。
+- **状态**：本地改动完成（工作区 27 项改动 + 1 个新文件），**未 commit / 未 push / 未三端同步**，等用户明确「同步」指令。一次性脚本与 quick 临时日志已清理。
+
+## 11-14 15:5x 收 bug：机构持仓变化卡片图例颜色未区分（用户 15:41 截图报障，→ 20261114b）
+
+- **用户反馈**：主图模块已确认没问题；「机构持仓变化」卡片两项图例颜色仍没区分（截图里柱与折线同为亮蓝）。图例形状已是「方块 + 横线」，说明上一轮形状改造生效，问题只在颜色。
+- **根因（实测，非推测）**：
+  - 括号匹配静态扫描 6 个图表模块的全部 series 对象：**只有 3 处完全没写颜色** —— `shareholderCharts.js:364/382`（机构图 3D 分支与回退分支的「占流通股比%」折线）、`deepCharts.js:2491`（「同比增长(%)」，属方向着色豁免）。其余 series 均有显式色。
+  - 这 2 处折线的颜色完全依赖 ECharts 主题色板隐式分色；`SA3D.bar25D` 把柱改写成 `custom` 且 data 项自带 `#3B82F6` 时分色顺序不稳定，浏览器里折线拿到了与柱相同的亮蓝。
+  - 用**真实 `chartTheme.js` + 本地 `vendor/echarts.min.js` 5.4.3 SSR**（vm 沙箱、零网络）实测：不显式着色时图例 fill 为 `#7FA8C9` / `#CF8E8E`（旧柔和色板），经过 `SA_CHART.polish` 后稳定为 `#3B82F6`（方块）/ `#F5A524`（横线），两项明确不同。
+- **修法（根因层 + 同类收口，不改数据与计算）**：
+  - `chartTheme.js` 新增 `normalizeSeriesColors(opt)` 纯函数：按 series 索引给「无显式色且非方向着色」的序列补方案 A 色；方向着色（函数色、数据项涨红跌绿）一律跳过。
+  - `applyLegendSemantics` 给每个图例项显式写 `itemStyle.color`（优先取同名 series 显式色，否则按序号取方案 A），**图例与曲线颜色都由代码锁定**，不再受 ECharts 分色策略影响。
+  - `polish()` 顺序：`opt.color` → `normalizeSeriesColors` → `applyLegendSemantics`；主图豁免分支完全不动。
+  - 双保险：`shareholderCharts.js` 两处折线显式写 `lineStyle.color`/`itemStyle.color = '#F5A524'`；`deepCharts.js:2487` 收入线旧蓝 `#5b8fb9` → 方案 A 亮蓝 `#3B82F6`（面积渐变同步）。第 3 处「同比增长(%)」按裁决保持涨红跌绿数据点不动，图例色按序号取方案 A，不出现红绿。
+  - 升 `APP_VERSION 20261114a → 20261114b`，8 个 HTML 共 57 处 `?v=` 同步。
+- **守卫**：`test_chart_legend.js` 新增 L7（17 条断言）：无显式色补色、图例项显式颜色、机构卡片两色不同且色相差 ≥60°、方向着色豁免、同类 3 处收口；总 **80 → 97 断言**。
+- **实测验证**：`test_chart_legend 97/0`、`test_color_semantics 148/0`、`test_cache_bust_guard 3/0`、`test_cap_vol_ratio_chart 26/0`、`test_chart_range_cursor 39/0`、`test_minute_chart 25/0`；改动 JS `node --check` 全过；`run_all_tests.js --quick` = **118/138 通过、失败 20 项**，与 14:06 基线 `scene-2026-11-14T06-06-54-182Z` 失败清单**逐项完全一致**（零本次引入失败）。
+- **未验证项**：浏览器实机渲染；当前 3005 服务返回 `20261114a`（用户已重启过一次），本次 `20261114b` 仍需双击桌面「Stock Analyzer.lnk」+ Ctrl+F5 才生效。一次性探针、扫描脚本、临时日志均已清理。
+- **状态**：本地完成，**未 commit / 未 push / 未三端同步**，等用户明确「同步」指令。
+
+## 11-14 17:3x 任务卡 #002 / #003 执行：首页两个资讯·舆情模块数据源扩展（→ 20261114c）
+
+- **触发**：用户「任务2按照推荐方案。任务3：雪球有很多热门话题，对板块和个股的热度判断有很大帮助。」→ 卡 #002 按★执行；卡 #003 用户把雪球从「只做来源展示」**改判**为「要真正参与板块/个股热度判断」。
+- **出卡前现状审计（只读实证）**：今日财经热点是东财 7×24 **单源**（兜底仍是东财内容搜索，同域名族）；周榜**早已有新浪财经 7×24** + 同花顺 + 华尔街见闻 + 财联社四路（近三日每天 100 条、零失败）；项目已有雪球公开筛选接口但只产个股关注数。真正不稳的是 `gubaEm`（0/92、11/92、0/92 反爬熔断）与 `market`（11-12 / 11-14 `error`）。
+- **接口实测（web-access 前置检查已跑，未启用 CDP）**：新浪需 `zhibo_id=152` ✅；财联社需 `md5(sha1(字典序 query))` 签名 ✅；华尔街见闻 A 股频道 ✅；雪球 `www.xueqiu.com/service/v5/stock/screener/screen` 200 / 5657 只 ✅；雪球话题榜 400 / 热股榜 403 / 帖子搜索 400016 → **需登录，如实不接**。
+- **卡 #002（隔离修改，输出结构零变化）**：`lib/newsSearch.js` 新增 5 个纯函数 + 3 个 fetch + `fetchMultiSourceNews()` 四路 `Promise.allSettled`；东财仍主源，三源时间统一走 `normalizeNewsTime()` 按北京渲染（防 UTC 早 8 小时重演），跨源按归一化标题去重、同题留摘要更全者；`source` 文案改为实际可用源列表，前端 `data.source` 自动透出，`server.js` / `homeNews.js` 零改动、不升版。实测四路全通 40/20/20/20=100 条，最终 24 条来自三源。
+- **卡 #003 默认口径（agent 拍板，假设已写进任务卡与注释）**：雪球热门话题帖需登录不抓；只消费公开 A 股关注榜前 1000 只，按 `sector_members.json`（92 板块 × 3 成分股）归集，**再做板块间 Min-Max 归一化**为 0~100 分位；只进 `crossCheck.xqConfirm`，不进 A/B/C/D/E 加权与归一化池；回传 `topStock/topRank` 让板块热度落到个股；不动 `sameDayJudgment.js`（避免触发 SCHEMA_VERSION 铁律）；合规对齐 `lib/ai/earnings.js:45`，只作社区热度代理不作数字类结论依据。
+- **两次实测驱动的根因修正（非推断）**：① 首版绝对分数 + `xqMin=70` → 85 板块几乎全命中、41 个被误判单源虚热、75/92 行名次变动最大位移 10 → 改为板块间分位 + 互斥；② 二版仍「只扣不加」（36 扣分 / 0 加分，因真实 An 中位数仅 4、p90=31）→ 按真实分布校准为「雪球热 + 舆情也热 → 共振 +3；雪球热但舆情极冷 → 只标记雪球单源热、默认不扣分（`gapAdj=0`，扣分留作可配开关）」。最终实测：加分 8 / 扣分 0 / 单源热标记 31 / 名次变化 14 行 / 最大位移 3 / 最大分数变化 3.0。
+- **稳定性治理（外部反爬与断连无法从代码层根治，做到止损 + 如实标注）**：`gubaEm` 连续失败阈值 8→3、当日熔断记忆 `em_blocked_date.txt`、后续重采直接跳过；`market` 双 host × 2 轮重试 + 20s 超时 + 退避；失败一律脚注如实标注，不编造数值。
+- **输出格式变化 → 协同进化一次性同步**：`hot_topics_collect.py` / `config.js` / `config.json` / `engine.js` / `index.js` / `homeHotTopics.js` / `test_chart_legend.js` / 新增 `test_hot_topics_xueqiu.js`；升 `APP_VERSION 20261114b → 20261114c`，8 个 HTML 共 57 处 `?v=` 同步。
+- **`test_chart_legend.js` 版本戳断言根治**：原硬编码 `ver === '20261114b'` 导致本轮 quick 新增 1 项假阳性失败；改为「校验版本号格式 + 全站 `?v=` 必须等于 server.js 的 APP_VERSION」，唯一权威源仍是 server.js，未来升版不再需要手改守卫。
+- **实测验证**：新增守卫 `test_hot_news_multisource 46/0`、`test_hot_topics_xueqiu 60/0`；`test_chart_legend 97/0`、`test_hot_topics_merge 25/0`、`consistency 11/0`、`stale_fix 6/0`、`test_news_time 19/0`、`sector_impact 15/0`、`sector_scoring 33/0`、`test_cache_bust_guard 3/0`；`node --check` + `py_compile` 全过。雪球真实采集 1000 只 / 覆盖 85/92 板块；周榜后端 `getWeeklyReport` 实测 `sources.xq=ok`、`xqBoards=85/92`、榜首半导体 59.9（雪球分位 80.3 · 中芯国际 第 78 名）。全量 `--quick` = **118/138 通过、失败 20 项**，与基线 `scene-2026-11-14T06-06-54-182Z` 失败清单**逐项完全一致**（新增 0 / 消失 0），零本次引入失败。
+- **今日数据补录**：把本轮真实抓到的雪球数据原子写入 `data/hotTopics/daily/2026-11-14.json` 的 `xueqiu` 字段 + `summary.xq/xqBoards/xqRows`（其它字段零改动），用户重启后立即可见，无需等 4-5 分钟重采。`docs/swallow-catch-manifest.md` 由 quick 自动刷新（137→138 空 catch、行号偏移），属升版应带产物，保留。
+- **未验证项**：浏览器实机渲染；3005 服务仍跑旧代码，需双击桌面「Stock Analyzer.lnk」重启 + Ctrl+F5 才生效。临时探测文件 / quick 日志 / `__pycache__` 已全部清理。
+- **状态**：本地完成，**未 commit / 未 push / 未三端同步**，等用户明确「同步」指令。任务卡存档 `.workbuddy/taskcards/20261114-home-sources.md`。
+
+## 11-14 19:2x AI 设置弹窗「双 Key 并列常显」（→ 20261114d，未同步）
+- **用户指令**：「把 api key 添加一个新的输入框，命名为火山 api key，原来的更名为阿里百炼 api key」。承接 18:47–19:22 三轮可行性问答（火山通道早已实现 / 服务商保持 Qwen / 三服务商差异）；与仍悬置的任务卡 #004（「同时使用」路线）无关，本轮只做 UI 字段。
+- **先查现状摆问题**：火山 Key 输入框**本已存在**（`index.html` 原 L1191-1192，id=`aiVolcApiKey`），被 `app.js:5088 syncSearchModeFields()` 收在 `#aiVolcFields` 内、仅 `searchMode='volc'` 时展开，所以用户在弹窗里看不见。若照字面「新增一个框」会产生**重复 id**，`getElementById` 取到隐藏的第一个、保存读到空值。故改为「复用 + 上移常显」，不重复新增。
+- **改动（4 类文件）**：① `public/index.html`——原 label「API Key」→「阿里百炼 API Key」+ placeholder 同步；把已有 `aiVolcApiKey` 输入框移到其正下方常显、label 改「火山 API Key」、placeholder 重写为「粘贴火山方舟 Ark API Key（留空则保留原值）」并去掉与代码行为不符的「未配置时自动回退内置搜索」；`#aiVolcFields` 只保留火山豆包模型，仍按 volc 模式展开。② `server.js`——`APP_VERSION 20261114c → 20261114d` + 版本注释。③ 8 个 HTML 共 57 处 `?v=` 同步。④ 新增守卫 `scripts/test_ai_settings_keys.js`（40 项）。
+- **零改动边界**：`app.js`（保存/回填按 id 取值，与元素位置无关）、`routes/aiRoutes.js`、`lib/ai/config.js`、`style.css`、`data/ai_config.json`、后端所有路由。**输出数据格式零变化**，按模块铁律第一条「隔离修改，其他模块不受影响」。弹窗已有 `ai-modal-wide` + `.ai-modal-body{max-height:68vh;overflow-y:auto}`（style.css:3836），新增字段不遮挡保存按钮，故 CSS 无需加滚动保护（实施前曾预判要加，实证后撤销）。
+- **诚实登记（本次未改）**：`app.js:5117/5168` 与 `index.html` 百度 Key placeholder 仍写「未配置…将回退内置搜索」，而 `llm.js:281-319` 实际为外部通道失败后**纯推理降级、完全不联网**（20260916c 刻意设计，防静默扣费）。这 3 处属既有文案与行为不一致，不属本轮范围，未擅自扩大改动面。
+- **验证（实跑）**：`node --check` 三文件全过；新守卫 **40/0**；`test_chart_legend 97/0`；在线 3005 服务（未重启）`curl -L /` 实测送达 `v=20261114d`×27、两个新 label 均在；`git diff --numstat` 确认 `app.js` / `style.css` 零改动。全量 `--quick`（后台 2m39s）= **119/139 通过、失败 20 项**：19 项为脚本硬编码 `APP_VERSION='20261112a'` 的既有基线假阳性；剩 `test_e2e_chains.js` 4 项失败（行业解析 / 资金量能 / 降级快照），该脚本对本次改动标识符**零引用**，失败总数与基线 20 项一致，零本次引入失败。总数 138→139 仅因新增守卫且它通过。
+- **副产物**：`docs/swallow-catch-manifest.md` 由 quick 自动刷新（137→138 空 catch + 本次版本注释导致的行号 +3 偏移），属自动生成应带产物，保留登记；`tmp/_quick_20261114d.log`（tmp 被忽略）；`data/test-scenes/scene-2026-11-14T11-34-08-163Z`（失败现场，自动保留 3 天）。
+- **未验证项**：浏览器实机渲染、在弹窗里真实填入火山 Key 后保存。**必须重启服务**：实测当前 3005 进程内存 `APP_VERSION=20261114c`（`/api/health` 返回 `version:"20261114c"`），`/` 302 到 `/index.html?v=20261114c`、请求 `js/app.js?v=20261114d` 被 302 回 `?v=20261114c`——`server.js:172/185` 用**进程内**版本校验并重定向，静态页虽实时读盘已含新字段，但前后端版本戳漂移会让缓存破坏失效、URL 回退。按三步仪式：双击桌面「Stock Analyzer.lnk」重启 → Ctrl+F5 硬刷新。（实施中曾据「静态页实时读盘」推断「无需重启」，经实测证伪并更正。）
+- **状态**：本地完成，**未 commit / 未 push / 未三端同步**，等用户明确「同步」指令。工作区受版本控制改动 35 → 36 项（+新增守卫）。任务卡 #004 仍悬置、未确认、未执行。
+
+## 11-14 20:1x 用户明确「同步」指令 → 三端同步仪式（WAL · 仅登记触发与范围）
+- **触发合法性**：20:13 用户明确下达「同步」字样指令，符合 2026-10-20 铁律与 2026-11-13 Z 裁决。本轮由 agent 执行整套仪式（commit → push → 克隆端 fetch+reset → 三端 hash 校验 → data 带外拷贝），用户不敲命令；非 agent 自行发起、非以留痕/闭环为由补推。
+- **提交前环境实测**：本地 `git status --short` = 36 项（32 M + 4 ??），HEAD `13cb2cb`，ahead/behind `0 0`；克隆端 HEAD `13cb2cb`、porcelain 0。改动分 5 组：① 每日复盘日期化/任意历史交易日补生成/数据补全与 UI 精简（20261113a–d）② 任务卡 #001 全站图例「颜色+形状」双编码（20261114a）③ 机构持仓图例颜色 bug（20261114b）④ 任务卡 #002/#003 首页资讯·舆情数据源扩展与雪球热度参与（20261114c）⑤ AI 设置弹窗双 Key 并列常显（20261114d）；另有 SESSION-STATE.md WAL 与 `docs/swallow-catch-manifest.md` quick 自动刷新产物。
+- **§8.2 交接检查点（同步前执行，append-only 留痕）**：`docs/logic/factor-corr-20261112-review.md` 原档 md5 `9631f759114758ad214d34fc44b25a5f`（与 11-12 归档副本逐字一致）、Trea 档 `5ee90458db899209bf09033ce4a8e8d9` 均未变；`docs/logic/` 未出现 11-14 合规新复核档案 → **仅通报、不进阶段二**，不改 A 段、不自产/代写复核档案。
+- **提交前清理与扫描**：`tmp/_quick_20261114d.log` 用 node `fs.unlinkSync` 删除；根目录 / scripts 的 `_*.js` `_*.log` `__pycache__` 零残留；公开仓库密钥扫描（lib / public/js / scripts / server.js / routes）零命中；`.gitignore` 两端 raw md5 不同但 EOL 归一化后逐字一致（autocrlf 已知坑，非内容漂移）。
+- **运行时实测**：3005 `LISTENING` PID `5492`，`/api/health` 返回 `version:"20261114d"` —— 用户已完成重启，进程内版本与磁盘 `server.js` 一致，19:2x 登记的版本戳漂移已解除。
+- **诚实边界**：本条写于 commit 之前，只登记触发、范围与提交前实测；**同步结果（commit hash / 三端校验 / data 带外拷贝与 md5 比对）不在此预写**，由 `.workbuddy/memory/MEMORY.md` §3 与当轮会话日志在实测后登记。

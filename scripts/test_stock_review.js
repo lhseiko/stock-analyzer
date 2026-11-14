@@ -95,7 +95,19 @@ section('§1 模块结构（lib / prompt / 路由 / tab / 接线）');
   ok(lm.includes('每日复盘'), 'logicModel TREE 含「每日复盘」节点');
 
   const ui = read('public/js/stockReviewUI.js');
-  ok(ui.includes('window.StockReviewUI') && ui.includes('/api/stock-review/pool'), 'UI 全局对象 + 观察池 API 对接');
+  ok(ui.includes('window.StockReviewUI') && !ui.includes('/api/stock-review/pool'),
+    'UI 全局对象在位；观察池接入已移除（20261113b 用户指令）');
+  // [20261113b] 观察池下拉 + 代码输入删除，改日历菜单（日期选择 + 前后跳转），生成按钮保留
+  ok(!ui.includes('id="srPool"') && !ui.includes('id="srSymbol"'), '观察池带入 / 或输代码 已删除');
+  ok(ui.includes('id="srDate"') && ui.includes('id="srPrev"') && ui.includes('id="srNext"') && ui.includes('id="srRun"'),
+    '日历菜单（日期 + 前后跳转）替代观察池位置，生成今日复盘按钮保留');
+  ok(!ui.includes('id="srHist"') && ui.includes('function stepDate'), '往日复盘记录 chip 列表已改为日历跳转');
+  // [20261113a] 切页竞态修复：令牌作废过期响应 + 成功路径必须复位按钮
+  ok(ui.includes('let viewToken = 0') && ui.includes('if (tk !== viewToken) return'),
+    '切页竞态修复：viewToken 作废过期 GET/POST 响应（防覆盖 loading）');
+  ok(ui.includes('if (!state.busy) setLoading(false)'), '回到 tab 且无在途生成时强制复位按钮（修按钮永久置灰）');
+  ok(ui.includes('} finally {') && ui.includes('if (tk === viewToken) setLoading(false)'),
+    '生成成功/失败均走 finally 复位按钮（原成功路径漏复位）');
   ok(!/cdn\.|https?:\/\//.test(ui.replace(/^\s*\*.*$/gm, '').replace(/\/\/.*$/gm, '')) || true, 'UI 零外链 CDN');
 
   // [20261111d] 分钟级真实分时：AKShare 主源 + 腾讯降级 + 代码权威特征 + 来源/口径日标注
@@ -352,8 +364,8 @@ section('§7 大盘复盘 ↔ 个股复盘 双向联动 + 路由守卫 + 20:35 �
   ok(sv.includes('stockReview.runPoolBatch(today)'), 'B0-4 调度调用 runPoolBatch');
 
   const dr = read('public/js/dailyReview.js');
-  ok(dr.includes('decorateWatchPool') && dr.includes('dr-pool-link') && dr.includes('#stockreview'),
-    'B0-3 大盘复盘页观察池「个股复盘 →」直达入口');
+  ok(!dr.includes('dr-pool-link') && !dr.includes('个股复盘 →') && dr.includes('function decorateWatchPool'),
+    '观察池「操作」列与「个股复盘 →」入口已移除（20261113b 用户指令，函数保留为空实现）');
   const app = read('public/js/app.js');
   ok(app.includes("location.hash === '#stockreview'") && app.includes("switchTab('stockreview')"),
     'B0-3 个股页识别 #stockreview 自动切 tab');
@@ -406,7 +418,75 @@ section('§9 缓存键 / 批量幂等 / 反向联动（异步实测）');
   ok(sum.total === 1 && sum.skipped === 1 && sum.degraded === 0 && sum.failed === 0,
     'runPoolBatch 幂等：当日已有复盘 → 跳过且不调 LLM（实际 ' + JSON.stringify({ total: sum.total, skipped: sum.skipped, degraded: sum.degraded, failed: sum.failed }) + '）');
 
-  // 9.4 清理 + 汇总
+  // 9.4 [20261113a] 统一出站清洗：所有个股/所有入口共用 generateReview，故在此锁死口径
+  {
+    const dirty = '分时（腾讯分时 ifzq.gtimg.cn, 242 个分钟点，口径日 2026-11-13 与复盘日一致）呈探底回升；'
+      + '量能峰值仍在 1500 集合竞价（peakVolTime 1500）。所属行业 保险（industryName 保险 / boardName 保险），'
+      + '价格位置 position.label 为低位区间。量比 ratio5 1.04（平量档），但 ratio20 仅 0.68，volumeTier 判为缩量。'
+      + '龙虎榜待晚间补录（盘后延迟发布，20:30 / 次日 15:35 兜底重抓），本文不作推断。';
+    const clean = stockReview.sanitizeReviewMarkdown(dirty);
+    const forbidden = ['ifzq.gtimg.cn', 'peakVolTime', 'tailChgPct', 'closeVsAvgPct', 'ratio5', 'ratio20',
+      'volumeTier', 'position.label', 'industryName', 'boardName', 'AKShare', '分钟点', '20:30', '15:35'];
+    const hits = forbidden.filter(f => clean.includes(f));
+    ok(stockReview.sanitizeReviewMarkdown === 'function' || typeof stockReview.sanitizeReviewMarkdown === 'function',
+      '统一清洗函数已导出（供所有入口共用）');
+    ok(hits.length === 0, '清洗后正文零内部细节（实际残留 ' + JSON.stringify(hits) + '）');
+    ok(clean.includes('探底回升') && clean.includes('低位区间') && clean.includes('龙虎榜待晚间补录'),
+      '保留事实：形态/价格位置/龙虎榜状态不因清洗丢失');
+    ok(clean.includes('20日量比') && clean.includes('量能档位'), '字段名替换为中文而非整句删除');
+    ok(clean.includes('保险') && !/保险\s*\/\s*保险/.test(clean), '行业名去重（不出现「保险 / 保险」）');
+    ok(stockReview.sanitizeReviewMarkdown('') === '' && stockReview.sanitizeReviewMarkdown(null) == null,
+      '空输入安全返回（不抛异常）');
+    const plain = '今日涨幅 0.88%，收 53.80 元。';
+    ok(stockReview.sanitizeReviewMarkdown(plain) === plain, '无反例误伤：正常正文逐字不变');
+    // 降级快照路径同样经过唯一出口：快照模板里的「分钟点 N」不得漏出
+    const snap = '| 分时 | 探底回升 · 开 53.16 / 收 53.80 · 分钟点 242 |';
+    ok(!stockReview.sanitizeReviewMarkdown(snap).includes('分钟点'), '降级快照「分钟点 N」也被清洗（唯一出口覆盖快照路径）');
+    // [20261113c] 用户报障：分时「出现在 **」——时刻被一刀切删掉。时刻属事实，必须保留。
+    const times = '分时最高 15.42 元出现在 09:47，最低 14.97 元出现在 10:23，量能峰值在 14:55（09:47）。';
+    const timesOut = stockReview.sanitizeReviewMarkdown(times);
+    ok(timesOut.includes('09:47') && timesOut.includes('10:23') && timesOut.includes('14:55'),
+      '分时高低点/量能峰值时刻保留（含括号内时刻，不因清洗丢失事实）');
+    const bold = '收盘 **（20:30 兜底重抓）** 后不再推断。';
+    const boldOut = stockReview.sanitizeReviewMarkdown(bold);
+    ok(!boldOut.includes('**') && boldOut.includes('不再推断'),
+      '成对加粗被删空后不残留孤儿 **（20261113c 用户截图「出现在 **」）');
+    const keepBold = '时刻 **09:47** 与分位 **17.17%** 均保留。';
+    ok(stockReview.sanitizeReviewMarkdown(keepBold).includes('**09:47**'),
+      '正文有效加粗不被误删（只清孤儿星，不破坏正常强调）');
+    const sched = '15:30 定时批量、20:45 观察池个股复盘批量、次日 15:35 兜底重抓。';
+    const schedOut = stockReview.sanitizeReviewMarkdown(sched);
+    ok(!/15:30|20:45|15:35/.test(schedOut), '调度时点仍被清洗（与调度词同段才删，不误伤分时时刻）');
+  }
+
+  // 9.45 [20261113c] 生成日期化 + 非交易日拒绝 + 启动补偿（用户报障：周末把昨日数据当今日）
+  {
+    const lib = read('lib/stockReview.js');
+    ok(lib.includes('function assertTradingDay') && lib.includes("err.code = 'NON_TRADING_DAY'"),
+      '生成前先查 trade_calendar：非交易日抛 NON_TRADING_DAY（不落盘）');
+    const ui2 = read('public/js/stockReviewUI.js');
+    ok(/date:\s*targetDate/.test(ui2) && ui2.includes("getElementById('srDate')"),
+      '前端把日历选中日期随 POST 提交（生成不再固定为今天）');
+    ok(ui2.includes('dates.indexOf(inp.value) < 0'), '选中日期无记录时日历回落到最近一份（周末不默认停在休息日）');
+    const srv = read('server.js');
+    ok(srv.includes('启动补偿批量') && srv.includes('runWatchlistBatch(today)'),
+      '服务启动后补跑当日自选股复盘批量（幂等，只补当日）');
+    const tc = require('../lib/tradeCalendar');
+    try { tc.ensureImported(); } catch (e) { /* 忽略 */ }
+    ok(tc.isTradingDay('2026-11-14').is_trading_day === false, '交易日历可判定 2026-11-14 为周末（守卫口径）');
+    // [20261113d] 任意历史交易日可补生成：行情按该日 bar，实时类数据置空并记 dataGaps
+    ok(lib.includes('const isHistorical = date < todayStr()') && lib.includes('meta.dataGaps'),
+      '历史日期走 asOf 分支：行情取该日 bar，缺口写入 meta.dataGaps');
+    ok(lib.includes("'fetchThsHistory'"),
+      '历史行情优先同花顺通道（实测可用），东财/腾讯仅作兜底');
+    ok(lib.includes('dataGaps: (context.meta && context.meta.dataGaps)') && lib.includes('historical: !!(context.meta'),
+      '落盘记录透出 historical / dataGaps（前端横幅据此如实告知）');
+    ok(read('prompts/stock-review-system.md').includes('meta.dataGaps'),
+      '提示词要求 dataGaps 非空时在正文开头写明「数据不足」');
+    ok(ui2.includes('rec.dataGaps') && ui2.includes('数据不足'), '前端横幅展示数据缺口，不静默');
+  }
+
+  // 9.5 清理 + 汇总
   try { fs.rmSync(TMP_ROOT, { recursive: true, force: true }); } catch (e) { /* 忽略 */ }
   console.log('\n===== 结果：' + pass + ' 通过 / ' + fail + ' 失败 =====');
   process.exit(fail ? 1 : 0);

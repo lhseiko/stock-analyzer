@@ -162,8 +162,8 @@ ok(/return 'tp-vol-active'/.test(app) && /return 'tp-vol-quiet'/.test(app),
 ok(/function markdownHtml\(md\)/.test(dr) &&
   /'<pre class="dr-markdown-fallback">' \+ esc\(md\)/.test(dr),
   'Markdown 来源不可信：无渲染库时走 esc 转义兜底（dr-markdown-fallback）');
-ok(/markdownHtml\(md\)/.test(dr) && /decorateWatchPool\(main\)/.test(dr),
-  'renderVersion 正文统一经 markdownHtml 渲染（不再逐字段拼 HTML 着色）');
+ok(/markdownHtml\(md\)/.test(dr) && !/dr-pool-link/.test(dr),
+  'renderVersion 正文统一经 markdownHtml 渲染；观察池操作列已移除（20261113b）');
 
 console.log('\n===== L4 vm 沙箱：真实渲染行为 =====');
 const mkEl = () => ({

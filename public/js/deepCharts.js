@@ -35,21 +35,21 @@ const DeepCharts = {
     });
   },
 
+  // [20261114a] 分类色统一方案 A（跨色系、禁用红绿）；方向语义由文字分析承担，图表序列不再用暗红/暗绿
   colors: {
-    revenue: '#7fa8c9',
-    cost: '#cf8e8e',
-    profit: '#8fb89a',
-    operatingProfit: '#a99bc4',
-    marketCap: '#cdab74',
-    netAssets: '#a99bc4',
-    cash: '#6fb0a4',
-    expense1: '#cf8e8e',
-    expense2: '#cdab74',
-    expense3: '#7fa8c9',
-    mean: '#8b939c',
-    // 20260902g：估值带线色对调，对齐全站利好红/利空绿语义（高估=利空→绿，低估=利好→红）
-    high: '#8fb89a',
-    low: '#cf8e8e',
+    revenue: '#3B82F6',
+    cost: '#F5A524',
+    profit: '#A855F7',
+    operatingProfit: '#38BDF8',
+    marketCap: '#E8D44D',
+    netAssets: '#8B7FE8',
+    cash: '#8A9BB0',
+    expense1: '#F5A524',
+    expense2: '#E8D44D',
+    expense3: '#3B82F6',
+    mean: '#8A9BB0',
+    high: '#38BDF8',
+    low: '#F5A524',
   },
 
   // 通用：为年度图表生成带 TTM 标记的 x 轴标签
@@ -114,9 +114,9 @@ const DeepCharts = {
       xAxis: { type: 'category', data: years },
       yAxis: { type: 'value', name: '%', axisLabel: { formatter: '{value}%' } },
       series: [
-        { name: 'ROE', type: 'line', data: roeData, smooth: true, connectNulls: true, itemStyle: { color: '#cdab74' }, lineStyle: { width: 3 } },
-        { name: '毛利率', type: 'line', data: gmData, smooth: true, connectNulls: true, itemStyle: { color: '#8fb89a' } },
-        { name: '净利率', type: 'line', data: nmData, smooth: true, connectNulls: true, itemStyle: { color: '#7fa8c9' } },
+        { name: 'ROE', type: 'line', data: roeData, smooth: true, connectNulls: true, itemStyle: { color: '#3B82F6' }, lineStyle: { width: 3 } },
+        { name: '毛利率', type: 'line', data: gmData, smooth: true, connectNulls: true, itemStyle: { color: '#F5A524' } },
+        { name: '净利率', type: 'line', data: nmData, smooth: true, connectNulls: true, itemStyle: { color: '#A855F7' } },
       ],
     });
     // 文字解读（方向 + 幅度 + 边际）
@@ -140,10 +140,10 @@ const DeepCharts = {
     if (!chart || !data) return;
     const cats = ['货币资金', '短期投资', '短期负债', '应付账款'];
     const vals = [
-      { value: data.cash, color: '#8fb89a' },
-      { value: data.shortTermInvestments, color: '#7fa8c9' },
-      { value: data.shortTermDebt, color: '#cf8e8e' },
-      { value: data.accountsPayable, color: '#cdab74' },
+      { value: data.cash, color: '#3B82F6' },
+      { value: data.shortTermInvestments, color: '#F5A524' },
+      { value: data.shortTermDebt, color: '#A855F7' },
+      { value: data.accountsPayable, color: '#38BDF8' },
     ];
     // 20261003g：短期偿债柱图升级 2.5D 立体柱（保留数值标签）
     if (window.SA3D && SA3D.bar25D) {
@@ -222,7 +222,7 @@ const DeepCharts = {
         label: { formatter: (p) => (p.value != null ? p.value.toFixed(1) + '亿' : '') },
         series: [{
           name: '负债规模',
-          data: data.map(d => ({ value: d.value, color: '#cf8e8e' })),
+          data: data.map(d => ({ value: d.value, color: '#F5A524' })),
         }],
       });
       chart.setOption(b);
@@ -234,7 +234,7 @@ const DeepCharts = {
         yAxis: { type: 'category', data: cats, inverse: true },
         series: [{
           type: 'bar',
-          data: data.map(d => ({ value: d.value, itemStyle: { color: '#cf8e8e' } })),
+          data: data.map(d => ({ value: d.value, itemStyle: { color: '#F5A524' } })),
           label: { show: true, position: 'right', formatter: '{c}亿' },
         }],
       });
@@ -360,11 +360,11 @@ const DeepCharts = {
     const series = [
       { name: '营业总收入', type: 'line', data: data.map(d => d.revenue), smooth: true, itemStyle: { color: this.colors.revenue } },
       { name: '营业总成本', type: 'line', data: data.map(d => d.cost), smooth: true, itemStyle: { color: this.colors.cost } },
-      { name: '营业成本', type: 'line', data: data.map(d => d.operatingCost), smooth: true, itemStyle: { color: '#f97316' } },
+      { name: '营业成本', type: 'line', data: data.map(d => d.operatingCost), smooth: true, itemStyle: { color: '#E8D44D' } },
     ];
     if (hasOp) {
       legend.push('营运利润');
-      series.push({ name: '营运利润', type: 'line', data: data.map(d => d.operatingProfit || 0), smooth: true, itemStyle: { color: '#7fa8c9' }, lineStyle: { width: 3 }, label: { show: true, formatter: (p) => (p.value != null ? p.value.toFixed(2) : '') } });
+      series.push({ name: '营运利润', type: 'line', data: data.map(d => d.operatingProfit || 0), smooth: true, itemStyle: { color: '#38BDF8' }, lineStyle: { width: 3 }, label: { show: true, formatter: (p) => (p.value != null ? p.value.toFixed(2) : '') } });
     }
     chart.setOption({
       tooltip: { trigger: 'axis' },
@@ -511,7 +511,7 @@ const DeepCharts = {
     const years = this._yearLabels(data);
     const values = data.map(d => d[label.toLowerCase()] || d.pe || 0);
     const series = [
-      { name: label, type: 'line', data: values, smooth: true, itemStyle: { color: '#7fa8c9' }, label: { show: true, formatter: '{c}' } },
+      { name: label, type: 'line', data: values, smooth: true, itemStyle: { color: '#3B82F6' }, label: { show: true, formatter: '{c}' } },
       { name: '均值', type: 'line', data: years.map(() => stats.mean), lineStyle: { type: 'dashed', color: this.colors.mean }, itemStyle: { color: this.colors.mean } },
       { name: '高估线(+1σ)', type: 'line', data: years.map(() => stats.high), lineStyle: { type: 'dashed', color: this.colors.high }, itemStyle: { color: this.colors.high } },
       { name: '低估线(-1σ)', type: 'line', data: years.map(() => stats.low), lineStyle: { type: 'dashed', color: this.colors.low }, itemStyle: { color: this.colors.low } },
@@ -839,8 +839,8 @@ const DeepCharts = {
     const years = data.series.map(d => d.year);
     const values = data.series.map(d => d.yield);
     const s = data.stats || { mean: 0, std: 0, high: 0, low: 0 };
-    // 参考线配色：均值灰 / +1σ 绿(高分红) / -1σ 红(低分红) —— 用户指定语义（非价格涨跌色）
-    const cMean = '#95a5a6', cHigh = '#5cb85c', cLow = '#e74c3c';
+    // [20261114a] 参考线配色：方案 A 钢灰 / 明黄 / 靛紫（分类色禁用红绿；高低语义由线型与名称承担）
+    const cMean = '#8A9BB0', cHigh = '#E8D44D', cLow = '#8B7FE8';
     chart.setOption({
       tooltip: { trigger: 'axis', formatter: (ps) => {
         const p = ps[0];
@@ -855,7 +855,7 @@ const DeepCharts = {
       yAxis: { type: 'value', name: '股息率(%)' },
       series: [
         { name: '股息率', type: 'line', data: values, smooth: true, symbolSize: 7,
-          itemStyle: { color: '#7fa8c9' }, lineStyle: { width: 3 },
+          itemStyle: { color: '#3B82F6' }, lineStyle: { width: 3 },
           label: { show: true, formatter: (p) => p.value != null ? p.value.toFixed(2) : '', position: 'top' } },
         { name: '均值', type: 'line', data: years.map(() => s.mean), smooth: false, symbol: 'none',
           lineStyle: { type: 'dashed', color: cMean, width: 1.5 }, itemStyle: { color: cMean } },
@@ -1282,7 +1282,7 @@ const DeepCharts = {
       el.innerHTML = '<div class="data-empty">⚠️ 该维度构成数据为空。</div>';
       return;
     }
-    const palette = ['#7fa8c9', '#cf8e8e', '#8fb89a', '#cdab74', '#a99bc4', '#6fb0a4', '#f97316', '#94a3b8'];
+    const palette = ['#3B82F6', '#F5A524', '#A855F7', '#38BDF8', '#E8D44D', '#8B7FE8', '#8A9BB0', '#E8D44D'];
     const series = names.map((n, i) => ({
       name: n,
       type: 'line', smooth: true,
@@ -1356,7 +1356,7 @@ const DeepCharts = {
       return skipMarks.some(m => n.includes(m));
     };
 
-    const palette = ['#7fa8c9', '#cdab74'];
+    const palette = ['#3B82F6', '#F5A524'];
     const domesticData = [];
     const foreignData = [];
     let totalForeignRaw = 0;
@@ -1983,7 +1983,7 @@ const DeepCharts = {
         unit: ' 亿',
         noTooltip: true,
         depth: 9,
-        series: [{ name: '保费收入(亿)', data: premiums, color: '#7fa8c9' }],
+        series: [{ name: '保费收入(亿)', data: premiums, color: '#3B82F6' }],
       });
       b.tooltip = baseOpt.tooltip;
       b.legend = baseOpt.legend;
@@ -1991,7 +1991,7 @@ const DeepCharts = {
       b.xAxis = baseOpt.xAxis;
       b.yAxis = baseOpt.yAxis;
       b.series = b.series.concat([
-        { name: '同比增长(%)', type: 'line', yAxisIndex: 1, data: growths, itemStyle: { color: '#cdab74' }, smooth: true },
+        { name: '同比增长(%)', type: 'line', yAxisIndex: 1, data: growths, itemStyle: { color: '#F5A524' }, smooth: true },
       ]);
       chart.setOption(b);
       return;
@@ -2004,8 +2004,8 @@ const DeepCharts = {
       xAxis: baseOpt.xAxis,
       yAxis: baseOpt.yAxis,
       series: [
-        { name: '保费收入(亿)', type: 'bar', data: premiums, itemStyle: { color: '#7fa8c9' } },
-        { name: '同比增长(%)', type: 'line', yAxisIndex: 1, data: growths, itemStyle: { color: '#cdab74' }, smooth: true },
+        { name: '保费收入(亿)', type: 'bar', data: premiums, itemStyle: { color: '#3B82F6' } },
+        { name: '同比增长(%)', type: 'line', yAxisIndex: 1, data: growths, itemStyle: { color: '#F5A524' }, smooth: true },
       ],
     });
   },
@@ -2151,13 +2151,13 @@ const DeepCharts = {
         axisPointer: { type: 'line' },
         tooltipFmt: nbvTooltipFmt,
         series: [
-          { name: '当季NBV(亿)', type: 'bar', data: quarterVals.map(v => ({ value: v, color: '#a99bc4' })) },
-          { name: '累计NBV(亿)', type: 'line', data: cumVals, itemStyle: { color: '#7fa8c9' }, smooth: false, yAxisIndex: 0 },
+          { name: '当季NBV(亿)', type: 'bar', data: quarterVals.map(v => ({ value: v, color: '#8B7FE8' })) },
+          { name: '累计NBV(亿)', type: 'line', data: cumVals, itemStyle: { color: '#3B82F6' }, smooth: false, yAxisIndex: 0 },
           {
             name: 'TTM滚动(亿)',
             type: 'line',
             data: ttmVals,
-            itemStyle: { color: '#e6b85c' },
+            itemStyle: { color: '#E8D44D' },
             lineStyle: { width: 3 },
             smooth: false,
             yAxisIndex: 0,
@@ -2208,12 +2208,12 @@ const DeepCharts = {
         ],
         series: [
           { name: '当季NBV(亿)', type: 'bar', data: quarterVals, itemStyle: { color: '#a99bc4' }, yAxisIndex: 0 },
-          { name: '累计NBV(亿)', type: 'line', data: cumVals, itemStyle: { color: '#7fa8c9' }, smooth: false, yAxisIndex: 0 },
+          { name: '累计NBV(亿)', type: 'line', data: cumVals, itemStyle: { color: '#3B82F6' }, smooth: false, yAxisIndex: 0 },
           {
             name: 'TTM滚动(亿)',
             type: 'line',
             data: ttmVals,
-            itemStyle: { color: '#e6b85c' },
+            itemStyle: { color: '#E8D44D' },
             lineStyle: { width: 3 },
             smooth: false,
             yAxisIndex: 0,
@@ -2484,9 +2484,9 @@ const DeepCharts = {
       series: [
         {
           name: meta.legend || '收入(亿)', type: 'line', smooth: true, data: values,
-          itemStyle: { color: '#5b8fb9' }, lineStyle: { width: 3 },
+          itemStyle: { color: '#3B82F6' }, lineStyle: { width: 3 },
           label: { show: true, formatter: (p) => (p.value != null ? p.value.toFixed(2) : '') },
-          areaStyle: { color: 'rgba(91,143,185,0.08)' },
+          areaStyle: { color: 'rgba(59,130,246,0.08)' },
         },
         {
           name: '同比增长(%)', type: 'line', yAxisIndex: 1, data: yoyColored,

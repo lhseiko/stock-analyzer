@@ -177,19 +177,19 @@ const ShareholderCharts = {
     const series = [
       {
         name: '股东户数', type: 'bar', data: nums,
-        itemStyle: { color: '#5470c6' }, barWidth: '50%',
+        itemStyle: { color: '#3B82F6' }, barWidth: '50%',
       },
       {
         name: '环比变化%', type: 'line', yAxisIndex: 1, smooth: true, data: ratios,
-        lineStyle: { width: 2, color: '#cdab74' }, itemStyle: { color: '#cdab74' },
+        lineStyle: { width: 2, color: '#F5A524' }, itemStyle: { color: '#F5A524' },
       },
     ];
     const legendData = ['股东户数', '环比变化%'];
     if (showPrice) {
       series.push({
         name: '股价', type: 'line', yAxisIndex: 2, smooth: true, data: priceCloses,
-        // [20261109b] 股价叠加线是「绝对价位序列」而非涨跌信号 → 中性蓝，不占用方向色
-        lineStyle: { width: 2, color: '#7fa8c9', type: 'dashed' }, itemStyle: { color: '#7fa8c9' },
+        // [20261114a] 股价叠加线是「绝对价位序列」而非涨跌信号 → 方案 A 紫罗兰虚线，不占用方向色
+        lineStyle: { width: 2, color: '#A855F7', type: 'dashed' }, itemStyle: { color: '#A855F7' },
       });
       legendData.push('股价');
     }
@@ -205,15 +205,15 @@ const ShareholderCharts = {
         yAxis: yAxes,
         axisPointer: { type: 'line' },
         series: [
-          { name: '股东户数', type: 'bar', data: nums.map(v => ({ value: v, color: '#5470c6' })) },
+          { name: '股东户数', type: 'bar', data: nums.map(v => ({ value: v, color: '#3B82F6' })) },
           {
             name: '环比变化%', type: 'line', yAxisIndex: 1, smooth: true, data: ratios,
-            lineStyle: { width: 2, color: '#cdab74' }, itemStyle: { color: '#cdab74' },
+            lineStyle: { width: 2, color: '#F5A524' }, itemStyle: { color: '#F5A524' },
           },
           ...(showPrice ? [{
             name: '股价', type: 'line', yAxisIndex: 2, smooth: true, data: priceCloses,
-            // [20261109b] 股价叠加线是「绝对价位序列」而非涨跌信号 → 中性蓝，不占用方向色
-        lineStyle: { width: 2, color: '#7fa8c9', type: 'dashed' }, itemStyle: { color: '#7fa8c9' },
+            // [20261114a] 股价叠加线是「绝对价位序列」而非涨跌信号 → 方案 A 紫罗兰虚线，不占用方向色
+        lineStyle: { width: 2, color: '#A855F7', type: 'dashed' }, itemStyle: { color: '#A855F7' },
           }] : []),
         ],
       });
@@ -360,8 +360,8 @@ const ShareholderCharts = {
         axisPointer: { type: 'line' },
         tooltipFmt,
         series: [
-          { name: '机构家数', type: 'bar', data: orgNums.map(v => ({ value: v, color: '#7fa8c9' })) },
-          { name: '占流通股比%', type: 'line', yAxisIndex: 1, smooth: true, data: ratios, lineStyle: { width: 2 } },
+          { name: '机构家数', type: 'bar', data: orgNums.map(v => ({ value: v, color: '#3B82F6' })) },
+          { name: '占流通股比%', type: 'line', yAxisIndex: 1, smooth: true, data: ratios, lineStyle: { width: 2, color: '#F5A524' }, itemStyle: { color: '#F5A524' } },
         ],
       });
       b.dataZoom = zoom;
@@ -378,8 +378,8 @@ const ShareholderCharts = {
         ],
         dataZoom: zoom,
         series: [
-          { name: '机构家数', type: 'bar', data: orgNums, itemStyle: { color: '#7fa8c9' }, barWidth: '50%' },
-          { name: '占流通股比%', type: 'line', yAxisIndex: 1, smooth: true, data: ratios, lineStyle: { width: 2 } },
+          { name: '机构家数', type: 'bar', data: orgNums, itemStyle: { color: '#3B82F6' }, barWidth: '50%' },
+          { name: '占流通股比%', type: 'line', yAxisIndex: 1, smooth: true, data: ratios, lineStyle: { width: 2, color: '#F5A524' }, itemStyle: { color: '#F5A524' } },
         ],
       };
     }

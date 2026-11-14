@@ -254,6 +254,7 @@
     const lo = Math.floor(Math.min(...all) - 0.5);
     const hi = Math.ceil(Math.max(...all) + 0.5);
     trendChart = echarts.init(el, 'softDark');
+    if (window.SA_CHART) trendChart = SA_CHART.attach(trendChart); // [20261114a] 补齐 attach：图例语义与方案 A 色板对齐
     trendChart.setOption({
       animation: false,
       grid: { left: 56, right: 24, top: 34, bottom: 32 },
@@ -280,11 +281,11 @@
         splitLine: { lineStyle: { color: '#21262D' } },
       },
       series: [
-        // [20261109b] 持仓比例 / 现金比例是「结构占比序列」，不是利好/利空 → 中性蓝 / 琥珀
+        // [20261114a] 持仓比例 / 现金比例是「结构占比序列」，不是利好/利空 → 方案 A 亮蓝 / 琥珀橙
         { name: '持仓比例', type: 'line', data: stock, symbolSize: 7,
-          lineStyle: { width: 2, color: '#7fa8c9' }, itemStyle: { color: '#7fa8c9' } },
+          lineStyle: { width: 2, color: '#3B82F6' }, itemStyle: { color: '#3B82F6' } },
         { name: '现金比例', type: 'line', data: cash, symbolSize: 7,
-          lineStyle: { width: 2, color: '#cdab74' }, itemStyle: { color: '#cdab74' } },
+          lineStyle: { width: 2, color: '#F5A524' }, itemStyle: { color: '#F5A524' } },
       ],
     });
     if (!renderTrendChart._resizeBound) {

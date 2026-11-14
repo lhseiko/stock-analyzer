@@ -287,7 +287,7 @@ const CapitalCharts = {
       series: [
         {
           name: '20日量能比', type: 'line', data: ratios, smooth: true, symbol: 'circle', symbolSize: 4,
-          lineStyle: { width: 2, color: '#cdab74' }, itemStyle: { color: '#cdab74' },
+          lineStyle: { width: 2, color: '#F5A524' }, itemStyle: { color: '#F5A524' },
           connectNulls: false,
           markLine: {
             silent: true, symbol: 'none',
@@ -420,9 +420,9 @@ const CapitalCharts = {
             name: '主力净流入', data: mainNet, barSize: [16, 16],
             color: function (v) { return v >= 0 ? '#F6465D' : '#0ECB81'; },
           },
-          { name: '超大/大单', kind: 'line', data: largeNet, color: '#cdab74' },
-          { name: '中单', kind: 'line', data: mediumNet, color: '#7fa8c9' },
-          { name: '小单', kind: 'line', data: smallNet, color: '#8b939c' },
+          { name: '超大/大单', kind: 'line', data: largeNet, color: '#F5A524' },
+          { name: '中单', kind: 'line', data: mediumNet, color: '#3B82F6' },
+          { name: '小单', kind: 'line', data: smallNet, color: '#8A9BB0' },
         ],
         legend: { data: ['主力净流入', '超大/大单', '中单', '小单'], top: 28, left: 'center', itemWidth: 14, itemHeight: 10, textStyle: { fontSize: 11 } },
         view: { alpha: 14, beta: -32, distance: 240 },
@@ -444,9 +444,9 @@ const CapitalCharts = {
               borderRadius: [2, 2, 0, 0],
             },
           },
-          { name: '超大/大单', type: 'line', data: largeNet, smooth: true, lineStyle: { width: 2 }, itemStyle: { color: '#cdab74' }, symbol: 'none' },
-          { name: '中单', type: 'line', data: mediumNet, smooth: true, lineStyle: { width: 2 }, itemStyle: { color: '#7fa8c9' }, symbol: 'none' },
-          { name: '小单', type: 'line', data: smallNet, smooth: true, lineStyle: { width: 2 }, itemStyle: { color: '#8b939c' }, symbol: 'none' },
+          { name: '超大/大单', type: 'line', data: largeNet, smooth: true, lineStyle: { width: 2 }, itemStyle: { color: '#F5A524' }, symbol: 'none' },
+          { name: '中单', type: 'line', data: mediumNet, smooth: true, lineStyle: { width: 2 }, itemStyle: { color: '#3B82F6' }, symbol: 'none' },
+          { name: '小单', type: 'line', data: smallNet, smooth: true, lineStyle: { width: 2 }, itemStyle: { color: '#8A9BB0' }, symbol: 'none' },
         ],
       };
     }
@@ -545,8 +545,8 @@ const CapitalCharts = {
       yAxis: { type: 'value', scale: true, axisLabel: { formatter: v => CapitalCharts.formatVol(v) } },
       series: [{
         name: 'OBV', type: 'line', data: s.obv, smooth: true, symbol: 'none',
-        areaStyle: { color: window.SA_CHART ? SA_CHART.grad('#7fa8c9', 0.22, 0) : { opacity: 0.1 } },
-        lineStyle: { width: 2, color: '#7fa8c9' },
+        areaStyle: { color: window.SA_CHART ? SA_CHART.grad('#3B82F6', 0.22, 0) : { opacity: 0.1 } },
+        lineStyle: { width: 2, color: '#3B82F6' },
       }],
     });
   },
@@ -566,7 +566,7 @@ const CapitalCharts = {
       yAxis: { type: 'value', axisLabel: { formatter: '{value}' } },
       series: [{
         name: 'VR', type: 'line', data: s.vr, smooth: true,
-        lineStyle: { width: 2, color: '#cdab74' },
+        lineStyle: { width: 2, color: '#F5A524' },
         markLine: {
           data: [
             { yAxis: 200, lineStyle: { color: '#cf8e8e', type: 'dashed' }, label: { formatter: '超买200' } },
@@ -594,11 +594,11 @@ const CapitalCharts = {
       series: [
         {
           name: '成交量', type: 'bar', data: s.volumes, barMaxWidth: 12,
-          itemStyle: { color: 'rgba(127,168,201,0.60)', borderRadius: [2, 2, 0, 0] },
+          itemStyle: { color: 'rgba(59,130,246,0.60)', borderRadius: [2, 2, 0, 0] },
         },
-        { name: 'MA5', type: 'line', data: s.volMA5, smooth: true, symbol: 'none', lineStyle: { width: 1.5, color: '#cf8e8e' } },
-        { name: 'MA10', type: 'line', data: s.volMA10, smooth: true, symbol: 'none', lineStyle: { width: 1.5, color: '#cdab74' } },
-        { name: 'MA20', type: 'line', data: s.volMA20, smooth: true, symbol: 'none', lineStyle: { width: 1.5, color: '#a99bc4' } },
+        { name: 'MA5', type: 'line', data: s.volMA5, smooth: true, symbol: 'none', lineStyle: { width: 1.5, color: '#F5A524' } },
+        { name: 'MA10', type: 'line', data: s.volMA10, smooth: true, symbol: 'none', lineStyle: { width: 1.5, color: '#A855F7' } },
+        { name: 'MA20', type: 'line', data: s.volMA20, smooth: true, symbol: 'none', lineStyle: { width: 1.5, color: '#38BDF8' } },
       ],
     });
   },
@@ -631,10 +631,10 @@ const CapitalCharts = {
         legend: { data: ['融资余额(亿)', '融券余额(亿)'], top: 0 },
         view: { alpha: 14, beta: -32, distance: 240 },
         series: [
-          // [20261109b] 融资/融券余额是「存量序列」，不是方向信号 → 中性蓝 / 琥珀，
+          // [20261109b] 融资/融券余额是「存量序列」，不是方向信号 → 方案 A 亮蓝 / 琥珀橙，
           // 避免把「柱子是红色」误读成利好；该卡的增减方向语义由 renderMarginSummary 的 cap-pos/cap-neg 单独承担。
-          { name: '融资余额(亿)', data: rzBalance, barSize: [16, 16], color: '#7fa8c9' },
-          { name: '融券余额(亿)', kind: 'line', data: rqBalance, color: '#cdab74' },
+          { name: '融资余额(亿)', data: rzBalance, barSize: [16, 16], color: '#3B82F6' },
+          { name: '融券余额(亿)', kind: 'line', data: rqBalance, color: '#F5A524' },
         ],
       });
       marginOpt.tooltip.axisPointer = undefined;
@@ -648,9 +648,9 @@ const CapitalCharts = {
         series: [
           {
             name: '融资余额(亿)', type: 'bar', data: rzBalance, barMaxWidth: 16,
-            itemStyle: { color: 'rgba(127,168,201,0.78)', borderRadius: [2, 2, 0, 0] },
+            itemStyle: { color: 'rgba(59,130,246,0.78)', borderRadius: [2, 2, 0, 0] },
           },
-          { name: '融券余额(亿)', type: 'line', data: rqBalance, smooth: true, symbol: 'none', lineStyle: { width: 2, color: '#cdab74' } },
+          { name: '融券余额(亿)', type: 'line', data: rqBalance, smooth: true, symbol: 'none', lineStyle: { width: 2, color: '#F5A524' } },
         ],
       };
     }

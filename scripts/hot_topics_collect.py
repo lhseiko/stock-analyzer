@@ -46,7 +46,8 @@ def load_community_cfg():
     """读取 data/hotTopics/config.json 的 community 节（缺省：两源皆启用）。
     键：em(东财股吧开关) / ths(同花顺讨论开关) / emIntervalSec(东财抓取间隔) / emFailStreakMax(东财连续失败熔断阈值)。
     与 Node 侧 lib/hotTopicsWeekly/config.js 共用同一份用户配置。"""
-    defaults = {'em': True, 'ths': True, 'emIntervalSec': 1.2, 'emFailStreakMax': 8}
+    defaults = {'em': True, 'ths': True, 'emIntervalSec': 1.2,
+                'emFailStreakMax': 3, 'emDailyBlock': True}
     try:
         with open(_p('data/hotTopics/config.json'), 'r', encoding='utf-8') as f:
             cfg = json.load(f)
@@ -209,12 +210,16 @@ def collect_market():
     }
     rows = []
     last_err = ''
-    for host in ('push2delay.eastmoney.com', 'push2.eastmoney.com'):
+    # 20261114c：实测 11-12 / 11-14 出现 RemoteDisconnected（服务端提前断连）。
+    # 外部通道故障无法从代码层根治，此处做到：每 host 两轮尝试 + 20s 超时 + 失败退避，
+    # 仍失败则如实留 error 状态，由前端标注「交叉验证今日不可用」，绝不编造数值。
+    hosts = ('push2delay.eastmoney.com', 'push2.eastmoney.com') * 2
+    for host in hosts:
         try:
             for pn in range(1, 7):  # 上限 600 条足够
                 params['pn'] = str(pn)
                 r = requests.get('https://%s/api/qt/clist/get' % host, params=params,
-                                 headers={'User-Agent': UA}, timeout=12)
+                                 headers={'User-Agent': UA}, timeout=20)
                 d = r.json()
                 diff = (d.get('data') or {}).get('diff') or []
                 if not diff:
@@ -246,7 +251,7 @@ def collect_market():
                 return {'status': 'ok', 'host': host, 'rows': uniq}
         except Exception as e:
             last_err = str(e)[:120]
-            time.sleep(1)
+            time.sleep(2)
     if last_err:
         raise RuntimeError(last_err)
     return {'status': 'empty', 'rows': []}
@@ -361,6 +366,164 @@ def collect_news(cfg=None):
         time.sleep(0.4)
         items.extend(fetch_cls_telegraph())
     return {'status': 'ok' if items else 'empty', 'items': items}
+
+
+# ---------- 雪球公开热度榜 → 板块归集（20261114c） ----------
+# 实测（2026-11-14）：雪球「热门话题/热帖/热股榜」接口均需登录或触发 WAF
+#   （hots/topic/list.json=400、hot_rank/list=403、query/v1/search/status.json=400016），
+#   只有 service/v5/stock/screener/screen 公开可用（xueqiu.com 会 301 到 www.xueqiu.com）。
+# 因此本通道只消费「公开个股关注榜数值」（关注人数/排名/涨跌幅），不抓帖子正文、不做话题文本分析。
+# 合规：遵守 lib/ai/earnings.js《来源分级》——论坛/社区内容只作市场情绪与热度代理，
+#       绝不作为行情数字、财报数字或估值结论的依据。
+XQ_SCREEN_URL = 'https://www.xueqiu.com/service/v5/stock/screener/screen'
+
+
+def load_xq_cfg():
+    """读取 data/hotTopics/config.json 的 xueqiu 节（缺省：启用 / 5 页 / 每页 200）。"""
+    defaults = {'enabled': True, 'pages': 5, 'size': 200}
+    try:
+        with open(_p('data/hotTopics/config.json'), 'r', encoding='utf-8') as f:
+            c = json.load(f).get('xueqiu') or {}
+        out = dict(defaults)
+        for k in defaults:
+            if k in c:
+                out[k] = c[k]
+        return out
+    except Exception:
+        return defaults
+
+
+def _xq_symbol(code):
+    """6 位 A 股代码 → 雪球 SHxxxxxx / SZxxxxxx。"""
+    c = str(code or '').strip()
+    if len(c) != 6 or not c.isdigit():
+        return ''
+    return ('SH' if c[0] in '69' else 'SZ') + c
+
+
+def fetch_xueqiu_follow_rank(max_pages=5, size=200):
+    """雪球公开 A 股关注榜（无需登录）。返回 [{symbol,name,follow,pct,rank}]，失败返回 []。"""
+    rows = []
+    for page in range(1, max_pages + 1):
+        url = (XQ_SCREEN_URL + '?category=CN&size=%d&order=desc&order_by=follow'
+               '&only_count=0&page=%d' % (size, page))
+        try:
+            r = requests.get(url, headers={'User-Agent': UA, 'Referer': 'https://xueqiu.com/'},
+                             timeout=15, proxies=THS_PROXIES)
+            if r.status_code != 200:
+                break
+            lst = ((r.json() or {}).get('data') or {}).get('list') or []
+            if not lst:
+                break
+            base = len(rows)
+            for i, it in enumerate(lst):
+                sym = str(it.get('symbol') or '').strip()
+                if not sym:
+                    continue
+                try:
+                    rows.append({'symbol': sym, 'name': str(it.get('name') or ''),
+                                 'follow': int(it.get('follow') or 0),
+                                 'pct': float(it.get('pct') or 0), 'rank': base + i + 1})
+                except (TypeError, ValueError):
+                    continue
+            if len(lst) < size:
+                break
+            time.sleep(0.4)
+        except Exception:
+            break
+    return rows
+
+
+def collect_xueqiu(boards, members, cfg=None):
+    """雪球热度 → 板块归集。全部确定性代码，LLM 不参与。
+
+    口径（默认假设，写在此处以便人工裁决）：
+      · 板块雪球热度 = 该板块代表性成分股在榜中的「排名得分」均值（未入榜记 0、不拉低均值）；
+        排名得分 = 100 - (rank-1)*100/total（线性分位代理，越靠前越高）。
+      · 只进 engine.js 的 crossCheck 交叉验证修正，不进 A/B/C/D/E 加权公式 ——
+        因此不会抬高 Min-Max 归一化的条数基数，不引起榜单名次系统性漂移。
+      · 回传 topStock / topRank，让板块热度能落到具体个股（服务个股热度判断）。
+    返回 {status, boards:{code:{score,topStock,topRank,hits,stocks}}, count, rows, note}。
+    """
+    cfg = cfg or {}
+    out = {'status': 'disabled', 'boards': {}, 'count': 0, 'rows': 0, 'note': ''}
+    if not cfg.get('enabled', True):
+        return out
+    rank = fetch_xueqiu_follow_rank(int(cfg.get('pages', 5)), int(cfg.get('size', 200)))
+    if not rank:
+        out['status'] = 'error'
+        out['note'] = '雪球公开关注榜不可用（接口变更/网络受限）'
+        return out
+    by_sym = {}
+    for r in rank:
+        by_sym.setdefault(r['symbol'], r)
+    total = len(rank)
+    raw_boards = {}
+    for b in boards:
+        code = b.get('code')
+        if not code:
+            continue
+        scores, hits = [], []
+        for m in (members.get(code) or []):
+            sym = _xq_symbol(m.get('code'))
+            hit = by_sym.get(sym)
+            if not hit:
+                continue
+            s = max(0.0, 100.0 - (hit['rank'] - 1) * 100.0 / max(total, 1))
+            scores.append(s)
+            hits.append({'symbol': sym, 'name': hit['name'], 'rank': hit['rank'],
+                         'follow': hit['follow'], 'pct': hit['pct'], 'raw': round(s, 2)})
+        if not hits:
+            continue
+        top = sorted(hits, key=lambda x: x['rank'])[0]
+        raw_boards[code] = {
+            'raw': round(sum(scores) / len(scores), 2),
+            'topStock': top['name'] or top['symbol'],
+            'topRank': top['rank'],
+            'hits': len(hits),
+            'stocks': hits,
+        }
+    # ⚠️ 必须做板块间 Min-Max 归一化：原始排名分普遍偏高（前 1000 名大票约 80~99），
+    #    直接拿绝对阈值 70 判定会让 85 个板块几乎全部命中「雪球热」，41 个被误判单源虚热、
+    #    榜单名次大幅洗牌。归一化为 0~100 的**板块间分位**后，只有相对更热的板块参与修正。
+    vals = [v['raw'] for v in raw_boards.values()]
+    lo, hi = (min(vals), max(vals)) if vals else (0.0, 0.0)
+    boards_data = {}
+    for code, v in raw_boards.items():
+        item = {k: val for k, val in v.items() if k != 'raw'}
+        item['score'] = 50.0 if hi == lo else round((v['raw'] - lo) / (hi - lo) * 100, 2)
+        boards_data[code] = item
+    out.update({
+        'status': 'ok', 'boards': boards_data, 'count': len(boards_data), 'rows': total,
+        'note': '雪球公开关注榜（前 %d 名）按板块代表性成分股归集；仅作社区热度代理，非权威行情' % total,
+    })
+    return out
+
+
+def _em_block_path():
+    return _p('data/hotTopics/em_blocked_date.txt')
+
+
+def em_blocked_today(date_str, enabled):
+    """东财股吧当日已确认被反爬拦截 → 跳过本源，避免重复 92 次无效请求（约 2 分钟）。"""
+    if not enabled:
+        return False
+    try:
+        with open(_em_block_path(), 'r', encoding='utf-8') as f:
+            return f.read().strip() == date_str
+    except Exception:
+        return False
+
+
+def mark_em_blocked(date_str):
+    try:
+        path = _em_block_path()
+        tmp = path + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            f.write(date_str)
+        os.replace(tmp, path)
+    except Exception:
+        pass
 
 
 # ---------- 同花顺讨论 API（替代东财股吧：绕过验证码墙，20260910） ----------
@@ -585,7 +748,12 @@ def collect_guba_em(boards, cfg):
             time.sleep(interval + random.uniform(0, 0.3))
     save_cookies(session, _p('data/hotTopics/em_cookies.txt'))
     status = 'challenge' if challenged else ('ok' if ok_cnt > 0 else 'empty')
-    return {'status': status, 'boards': boards_data, 'okCount': ok_cnt, 'total': total, 'mapCount': total}
+    if challenged:
+        # 反爬是外部风控，代码层无法根治。记录当日熔断，后续重采直接跳过本源，
+        # 由同花顺单源承担社区数据，前端如实标注（不编造、不静默留白）。
+        mark_em_blocked(datetime.now().strftime('%Y-%m-%d'))
+    return {'status': status, 'boards': boards_data, 'okCount': ok_cnt,
+            'total': total, 'mapCount': total, 'blockedToday': bool(challenged)}
 
 
 def update_sector_map(promoted, removed):
@@ -689,16 +857,24 @@ def main():
     # 2) 社区讨论（双源：同花顺讨论 API 为主源 + 东财股吧板块吧为补充源；任一可用即非降级）
     comm_cfg = load_community_cfg()
     news_cfg = load_news_cfg()
+    xq_cfg = load_xq_cfg()
     boards = []
     try:
         m = load_sector_map(_p('data/hotTopics/sector_map.json'))
         boards = [b for b in m.get('boards', [])]
     except Exception as e:
         result['errors'].append('sector_map: ' + str(e)[:160])
+
+    # 板块成分股映射：同花顺讨论与雪球归集共用，每日只构建一次（7 天缓存复用）
+    members = {}
+    try:
+        members = build_members(boards, _p('data/hotTopics/sector_members.json'))
+    except Exception as e:
+        result['errors'].append('sector_members: ' + str(e)[:160])
+
     # 2a) 同花顺讨论 API（按板块代表性成分股归集）
     if comm_cfg.get('ths', True):
         try:
-            members = build_members(boards, _p('data/hotTopics/sector_members.json'))
             result['guba'] = collect_guba_ths(boards, members, args.interval)
             result['guba']['mapCount'] = len(boards)
             result['guba']['memberTotal'] = sum(len(v) for v in members.values())
@@ -707,13 +883,18 @@ def main():
             result['errors'].append('guba(ths): ' + str(e)[:160])
     else:
         result['guba'] = {'status': 'disabled', 'boards': {}, 'okCount': 0, 'mapCount': len(boards)}
-    # 2b) 东财股吧板块吧（真实散户帖 + 板块总帖数；1 板块 1 请求，带风控熔断）
+    # 2b) 东财股吧板块吧（真实散户帖 + 板块总帖数；1 板块 1 请求，带当日熔断记忆）
     if comm_cfg.get('em', True):
-        try:
-            result['gubaEm'] = collect_guba_em(boards, comm_cfg)
-        except Exception as e:
-            result['gubaEm'] = {'status': 'error', 'boards': {}, 'okCount': 0, 'mapCount': len(boards)}
-            result['errors'].append('guba(em): ' + str(e)[:160])
+        if em_blocked_today(args.date, comm_cfg.get('emDailyBlock', True)):
+            result['gubaEm'] = {'status': 'blocked', 'boards': {}, 'okCount': 0,
+                                'mapCount': len(boards), 'blockedToday': True,
+                                'note': '当日已确认东财股吧反爬拦截，跳过重采；社区数据由同花顺单源承担'}
+        else:
+            try:
+                result['gubaEm'] = collect_guba_em(boards, comm_cfg)
+            except Exception as e:
+                result['gubaEm'] = {'status': 'error', 'boards': {}, 'okCount': 0, 'mapCount': len(boards)}
+                result['errors'].append('guba(em): ' + str(e)[:160])
     else:
         result['gubaEm'] = {'status': 'disabled', 'boards': {}, 'okCount': 0, 'mapCount': len(boards)}
     # 3) 舆情文本
@@ -722,6 +903,12 @@ def main():
     except Exception as e:
         result['news'] = {'status': 'error', 'items': []}
         result['errors'].append('news: ' + str(e)[:160])
+    # 4) 雪球公开热度榜（20261114c：按板块成分股归集，参与 crossCheck 热度判断）
+    try:
+        result['xueqiu'] = collect_xueqiu(boards, members, xq_cfg)
+    except Exception as e:
+        result['xueqiu'] = {'status': 'error', 'boards': {}, 'count': 0, 'rows': 0}
+        result['errors'].append('xueqiu: ' + str(e)[:160])
 
     result['summary'] = {
         'market': result['market'].get('status'), 'marketRows': len(result['market'].get('rows', [])),
@@ -729,7 +916,10 @@ def main():
         'gubaTotal': result['guba'].get('mapCount', 0),
         'gubaEm': result.get('gubaEm', {}).get('status'), 'gubaEmOk': result.get('gubaEm', {}).get('okCount', 0),
         'gubaEmTotal': result.get('gubaEm', {}).get('mapCount', 0),
+        'gubaEmBlocked': bool(result.get('gubaEm', {}).get('blockedToday')),
         'news': result['news'].get('status'), 'newsItems': len(result['news'].get('items', [])),
+        'xq': result['xueqiu'].get('status'), 'xqBoards': result['xueqiu'].get('count', 0),
+        'xqRows': result['xueqiu'].get('rows', 0),
     }
     tmp = out_path + '.tmp'
     with open(tmp, 'w', encoding='utf-8') as f:

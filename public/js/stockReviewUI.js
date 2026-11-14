@@ -2,16 +2,20 @@
  * public/js/stockReviewUI.js — 个股每日复盘 UI（20261110e · 替换原「策略」tab）
  * ==================================================================================
  * 联动：
- *  - 大盘复盘「明日核心观察池」自动带入（GET /api/stock-review/pool）
+ *  - [20261113b] 观察池带入 / 代码输入已按用户指令删除；生成对象固定为当前个股
  *  - 按 Symbol 生成/查看当日复盘卡片（POST /api/stock-review/:symbol/run）
- *  - 历史追踪（GET /api/stock-review/:symbol/history）+ 连续放弃信号反查横幅
+ *  - 历史追踪（GET /api/stock-review/:symbol/history）+ 连续放弃信号反查横幅；日期由日历菜单切换
  * 渲染：本地随包 Markdown 渲染器（window.Markdown，零 CDN），复用全局 .dr-markdown 样式。
  * 严禁：本模块只做观察记录展示，不输出任何买卖建议。
  */
 (function () {
   'use strict';
 
-  const state = { symbol: null, name: null, pool: [], history: [], built: false, forceNext: false };
+  const state = { symbol: null, name: null, pool: [], history: [], built: false, forceNext: false, busy: false };
+  // [20261113a] 页面切换竞态令牌：onTabSwitch 每次切 tab 都会发 GET，返回后无条件写 DOM。
+  // 若该 GET 晚于用户点击「生成今日复盘」返回，会把 loading 卡片与状态覆盖回旧快照，
+  // 表现为「按钮变灰但没反应」。所有异步写 DOM 前必须校验自己仍是最新一代。
+  let viewToken = 0;
 
   function todayStr() {
     const t = new Date();
@@ -54,10 +58,11 @@
       '.sr-chip-up{color:var(--red);border-color:var(--red);}',
       '.sr-chip-down{color:var(--green);border-color:var(--green);}',
       '.sr-chip-flat{color:var(--flat);border-color:var(--border);}',
-      '.sr-hist{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 6px;}',
-      '.sr-hist-item{background:var(--bg-card);border:1px solid var(--border);color:var(--text-primary);border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer;}',
-      '.sr-hist-item:hover{border-color:var(--accent);}',
-      '.sr-hist-item .g{color:var(--green);margin-left:4px;}',
+      // [20261113b] 日历菜单（替代原「往日复盘记录」日期 chip 列表）
+      '.sr-date-label{font-size:13px;color:var(--text-secondary);}',
+      '.sr-date-input{background:var(--bg-input);border:1px solid var(--border);color:var(--text-primary);border-radius:8px;padding:6px 10px;font-size:13px;color-scheme:dark;}',
+      '.sr-date-input:focus{outline:none;border-color:var(--accent);}',
+      '.sr-date-nav{padding:6px 11px;line-height:1;font-size:15px;}',
       '.sr-card{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:6px 18px 14px;}',
       '.sr-empty{color:var(--text-secondary);font-size:13px;padding:24px 0;text-align:center;}',
       '.sr-loading{display:flex;align-items:center;gap:10px;color:var(--text-secondary);font-size:13px;padding:18px 4px;}',
@@ -72,26 +77,40 @@
     root.innerHTML =
       '<div class="sr-wrap">' +
         '<div class="sr-toolbar">' +
-          '<label style="font-size:13px;color:#8B949E;">观察池带入</label>' +
-          '<select id="srPool"><option value="">（加载大盘复盘观察池…）</option></select>' +
-          '<label style="font-size:13px;color:#8B949E;">或输代码</label>' +
-          '<input id="srSymbol" placeholder="如 601318" />' +
+          '<span class="sr-date-label">复盘日期</span>' +
+          '<button id="srPrev" class="sr-btn sr-date-nav" type="button" title="上一个有复盘的日期">‹</button>' +
+          '<input type="date" id="srDate" class="sr-date-input" title="点选任意日期查看当日复盘" />' +
+          '<button id="srNext" class="sr-btn sr-date-nav" type="button" title="下一个有复盘的日期">›</button>' +
           '<button id="srRun" class="sr-btn sr-btn-accent">生成今日复盘</button>' +
           '<span id="srStatus" class="sr-status"></span>' +
         '</div>' +
         '<div id="srBanner" class="sr-banner"></div>' +
         '<div id="srMeta" class="sr-meta"></div>' +
-        '<div id="srCard" class="sr-card"><div class="sr-empty">选择股票后点「生成今日复盘」；已生成的日期会出现在下方历史中，点击即可回看。</div></div>' +
-        '<div id="srHist" class="sr-hist"></div>' +
+        '<div id="srCard" class="sr-card"><div class="sr-empty">点「生成今日复盘」生成当日卡片；上方日期可切换查看往日复盘。</div></div>' +
       '</div>';
 
     root.querySelector('#srRun').addEventListener('click', runToday);
-    root.querySelector('#srSymbol').addEventListener('keydown', function (e) { if (e.key === 'Enter') runToday(); });
-    root.querySelector('#srPool').addEventListener('change', function () {
-      const v = this.value;
-      if (v) root.querySelector('#srSymbol').value = '';
-      void v; // 名称生成走 runToday 内的 pool 解析
+    root.querySelector('#srPrev').addEventListener('click', function () { stepDate(1); });
+    root.querySelector('#srNext').addEventListener('click', function () { stepDate(-1); });
+    root.querySelector('#srDate').addEventListener('change', function () {
+      const d = this.value;
+      if (d && state.symbol) viewDate(state.symbol, d);
     });
+  }
+
+  /** [20261113b] 日历菜单：按历史记录日期前后跳转（dir=+1 更早、-1 更新）。
+   *  历史由 loadHistory 在每次切股/生成后写入 state.history；为空时兜底提示，不发请求。 */
+  function stepDate(dir) {
+    if (!state.symbol) { setStatus('请先切换个股'); return; }
+    if (!state.history.length) { setStatus('暂无历史复盘可切换'); return; }
+    const dates = state.history.map(function (r) { return r.date; });
+    const inp = document.getElementById('srDate');
+    const cur = (inp && inp.value) || '';
+    let idx = dates.indexOf(cur);
+    if (idx < 0) idx = 0;
+    const next = Math.min(dates.length - 1, Math.max(0, idx + dir));
+    if (next === idx) { setStatus(dir > 0 ? '已是最早一份复盘' : '已是最新一份复盘'); return; }
+    viewDate(state.symbol, dates[next]);
   }
 
   function setStatus(msg) {
@@ -114,43 +133,35 @@
     return j;
   }
 
-  async function loadPool() {
-    const sel = document.getElementById('srPool');
-    if (!sel) return;
-    try {
-      const j = await api('/api/stock-review/pool');
-      state.pool = (j.rows || []);
-      if (!state.pool.length) {
-        sel.innerHTML = '<option value="">（今日大盘复盘暂无核心观察池）</option>';
-        return;
-      }
-      sel.innerHTML = '<option value="">— 从「明日核心观察池」选择（' + esc(j.date || '') + '）—</option>' +
-        state.pool.map(function (r, i) {
-          return '<option value="' + i + '">' + esc(r.name) + (r.rating ? ' · ' + esc(r.rating) : '') + '</option>';
-        }).join('');
-    } catch (e) {
-      sel.innerHTML = '<option value="">（观察池加载失败：' + esc(e.message) + '）</option>';
-    }
-  }
-
+  /** [20261113b] 只拉取历史日期供日历菜单前后切换，不再渲染日期 chip 列表。
+   *  同时把日历输入框的可用区间钉到「最早一份 ~ 今天」，并标注可选日期数。 */
   async function loadHistory(symbol) {
-    const box = document.getElementById('srHist');
-    if (!box) return;
-    box.innerHTML = '';
-    if (!symbol) return;
+    if (!symbol) { state.history = []; return; }
     try {
       const j = await api('/api/stock-review/' + encodeURIComponent(symbol) + '/history');
       state.history = j.reviews || [];
-      state.history.forEach(function (r) {
-        const b = document.createElement('button');
-        b.className = 'sr-hist-item';
-        b.innerHTML = esc(r.date) +
-          (r.rating ? ' · ' + esc(r.rating) : '') +
-          (r.giveupTriggered ? '<span class="g">放弃</span>' : '');
-        b.addEventListener('click', function () { viewDate(symbol, r.date); });
-        box.appendChild(b);
-      });
-    } catch (e) { /* 历史为空/加载失败不阻塞主流程 */ }
+    } catch (e) {
+      state.history = [];
+    }
+    const inp = document.getElementById('srDate');
+    if (!inp) return;
+    if (state.history.length) {
+      const dates = state.history.map(function (r) { return r.date; }).sort();
+      inp.min = dates[0];
+      inp.max = todayStr();
+      inp.title = '点选任意日期查看当日复盘（已有复盘 ' + state.history.length + ' 份）';
+    } else {
+      inp.removeAttribute('min');
+      inp.max = todayStr();
+      inp.title = '点选任意日期查看当日复盘（暂无历史记录）';
+    }
+    // [20261113c] 当前选中日期无记录（周末/未生成）→ 日历回落到最近一份记录日期，
+    // 避免默认停在休息日、点生成被后端「非交易日」拒绝。仅在切股/生成后调用，不干扰手动选日。
+    if (state.history.length) {
+      const dates = state.history.map(function (r) { return r.date; }).sort().reverse();
+      if (!inp.value || dates.indexOf(inp.value) < 0) inp.value = dates[0];
+    }
+    return state.history;
   }
 
   function renderMeta(rec) {
@@ -186,9 +197,19 @@
   function renderBanner(rec) {
     const b = document.getElementById('srBanner');
     if (!b) return;
-    if (rec && rec.giveupStreak >= 3) {
+    const gaps = (rec && Array.isArray(rec.dataGaps)) ? rec.dataGaps : [];
+    const giveup = rec && rec.giveupStreak >= 3;
+    if (giveup || gaps.length) {
       b.style.display = 'block';
-      b.innerHTML = '⚠️ 该股已连续 <b>' + esc(rec.giveupStreak) + '</b> 个复盘日触发放弃信号——今日卡片末尾的「连续放弃信号反查」一节已用历史记录反查 AI 漏看的数据与环境变化，请重点阅读。';
+      const parts = [];
+      if (giveup) {
+        parts.push('⚠️ 该股已连续 <b>' + esc(rec.giveupStreak) + '</b> 个复盘日触发放弃信号——今日卡片末尾的「连续放弃信号反查」一节已用历史记录反查 AI 漏看的数据与环境变化，请重点阅读。');
+      }
+      // [20261113d] 历史补生成 / 数据缺口如实告知（不静默）
+      if (gaps.length) {
+        parts.push('⚠️ 数据不足：' + gaps.map(function (g) { return esc(g); }).join('；'));
+      }
+      b.innerHTML = parts.join('<br>');
     } else {
       b.style.display = 'none';
       b.innerHTML = '';
@@ -203,42 +224,54 @@
   }
 
   async function viewDate(symbol, date) {
+    const tk = ++viewToken;
+    const inp = document.getElementById('srDate');
+    if (inp && date) inp.value = date; // 日历菜单与当前查看日期保持同步
     setLoading(false);
     setStatus('查看 ' + date + ' …');
     try {
       const j = await api('/api/stock-review/' + encodeURIComponent(symbol) + '/' + date);
+      if (tk !== viewToken) return;
       renderReview(j.review);
       setStatus('正在查看历史复盘 ' + date);
-    } catch (e) { setStatus('读取失败：' + e.message); }
+    } catch (e) { if (tk === viewToken) setStatus('读取失败：' + e.message); }
   }
 
   async function runToday() {
-    const input = document.getElementById('srSymbol');
-    const poolSel = document.getElementById('srPool');
-    let symbol = (input && input.value || '').trim();
-    let name = null;
-    if (!symbol && poolSel && poolSel.value !== '') {
-      const row = state.pool[Number(poolSel.value)];
-      if (row) { name = row.name; symbol = row.name; } // 名称交给后端确定性解析
-    }
-    if (!symbol) { setStatus('请先输入股票代码或从观察池选择'); return; }
+    // [20261113b] 观察池/代码输入已移除：生成对象固定为当前个股
+    const symbol = state.symbol;
+    const name = state.name || null;
+    if (!symbol) { setStatus('请先切换个股'); return; }
+    // [20261113c] 生成日期 = 日历选中日期（原实现永远按「今天」生成，周末会把最近交易日数据
+    // 写成休息日卡片）。日历为空时回落今天；非交易日由后端拒绝并回显原因。
+    const dateInp = document.getElementById('srDate');
+    const targetDate = (dateInp && dateInp.value) || todayStr();
     state.symbol = symbol; state.name = name;
+    // 抢到最新一代：在途的切 tab GET 一律作废，避免它覆盖「生成中」卡片与状态
+    const tk = ++viewToken;
+    state.busy = true;
     setLoading(true);
-    setStatus('生成中…');
+    setStatus('生成中…（' + targetDate + '）');
     try {
       const j = await api('/api/stock-review/' + encodeURIComponent(symbol) + '/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         // 当日缓存若是 LLM 降级快照则自动 force 重生成（20261110e 事故修复），正常缓存直接复用
-        body: JSON.stringify({ name: name, force: !!state.forceNext }),
+        body: JSON.stringify({ name: name, force: !!state.forceNext, date: targetDate }),
       });
+      if (tk !== viewToken) return; // 期间已切股/切页，丢弃本次结果
       state.forceNext = false;
+      if (dateInp) dateInp.value = j.review.date; // 日历与生成结果对齐（后端以落盘日期为准）
       renderReview(j.review);
       setStatus('已生成 ' + j.review.date + '（' + (j.review.llm && j.review.llm.elapsedMs ? Math.round(j.review.llm.elapsedMs / 1000) + 's' : '') + '）');
       loadHistory(j.review.symbol || symbol);
     } catch (e) {
+      if (tk !== viewToken) return;
       setStatus('生成失败：' + e.message);
-      setLoading(false);
+    } finally {
+      // 成功/失败都必须复位按钮；原实现成功路径漏了 setLoading(false)，按钮会永久置灰
+      state.busy = false;
+      if (tk === viewToken) setLoading(false);
     }
   }
 
@@ -246,22 +279,29 @@
     ensureStyles();
     const root = document.getElementById('tab-stockreview');
     if (!root) return;
-    if (!state.built) { buildDom(root); state.built = true; loadPool(); }
+    if (!state.built) { buildDom(root); state.built = true; }
+    // 回到该 tab 时若没有在途生成，强制复位按钮——修「上次成功后按钮永久置灰」
+    if (!state.busy) setLoading(false);
     if (symbol && symbol !== state.symbol) {
       state.symbol = symbol;
-      const input = document.getElementById('srSymbol');
-      if (input && /^\d{5,6}$/.test(String(symbol))) input.value = symbol;
+      state.name = name || null;
+      state.forceNext = false;
+      const tk = ++viewToken;
+      const inp = document.getElementById('srDate');
+      if (inp && !inp.value) inp.value = todayStr(); // 日历默认停在今天
       setStatus('');
+      loadHistory(symbol); // 先填日历可用区间，再拉当日卡片
       const card = document.getElementById('srCard');
       // 已有当日缓存则直接展示，否则保持提示
       try {
         const j = await api('/api/stock-review/' + encodeURIComponent(symbol));
+        if (tk !== viewToken) return; // 已切股或已点生成，丢弃过期响应（修「覆盖 loading」竞态）
         if (j && j.review) {
           renderReview(j.review);
-          loadHistory(symbol);
           // 当日缓存为 LLM 降级快照 → 标记下次点击「生成今日复盘」自动 force 重生成
           state.forceNext = (j.review.date === todayStr()) && !!(j.review.llm && j.review.llm.degraded);
           if (state.forceNext) setStatus('今日卡片是降级数据快照，点「生成今日复盘」将自动重新生成正式版');
+          else setStatus('已加载 ' + j.review.date + ' 复盘');
         }
         else if (card) card.innerHTML = '<div class="sr-empty">「' + esc(name || symbol) + '」今日还没有复盘卡片，点上方「生成今日复盘」。</div>';
       } catch (e) { /* 无记录属正常 */ }

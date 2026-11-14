@@ -195,48 +195,10 @@
   }
 
   /**
-   * [20261110f B0-3] 正向联动：给【明日核心观察池】表格每行加「个股复盘 →」直达入口。
-   * 从渲染后的表格里就地取「代码」列（无代码列的旧复盘不渲染入口，不猜代码）；
-   * 点击跳到个股页并自动切到「每日复盘」tab（app.js 识别 #stockreview）。
+   * [20261113b] 用户指令：删除观察池表格右侧「操作」列与个股复盘直达链接（仅保留大盘复盘正文）。
+   * 说明：入口删除后不再给表格追加列；个股复盘仍可从自选股切换个股手动进入。
    */
-  function decorateWatchPool(main) {
-    try {
-      const tables = main.querySelectorAll('article.dr-markdown table');
-      const v = new URLSearchParams(location.search).get('v') || '';
-      for (const t of tables) {
-        const head = t.querySelector('thead tr');
-        if (!head) continue;
-        const ths = Array.from(head.children).map(c => c.textContent.trim());
-        if (ths[0] !== '股票名称') continue;              // 只认观察池表
-        const codeIdx = ths.indexOf('代码');
-        if (codeIdx < 0) continue;                        // 旧版复盘无代码列 → 不加入口
-        const rows = Array.from(t.querySelectorAll('tbody tr'));
-        if (!rows.length) continue;
-        // 表头补一列「操作」
-        const th = document.createElement('th');
-        th.textContent = '操作';
-        head.appendChild(th);
-        for (const tr of rows) {
-          const tds = tr.querySelectorAll('td');
-          if (!tds.length) continue;
-          const cell = tds[codeIdx] ? tds[codeIdx].textContent : '';
-          const m = cell.match(/\b(\d{6})\b/);
-          const td = document.createElement('td');
-          if (m) {
-            const a = document.createElement('a');
-            a.className = 'dr-pool-link';
-            a.href = '/index.html' + (v ? '?v=' + encodeURIComponent(v) : '?') + '&symbol=' + m[1] + '#stockreview';
-            a.textContent = '个股复盘 →';
-            a.title = '打开该股并进入「每日复盘」tab';
-            td.appendChild(a);
-          } else {
-            td.textContent = '—';
-          }
-          tr.appendChild(td);
-        }
-      }
-    } catch (e) { /* 联动入口属增强项，失败不影响复盘正文 */ }
-  }
+  function decorateWatchPool() { /* 已停用：用户要求移除操作列 */ }
 
   function renderVersion(review, ver, today) {
     const main = $('drMain');

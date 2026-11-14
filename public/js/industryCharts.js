@@ -297,10 +297,10 @@ window.IndustryCharts = {
           name: indexSeriesName, type: 'candlestick', data: values,
           itemStyle: { color: upColor, color0: downColor, borderColor: upColor, borderColor0: downColor },
         },
-        { name: 'MA5', type: 'line', data: ma5, smooth: true, showSymbol: false, lineStyle: { width: 1, color: '#E6EDF3' } },
-        { name: 'MA10', type: 'line', data: ma10, smooth: true, showSymbol: false, lineStyle: { width: 1, color: '#F0B90B' } },
+        { name: 'MA5', type: 'line', data: ma5, smooth: true, showSymbol: false, lineStyle: { width: 1, color: '#8A9BB0' } },
+        { name: 'MA10', type: 'line', data: ma10, smooth: true, showSymbol: false, lineStyle: { width: 1, color: '#F5A524' } },
         { name: 'MA20', type: 'line', data: ma20, smooth: true, showSymbol: false, lineStyle: { width: 1, color: '#A855F7' } },
-        { name: 'MA60', type: 'line', data: ma60, smooth: true, showSymbol: false, lineStyle: { width: 1, color: '#22C55E' } },
+        { name: 'MA60', type: 'line', data: ma60, smooth: true, showSymbol: false, lineStyle: { width: 1, color: '#38BDF8' } },
         ...(hasMarketCap ? [{
           name: capSeriesName,
           type: 'line',
@@ -401,7 +401,7 @@ window.IndustryCharts = {
     const hasRatio = ratio.some(v => v != null);
 
     const totalColor = '#3B82F6';
-    const bmColor = '#F0B97B';
+    const bmColor = '#F5A524';
     const ratioColor = '#A855F7';
 
     const num2 = (v) => { const n = Number(v); return isFinite(n) ? n.toFixed(2) : '--'; };
@@ -538,8 +538,8 @@ window.IndustryCharts = {
 
     const revName = '行业总营收（TTM，亿元）';
     const mcName = '行业总市值（亿元）';
-    const revColor = '#4ADE80';
-    const mcColor = '#60A5FA';
+    const revColor = '#A855F7';
+    const mcColor = '#3B82F6';
     const num2 = (v) => { const n = Number(v); return isFinite(n) ? n.toFixed(2) : '--'; };
 
     const chartEl = document.getElementById('indProsperityChart');
