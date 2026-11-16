@@ -49,6 +49,13 @@ const declOf = sel => (rules[sel] || []).join(' ');
 console.log('\n===== L1 CSS 红绿用法基线 =====');
 const rgSels = Object.keys(rules).filter(s => isRed(declOf(s)) || isGreen(declOf(s)));
 const hash = crypto.createHash('sha256').update(rgSels.slice().sort().join('\n')).digest('hex');
+// [任务卡 #013 人工语义复核 2026-11-15] 曾新增 6 条红绿规则（231→237），全部为方向语义着色，
+// 与全站红涨绿跌一致、无一处按数值符号机械染色：
+//   .es-headline.pos/.neg     速览一句话结论左边框：红=看涨 / 绿=看跌（同 tp-emo-lines 语义）
+//   .es-score-num.pos/.neg    速览总分数字：红=正值看涨 / 绿=负值看跌（同 scoreCls 口径）
+//   .es-score-dir b.pos/.neg  速览倾向文字：红=看涨 / 绿=看跌（同 dirCls 口径）
+// [任务卡 #015 2026-11-16] 「今日市场情绪速览」整块下线，上述 6 条 .es-* 规则随 CSS 一并删除，基线回到 231；
+// 本次为纯删除、无新增红绿用法，方向语义不变。
 const BASELINE_HASH = '55b10d93892be6d31f79e8268ce86251298fe643a681c12645aa98220f04dcfb';
 ok(rgSels.length === 231, `使用红绿的 CSS 规则数锁定为 231（当前 ${rgSels.length}）`);
 ok(hash === BASELINE_HASH, '红绿规则集合哈希与基线一致（新增红绿用法必须走人工语义复核）',
@@ -218,7 +225,7 @@ ok(/class="up"/.test(c('2026-10-26 14:30-15:00')) === false, '日期/时间连�
 const sd = sandbox();
 let drSrc = read('public/js/dailyReview.js');
 const cut = drSrc.lastIndexOf('})();');
-drSrc = drSrc.slice(0, cut) + 'globalThis.__DR = { markdownHtml, legacySectionsToMarkdown };\n' + drSrc.slice(cut);
+drSrc = drSrc.slice(0, cut) + 'globalThis.__DR = { markdownHtml, legacySectionsToMarkdown, snapshotMarkdown };\n' + drSrc.slice(cut);
 vm.runInContext(drSrc, sd, { timeout: 10000 });
 const DR = sd.__DR;
 ok(!!(DR && typeof DR.markdownHtml === 'function'), 'vm 成功加载 dailyReview 的 Markdown 渲染函数');
@@ -229,6 +236,30 @@ ok(/dr-empty/.test(DR.markdownHtml('')), '空正文返回 dr-empty 占位（不�
 const legacyMd = DR.legacySectionsToMarkdown([{ title: '测试段', metrics: [{ label: '指标', value: '数值' }] }]);
 ok(legacyMd.indexOf('### 测试段') === 0 && /\| 指标 \| 数值 \|/.test(legacyMd),
   '旧结构化复盘 legacySectionsToMarkdown 兼容还原仍可用');
+
+// 4c. [20261116d] AI 降级快照：可读摘要，不再倾倒 Context JSON
+const snapMd = DR.snapshotMarkdown({
+  meta: { reviewDate: '2026-11-16' },
+  market: {
+    quote: { index: [{ name: '上证指数', price: 3602.6, changePct: -0.87 }] },
+    breadth: { up: 1109, down: 4019, flat: 100, limitUp: 33, limitDown: 68 },
+    mainFund: { mainNetToday: -646.8 },
+    sectorFlow: { inflowTop: [{ name: '半导体', mainNet: 12.3 }], outflowTop: [{ name: '半导体', mainNet: -126.7 }] },
+  },
+  ladder: { ok: true, maxBoards: 4, limitUpCount: 33, board2PlusCount: 8, tiers: [{ boards: 4, count: 2, stocks: [{ name: '甲' }] }] },
+  dragonTiger: { available: false },
+  news: [{ title: '测试消息', source: '测试源' }],
+  sources: [{ status: 'ok' }, { status: 'fail', label: '龙虎榜', note: '未发布' }],
+  missing: [{ label: '龙虎榜', reason: '未发布' }],
+});
+ok(snapMd.includes('## 市场概况') && snapMd.includes('上证指数') && !snapMd.includes('```json'),
+  '降级快照渲染为可读摘要，不再倾倒 JSON');
+ok(snapMd.includes('## 龙虎榜') && snapMd.includes('尚未公布'), '缺口如实写「未公布」，不编造');
+ok(!/schema|contextChars|fetchedAt/.test(snapMd), '可读摘要不泄露内部字段名');
+ok(snapMd.includes('净流出前列：半导体（126.7 亿元）'), '净流出显示绝对值，不出现「净流出 -126.7」双重反向');
+const snap2 = DR.snapshotMarkdown({ dragonTiger: { available: true, count: 2, netBuyTotal: 5, topNetBuy: [{ name: '甲', netBuyYi: 4.6 }, { name: '甲', netBuyYi: 4.6 }, { name: '乙', netBuyYi: 1 }] } });
+ok((snap2.match(/甲：净买入/g) || []).length === 1, '龙虎榜重复行在展示层去重');
+ok(/snapshotMarkdown/.test(dr) && /degraded && ctx/.test(dr), 'renderVersion 在 AI 降级时改走可读摘要');
 
 console.log(`\n===== 结果：通过 ${pass} / 失败 ${fail} =====`);
 process.exit(fail ? 1 : 0);

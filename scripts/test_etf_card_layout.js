@@ -111,6 +111,10 @@ ok(pageSrc.includes('各宽基 ETF 申赎'), '含 ETF 明细表标题');
 ok(pageSrc.includes('被申购') && pageSrc.includes('被赎回'), '含逐股被申购/被赎回');
 ok(pageSrc.includes('怎么算的'), '含口径解释「怎么算的」');
 ok(pageSrc.includes('/api/etf-flow'), '独立页自行拉取 /api/etf-flow 数据');
+// 20261116f：累计表新增「累计净申赎」列（= 累计被申购 + 累计被赎回，cumSell 存负数），并带升降序
+ok(pageSrc.includes('累计净申赎'), '累计表含「累计净申赎」列');
+ok(pageSrc.includes("_sortBtn('cumNet'"), '累计净申赎列带 ▲▼ 排序按钮');
+ok(pageSrc.includes('_cumNet') && pageSrc.includes('_fmtNegQty'), '净额按带符号相加、负数走单减号格式化（防双减号）');
 
 // ============================================================================
 // [E] 源码守卫

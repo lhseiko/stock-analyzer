@@ -434,3 +434,43 @@ amount/1e8 转亿；换手率改读 q.turnover；前日成交额/换手率改从
 ### Resolution
 - **Resolved**: 2026-11-10T21:55:00+08:00
 - **Notes**: 实测 "5日主力净流出 0.69 亿；10日…；20日…"；守卫新增 4 条回归断言（无 [object Object]/无 {" dump/亿单位/换手率%）
+
+## [ERR-20261116-001] market_emotion_all_factors_zero_on_startup
+
+**Logged**: 2026-11-16T11:15:00+08:00
+**Priority**: high
+**Status**: pending
+**Area**: backend
+
+### Summary
+服务启动初期（约 11:03 截图）10 个情绪因子全部「降级归零并按比例分摊」，用户感知为「数据大量缺失」；约 5 分钟后实测已自愈（0 降级、有效权重 64.65%）。
+
+### Error
+```
+截图 11:03:58：全部因子 净权重 0.00% / 权重 0.00%、「无可用数据」；
+量价：上证/深证日线不足 21 根；宽度：涨跌家数缺失；两融/主力资金缺失；
+避险：汇率/国债缺失；警告含 mainFund: RuntimeError: curl exit=56
+```
+
+### Context
+- 服务 10:59 由 Stock Analyzer.lnk 重启（/api/health version=20261115e, uptime=535s@11:08）
+- 根因方向：启动初期多个外部数据源瞬断（东财 curl 56 / 乐咕 / 汇率 / 国债 / 腾讯行情），
+  且模型对原始行情日线**无本地落盘回退**——实时拉不到即归零，无「沿用上一交易日行情」路径
+- 与「今日未收盘」无关：未收盘只影响 ETF/热度/两融/主力的 T-1 定稿口径（正常也不归零，只标滞后）；
+  盘中日线接口本就含 300+ 根历史 K 线，「不足 21 根」只能是请求失败
+- 已持久化且实测完好：records.json（59 条含 11-13）、snapshots.json、limit_pool_daily 15 行、
+  data/reviews/2026-11-13.json、ETF 兜底缓存、MSI 热度序列
+- 未持久化：原始行情日线 / 当日资金流 / 涨跌家数 / 汇率 / 国债
+
+### Suggested Fix
+候选方向（需用户确认后另出任务卡，未擅自改）：
+1) 行情日线本地缓存：当日实时失败时沿用最近交易日收盘序列（原则 A）；
+2) 降级策略改为「沿用最近一次成功计算结果 + 如实标注」，替代直接归零；
+3) 启动后首次情绪计算增加预热重试（数据源就绪前不落归零结论）。
+
+### Metadata
+- Reproducible: intermittent（启动初期网络瞬断窗口）
+- Related Files: lib/marketEmotionModel.js, server.js
+- Tags: 数据源瞬断, 归零策略, 回退缺口
+
+---

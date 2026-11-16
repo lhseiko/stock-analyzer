@@ -20,7 +20,7 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'sa-margin-render-'));
 process.env.SA_MARKET_EMOTION_DIR = TMP;
 process.env.SA_MSI_SERIES = path.join(TMP, 'msi-series.json');
 fs.writeFileSync(process.env.SA_MSI_SERIES, '[]');
-const { computeMarketEmotion } = require('../lib/marketEmotionModel');
+const { computeMarketEmotion, plainTextOf } = require('../lib/marketEmotionModel');
 
 let pass = 0, fail = 0;
 function ok(cond, name) {
@@ -114,6 +114,71 @@ const mkEl = () => ({
   ok(/两融双栏各按半格/.test(html), '因子区标题同步说明半格口径');
   ok(/融资 \/ 融券各占本卡 50% 权重/.test(html), '卡内显示 splitNote 平分权重说明');
   ok(/tp-emo-info/.test(html), '保留 T+1 例行披露 / 口径信息条');
+  ok(/因子归纳/.test(html), '[#015] 结论区渲染「因子归纳」一行');
+  // [20261116b 补] 卡片文案去歧义：权重/计入总分分开写，指数势头改「收盘」并补 MA20 与近 5/20 日涨跌
+  ok(/本卡权重/.test(html) && !/净权重/.test(html), '因子卡用「本卡权重 + 计入总分」，不再出现「净权重」');
+  const imF = data.factors.find(f => f.key === 'indexMomentum');
+  ok(!!imF && /^收盘/.test(imF.value) && !/现价/.test(imF.value), '指数势头卡用「收盘」，不再用「现价」');
+  ok(!!imF && /MA20/.test(imF.detail) && /近 5 日/.test(imF.detail) && /近 20 日/.test(imF.detail),
+    '详情含 MA5/MA20/MA60 排序与近 5/20 日涨跌');
+  // [任务卡 #017] 人话层：每因子一句、原始数据收起但仍可展开
+  ok(data.factors.every(f => typeof f.plain === 'string' && f.plain.length >= 8), '10 个因子都有人话文案');
+  ok(!data.factors.some(f => /分位|净权重|贡献度|百分点|Top5/.test(f.plain)), '人话文案不含专业术语');
+  ok((html.match(/tp-comp-plain/g) || []).length === data.factors.length, '每张因子卡都渲染人话行');
+  ok((html.match(/<details class="tp-comp-raw">/g) || []).length === data.factors.length, '每张卡原始数据默认收起');
+  ok(/上证收盘/.test(html) && /近 20 日/.test(html), '原始数据仍保留在 HTML 内（可展开）');
+  ok(/净赎回 85\.9 亿/.test(plainTextOf({ key: 'etfFlow', score: -1, totalNet: -8585495010 })),
+    'ETF 金额元→亿元换算正确（不出现 8585495010 亿）');
+  ok(/净流出 646\.8 亿/.test(plainTextOf({ key: 'mainCapital', score: -1, todayNet: -646.8 })),
+    '主力金额本身是亿元口径，不重复换算');
+
+  // [任务卡 #015] 因子归纳：纯函数直测（10 打分因子 + 4 观察项，含避险未触发与总分方向对齐）
+  console.log('\n[任务卡 #015] 因子归纳（纯函数）：');
+  const SF = {
+    totalScore: 0.12,
+    factors: [
+      { key: 'mainCapital', contribution: -9.2 },
+      { key: 'breadthExtreme', contribution: -7.4 },
+      { key: 'volumePrice', contribution: 3.1 },
+      { key: 'indexMomentum', contribution: 0 },
+      { key: 'margin', contribution: 0, degraded: true },
+      { key: 'riskAversion', contribution: 0, conditional: true, triggered: false },
+      { key: 'discussionHeat', contribution: 0 },
+      { key: 'etfFlow', contribution: 0 },
+      { key: 'domesticMacro', contribution: 0 },
+      { key: 'usMacro', contribution: 0 },
+    ],
+    watchIndicators: {
+      items: [
+        { key: 'volatility', name: '波动率（20 日年化）', status: 'ready', value: 18.32, unit: '%', change: { direction: 'up', delta: 0.61 } },
+        { key: 'sectorLead', name: '板块主线', status: 'ready', value: 40, unit: '%' },
+        { key: 'newsFlow', name: '消息面', status: 'ready', value: 3, unit: '条' },
+        { key: 'futuresBasis', name: '期指基差', status: 'unavailable', value: null },
+      ],
+    },
+  };
+  const sum = App._emoPlainSummary(SF);
+  ok(typeof sum === 'string' && sum.length > 40, '归纳输出非空一段话');
+  ok(/打分因子共 10 项/.test(sum), '覆盖全部 10 个打分因子计数');
+  ok(/避险未触发、不计分/.test(sum), '「避险未触发」写入归纳');
+  ok(/主力资金流向/.test(sum) && /市场宽度（赚钱效应）/.test(sum), '点出当日影响最大的两个因子');
+  ok(/但其余因子的加分更多/.test(sum), '两项都在减分但总分为正 → 方向与总分一致');
+  ok(/另有 4 项观察指标只看不计分/.test(sum), '观察因子不占权重也一并总结');
+  ok(/期指基差暂无数据/.test(sum), '观察层缺口如实标注');
+  ok(!/净权重|贡献度/.test(sum), '不出现专业术语（净权重 / 贡献度）');
+  // [任务卡 #015] 输出白名单必须透出 conditional / triggered，否则真实接口下永远写不出「避险未触发」
+  const quiet = await computeMarketEmotion({
+    data: Object.assign({}, bundle, {
+      fx: { usdcnh: 7.0, usdcnhChgPct: 0, usdcny: 7.0, usdcnyChgPct: 0 },
+      bond: { cn10y: 2.0, chgBp5: 0 },
+    }),
+    macroFactors: [],
+  });
+  const raQ = quiet.factors.find(f => f.key === 'riskAversion');
+  ok(!!raQ && raQ.conditional === true && raQ.triggered === false, '输出白名单透出 conditional / triggered（真实模型 → 接口）');
+  ok(/避险未触发/.test(App._emoPlainSummary(quiet)), '中性避险日 → 归纳写入「避险未触发」');
+  const LIVE = fs.readFileSync(path.join(ROOT, 'public/js/app.js'), 'utf8') + fs.readFileSync(path.join(ROOT, 'public/index.html'), 'utf8');
+  ok(!/homeEmotionSummary|_renderEmotionSummary|EmotionSummary\.build/.test(LIVE), '速览模块已彻底下线（无残留容器/渲染/调用）');
 
   console.log(`\n===== 结果：通过 ${pass} / 失败 ${fail} =====`);
   fs.rmSync(TMP, { recursive: true, force: true });

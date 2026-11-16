@@ -26,6 +26,17 @@
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
+  /** Markdown 表格单元格：转义 + 把竖线换成全角，避免把表格撑坏。 */
+  function mdCell(s) { return esc(s).replace(/\|/g, '／'); }
+  function _num(v) { return (v == null || v === '') ? '—' : v; }
+  function _pct(v) {
+    const n = Number(v);
+    return Number.isFinite(n) ? (n > 0 ? '+' : '') + (Math.round(n * 100) / 100) + '%' : '—';
+  }
+  function _yi(v) {
+    const n = Number(v);
+    return Number.isFinite(n) ? (Math.round(n * 10) / 10) + ' 亿元' : '—';
+  }
   function localToday() {
     const d = new Date();
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
@@ -130,7 +141,7 @@
     const llm = (ver && ver.llm) || (review && review.llm) || null;
     if (!llm) return '<div class="dr-llm-bar dr-llm-legacy">该日期为旧版结构化复盘，已按原结构还原展示；点右上角「手动重跑」可重新生成大模型 Markdown 报告。</div>';
     if (!llm.ok) {
-      return '<div class="dr-llm-bar dr-llm-degraded">⚠ AI 生成暂不可用，当前展示原始数据快照，已照常发布（不因缺数据拦截）。' +
+      return '<div class="dr-llm-bar dr-llm-degraded">⚠ AI 生成暂不可用，当前展示当日数据摘要，已照常发布（不因缺数据拦截）。' +
         (llm.error ? '<br><span class="dr-meta">原因：' + esc(llm.error) + '</span>' : '') + '</div>';
     }
     const bits = ['✦ 本报告由大模型生成'];
@@ -139,6 +150,103 @@
     if (llm.contentChars) bits.push(llm.contentChars + ' 字');
     if (llm.elapsedMs) bits.push('耗时 ' + Math.round(llm.elapsedMs / 1000) + 's');
     return '<div class="dr-llm-bar">' + bits.join(' · ') + '</div>';
+  }
+
+  /**
+   * [20261116d] 降级快照的可读版：不再把 Context JSON 原样倾倒给用户。
+   * 只做「字段 → 表格/条目」的如实转写，不写推演、不下结论；字段缺失就省略或写「—」。
+   */
+  function snapshotMarkdown(ctx) {
+    const c = ctx || {};
+    const m = c.market || {};
+    const d = (c.meta && c.meta.reviewDate) || '';
+    const L = [];
+    L.push('# 每日复盘 · ' + d + '（数据快照）', '');
+    L.push('> AI 生成暂不可用，下面是工作台采集到的当日数据，只做如实罗列、不做推演；右上角「手动重跑」可生成完整版。', '');
+
+    const q = m.quote || {};
+    const b = m.breadth || null;
+    const idx = Array.isArray(q.index) ? q.index.slice(0, 3) : [];
+    const mf = m.mainFund || null;
+    if (idx.length || b || (mf && mf.mainNetToday != null)) {
+      L.push('## 市场概况', '', '| 指标 | 数值 |', '| --- | --- |');
+      idx.forEach(x => L.push('| ' + mdCell(x.name || x.code || '指数') + ' | ' + mdCell(_num(x.price)) + '（' + _pct(x.changePct) + '） |'));
+      if (b) {
+        L.push('| 上涨 / 下跌 / 平盘 | ' + _num(b.up) + ' / ' + _num(b.down) + ' / ' + _num(b.flat) + ' |');
+        L.push('| 涨停 / 跌停 | ' + _num(b.limitUp) + ' / ' + _num(b.limitDown) + ' |');
+      }
+      if (mf && mf.mainNetToday != null) L.push('| 主力资金净额 | ' + _yi(mf.mainNetToday) + ' |');
+      L.push('');
+    }
+
+    const sf = m.sectorFlow;
+    if (sf && ((sf.inflowTop || []).length || (sf.outflowTop || []).length)) {
+      L.push('## 板块资金', '');
+      if ((sf.inflowTop || []).length) L.push('- 净流入前列：' + sf.inflowTop.map(x => mdCell(x.name) + '（' + _yi(x.mainNet) + '）').join('、'));
+      // 净流出方向已由标题表达，数值统一取绝对值，避免「净流出 -126.7 亿元」双重反向
+      if ((sf.outflowTop || []).length) L.push('- 净流出前列：' + sf.outflowTop.map(x => mdCell(x.name) + '（' + _yi(Math.abs(Number(x.mainNet) || 0)) + '）').join('、'));
+      L.push('');
+    }
+
+    const sec = c.sectors;
+    if (sec && Array.isArray(sec.top) && sec.top.length) {
+      L.push('## 涨停板块', '', '| 板块 | 涨停家数 | 最高连板 |', '| --- | --- | --- |');
+      sec.top.slice(0, 6).forEach(x => L.push('| ' + mdCell(x.industry) + ' | ' + _num(x.count) + ' | ' + _num(x.boardsMax) + ' |'));
+      L.push('');
+    }
+
+    if (c.ladder && c.ladder.ok !== false) {
+      const ld = c.ladder;
+      const bits = [];
+      if (ld.maxBoards != null) bits.push('最高 ' + ld.maxBoards + ' 板');
+      if (ld.limitUpCount != null) bits.push('涨停 ' + ld.limitUpCount + ' 家');
+      if (ld.board2PlusCount != null) bits.push('2 板以上 ' + ld.board2PlusCount + ' 家');
+      const tiers = Array.isArray(ld.tiers) ? ld.tiers : [];
+      if (bits.length || tiers.length) {
+        L.push('## 连板梯队', '');
+        if (bits.length) L.push('- 涨停池口径：' + bits.join('；'));
+        tiers.slice(0, 5).forEach(t => {
+          const names = (t.stocks || []).map(s => s.name).filter(Boolean).join('、');
+          L.push('- ' + _num(t.boards) + ' 板：' + _num(t.count) + ' 家' + (names ? '（' + names + '）' : ''));
+        });
+        L.push('');
+      }
+    }
+
+    const dt = c.dragonTiger;
+    if (dt) {
+      L.push('## 龙虎榜', '');
+      if (!dt.available) {
+        L.push('- 盘后延迟发布，当前时点尚未公布（不是接口故障）。');
+      } else {
+        L.push('- 上榜 ' + _num(dt.count) + ' 家；合计净买入 ' + _yi(dt.netBuyTotal));
+        const seen = new Set();
+        (dt.topNetBuy || []).slice(0, 8).forEach(x => {
+          const k = String(x.name || '') + '|' + x.netBuyYi;
+          if (seen.has(k)) return; // 源数据可能重复同一行，展示层去重，不改源数据
+          seen.add(k);
+          if (seen.size <= 5) L.push('- ' + mdCell(x.name) + '：净买入 ' + _yi(x.netBuyYi));
+        });
+      }
+      L.push('');
+    }
+
+    if (Array.isArray(c.news) && c.news.length) {
+      L.push('## 消息面（前 5 条）', '');
+      c.news.slice(0, 5).forEach(n => L.push('- ' + mdCell(n.title || '（无标题）') + (n.source ? '（' + mdCell(n.source) + '）' : '')));
+      L.push('');
+    }
+
+    if (Array.isArray(c.sources) && c.sources.length) {
+      const okN = c.sources.filter(s => s.status === 'ok').length;
+      L.push('## 数据源', '', '- 正常 ' + okN + ' 项 / 共 ' + c.sources.length + ' 项');
+      const miss = Array.isArray(c.missing) ? c.missing : [];
+      if (miss.length) L.push('- 缺失：' + miss.map(x => mdCell(x.label || x.key) + (x.reason ? '（' + mdCell(x.reason) + '）' : '')).join('；'));
+      L.push('');
+    }
+
+    L.push('_本文为盘后观察记录，不是投资建议。_');
+    return L.join('\n');
   }
 
   function noticeBar(review, ver) {
@@ -205,8 +313,13 @@
     const date = (review && review.reviewDate) || (today && today.date) || S.date || '';
     const rawMd = (ver && ver.markdown) || (review && review.markdown) || '';
     const md = rawMd || (ver && ver.sections ? legacySectionsToMarkdown(ver.sections) : '');
+    // [20261116d] AI 降级时不再把落盘的 JSON 快照原样渲染，改由 Context 生成可读摘要；
+    // 旧记录（已存 JSON 快照）也走这里，无需重跑即可正常阅读；没有 context 时才回退原文。
+    const degraded = !!(ver && ver.llm && ver.llm.ok === false);
+    const ctx = (ver && ver.context) || (review && review.context) || null;
+    const bodyMd = (degraded && ctx) ? snapshotMarkdown(ctx) : md;
     const dateHeading = date ? '<div class="dr-review-date">📅 <span>' + esc(date) + '</span> 盘后复盘</div>' : '';
-    main.innerHTML = dateHeading + noticeBar(review, ver) + versionBar(review, ver && ver.version) + llmBar(review, ver) + markdownHtml(md);
+    main.innerHTML = dateHeading + noticeBar(review, ver) + versionBar(review, ver && ver.version) + llmBar(review, ver) + markdownHtml(bodyMd);
     decorateWatchPool(main);
     setStatus(today, review, ver);
     bindVersionButtons(review, today);

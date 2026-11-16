@@ -1097,6 +1097,121 @@ const App = {
     if (homeBody) homeBody.innerHTML = '<div class="ai-empty">情绪拐点检测失败，请稍后重试</div>';
   },
 
+  // [任务卡 #015] 因子归纳：把 10 个打分因子 + 4 个观察项收成一段大白话，放在「风险提示」下方。
+  // 硬边界：只做「读数 → 人话」翻译，不新增打分/权重/方向判断；方向一律取贡献值符号，与总分同源。
+  // 术语剔除：不写「净权重 / 方向 × 权重 / 贡献度」，统一用「加分 / 减分 / 影响最大」表达。
+  _emoPlainSummary(data) {
+    const fs = Array.isArray(data && data.factors) ? data.factors : [];
+    if (!fs.length) return '';
+    const contrib = (f) => (typeof f.contribution === 'number' ? f.contribution : 0);
+    // 因子大白话：名字 / 偏多时说明 / 偏空时说明（只做语义转述，不新增事实）
+    const PLAIN = {
+      volumePrice: ['成交量能和量价配合', '买盘跟得上、成交在配合', '量价配合转弱、追高意愿不足'],
+      breadthExtreme: ['市场宽度（赚钱效应）', '上涨的股票在变多、赚钱面在扩散', '赚钱面偏窄、多数股票跟不上'],
+      indexMomentum: ['大盘涨跌势头', '指数自身还在往上走', '指数近期在走弱'],
+      margin: ['两融余额（杠杆资金）', '融资盘在加仓', '融资盘在减仓'],
+      mainCapital: ['主力资金流向', '大资金在净流入', '大资金在净流出'],
+      discussionHeat: ['股吧讨论热度', '散户讨论降温（反向偏正面）', '散户讨论升温（反向偏负面）'],
+      riskAversion: ['避险情绪', '避险情绪升温', '避险情绪缓和'],
+      etfFlow: ['宽基ETF申赎', '宽基ETF在净申购、有增量资金进场', '宽基ETF在净赎回、场内资金在撤'],
+      domesticMacro: ['国内宏观数据', '国内数据偏暖', '国内数据偏冷'],
+      usMacro: ['美国宏观事件', '海外事件对A股偏正面', '海外事件对A股偏负面'],
+    };
+    const plainOf = (f, pos) => {
+      const p = PLAIN[f.key];
+      if (p) return { name: p[0], infer: pos ? p[1] : p[2] };
+      return {
+        name: String(f.name || f.key || '因子').replace(/（.*?）/g, ''),
+        infer: pos ? '在给市场加分' : '在给市场减分',
+      };
+    };
+
+    const bull = fs.filter(f => contrib(f) > 0).length;
+    const bear = fs.filter(f => contrib(f) < 0).length;
+    const flat = fs.length - bull - bear;
+    const notTrig = fs.filter(f => f && f.conditional && !f.triggered).length;
+    const degraded = fs.filter(f => f && f.degraded).length;
+
+    let s = `打分因子共 ${fs.length} 项：${bull} 项偏多、${bear} 项偏空、${flat} 项中性`;
+    const zeroNote = [];
+    if (notTrig) zeroNote.push('避险未触发、不计分');
+    if (degraded) zeroNote.push(`${degraded} 项数据缺失、不计分`);
+    if (zeroNote.length) s += `（${zeroNote.join('；')}）`;
+    s += '。';
+
+    // 当日影响最大的两项：只挑真正有加减分、且数据完整的因子
+    const ranked = fs
+      .filter(f => f && !f.degraded && contrib(f) !== 0)
+      .sort((a, b) => Math.abs(contrib(b)) - Math.abs(contrib(a)));
+    const top = ranked.slice(0, 2);
+    const total = (typeof data.totalScore === 'number') ? data.totalScore : null;
+    if (top.length >= 2) {
+      const p0 = contrib(top[0]) > 0;
+      const p1 = contrib(top[1]) > 0;
+      const a = plainOf(top[0], p0);
+      const b = plainOf(top[1], p1);
+      let judge;
+      if (p0 === p1) {
+        if (p0) judge = (total != null && total < 0) ? '两项都在给今天加分，但抵不过其余因子的减分' : '两项都在给今天加分';
+        else judge = (total != null && total > 0) ? '两项都在给今天减分，但其余因子的加分更多' : '两项都在给今天减分，是读数偏弱的主要原因';
+      } else {
+        judge = '一项加分、一项减分，彼此抵消了一部分';
+      }
+      s += `影响最大的是「${a.name}」和「${b.name}」：${a.infer}、${b.infer}，${judge}。`;
+    } else if (top.length === 1) {
+      const p0 = contrib(top[0]) > 0;
+      const a = plainOf(top[0], p0);
+      s += `今天最起作用的是「${a.name}」（${a.infer}），${p0 ? '是读数的主要支撑' : '是读数偏弱的主要原因'}。`;
+    } else {
+      s += '各因子今天影响都很小，读数接近中性。';
+    }
+
+    // 观察项不占权重，但一并总结（用户裁决：观察因子也要一起总结）
+    const watchItems = (data.watchIndicators && Array.isArray(data.watchIndicators.items))
+      ? data.watchIndicators.items : [];
+    if (watchItems.length) {
+      const ready = watchItems.filter(x => x && x.status === 'ready');
+      const miss = watchItems.filter(x => x && x.status === 'unavailable');
+      const brief = (x) => {
+        const nm = String(x.name || '').replace(/（.*?）/g, '');
+        const v = (x.value == null) ? '—' : x.value;
+        const chg = x.change;
+        if (x.key === 'volatility') {
+          const dirWord = chg ? (chg.direction === 'up' ? '上升' : chg.direction === 'down' ? '下降' : '基本持平') : '';
+          const sense = !chg || chg.direction === 'flat'
+            ? '市场情绪与上周差不多'
+            : (chg.direction === 'up' ? '市场比上周更不安、波动在放大' : '市场比上周更平稳、波动在收敛');
+          return `指数波动水平约 ${v}%${chg ? `，比一周前${dirWord} ${Math.abs(Number(chg.delta) || 0)} 个点` : ''}，${sense}`;
+        }
+        if (x.key === 'sectorLead') {
+          const n = Number(v);
+          const sense = !isFinite(n) ? '暂时看不出主线强弱'
+            : n >= 40 ? '领涨板块有延续、主线较清晰'
+              : n >= 20 ? '主线一般、热点有切换'
+                : '领涨板块几乎天天换、热点分散，追涨难度大';
+          return `板块主线延续度 ${v}%，${sense}`;
+        }
+        if (x.key === 'newsFlow') {
+          const n = Number(v) || 0;
+          const sense = n === 0 ? '消息面清淡、暂无驱动'
+            : n <= 2 ? '消息面偏清淡，暂未形成板块级主线'
+              : '消息面较热闹，留意板块轮动';
+          return `仍在生效的消息 ${v} 条，${sense}`;
+        }
+        return `${nm} ${v}${x.unit || ''}`;
+      };
+      const parts = ready.slice(0, 3).map(brief);
+      s += `另有 ${watchItems.length} 项观察指标只看不计分`;
+      if (parts.length) s += `：${parts.join('；')}`;
+      if (miss.length) s += `${parts.length ? '；' : '：'}${miss.map(x => {
+        const nm = String(x.name || '').replace(/（.*?）/g, '');
+        return nm === '期指基差' ? '期指基差暂无数据，暂时看不出期货资金的态度' : `${nm}暂无数据`;
+      }).join('、')}`;
+      s += '。';
+    }
+    return s;
+  },
+
   // ============ 行业板块拥挤度 ============
   async loadSectorCrowding(refresh) {
     try {
@@ -1216,7 +1331,8 @@ const App = {
     html += `<div class="tp-status-row tp-emo ${scoreCls}">`;
     html += `<span class="tp-status-badge">情绪总分 ${points != null ? (points > 0 ? '+' : '') + points.toFixed(2) + ' 分' : '—'}</span>`;
     html += `<span class="tp-status-dir">短期倾向：<b class="${dirCls}">${esc(data.tendency || '中性')}</b></span>`;
-    html += `<span class="tp-status-idx">量能状态：<span class="${volTierCls(data.volumeState)}">${esc(data.volumeState || '—')}</span></span>`;
+    // [20261115c A6] 披露去重：量能状态已在下方「六行结论」完整展示（含 _dirColorize 语义着色），
+    // 顶部胶囊不再重复同一句话（截图实测同屏两次）。胶囊只承载总分 / 短期倾向 / 熔断。
     if (data.circuit) html += `<span class="tp-status-z">⛔ 极端行情熔断</span>`;
     html += `</div>`;
     html += `<button class="tp-detail-toggle" data-action="toggle-tp-detail">${detailOpen ? '▾ 隐藏详情' : '▸ 展开详情'}</button>`;
@@ -1224,7 +1340,7 @@ const App = {
     // —— §十 最终输出：六行结论（始终可见）——
     const line = (k, v, cls) => `<div class="tp-emo-line"><span class="tp-emo-k">${k}</span><span class="tp-emo-v ${cls || ''}">${v}</span></div>`;
     html += `<div class="tp-emo-lines">`;
-    html += line('情绪总分', `${points != null ? (points > 0 ? '+' : '') + points.toFixed(2) + ' 分' : '—'}<span class="tp-emo-sub">（范围 −100 ~ +100 分，正值乐观；= 各因子净权重合计）</span>`);
+    html += line('情绪总分', `${points != null ? (points > 0 ? '+' : '') + points.toFixed(2) + ' 分' : '—'}<span class="tp-emo-sub">（范围 −100 ~ +100 分，正值乐观；= 各因子计入总分的合计）</span>`);
     html += line('短期倾向', `<b class="${dirCls}">${esc(data.tendency || '中性')}</b>`);
     html += line('核心驱动', this._dirColorize(data.coreDriver || '—'));
     html += line('量能状态', this._dirColorize(data.volumeState || '—'), volTierCls(data.volumeState));
@@ -1232,6 +1348,10 @@ const App = {
     // 否则会把 .tp-emo-warn / .tp-emo-risk 的琥珀警示色染成方向色（数值符号 ≠ 方向）。
     html += line('操作建议', esc(data.advice || '—'), data.circuit ? 'tp-emo-warn' : '');
     html += line('风险提示', esc(data.riskTip || '—'), 'tp-emo-risk');
+    // [任务卡 #015] 因子归纳：一段大白话，覆盖 10 个打分因子 + 4 个观察项；
+    // 替代已删除的「今日市场情绪速览」整块，结论只在这一行出现一次。
+    const plainSummary = this._emoPlainSummary(data);
+    if (plainSummary) html += line('因子归纳', this._dirColorize(plainSummary));
     html += `</div>`;
 
     // 20261025p：删除「情绪因子明细 / 宽基 ETF 申赎」页签——ETF 明细改独立网页 /etf-flow.html，
@@ -1242,19 +1362,26 @@ const App = {
     // 因子网格（与后端同源，数值一致）
     const fs = Array.isArray(data.factors) ? data.factors : [];
     if (fs.length) {
-      html += `<div class="tp-block-title">因子明细（8 常驻 + 2 非常驻 · 净权重=评分，方向满格计入总分；两融双栏各按半格）</div>`;
+      // [20261115c A6] 标题精简为一句：计分口径已由 scoreRuleNote 在结论层完整披露，
+      // 此处不再重复「强度分仅用于文案分档」等长串说明。
+      html += `<div class="tp-block-title">因子明细（8 常驻 + 2 非常驻 · 计入总分 = 方向 × 本卡权重；两融双栏各按半格）</div>`;
       html += '<div class="tp-comp-grid">';
       fs.forEach(f => {
-        // 20261025n：权重=评分（对齐个股短期判断模块）——大字显示「净权重 ±X%」（方向满格×权重），
+        // 20261025n：权重=评分（对齐个股短期判断模块）——大字显示「计入总分 ±X 分」（方向满格×本卡权重），
         // 不再显示 -1~1 的强度得分；强度信息保留在 detail 文案里
         const contrib = (typeof f.contribution === 'number') ? f.contribution : 0;
         const sigCls = contrib > 0 ? 'tp-sig-bull' : contrib < 0 ? 'tp-sig-bear' : 'tp-sig-flat';
-        const signTxt = `净权重 ${contrib > 0 ? '+' : ''}${contrib.toFixed(2)}%`;
+        // [20261116b 补] 用户反馈：「权重 11.66%」与「净权重 -11.66%」只差一个负号，易被读成权重变负。
+        // 大字改为「计入总分 ±X 分」，卡头改为「本卡权重 X%」，两者语义一眼可分；数值口径不变。
+        const signTxt = `计入总分 ${contrib > 0 ? '+' : ''}${contrib.toFixed(2)} 分`;
         // [20261109a] 两融余额：一张卡内融资/融券双栏，各占本卡 50% 权重
         const isDual = f.key === 'margin' && Array.isArray(f.subs) && f.subs.length === 2;
         html += `<div class="tp-comp${f.degraded ? ' tp-comp-degraded' : ''}${isDual ? ' tp-comp-dual-card' : ''}">`;
-        html += `<div class="tp-comp-label">${esc(f.name)}<span class="tp-comp-w">权重${f.weight != null ? f.weight.toFixed(2) : '—'}%</span></div>`;
+        html += `<div class="tp-comp-label">${esc(f.name)}<span class="tp-comp-w">本卡权重 ${f.weight != null ? f.weight.toFixed(2) : '—'}%</span></div>`;
         html += `<div class="tp-comp-sig ${sigCls}">${signTxt}</div>`;
+        // [任务卡 #017] 人话层：卡面只显示一句直白结论；原始数据保留但默认收起，点「展开数据」可见。
+        if (f.plain) html += `<div class="tp-comp-plain">${esc(f.plain)}</div>`;
+        html += '<details class="tp-comp-raw"><summary>展开数据</summary>';
         if (isDual) {
           // 方向色按**语义**给（利好=红 / 利空=绿），不经过 _dirColorize：
           // 融券余额「+2%」是增加=利空，若按数值符号染红就与本卡语义错位（用户铁律：禁止方向与颜色语义错位）。
@@ -1279,20 +1406,26 @@ const App = {
           : (f.detail || '');
         html += `<div class="tp-comp-detail">${isDual ? esc(detailTxt) : this._dirColorize(detailTxt)}</div>`;
         if (isDual && f.splitNote) html += `<div class="tp-comp-detail tp-emo-info">ℹ️ ${esc(f.splitNote)}</div>`;
-        if (f.key === 'etfFlow') html += `<button type="button" class="tp-comp-more" data-action="open-etf-page">查看宽基ETF明细 →</button>`;
         // 20261023j：卡片补「数据日期」——原来只有结论没有日期，用户无法判断数据新旧（2026-10-23 截图报障）。
-        //   优先用因子自带日期（ETF=份额披露日 20261022、讨论热度=热度时间），其余用模型基准日；
-        //   宏观因子数据期为月度，已在 detail 写明（如「2026年09月份」），不再重复。
+        // [20261115c A1] 原则 A/C 日期回退链：因子真实数据日 → 专属口径日（ETF etfDate /
+        //   讨论热度 heatDate）→ 基准日 → 运行日。旧链把 data.date（运行日）排在 baselineDate 前，
+        //   8/10 因子 dataDate=null 时全屏显示周日 2026-11-15，与页脚「基准日 2026-11-13」矛盾。
+        //   降级因子无可用数据，不渲染「数据日期」，改渲染「无可用数据」（原因见下方 ⚠ 行，不重复）。
         const isMacroF = f.key === 'domesticMacro' || f.key === 'usMacro';
         const fmtD = (s) => /^\d{8}$/.test(String(s)) ? `${String(s).slice(0, 4)}-${String(s).slice(4, 6)}-${String(s).slice(6)}` : String(s);
-        const dateTxt = (f.key === 'etfFlow' && f.etfDate) ? fmtD(f.etfDate)
-          : (f.key === 'discussionHeat' && f.heatDate) ? String(f.heatDate).slice(0, 10)
-            : fmtD(f.dataDate || data.date || data.baselineDate || '');
+        const dateTxt = f.degraded ? '' : (
+          (f.key === 'etfFlow' && f.etfDate) ? fmtD(f.etfDate)
+            : (f.key === 'discussionHeat' && f.heatDate) ? String(f.heatDate).slice(0, 10)
+              : fmtD(f.dataDate || data.baselineDate || data.date || '')
+        );
         if (!isMacroF && dateTxt) html += `<div class="tp-comp-date">数据日期 ${esc(dateTxt)}</div>`;
+        else if (!isMacroF && f.degraded) html += `<div class="tp-comp-date">无可用数据</div>`;
         // 20261110g P0-3：代理口径「代理」角标（中性色，裁决③只做展示不进打分）
         if (window.honestyBadge && window.honestyBadge.isProxy(f)) {
           html += `<div class="tp-comp-detail">${window.honestyBadge.badgeHTML(f.honesty || f.proxyKeys)}</div>`;
         }
+        // [20261115b F7] 单源缺失：只做如实标注，不改计分
+        if (f.partial && f.partialNote) html += `<div class="tp-comp-detail tp-emo-info">ℹ️ ${esc(f.partialNote)}</div>`;
         if (f.degraded) html += `<div class="tp-comp-detail tp-emo-warn">⚠ ${esc(f.reason || '数据不可用')} → 权重已归零并按比例分摊</div>`;
         else if (f.fallback) html += `<div class="tp-comp-detail tp-emo-warn">⊕ ${esc(f.reason || '节假日兜底：显示最近一次成功数据')}</div>`;
         else if (f.lagged) {
@@ -1301,9 +1434,12 @@ const App = {
           const lagDate = f.dataDate ? fmtD(f.dataDate) : (f.lagDays != null ? `${f.lagDays} 个交易日前` : '上一交易日');
           const cadenceTxt = f.lagNote || `T+1 例行披露（最新可得 ${lagDate}）`;
           html += f.lagKind === 'cadence'
-            ? `<div class="tp-comp-detail tp-emo-info">ℹ️ ${esc(cadenceTxt)} → 模型规则权重 ×0.8（惯例折扣，非数据异常）</div>`
+            ? `<div class="tp-comp-detail tp-emo-info">ℹ️ ${esc(cadenceTxt)} → 模型规则权重 ×0.8 后再按合计 100% 归一（惯例折扣，折扣会部分转嫁给其他因子，非数据异常）</div>`
             : `<div class="tp-comp-detail tp-emo-warn">⏱ 数据滞后${f.lagDays != null ? ` ${f.lagDays} 个交易日` : '（日期未知）'} → 权重按规则打 8 折</div>`;
         }
+        html += '</details>';
+        // ETF 明细按钮留在折叠区外，避免「想看明细」还要先展开原始数据。
+        if (f.key === 'etfFlow') html += `<button type="button" class="tp-comp-more" data-action="open-etf-page">查看宽基ETF明细 →</button>`;
         html += `</div>`;
       });
       html += '</div>';
@@ -1324,8 +1460,11 @@ const App = {
       const ins = ld.filter(x => x.status === 'insufficient');
       if (ready.length) {
         const parts = [];
+        // [20261115b S4] 自学习已改「按自然日去重」：同日重复请求只回诊断、不再动权重
+        const todayDone = ready.filter(x => x.status === 'already_today');
         const capped = ready.filter(x => x.status === 'cap_up' || x.status === 'cap_down');
         const dz = ready.filter(x => x.status === 'deadzone');
+        if (todayDone.length) parts.push(`今日已完成自学习（按日去重，同日重复请求不再调整权重）：${todayDone.length} 个因子维持当前权重`);
         if (capped.length) parts.push(`已顶权重边界（不再同向调整）：${capped.map(x => `${esc(x.name)} 近窗命中 ${fmtRate(x.rate)}（权重 ${x.weight}%）`).join('、')}`);
         if (dz.length) parts.push(`死区观望（45%~60% 按规则不动）：${dz.map(x => `${esc(x.name)} 近窗命中 ${fmtRate(x.rate)}（权重 ${x.weight}%）`).join('、')}`);
         if (ins.length) {
@@ -1369,13 +1508,74 @@ const App = {
     }
     if (data.health && data.health.report) {
       const hr = data.health.report;
-      html += `<div class="tp-learn-line">模型健康度（${esc(hr.month)}）：结算 ${hr.settledCount} 条${hr.accuracy != null ? `，准确率 ${hr.accuracy}%` : ''}${(hr.failedFactors || []).length ? `；⚠ ${esc(hr.failedFactors.join('；'))}` : ''}</div>`;
+      // [20261115a F08] 回退读到的旧月报必须标明「最近一次」，不能让人误以为是本月
+      // [20261115c A7] 后端已透出 health.backfilled：补生成月报须标明「回溯补生成，非月末实时快照」
+      const healthTags = [];
+      if (data.health.stale) healthTags.push('最近一次月报，本月报告未生成');
+      if (data.health.backfilled) healthTags.push('回溯补生成，非月末实时快照');
+      const staleTag = healthTags.length ? `（${healthTags.join('；')}）` : '';
+      html += `<div class="tp-learn-line">模型健康度（${esc(hr.month)}）${staleTag}：结算 ${hr.settledCount} 条${hr.accuracy != null ? `，准确率 ${hr.accuracy}%` : ''}${(hr.failedFactors || []).length ? `；⚠ ${esc(hr.failedFactors.join('；'))}` : ''}</div>`;
     }
     html += '</div>';
 
-    if (data.dataNote) html += `<div class="tp-sample-note tp-emo-warn">数据缺口：${esc(data.dataNote)}</div>`;
+    // [20261115d] 任务卡 #011 阶段一：观察指标层（仅展示 · 不参与打分）。
+    // 与因子网格解耦：观察项没有权重/净权重/方向强度，复用 tp-comp 卡片容器但卡内不出现权重；
+    // 数值统一用中性灰 tp-sig-flat，不占红绿方向色（避免把「波动率上升」误读成看涨/看跌）。
+    // watchIndicators 缺失（旧进程 / 观察层算失败）时整块静默不渲染，不影响主结论。
+    const watch = data.watchIndicators;
+    if (watch && Array.isArray(watch.items) && watch.items.length) {
+      const readyItems = watch.items.filter(x => x && x.status === 'ready');
+      const missingItems = watch.items.filter(x => x && x.status === 'unavailable');
+      html += '<div class="tp-watch-block">';
+      html += '<div class="tp-block-title">观察指标（仅展示 · 不参与打分）</div>';
+      if (readyItems.length) {
+        html += '<div class="tp-comp-grid">';
+        readyItems.forEach(w => {
+          const valTxt = (w.value == null || w.value === '') ? '—' : `${esc(String(w.value))}${esc(w.unit || '')}`;
+          const chg = w.change;
+          const chgWord = chg ? (chg.direction === 'up' ? '上升' : chg.direction === 'down' ? '下降' : '持平') : '';
+          html += '<div class="tp-comp tp-watch-comp">';
+          html += `<div class="tp-comp-label">${esc(w.name)}<span class="tp-comp-w">观察项</span></div>`;
+          html += `<div class="tp-comp-sig tp-sig-flat">${valTxt}</div>`;
+          // [任务卡 #017] 观察项同样「人话在上、原始数据收起」
+          if (w.plain) html += `<div class="tp-comp-plain">${esc(w.plain)}</div>`;
+          html += '<details class="tp-comp-raw"><summary>展开数据</summary>';
+          if (chg) html += `<div class="tp-comp-value">${chgWord} ${Math.abs(Number(chg.delta) || 0)} ${esc(chg.unit || '百分点')}</div>`;
+          html += `<div class="tp-comp-detail">${esc(w.detail || '')}</div>`;
+          html += `<div class="tp-comp-detail">口径：${esc(w.method || '')}</div>`;
+          html += `<div class="tp-comp-detail">来源：${esc(w.source || '')}｜${esc(w.completeness || '')}</div>`;
+          const dateLabel = w.asOfKind === 'event-time' ? '事件时间' : '数据日期';
+          if (w.asOf) html += `<div class="tp-comp-date">${dateLabel} ${esc(w.asOf)}${w.asOfKind === 'event-time' ? '（非行情数据日）' : ''}</div>`;
+          else html += '<div class="tp-comp-date">无可用日期</div>';
+          html += '</details>';
+          html += '</div>';
+        });
+        html += '</div>';
+      }
+      if (missingItems.length) {
+        html += `<div class="tp-sample-note">数据源待接入：${missingItems.map(x => `${esc(x.name)}（${esc(x.plain || x.detail || '')}）`).join('；')}</div>`;
+      }
+      if (watch.summary) html += `<div class="tp-sample-note">${esc(watch.summary)}</div>`;
+      if (watch.note) html += `<div class="tp-sample-note tp-emo-info">${esc(watch.note)}</div>`;
+      html += '</div>';
+    }
+
+    // [20261115c A6] 披露去重：dataNote（降级 / 权重越界 / 采集层明细）与 warnings 合并成一行，
+    // 且只补 warnings 中 dataNote 尚未覆盖的条目；不再硬加与内容矛盾的「数据缺口：」前缀。
+    // 条数统计统一由 sampleNote 唯一总览负责，避免「采集层警告 1 条」「curl exit=56」同屏多次。
+    const noteBase = String(data.dataNote || '');
+    const warnExtra = (Array.isArray(data.warnings) ? data.warnings : [])
+      .filter(w => w && noteBase.indexOf(String(w)) < 0);
+    const dataLine = [noteBase, warnExtra.join('；')].filter(Boolean).join(' ').trim();
+    if (dataLine) html += `<div class="tp-sample-note tp-emo-warn">数据说明：${esc(dataLine)}</div>`;
+    // sampleNote 是唯一总览（有效权重 / 降级 / 兜底 / 滞后 / 单源 / 警告条数只在此出现一次）
     if (data.sampleNote) html += `<div class="tp-sample-note">${esc(data.sampleNote)}</div>`;
     if (Array.isArray(data.issues) && data.issues.length) html += `<div class="tp-sample-note tp-emo-warn">数据自检：${esc(data.issues.map(i => i.msg).join('；'))}</div>`;
+    // [20261115a F10] 滞后口径因子汇总上提到结论层（卡片内仍保留各自的「数据日期」）
+    if (data.timelinessNote) html += `<div class="tp-sample-note tp-emo-info">${esc(data.timelinessNote)}</div>`;
+    // [20261115b S1/S2/S10/S11] 计分口径、有效权重与结论置信度如实披露（算法零改动）
+    if (data.scoreRuleNote) html += `<div class="tp-sample-note">${esc(data.scoreRuleNote)}</div>`;
+    if (data.confidenceNote) html += `<div class="tp-sample-note tp-emo-info">${esc(data.confidenceNote)}</div>`;
     html += `<div class="tp-source-note">数据来源：${esc(data.source || '')}｜基准日 ${esc(data.baselineDate || data.date || '')}｜规则：大盘量能情绪分析模型（完整版）。</div>`;
     html += `</div>`;
 

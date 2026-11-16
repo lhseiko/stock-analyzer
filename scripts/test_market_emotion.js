@@ -261,10 +261,14 @@ const withBars = (bars, over = {}) => baseBundle({ index: { code: 'sh000001', na
   ok(Math.abs(r.factors.reduce((a, f) => a + f.weight, 0) - 100) < 0.1, '剔除后权重合计仍 = 100%');
   ok(/过期|滞后/.test(r.dataNote || ''), `数据缺口说明已如实标注（${(r.dataNote || '').slice(0, 40)}…）`);
 
-  console.log('\n[11] 股吧热度时效：日期缺失 → 无法判定时效，按剔除处理（不静默当今日）');
+  // [20261115c A4] 原则 A：时效「判不出来」不等于「数据过期」。旧口径把日期未知判 stale
+  // → 降级归零分摊；现改为保守沿用并如实标注，不归零、也不静默当今日（任务卡 #010 A4）。
+  console.log('\n[11] 股吧热度时效：日期缺失 → 无法判定时效，保守沿用不归零（原则 A，不静默当今日）');
   r = await computeMarketEmotion({ data: withBars(bars9, { discussionHeat: { marketHeat: 0.2 } }), macroFactors: [] });
   const dh11 = r.factors.find(f => f.key === 'discussionHeat');
-  ok(dh11.degraded === true && dh11.weight === 0, `日期未知 → 剔除（weight=${dh11.weight}%）`);
+  ok(dh11.lagDays === null && !/已按过期数据剔除/.test(dh11.reason || ''),
+    '日期未知 → 不再按「过期数据」剔除归零（原则 A）');
+  ok(/热度日期未知/.test(dh11.detail || ''), '详情如实标注「热度日期未知」，不冒充当日');
 
   console.log('\n[12] 分位样本交易日过滤：18 条里 4 条是周末，应只留 14 条');
   r = await computeMarketEmotion({ data: baseBundle(), macroFactors: [] });

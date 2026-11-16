@@ -475,7 +475,7 @@ section('§9 缓存键 / 批量幂等 / 反向联动（异步实测）');
     try { tc.ensureImported(); } catch (e) { /* 忽略 */ }
     ok(tc.isTradingDay('2026-11-14').is_trading_day === false, '交易日历可判定 2026-11-14 为周末（守卫口径）');
     // [20261113d] 任意历史交易日可补生成：行情按该日 bar，实时类数据置空并记 dataGaps
-    ok(lib.includes('const isHistorical = date < todayStr()') && lib.includes('meta.dataGaps'),
+    ok(lib.includes('const isHistorical = !!o.date && o.date < liveDate') && lib.includes('meta.dataGaps'),
       '历史日期走 asOf 分支：行情取该日 bar，缺口写入 meta.dataGaps');
     ok(lib.includes("'fetchThsHistory'"),
       '历史行情优先同花顺通道（实测可用），东财/腾讯仅作兜底');

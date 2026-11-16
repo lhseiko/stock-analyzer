@@ -102,7 +102,17 @@ for (const f of tests) {
     // 关键词均取中文断言措辞，不会误伤 SCHEMA_VERSION 名（review-llm-2026xxxx）或历史功能标记。
     const inCtx = line.includes('APP_VERSION') || line.includes('?v=')
       || /版本断言|版本戳|版本标识|版本注释|缓存破坏/.test(line);
-    if (inCtx && line.includes(oldVer)) { hit++; return line.split(oldVer).join(nextVer); }
+    if (!inCtx) return line;
+    // [20261116b] 漂移自愈：版本断言行里的版本 token 无论是否为「上一版」都改写成新版本。
+    // 旧规则只换 oldVer，一旦某次 bump 漏跑，测试会钉在更早的版本上、后续 bump 再也换不到（本次 20 项红灯根因）。
+    // 只认「断言目标」四种句式，避免误改断言文案里的历史条目（如「（[20261116a] 删除策略回测模块）」）。
+    let o2 = line
+      .replace(/(const APP_VERSION\s*=\s*['"])(\d{8}[a-z])(['"])/g, (mm, a, b2, c) => a + nextVer + c)
+      .replace(/\?v=(\d{8}[a-z])/g, '?v=' + nextVer)
+      .replace(/(版本戳\s*[=＝:：]?\s*)(\d{8}[a-z])/g, (mm, a) => a + nextVer)
+      .replace(/(版本断言同步至\s*)(\d{8}[a-z])/g, (mm, a) => a + nextVer);
+    if (o2 === line && line.includes(oldVer)) o2 = line.split(oldVer).join(nextVer);
+    if (o2 !== line) { hit++; return o2; }
     return line;
   }).join('\n');
   if (hit > 0) {

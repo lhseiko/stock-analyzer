@@ -34,3 +34,6 @@ Thumbs.db
 # 技能生成物（mx-finance-data 等外抓结果，非源码）
 miaoxiang/mx_finance_data/
 .learnings/
+
+# 其他 AI 工具的任务卡草稿（非项目源码，用户裁决不入库）
+.trae/

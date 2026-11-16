@@ -121,9 +121,9 @@ function makeFixture() {
     ok(appJs.indexOf('f.fallback') >= 0, 'app.js 情绪卡展示兜底标注');
     const t1 = fs.readFileSync(path.join(ROOT, 'scripts/test_metric_analysis_vote.js'), 'utf8');
     const t2 = fs.readFileSync(path.join(ROOT, 'scripts/test_consistency_audit.js'), 'utf8');
-    ok(t1.indexOf('20261112a') >= 0 && t2.indexOf('20261112a') >= 0, '版本断言已同步 20261112a');
+    ok(t1.indexOf('20261116f') >= 0 && t2.indexOf('20261116f') >= 0, '版本断言已同步 20261116f');
     const server = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
-    ok(/const APP_VERSION = '20261112a'/.test(server), "APP_VERSION = '20261112a'");
+    ok(/const APP_VERSION = '20261116f'/.test(server), "APP_VERSION = '20261116a'");
   }
 
   console.log(`\n结果：${pass} 通过 / ${fail} 失败`);

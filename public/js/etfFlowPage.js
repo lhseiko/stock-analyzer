@@ -11,6 +11,7 @@
   let stockMonthData = null;    // 20261027a：当月逐日明细（来自 /api/etf-flow/stock-monthly）
   let trendData = null;         // 20261028a：持仓比例 vs 现金比例趋势（/api/etf-flow/cash-trend）
   let trendChart = null;        // 20261028a：趋势图实例（重渲染前 dispose，防泄漏）
+  let stockSort = { key: null, dir: 0 }; // 20261116e：累计表列排序（key=cumBuy/cumSell，dir=1 升序 / -1 降序；空=后端默认顺序）
 
   function esc(s) {
     return String(s == null ? '' : s)
@@ -45,6 +46,42 @@
     return (v > 0 ? '+' : '') + (Math.round(v * 100) / 100);
   }
   function _netCls(v) { return v == null ? '' : v > 0 ? 'etf-pos' : v < 0 ? 'etf-neg' : ''; }
+
+  // 20261116f：负数股数统一按「−绝对值」显示（cumSell / daySell 本身带负号，避免出现双减号「−−763.81 万股」）
+  function _fmtNegQty(v) {
+    if (v == null || !isFinite(v)) return '—';
+    return '−' + _fmtQty(Math.abs(v));
+  }
+  // 20261116f：累计净申赎（股）= 累计被申购 − 累计被赎回（cumSell 存负数，故直接相加）
+  function _cumNet(s) {
+    const v = Number((s && s.cumBuy) || 0) + Number((s && s.cumSell) || 0);
+    return isFinite(v) ? v : 0;
+  }
+
+  // 20261116e：累计表排序——按绝对值比较；空值 / 0 恒定沉底；未选列时保持后端默认顺序（按申赎总量降序）
+  // 20261116f：「累计净申赎」是带符号净额，按原值比较（升序 = 净赎回最多在前），不取绝对值
+  function _sortStocks(list) {
+    if (!stockSort.key) return list;
+    const k = stockSort.key, d = stockSort.dir;
+    const val = (s) => {
+      const raw = k === 'cumNet' ? _cumNet(s) : Math.abs(Number(s[k]));
+      return isFinite(raw) && raw !== 0 ? raw : null;
+    };
+    return list.slice().sort((a, b) => {
+      const va = val(a), vb = val(b);
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1;
+      if (vb == null) return -1;
+      if (va === vb) return 0;
+      return (va - vb) * d;
+    });
+  }
+  // 20261116e：表头 ▲/▼（同一列同时只有一个箭头点亮；再点已点亮的箭头 → 取消排序回默认）
+  function _sortBtn(key, dir, label) {
+    const on = stockSort.key === key && stockSort.dir === dir;
+    return `<button type="button" class="etf-sort-btn" data-sort-key="${key}" data-sort-dir="${dir}"`
+      + ` aria-pressed="${on ? 'true' : 'false'}" title="${label}" aria-label="${label}">${dir === 1 ? '▲' : '▼'}</button>`;
+  }
 
   function render(d) {
     const body = document.getElementById('efBody');
@@ -161,21 +198,28 @@
       html += `<div class="etf-block-title">全部成分股累计（台账 ${sum.ledgerDays || 0} 个交易日）</div>`;
       html += '<div class="etf-scroll etf-scroll-tall"><table class="etf-table"><thead><tr>'
         + `<th>代码</th><th>名称</th><th>所属宽基</th><th class="num">${esc(dataDateShort)} 买</th><th class="num">${esc(dataDateShort)} 卖</th>`
-        + '<th class="num">累计被申购</th><th class="num">累计被赎回</th><th class="num">买/卖天数</th>'
+        + `<th class="num">累计被申购<span class="etf-sort-group">${_sortBtn('cumBuy', 1, '累计被申购 · 升序（绝对值）')}${_sortBtn('cumBuy', -1, '累计被申购 · 降序（绝对值）')}</span></th>`
+        + `<th class="num">累计被赎回<span class="etf-sort-group">${_sortBtn('cumSell', 1, '累计被赎回 · 升序（绝对值）')}${_sortBtn('cumSell', -1, '累计被赎回 · 降序（绝对值）')}</span></th>`
+        + `<th class="num">累计净申赎<span class="etf-sort-group">${_sortBtn('cumNet', 1, '累计净申赎 · 升序（带符号）')}${_sortBtn('cumNet', -1, '累计净申赎 · 降序（带符号）')}</span></th>`
+        + '<th class="num">买/卖天数</th>'
         + '</tr></thead><tbody>';
-      stocks.forEach(s => {
+      _sortStocks(stocks).forEach(s => {
+        const net = _cumNet(s);
         html += '<tr>'
           + `<td class="mono">${esc(s.code)}</td>`
           + `<td class="name"><a class="etf-stock-link" data-code="${esc(s.code)}" data-name="${esc(s.name || s.code)}" title="查看该股票当月逐日申赎明细">${esc(s.name || '—')}</a></td>`
           + `<td class="dim">${esc(s.groupLabel || '')}</td>`
           + `<td class="num ${_netCls(s.dayBuy)}">${s.dayBuy ? '+' + _fmtQty(s.dayBuy) : '—'}</td>`
-          + `<td class="num ${_netCls(s.daySell)}">${s.daySell ? '−' + _fmtQty(s.daySell) : '—'}</td>`
+          + `<td class="num ${_netCls(s.daySell)}">${s.daySell ? _fmtNegQty(s.daySell) : '—'}</td>`
           + `<td class="num etf-pos">${s.cumBuy ? '+' + _fmtQty(s.cumBuy) : '—'}</td>`
-          + `<td class="num etf-neg">${s.cumSell ? '−' + _fmtQty(s.cumSell) : '—'}</td>`
+          + `<td class="num etf-neg">${s.cumSell ? _fmtNegQty(s.cumSell) : '—'}</td>`
+          + `<td class="num ${_netCls(net)}">${net ? (net > 0 ? '+' + _fmtQty(net) : _fmtNegQty(net)) : '—'}</td>`
           + `<td class="num dim">${s.buyDays || 0} / ${s.sellDays || 0}</td>`
           + '</tr>';
       });
       html += '</tbody></table></div>';
+      html += '<div class="etf-month-note">口径：累计净申赎 = 累计被申购 − 累计被赎回（台账累计净额，<b>股数</b>口径，正为净申购、负为净赎回）；'
+        + '与页面上方「合计净申赎」的金额口径不同（后者为当期净额按净值折算），两者不可直接相加。</div>';
 
       // ⑥ 选中股票的当月逐日明细（点击累计表股票名触发，20261027a；20261027b 修标签口径）
       if (selectedStock) {
@@ -335,6 +379,18 @@
   const efBody = document.getElementById('efBody');
   if (efBody) {
     efBody.addEventListener('click', (ev) => {
+      // 20261116e：累计表列排序（▲ 升序 / ▼ 降序；再点已点亮的箭头取消，回到后端默认顺序）
+      const sortBtn = ev.target.closest('.etf-sort-btn');
+      if (sortBtn) {
+        ev.preventDefault();
+        const key = sortBtn.dataset.sortKey;
+        const dir = Number(sortBtn.dataset.sortDir) === 1 ? 1 : -1;
+        stockSort = (stockSort.key === key && stockSort.dir === dir)
+          ? { key: null, dir: 0 }
+          : { key, dir };
+        render(DATA);
+        return;
+      }
       const link = ev.target.closest('.etf-stock-link');
       if (link) {
         ev.preventDefault();

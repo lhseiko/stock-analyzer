@@ -4,6 +4,15 @@
  *   ① 事件权重过高（轻微+中度反向却合计约 50%）
  *   ② 市场情绪提醒需要准确率记录
  */
+// [20261115a F03] 单测台账隔离：DIR 在 lib/sentimentAccuracy 模块加载时求值，
+// 故必须在 require 之前设置环境变量；否则 2027/2028 未来日期样本会落进生产台账，
+// 造成首页「待结算」出现假的未来记录（任务卡 #006 F03）。
+const fsSa = require('fs');
+const pathSa = require('path');
+const osSa = require('os');
+const SA_TEST_DIR = fsSa.mkdtempSync(pathSa.join(osSa.tmpdir(), 'sa-sentacc-'));
+process.env.SA_SENTIMENT_ACCURACY_DIR = SA_TEST_DIR;
+
 const assert = require('assert');
 const ee = require('../lib/eventEngine');
 const sa = require('../lib/sentimentAccuracy');
@@ -194,5 +203,8 @@ t('留档侧：交易日 baseDate 照常按原日期留档（正常路径不受�
 
 console.log('\n' + '='.repeat(50));
 console.log(`结果：${pass}/${pass + fail} 通过`);
+// [20261115a F03] 先清理隔离目录再退出，通过/失败两条路径都不留残留
+try { fsSa.rmSync(SA_TEST_DIR, { recursive: true, force: true }); }
+catch (e) { try { fsSa.rmdirSync(SA_TEST_DIR, { recursive: true }); } catch (_) { /* best-effort */ } }
 if (fail) { console.log(`${fail} 项失败 ❌`); process.exit(1); }
 console.log('全部通过 ✅');

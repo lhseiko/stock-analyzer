@@ -4959,6 +4959,14 @@ a.mo-tile-link:hover .mo-link-mark { opacity: 1; }
 .tp-comp-value { font-size: 12px; color: var(--text-primary); }
 .tp-comp-detail { font-size: 11px; color: var(--text-muted); margin-top: 3px; line-height: 1.4; }
 .tp-comp-date { font-size: 10.5px; color: var(--text-muted); margin-top: 6px; padding-top: 4px; border-top: 1px dashed rgba(255,255,255,.06); }
+/* [任务卡 #017] 因子卡人话层：一句直白结论常显；原始数据保留但默认收起（原生 details，无脚本无状态） */
+.tp-comp-plain { font-size: 12.5px; color: var(--text-primary); line-height: 1.55; margin: 6px 0 2px; }
+.tp-comp-raw { margin-top: 6px; }
+.tp-comp-raw > summary { font-size: 10.5px; color: var(--text-muted); cursor: pointer; user-select: none; list-style: none; }
+.tp-comp-raw > summary::-webkit-details-marker { display: none; }
+.tp-comp-raw > summary::before { content: '▸ '; }
+.tp-comp-raw[open] > summary::before { content: '▾ '; }
+.tp-comp-raw > summary:hover { color: var(--text-secondary); }
 
 /* [20261109a] 两融余额因子卡：卡内双栏，融资 / 融券各占 50% 权重。
    方向色沿用 tp-sig-bull(红=利好) / tp-sig-bear(绿=利空)，与全站红涨绿跌语义一致；
@@ -5222,6 +5230,16 @@ a.mo-tile-link:hover .mo-link-mark { opacity: 1; }
 .etf-table .dim { color: var(--text-muted); }
 .etf-table .note { color: var(--text-muted); font-size: 11px; max-width: 240px; }
 .etf-table .row-dim { opacity: .55; }
+/* 20261116e：累计表表头排序箭头（▲ 升序 / ▼ 降序；点亮=当前排序，再点取消回默认顺序） */
+.etf-table th .etf-sort-group { display: inline-flex; gap: 2px; margin-left: 4px; vertical-align: middle; }
+.etf-table th .etf-sort-btn {
+  appearance: none; border: 1px solid transparent; background: transparent;
+  color: var(--text-muted); opacity: .55; cursor: pointer;
+  font-size: 9px; line-height: 1; padding: 1px 2px; border-radius: 3px;
+}
+.etf-table th .etf-sort-btn:hover { opacity: 1; color: var(--text-primary); background: var(--bg-hover); }
+.etf-table th .etf-sort-btn[aria-pressed="true"] { opacity: 1; color: var(--accent); border-color: var(--accent); }
+.etf-table th .etf-sort-btn:focus-visible { outline: none; border-color: var(--accent); }
 
 /* 20261027a：累计表股票名超链接 + 当月逐日明细表 */
 .etf-stock-link {
@@ -6779,3 +6797,5 @@ body { display: flex; flex-direction: column; }
 @media (max-width: 900px) {
   .health-body .hp-kpis { grid-template-columns: repeat(2, 1fr); }
 }
+
+

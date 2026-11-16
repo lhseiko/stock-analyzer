@@ -143,10 +143,10 @@ section('§3 后端单一权威源 / renderAll 接线 / 样式 / 版本戳');
   const server = read('server.js');
   const idx = read('public/index.html');
   const av = (server.match(/const APP_VERSION = '(\d{8}[a-z])'/) || [])[1];
-  ok(av === '20261112a', 'APP_VERSION = 20261112a（后端结构 + 前端 UI 均变更，版本戳已升）');
+  ok(av === '20261116f', 'APP_VERSION = 20261116f（后端结构 + 前端 UI 均变更，版本戳已升）');
   ok(idx.includes('js/deepCharts.js?v=' + av) && idx.includes('css/style.css?v=' + av),
     'index.html 的 deepCharts.js / style.css 缓存戳与 APP_VERSION 一致');
-  ok(!/\?v=20261111b/.test(idx), 'index.html 无残留旧版本戳 20261111b');
+  ok(!new RegExp('\\?v=(?!' + av + ')\\d{8}[a-z]').test(idx), 'index.html 无残留旧版本戳');
 }
 
 console.log('\n===== B2 前端闭环守卫：' + pass + ' 通过 / ' + fail + ' 失败 =====');

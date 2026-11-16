@@ -9,6 +9,8 @@
 
 ## 待办（pending / active）
 
+- **LRN-20261115-001**（2026-11-15 · pending）新增结论层披露字段前必须先做同屏去重：#007 的 confidenceNote 让「采集层警告」出现 3 次、「滞后口径」3 次——LRN-20261020-013 同类教训重犯。
+- **LRN-20261115-002**（2026-11-15 · pending）新增字段只接正常路径、漏降级/回溯分支：降级因子仍显示「数据日期 2026-11-15」，回溯补生成月报没透出标记。
 - **LRN-20261103-001**（2026-11-03 · pending）位置驱动的展示分支（横盘股无主判/无参考表）会被用户感知为"这只股票版面坏了/和其他股不一样"——第三次同类报障。
 - **LRN-20261106-005**（2026-11-06 · active）三条工程教训：① 守卫版本戳批量升级时负断言必须指向「上一版」并用占位符保护（m 轮曾把
 
@@ -89,3 +91,175 @@ stockReview.js 首版凭直觉写了 q.turnoverRate / amount=亿 / getHistory �
 - Pattern-Key: harden.runtime_probe_before_mapping
 - Recurrence-Count: 2（此前 20261110a 每日复盘接数据源也踩过字段形状）
 - First-Seen: 2026-11-10 / Last-Seen: 2026-11-10
+
+---
+
+## [LRN-20261115-001] correction
+
+**Logged**: 2026-11-15T17:39:00+08:00
+**Priority**: high
+**Status**: pending
+**Area**: frontend | backend
+
+### Summary
+新增结论层披露字段前必须先做「同屏去重」：任务卡 #007 加 `confidenceNote` 时没删原处重复，同一事实在首页情绪模块最多出现 3 次；归档 `LRN-20261020-013` 第 3 条已写过同一条规则，属重犯。
+
+### Details
+- 用户 17:26 两张截图反馈。接口字段交叉命中实测：「采集层警告」同时在 `dataNote` / `sampleNote` / `confidenceNote`（3 处）、「滞后口径」在 `sampleNote` / `timelinessNote` / `confidenceNote`（3 处）、「有效权重」在 `sampleNote` / `confidenceNote`（2 处）、`curl exit=56` 在 `dataNote` / `warnings`（2 处）。
+- 根因：#007 的目标是「把健康信息透出来」，于是把 `confidenceNote` 当作一条独立新增行接上，没有盘点 `app.js:1383~1392` 已有 7 条披露行（dataNote / sampleNote / issues / warnings / timelinessNote / scoreRuleNote / confidenceNote）各自的职责边界，也没删 `sampleNote` 里已含的同类汇总。
+- 数值正确、守卫 52/0 全绿、全量回归不新增失败，但界面读起来像同一段话复制三遍——**结构守卫验证不了「信息重复」**。
+- 同类第 2 次：2026-10-20 把箱体边界并入价位清单时，也是「并入后没删原处展示」，当时已写进归档条目。
+
+### Suggested Action
+新增/改写任何结论层文案前：①列出该区块所有同源字段与渲染行，做关键词交叉命中表；②每个事实只保留一个权威行，其余改为引用或删除；③守卫加「同一关键词跨字段命中 ≤1」的纯字符串断言（可确定性验证）；④改完必须读一次真实接口产出的完整文案，不能只跑单测。
+
+### Metadata
+- Source: user_feedback（2026-11-15 17:26 截图）
+- Related Files: lib/marketEmotionModel.js, public/js/app.js, scripts/test_emotion_factor_audit.js
+- Tags: disclosure, duplication, ui-copy, market-emotion
+- See Also: LRN-20261020-013, LRN-20261115-002
+- Pattern-Key: simplify.no_duplicate_disclosure
+- Recurrence-Count: 2
+- First-Seen: 2026-10-20 / Last-Seen: 2026-11-15
+
+---
+
+## [LRN-20261115-002] correction
+
+**Logged**: 2026-11-15T17:39:00+08:00
+**Priority**: medium
+**Status**: pending
+**Area**: frontend | backend
+
+### Summary
+新增字段/数据时只接了正常路径，漏了降级与回溯路径的展示语义：降级因子仍显示「数据日期」，回溯补生成的月报没透出「回溯」标记。
+
+### Details
+- 截图 2：「市场宽度与极端情绪」已降级（涨跌家数缺失、权重 0.00%），卡片却写「数据日期 2026-11-15」。根因 `app.js` 的 `dateTxt = fmtD(f.dataDate || data.date || data.baselineDate)`：降级时 `dataDate=null` 回退到 `data.date`（模型运行日），而同模块页脚写「基准日 2026-11-13」，同屏两个日期互相矛盾。与 20261023k（ETF 降级漏透 etfDate）同型，#006 F06 修过一次、#007 F07 又只补了单源标注。
+- 截图 1：「模型健康度（2026-11）：结算 12 条，准确率 16.7%」是 #007 S9 回溯补生成的月报，但 `maybeMonthlyHealth` 非月末分支 `return { month, generatedAt, report }` 没有透出 JSON 里已写好的 `backfilled` / `method`，前端 `staleTag` 只在 stale 时显示 → 界面看起来像运行时实时月报。
+- 共性：**新增数据源/字段时只验证「主路径字段存在」，没验证降级、兜底、回溯三类分支的渲染语义**；数据文件里写了标注，界面拿不到等于没写。
+
+### Suggested Action
+①降级因子不渲染「数据日期」，改渲染「无可用数据（原因）」；②`dateTxt` 回退链不要用 `data.date`（运行日）冒充数据日，优先 `baselineDate`；③`maybeMonthlyHealth` 非月末分支把 `backfilled` / `method` 一并返回，前端 health 行加「回溯补生成」标注；④守卫对每个新增字段补「降级态 + 回溯态」两条渲染断言。
+
+### Metadata
+- Source: user_feedback（2026-11-15 17:26 截图）
+- Related Files: public/js/app.js, lib/marketEmotionModel.js, scripts/rebuild_emotion_factor_audit.js
+- Tags: degraded-fallback, date-label, backfill-disclosure, market-emotion
+- See Also: LRN-20261115-001
+- Pattern-Key: harden.render_all_branches
+- Recurrence-Count: 2
+- First-Seen: 2026-10-23 / Last-Seen: 2026-11-15
+
+---
+
+## [LRN-20261115-003] correction
+
+**Logged**: 2026-11-15T17:52:00+08:00
+**Priority**: medium
+**Status**: pending
+**Area**: frontend | backend
+
+### Summary
+复核补充（不回改 001/002）：披露行还有「标签与内容自相矛盾」；日期回退链缺陷是**常态**不是仅降级态；数据文件里的标注必须一路追到接口再到界面，任一环断开等于没写。
+
+### Details
+- 17:5x 当场实测 `/api/sentiment-turning-point`（`20261115b`）：
+  - `dataNote` 内容为「采集层警告 1 条：mainFund… curl exit=56（主链失败时已自动切换备链，**数据块仍齐备**）」，前端 `app.js:1383` 却硬加前缀「**数据缺口**：」→ 标签说缺数据、内容说数据齐备，同一行自相矛盾。
+  - 关键词交叉命中比截图更细：「采集/警告」在 `dataNote`/`sampleNote`/`confidenceNote` 3 处 + 独立渲染的「采集警告」行 = 同屏 **4 次**；「滞后」3 处；「有效权重 43.12%」2 处；`curl exit=56` 2 处。
+  - **对 002 的范围更正**：当前 `degradedFactors=[]`、`issues=[]`，截图里的「涨跌家数缺失 / 权重 0.00%」已恢复；但实测 **8/10 因子 `dataDate=null`**，`dateTxt` 一律回退到 `data.date=2026-11-15`（运行日），页脚写「基准日 2026-11-13」。日期矛盾覆盖绝大多数卡片，降级只是其中最刺眼的一种。
+  - `health/2026-11.json` 磁盘写有 `backfilled:true` + `method`，`maybeMonthlyHealth` 非月末分支只返回 `{month, generatedAt, report}`，接口 `health` 无这两个字段，前端 `staleTag` 只在 stale 时显示 → 三层链路在数据文件→接口处断掉。
+- 共性：#007 的目标是「把健康信息透出来」，验证时只查了「字段是否存在」与「守卫是否全绿」，没查「同屏读起来是什么」和「标注是否走完 数据文件→接口→界面 全链路」。结构守卫验证不了文案语义。
+
+### Suggested Action
+①新增结论层文案后，除关键词去重表外，再做一次「标签词 vs 内容语义」一致性核对；②任何新增标注字段，用真实接口回包核对是否在响应里，再核对前端是否渲染；③降级 / 兜底 / 回溯三类分支各补一条渲染断言；④守卫加「同一关键词跨披露字段命中 ≤1」的纯字符串断言。
+
+### Metadata
+- Source: user_feedback（2026-11-15 17:26 两张截图）+ 17:5x 接口实测复核
+- Related Files: public/js/app.js, lib/marketEmotionModel.js, scripts/test_emotion_factor_audit.js
+- Tags: disclosure, label-semantics, degraded-fallback, backfill-disclosure, full-chain-verification
+- See Also: LRN-20261115-001, LRN-20261115-002, LRN-20261020-013
+- Pattern-Key: harden.verify_render_full_chain
+- Recurrence-Count: 1
+- First-Seen: 2026-11-15 / Last-Seen: 2026-11-15
+
+---
+
+## [LRN-20261115-004] correction
+
+**Logged**: 2026-11-15T18:12:00+08:00
+**Priority**: high
+**Status**: pending
+**Area**: backend | docs
+
+### Summary
+出推荐方案前必须先检索「既有设计原则 + 用户历史指令 + 模块内裁决注释」：本次把 ETF 全零缓存误判为「无效数据」、把非交易日误判为「数据过期」，两条★推荐都违反项目里已存在数周的规则。
+
+### Details
+- 18:0x 出任务卡 #009 时，P0② 推荐「全零即 degraded」、P1④ 推荐「非交易日降级归零」。18:12 用户裁决纠正：数据因子以最近一个交易日收盘为准、非交易日不得归零；ETF 采用最近一次更新数据、不得随意归零。
+- 核查发现原则**早已存在**：`lib/etfFlow.js:770-773` 的 20261103g 用户指令「节假日只读取最后一次更新的数据」「宁可展示标注了日期的旧数据，不出报错/空值」，`withLastFactorFallback()` + `saveLastSuccessfulFactor()`（仅非 degraded 落盘）已实现；`docs/logic/common-01-data-source.md` §二.3 已有交易日感知三态（判断失败 null ≠ 非交易日、`countTradingDaysBetween=0` 保守判仍为最新可得）。
+- 根因：出卡前上下文采集只做 git status / WAL / DESIGN 版本规则 / 测试基线 / 改动点行号，**没有按「数据基准 / 时效 / 降级 / 兜底 / 归零 / 交易日」这类业务关键词 grep 既有原则文档与模块头部裁决注释**；把「数值为 0」与「数据不可用」混同，把「非交易日」与「数据过期」混同。
+- 更严重：#007 F8 已落盘的 `server.js:1165-1168` 本身就违反该原则，说明不止方案错，既有实现也需按原则回退；守卫里对 F8 的断言也要同步。
+
+### Suggested Action
+①任务卡出卡前的上下文采集固定增加一步：按业务关键词 grep `docs/logic/**`、模块文件头部裁决注释、`.learnings/` 归档；②任何「降级 / 归零」类推荐，先确认既有用户指令是否禁止；③始终区分「数值为 0（有效中性方向）」与「数据文件不存在（不可用）」；④原则类裁决立即固化到既有设计文档，不另造新文档。
+
+### Metadata
+- Source: user_feedback（2026-11-15 18:12 裁决）
+- Related Files: docs/logic/common-01-data-source.md, lib/etfFlow.js, lib/marketEmotionModel.js, server.js, .workbuddy/taskcards/20261115-emotion-improvement-plan.md
+- Tags: principle, trading-day-basis, fallback, no-zeroing, pre-card-context
+- See Also: LRN-20261115-001, LRN-20261115-002, LRN-20261115-003
+- Pattern-Key: research.existing_principles_before_recommending
+- Recurrence-Count: 1
+- First-Seen: 2026-11-15 / Last-Seen: 2026-11-15
+
+## [LRN-20261116-001] correction
+
+**Logged**: 2026-11-16T11:15:00+08:00
+**Priority**: medium
+**Status**: pending
+**Area**: backend
+
+### Summary
+用户带截图报「数据大量缺失」时，必须先实测当前接口再回答——截图是瞬时状态，5 分钟后已自愈，凭截图答因会答错。
+
+### Details
+11:03 截图全因子归零 → 11:08 实测 0 降级恢复正常。直接按截图推断「未收盘导致」会误导；
+实测 + 落盘核查（records/snapshots/SQLite/复盘文件）才能区分「瞬时数据源失败」与「持久化缺失」。
+
+### Suggested Action
+诊断类交付固定三步：①当前接口实测 ②落盘逐类核查 ③截图现象时间窗与服务启动时间对齐。
+
+### Metadata
+- Source: conversation
+- Tags: 诊断流程, 瞬时状态, 截图报障
+- Pattern-Key: diagnose.verify_current_state_first
+
+---
+
+## [LRN-20261116-002] knowledge_gap
+
+**Logged**: 2026-11-16T11:45:00+08:00
+**Priority**: medium
+**Status**: pending
+**Area**: tests
+
+### Summary
+bump_version.js 对 lib/ 下自有版本常量（如 marketEmotionWatch.js 的 WATCH_VERSION）是覆盖盲区——连续两次升版（#013、#014）都需手动补升，第二次才识别为重复模式。
+
+### Details
+bump 只改 server.js APP_VERSION、public/*.html ?v=、以及"版本戳语境"白名单脚本；lib 里的独立版本常量不会被改，守卫期望值却已被 bump 同步更新 → 守卫失败。
+
+### Suggested Action
+①每次 bump 后固定复跑 test_emotion_watch.js；②长期可把 WATCH_VERSION 纳入 bump 白名单或改为从 APP_VERSION 派生（需另出卡）。
+
+### Metadata
+- Source: error
+- Tags: 升版盲区, 守卫协同, 重复模式
+- Pattern-Key: bump.version_constants_blindspot
+- Recurrence-Count: 2
+- First-Seen: 2025-11-15
+- Last-Seen: 2025-11-16
+- See Also: LRN-20261116-001
+
+---

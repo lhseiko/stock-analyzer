@@ -129,12 +129,17 @@ ok(!chartsCode.includes('全模块综合总结（代码聚合）'), '聚合行�
 ok(!chartsCode.includes('20261106m（用户裁决'), 'm 轮聚合块注释已清理（留档注释除外）');
 
 section('§8 版本戳 / 缓存破坏');
-ok(/const APP_VERSION = '20261112a'/.test(server), 'APP_VERSION = 20261112a');
+ok(/const APP_VERSION = '20261116f'/.test(server), 'APP_VERSION 已是当前版本');
 ok(server.includes('[20261106i]'), 'server.js 存在 [20261106i] 独立变更日志');
 ok(server.includes('[20261106h]') && server.includes('[20261106g]'), '功能引入版本号保留（铁律）');
-for (const f of ['index.html', 'accuracy.html', 'logic-model.html', 'notes.html', 'volume-map.html']) {
-  const html = read('public/' + f);
-  ok(html.includes('?v=20261112a') && !html.includes('?v=20261106l'), `public/${f} 缓存戳全部对齐 20261112a`);
+// [20261116f] 漂移自愈：缓存戳以 server.js 的 APP_VERSION 为唯一权威，不再写字面量旧版本负断言
+{
+  const _av = (server.match(/const APP_VERSION = '(\d{8}[a-z])'/) || [])[1];
+  for (const f of ['index.html', 'accuracy.html', 'logic-model.html', 'notes.html', 'volume-map.html']) {
+    const html = read('public/' + f);
+    const _stamps = html.match(/\?v=\d{8}[a-z]/g) || [];
+    ok(_stamps.length > 0 && _stamps.every(x => x === '?v=' + _av), `public/${f} 缓存戳全部对齐 APP_VERSION`);
+  }
 }
 
 console.log(`\n===== 汇总：通过 ${pass} / ${fail} 失败 =====`);
