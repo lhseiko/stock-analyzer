@@ -11,7 +11,8 @@
  * 本脚本做什么（确定性、幂等、可重跑）：
  *   1. 备份 state.json 到 state.backup-YYYYMMDD.json（仅首次，已存在则跳过）；
  *   2. 从 BASE_WEIGHTS 出发，按 records.json 的日期顺序逐条重放：
- *      - 跳过未结算记录与 flat 日（新口径，任务卡关键问题①选 A）；
+ *      - 跳过未结算记录；[任务卡 #021] 震荡日（|chg|≤0.5%）若有非零涨跌幅，
+ *        按实际符号计入样本；仅恰好 0 / 无涨跌幅才跳过；
  *      - 旧键 priceVolume 归并到 volumePrice（关键口径 F09）；
  *      - 每结算一条调用线上同一份 applyFactorAccuracy + learnWeights，复现「若一开始
  *        就是新口径，历史学习轨迹会怎样」，避免另发明一套权重算法；
@@ -37,6 +38,7 @@
 const fs = require('fs');
 const path = require('path');
 const model = require('../lib/marketEmotionModel');
+const { signDir } = require('../lib/directionHit');
 const { localDate } = require('../lib/localDate');
 
 const ROOT = path.join(__dirname, '..');
@@ -81,7 +83,7 @@ function rebuild(opts = {}) {
   // 被反复计入因子命中样本。按 baselineDate 去重，同一基准日只保留第一条结算样本。
   const seenBaseline = new Set();
   let replayed = 0, skippedFlat = 0, skippedUnsettled = 0, adjustments = 0;
-  let skippedDuplicate = 0, skippedNonTrading = 0;
+  let skippedDuplicate = 0, skippedNonTrading = 0, smallMoveReplayed = 0;
   for (const r of records) {
     if (r.isTradingDay === false) { skippedNonTrading++; continue; }
     if (!r.settledT1) { skippedUnsettled++; continue; }
@@ -90,14 +92,18 @@ function rebuild(opts = {}) {
     const baseKey = r.baselineDate || r.date;
     if (seenBaseline.has(baseKey)) { skippedDuplicate++; continue; }
     seenBaseline.add(baseKey);
-    if (dir === 'flat') { skippedFlat++; continue; }
+    // [任务卡 #021] flat 标签不再等于「无方向」：按已存 chgPct 取实际符号。
+    const chgPct = r.resultT1 ? r.resultT1.chgPct : undefined;
+    const hitDir = dir === 'flat' ? signDir(chgPct) : dir;
+    if (!hitDir || hitDir === 'flat') { skippedFlat++; continue; }
+    if (dir === 'flat') smallMoveReplayed++;
 
     // 旧键 priceVolume → volumePrice（历史因子改名遗留，与 migrateVolumePriceWeights 同语义）
     const dirs = {};
     for (const [k, v] of Object.entries(r.factorDirs || {})) {
       dirs[k === 'priceVolume' ? 'volumePrice' : k] = v;
     }
-    model.applyFactorAccuracy(state, [{ record: { factorDirs: dirs }, actualDir: dir }]);
+    model.applyFactorAccuracy(state, [{ record: { factorDirs: dirs }, actualDir: hitDir, hitDir, chgPct }]);
     // force=true：重放的是历史轨迹，逐条推进，不受「同一自然日只学一次」的按日去重约束
     const { learnLog } = model.learnWeights(state, { today: r.date, force: true });
     adjustments += learnLog.length;
@@ -116,7 +122,7 @@ function rebuild(opts = {}) {
     state,
     summary: {
       records: records.length, replayed, skippedFlat, skippedUnsettled, adjustments,
-      skippedDuplicate, skippedNonTrading,
+      skippedDuplicate, skippedNonTrading, smallMoveReplayed,
       weights: { ...state.weights }, factorAcc,
       oldWeights: old && old.weights ? { ...old.weights } : null,
     },
@@ -168,10 +174,12 @@ function backfillHealth(opts = {}) {
     const recs = byMonth[month];
     if (!fs.existsSync(file)) {
       const settled = recs.filter(r => r.settledT1);
-      // factorStats 与线上 applyFactorAccuracy 同口径：flat 日不计样本、dir=0 不计
+      // factorStats 与线上 applyFactorAccuracy 同口径：[任务卡 #021] flat 日按已存 chgPct
+      // 取符号计入样本（仅恰好 0 / 无数值跳过）；dir=0 不计。
       const stats = {};
       for (const r of settled) {
-        const d = r.resultT1 && r.resultT1.dir;
+        let d = r.resultT1 && r.resultT1.dir;
+        if (d === 'flat') d = signDir(r.resultT1 && r.resultT1.chgPct);
         if (!d || d === 'flat') continue;
         const up = d === 'up';
         for (const [k, sign] of Object.entries(r.factorDirs || {})) {
@@ -237,7 +245,7 @@ function runReplay() {
   const result = rebuild();
   const s = result.summary;
   console.log('===== 情绪因子台账按新口径重放 =====');
-  console.log(`记录 ${s.records} 条｜参与重放 ${s.replayed}｜跳过震荡日 ${s.skippedFlat}｜未结算 ${s.skippedUnsettled}｜重复基准日 ${s.skippedDuplicate}｜非交易日 ${s.skippedNonTrading}`);
+  console.log(`记录 ${s.records} 条｜参与重放 ${s.replayed}（其中小幅同向 ${s.smallMoveReplayed}）｜零涨幅跳过 ${s.skippedFlat}｜未结算 ${s.skippedUnsettled}｜重复基准日 ${s.skippedDuplicate}｜非交易日 ${s.skippedNonTrading}`);
   console.log(`自学习调整累计 ${s.adjustments} 次`);
   console.log('旧权重：', JSON.stringify(s.oldWeights));
   console.log('新权重：', JSON.stringify(s.weights));

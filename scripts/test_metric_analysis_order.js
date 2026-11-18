@@ -63,12 +63,13 @@ const fundamental = {
 const out = buildMetricAnalysis(quote, comparison, companyType, signals, fundamental);
 
 // ---------- 1. 项数与顺序 ----------
-// ★ 20261029a：METRIC_ORDER 14→16（dedProfitGrowth 后插 opProfit/nbv）；opProfit/nbv 为
-//   条件指标（入参缺数据时整行不渲染），本测试未传入 → 输出仍为 14 项。
+// ★ 20261029a：METRIC_ORDER 14→16（dedProfitGrowth 后插 opProfit/nbv）；
+//   20261117a #018：末尾再加商誉 → 17 项。opProfit/nbv/goodwill 为条件指标
+//   （入参缺数据时整行不渲染），本测试三者均未传 → 输出仍为 14 项。
 ok(Array.isArray(out.metrics), 'out.metrics 应为数组');
-eq(METRIC_ORDER.length, 16, 'METRIC_ORDER 长度应为 16（20261029a：+opProfit +nbv）');
-eq(out.metrics.length, 14, '未传 opProfit/insuranceNBV 时右卡输出项数应为 14（条件指标不渲染）');
-eq(out.metrics.map(m => m.key), METRIC_ORDER.filter(k => k !== 'opProfit' && k !== 'nbv'), '右卡 key 顺序必须严格等于 METRIC_ORDER（去掉未提供的条件指标）');
+eq(METRIC_ORDER.length, 17, 'METRIC_ORDER 长度应为 17（20261029a +opProfit +nbv；20261117a +goodwill）');
+eq(out.metrics.length, 14, '未传 opProfit/insuranceNBV/goodwill 时右卡输出项数应为 14（条件指标不渲染）');
+eq(out.metrics.map(m => m.key), METRIC_ORDER.filter(k => k !== 'opProfit' && k !== 'nbv' && k !== 'goodwill'), '右卡 key 顺序必须严格等于 METRIC_ORDER（去掉未提供的条件指标）');
 eq(out.order, METRIC_ORDER, 'out.order 应回显 METRIC_ORDER');
 
 // ---------- 2. 扣非 / PEG 必然出现 ----------
@@ -132,7 +133,7 @@ const end = appSrc.indexOf('\n    ];', start);
 ok(start > 0 && end > start, `应能定位左卡 rows 数组（start=${start}, end=${end}）`);
 const block = appSrc.slice(start, end);
 const leftRowCount = (block.match(/\n\s*\[/g) || []).length;
-eq(leftRowCount, 14, '左卡 rows 数组行数应为 14');
+eq(leftRowCount, 15, '左卡 rows 数组行数应为 15（20261117a #018：末尾新增商誉）');
 
 // 右卡 14 个 label 依次在左卡块中出现的位置必须严格递增 → 证明两卡同序
 let lastPos = -1, monotonic = true, firstBad = '';

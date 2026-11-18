@@ -165,7 +165,7 @@ function fixture(date, redRate, avgChgPct, bigDropRate) {
   ok(/limit_pool_daily/.test(DOC) && /任务卡 #012/.test(DOC), '逻辑说明文档已登记新数据源');
   ok(/涨跌停池按交易日真实落盘/.test(COMMON), '数据基准原则补入 D 条');
   const ver = SERVER.match(/^const APP_VERSION = '(\d{8}[a-z])';/m);
-  ok(ver && ver[1] === '20261116f', '前端零改动，版本戳仍 20261116f', ver && ver[1]);
+  ok(ver && ver[1] === '20261118a', '前端零改动，版本戳仍 20261118a', ver && ver[1]);
 
   db.closeDb();
   fs.rmSync(TMP, { recursive: true, force: true });

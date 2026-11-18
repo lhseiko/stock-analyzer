@@ -1258,3 +1258,78 @@
 - **验证**：`test_color_semantics` 154/0（新增 5 条快照守卫）、`test_emotion_margin_render` 37/0、全量 `--quick` 145/145；用今日真实记录实跑 `snapshotMarkdown` 输出可读摘要、无 ```json。
 - **升版**：`APP_VERSION 20261116d`、`WATCH_VERSION d`、全站 57 处 `?v=`；文档 `daily-review-spec-20261110.md` 第四部分已登记。
 - **状态**：服务已重启；未 commit / 未 push / 未三端同步。
+
+## 11-16 19:0x 三端同步完成（用户明确「同步」指令）
+
+- **触发**：用户 19:05「同步」——按同步铁律执行本地 commit → GitHub push → 工作空间克隆 fetch/reset → 三端校验。
+- **提交前检查**：密钥扫描零命中；scratch（data/_gen_map_*.js、tmp/_quick_*.log、.venv_akshare/）均在 gitignore 内未入库；发现未跟踪 `.trae/`（另一 AI 工具 3 张任务卡草稿，含「待用户确认/未执行」），**用户裁决不提交、已加入 .gitignore**。
+- **commit**：`7c5491e`（70 文件，+4271/-283），message 按 8 个子任务分节（#006/#007/#010/#011/#012/#013 + 11-16 诊断#014 + #015/#016/#017 + 工程修复）。
+- **三端 hash 全等**：`7c5491e030090cbf7c88b4118730d31f687611aa`（本地 = 远端 = 克隆端）。
+- **内容二次确认**：14 个关键文件（server.js / 3 新增 lib / 情绪模型 / emotionSummary.js / app.js / etfFlowPage.js / index.html / style.css / 2 守卫 / .gitignore）EOL 归一化后逐字节一致。
+- **覆盖范围**：上次同步点 2e12240（11-14）之后全部改动，APP_VERSION 20261116f；验收入口仍以用户重启 + Ctrl+F5 为准。data/ 与克隆端无该目录属 gitignore 正常，非同步失败。
+
+## 11-17 11:1x 任务卡 #018：全部个股新增商誉指标（本地完成，未同步）
+
+- **用户裁决**：取最新一期资产负债表；财务健康 25 分改五项各 5 分（<5% 5 分、5%~10% 含边界 3 分、>10% 0 分、无商誉 0% 得 5 分）；分母用归母净资产（与 PB / 深度分析同源）。
+- **落地**：新增 `lib/goodwill.js`（纯函数）与 `fetchGoodwillSnippet`（东财 F10 zcfzbAjaxNew，季报优先）；server 在评分/信号/指标分析之前取数并单一快照注入三处；`fundamentalScore.js` 财务健康五项各 5 分（旧调用方不注入时仍四项口径不变）；`analysis.js` 新增商誉信号；`metricAnalysis.js` METRIC_ORDER 扩至 17 且商誉不参与五维多数决（阈值硬规则）；`app.js` 左卡最下方新增商誉行。
+- **验证**：新增守卫 61/61；相关守卫全绿；全量 `--quick` 146/146（跳过 15 需网络）；真实 F10 取数 603288=2.81亿/0.71%/5分、600460=2.45亿/1.98%/5分；隔离实例 3099 端到端确认 goodwill/信号/右卡判定/健康扣分一致（bull/5.0 分）。
+- **升版**：`APP_VERSION`、`WATCH_VERSION`、全站 `?v=` → `20261117a`。
+- **状态**：本地改动完成；未 commit / 未 push / 未三端同步；用户需重启 3005 + Ctrl+F5 硬刷新验收；等「同步」指令。
+
+## 11-17 12:4x 任务卡 #019：营运利润补单季环比（本地完成，未同步）
+
+- **用户裁决**：按推荐执行 = ①A 沿用东财 F10 累计差分（不接 NeoData 运行期通道）；②A 只展示不改判定；③A 不动左卡。
+- **落地**：`fetchOpProfitSnippet` 入参扩至 5 期（新增同年度上上期），算出 `sqPrevQuarter`（上季单季）与 `sqQoqPct`；`server.js` opDates 追加 `prevPrevMap`（12-31→06-30、09-30→03-31）；`metricAnalysis.js` 营运利润 `qoq` 改为真实单季环比展示，投票循环对 opProfit 剔除 qoq，note 补口径说明；`public/js/app.js` 未动。
+- **边界**：Q1 年初第一期不跨年比；上季单季为 0/缺失 → 环比不可得；负基数用 |上季| 作分母；判定仍只按单季同比符号。
+- **验证**：`test_metric_analysis_nbv.js` 61→90/90；vote 47/47；order 33/33；全量 `--quick` 首轮 144/146、二次 146/146（跳过 15 需网络）；首轮失败的手动区间两守卫单独复跑 36/36、74/74 全绿，判为顺序/残留污染导致的间歇失败，非本任务回归。
+- **实测**：真实 F10 603288 → Q3 单季 14.40亿 / Q2 单季 20.75亿 / 环比 −30.60%（NeoData 对照 −30.56%，差异来自先 round 再差分的既有规则）；隔离实例 3099 端到端确认字段下发、右卡文案与「判定只引用同比」。
+- **升版**：`APP_VERSION` / 全站 `?v=` / `WATCH_VERSION` → `20261117b`（bump 34 处 + 手动同步 WATCH_VERSION）。
+- **状态**：本地改动完成，未 commit / 未 push / 未三端同步；隔离实例已停、临时文件已清；等用户「同步」指令。
+
+## 11-17 13:1x 任务卡 #020：基本面结论卡扩写并上移（本地完成，未同步）
+
+- **用户裁决**：按推荐执行 = ①A 三文件+新守卫+升版；②A 6 条核心指标（PE/PB/ROE/营收增长/归母净利增长/资产负债率）；③A 评分明细默认展开且保留论证折叠；④A 保留「较弱」(C) 代号只改直白。
+- **落地**：`index.html` 把 `#fundConclusion` 移到评分明细卡上方；`app.js::buildFundamentalConclusion` 重写为确定性拼装（结论→评分明细→关键指标→白话收尾→原论证折叠），数值复用左卡 rows、解读复用现有判定信号；`style.css` 新增 `.fc-*` 紧凑两列布局；新增 `test_fundamental_conclusion.js` 37 项断言。
+- **边界**：零 LLM / 零估算；缺值如实写「数据不足，无法解读」；不动评分算法、评级口径、其他卡片与接口。
+- **验证**：新守卫 37/37；颜色语义 154/154（新增 2 条红绿规则经人工复核：bull→红、bear→绿，基线 231→233 并更新哈希）；缓存戳 3/3；全量 `--quick` 147/147（跳过 15 需网络）。
+- **升版**：`APP_VERSION` / 全站 `?v=` / `WATCH_VERSION` → `20261117c`。
+- **状态**：本地改动完成，未 commit / 未 push / 未三端同步；等用户重启 3005 + Ctrl+F5 硬刷新验收，以及「同步」指令。
+
+## 11-17 14:1x 任务卡 #021：市场情绪命中判定改为方向符号一致（本地完成，未同步）
+
+- **用户裁决**：判跌遇负涨跌幅命中、判涨遇正涨跌幅命中，幅度小到标「震荡」也算命中；保持 ±0.5% 震荡标签不变；台账 + 模块内部因子学习同步改；历史已结算按已存涨跌幅重算。
+- **落地**：新增 `lib/directionHit.js` 符号判定单源；`sentimentAccuracy.js::correct` 与 `marketEmotionModel.js::correctT1` 改按符号判定，原值留痕 `correctBefore` / `correctT1Before`，`hitRule=direction-sign-v1` 幂等；`applyFactorAccuracy` 不再 flat 整日跳过，按实际符号记样本（中性倾向与恰好 0 行为不变）；重放脚本同步新口径；前端展示拆成「小幅同向命中 / 小幅反向 / 方向真错」。
+- **历史重算**：界面台账 37 条重算 35 条（正确 14→17、准确率 40%→48.6%）；模型内部 58 条已结算全部打标记（正确 23→35、内部准确率 60.3%）；二次重算零改写。生产 `state.json` 因子学习样本未重建（干跑会推两因子到 30% 上限，超出授权）。
+- **验证**：新守卫 23/23；自学习健康 54/54；事件权重 44/44；taxonomy 27/27；前视 26/26；缓存戳 3/3；观察层 82/82；全量 `--quick` 首轮 145/148（手动区间两守卫间歇失败 + 市场情绪旧断言已按新口径更正），单独复跑全绿、二次全量 148/148。
+- **升版**：`APP_VERSION` / 全站 `?v=` / `WATCH_VERSION` → `20261117d`。
+- **状态**：本地改动完成，未 commit / 未 push / 未三端同步；等用户重启 3005 + Ctrl+F5 硬刷新验收，以及「同步」指令。
+
+## 11-17 17:0x 任务卡 #022：个股新增「20日均量比」独立卡片置于量价行最左（本地完成，未同步）
+
+- **用户裁决**：按推荐执行 = ① 口径用**当日成交量 ÷ 前20日均量**（`vp.unified.ratio20`，判定层同源，非与首卡重复的涨跌日均量比）；② 新卡带 `.cm-sub` 副行 + 独立「解读」下拉面板；③ 颜色阈值用现行 ÷20 判定（>1.3 放量标红、<0.8 缩量标绿、区间中性）。
+- **落地**：`public/js/app.js` 主渲染路径量价行 `ve-cols-3` 升 `ve-cols-4`，新卡居首（20日均量比 → 20日涨跌日量能比 → 20日涨跌日 → 20日净涨跌）；`capitalCharts.js` 兼容路径同步（无 `unified` 时回退 `ratio20Series` 末值，不臆造）；`VpRatioInterpret` 新增 `buildTrigger(id)` / `buildRatio20Panel` / `ratio20Band` 纯函数与 `data-interpret-id` 配对机制（首卡不传 id 行为逐字不变），解读内容按新口径三档确定性拼装（放量/平量/缩量 × 当日涨跌方向比对），缺值如实写「数据不足」。
+- **边界**：零 LLM / 零估算 / 零后端改动；三张原卡的标签、数值、副行、下拉解读面板逐字未动；CSS 复用既有 `.ve-cols-4` / `.cap-metric`，未新增样式规则。
+- **验证**：新守卫 `test_volume_20day_avg_ratio.js` 全绿；6 个相关守卫全绿（`test_vp_ratio_interpret.js` 两处断言按四联结构同步更正）；缓存戳守卫 3/3；全量 `--quick` 二次 149/150，唯一稳定失败 `test_swallow_catch_guard.js`（+2 空 catch）经排查来自工作树内其他未提交改动（`lib/docStore.js`/`lib/reportSync.js` 等），守卫扫描范围不含 `public/js/`，与本卡改动零交集。
+- **实测**：`/api/capital-flow/601318` 返回 `unified.ratio20 = 0.76`（与 `ratio20Series` 末值一致），新卡显示 0.76 并按缩量标绿；当日平盘走「缩量+平盘」诚实分支。
+- **升版**：`APP_VERSION` / 全站 `?v=` / `WATCH_VERSION` → `20261117e`。
+- **状态**：本地改动完成，未 commit / 未 push / 未三端同步；等用户重启 3005 + Ctrl+F5 硬刷新验收，以及「同步」指令。
+
+## 11-17 17:1x 任务卡 #022 缺陷修复：renderVolumeEngine 引用未定义变量致「量能分析」空白（20261117f，本地完成，未同步）
+
+- **报障**：用户 17:06 截图——资金量能页「量能分析（量价 × 价格位置 × 量能行为）」标题下正文整块空白。
+- **根因**：20261117e 在 `app.js::renderVolumeEngine(data)` 内误引用 `renderVolumePrice` 的局部变量 `vp`（本函数作用域不存在），运行时抛 `ReferenceError: vp is not defined`，模块渲染中断；该错误语法合法、静态守卫（字符串断言 + node --check + 纯函数沙箱）全部无法发现，属守卫设计盲区。
+- **修复**：引擎路径取数改为 `data.volumeIndicators.volumePrice.unified.ratio20` 优先 + `series.ratio20Series` 末值回退（实测接口 601318 = 0.76，与兼容路径同口径）；主路径与兼容路径零改动。
+- **守卫补强**：`test_volume_20day_avg_ratio.js` 新增第 7 节——提取 renderVolumeEngine 方法体、stub DOM、真实 payload 结构沙箱**实跑**，断言不抛错且输出含新卡标签 / 0.76 真实值 / `data-interpret-id="r20"` 配对面板；`r20Val` 断言更正为「恰两处、均 unified 优先」。38/38 全绿；dashboard_ui_d / caliber_warn / vp_ratio_interpret / ratio_labels / cache_bust 复跑 PASS。
+- **升版**：`APP_VERSION` / 全站 `?v=` / `WATCH_VERSION` → `20261117f`。
+- **留痕**：`.learnings/ERRORS.md` ERR-20261117-001（resolved）、`.learnings/LEARNINGS.md` LRN-20261117-001（渲染函数改动必须实跑验证、禁止跨函数照抄变量）。
+- **状态**：本地改动完成，未 commit / 未 push / 未三端同步；等用户重启 3005 + Ctrl+F5 硬刷新验收，以及「同步」指令。
+
+## 11-18 12:5x 任务卡 #023：ETF累计表末列改「净申赎占比」（本地完成，未同步）
+
+- **用户裁决**：按推荐执行 = ① 分母用腾讯行情字段72（A股当前流通股本，缓存累积）；② 带符号两位百分比、净申购红/净赎回绿；③ 新列带 ▲▼ 排序。
+- **落地**：后端 `lib/etfFlow.js` 新增 `FLOAT_CACHE`（stock-float-shares.json），`fetchStockNames` 的 missing 改「名称缺失 ∪ 流通股缺失」复用同批腾讯请求顺带缓存流通股（仅 >0），`computeFromSnapshots` 同步注入 `stocks[].floatShares`（缺值 null）；前端 `etfFlowPage.js` 末列「买/卖天数」原位替换为「净申赎占比」= 累计净申赎 ÷ 流通股 × 100，新增 `_netRatio`/`_fmtPct`、`netRatio` 带符号排序、红绿同源、缺分母「—」、口径说明补分母来源。
+- **边界**：原八列零改动；台账 buyDays/sellDays 字段保留（仅前端不展示）；因子权重与情绪模型零改动。
+- **验证**：新守卫 `test_etf_net_ratio.js` 23/23（含 vm 沙箱实跑 render()，断言 +0.49% / −0.19% / 缺值「—」）；`test_etf_card_layout.js` 补 2 条断言；5 个 ETF 守卫单独复跑全绿；缓存戳 3/3；全量 `--quick` 二次 149/151——`swallow_catch_guard`（历史 +2 空 catch）、`test_emotion_learning_health`（2 条归档假记录文件断言，守卫自身从未创建该两文件）均历史遗留、与本次零交集；manual_zones / ths_daily_cache 间歇失败单独复跑全绿。本次改动文件零新增 catch。
+- **实测**：腾讯字段72 取数 601318=106.60亿股、601398=2696.12亿股；隔离目录验证缓存写入链路成功，临时目录已清理。
+- **升版**：`APP_VERSION` / 全站 `?v=` / `WATCH_VERSION` → `20261118a`。
+- **状态**：本地改动完成，未 commit / 未 push / 未三端同步；当前 3005 为旧进程需重启加载新代码 + 触发一次采集生成流通股缓存 + Ctrl+F5 硬刷新验收；等用户「同步」指令。

@@ -4,7 +4,9 @@
  * 覆盖：
  *   A. lib/insuranceAnalysis.latestNbvSnapshot（备查库真实数据 + 前缀剥离 + 非保险/无数据 null）
  *   B. lib/metricAnalysis.buildMetricAnalysis 两个新 builder（渲染位置/数值/判定符号/note 口径说明）
- *   C. lib/deep/financials.fetchOpProfitSnippet（axios mock：companyType 回退、负基数同比、缺科目降级）
+ *      + 20261117b #019 营运利润单季环比展示且不参与判定
+ *   C. lib/deep/financials.fetchOpProfitSnippet（axios mock：companyType 回退、负基数同比、
+ *      单季环比 Q2/Q3 差分、Q1/缺期/零基数降级、负单季基数、缺科目降级）
  *   D. 左卡对齐（app.js 条件插入块 / keyOf / METRIC_HELP 源码级断言）
  *
  * 运行： node scripts/test_metric_analysis_nbv.js
@@ -53,8 +55,8 @@ ok(isInsuranceCompany('601318', '中国平安', null) === true, 'isInsuranceComp
 // ═══════════ B. buildMetricAnalysis 两个新 builder ═══════════
 const { buildMetricAnalysis, METRIC_ORDER } = require('../lib/metricAnalysis');
 
-// METRIC_ORDER：16 项，opProfit 在 dedProfitGrowth 之后、nbv 在其后、debt 之前
-eq(METRIC_ORDER.length, 16, 'METRIC_ORDER 应为 16 项');
+// METRIC_ORDER：17 项（20261117a #018 末尾加商誉），opProfit 在 dedProfitGrowth 之后、nbv 在其后、debt 之前
+eq(METRIC_ORDER.length, 17, 'METRIC_ORDER 应为 17 项（20261117a +goodwill）');
 const iOp = METRIC_ORDER.indexOf('opProfit'), iNbv = METRIC_ORDER.indexOf('nbv'), iDed = METRIC_ORDER.indexOf('dedProfitGrowth'), iDebt = METRIC_ORDER.indexOf('debt');
 ok(iDed < iOp && iOp < iNbv && iNbv < iDebt, `顺序应为 …dedProfitGrowth → opProfit → nbv → debt…（实际 ${iDed},${iOp},${iNbv},${iDebt}）`);
 
@@ -136,6 +138,42 @@ const outOpOnly = buildMetricAnalysis(quote, comparison, companyType, signals, f
 ok(outOpOnly.metrics.some(m => m.key === 'opProfit') && !outOpOnly.metrics.some(m => m.key === 'nbv'),
   '000902 场景：有营运利润、无 NBV 行');
 
+// B6. 20261117b #019：营运利润单季环比展示 + 只展示不改判定
+const opQoqData = {
+  cur: { date: '2026-09-30', opProfitYi: 64.02 },
+  prev: { date: '2025-09-30', opProfitYi: 50.00 },
+  yoyPct: 28.04,
+  sqCur: { date: '2026-09-30', opProfitYi: 14.40 },
+  sqPrev: { date: '2025-09-30', opProfitYi: 12.00 },
+  sqYoyPct: 20.00,
+  sqPrevQuarter: { date: '2026-06-30', opProfitYi: 20.75 },
+  sqQoqPct: -30.60,
+};
+const outQoq = buildMetricAnalysis(quote, comparison, companyType, signals, fundamental, opQoqData, null);
+const opQoqM = outQoq.metrics.find(m => m.key === 'opProfit');
+ok(opQoqM.dims.qoq.available && /单季环比\s*-30\.60%/.test(opQoqM.dims.qoq.text),
+  `环比维度应展示单季环比 -30.60%（实际：${opQoqM.dims.qoq.text}）`);
+ok(/14\.40亿/.test(opQoqM.dims.qoq.text) && /20\.75亿/.test(opQoqM.dims.qoq.text),
+  '环比维度应同时展示本期单季与上季单季绝对值');
+ok(/本机计算/.test(opQoqM.dims.qoq.text), '环比文案必须标注「本机计算」（非财报直供）');
+eq(opQoqM.dims.qoq.signal, 'bear', '环比 -30.60% → 环比票 bear（仅展示）');
+eq(opQoqM.judgment.signal, 'bull', '环比看跌不改判定：单季同比 +20% → 仍 bull');
+ok(!/多数决/.test(opQoqM.judgment.reason), '环比不参与投票 → reason 不应出现多数决冲突标注');
+ok(/单季环比/.test(opQoqM.note) && /只作展示，不改变本行判定/.test(opQoqM.note),
+  'note 应含单季环比口径说明，并声明只展示不改判定');
+// 缺上上期：环比如实不可得，且不影响同比判定
+const outNoQoq = buildMetricAnalysis(quote, comparison, companyType, signals, fundamental,
+  { cur: opQoqData.cur, prev: opQoqData.prev, yoyPct: 28.04, sqCur: opQoqData.sqCur, sqPrev: opQoqData.sqPrev, sqYoyPct: 20.00, sqPrevQuarter: null, sqQoqPct: null }, null);
+const opNoQoqM = outNoQoq.metrics.find(m => m.key === 'opProfit');
+eq(opNoQoqM.dims.qoq.available, false, '缺上上期累计 → 环比维度如实不可得');
+eq(opNoQoqM.judgment.signal, 'bull', '环比不可得不改判定：仍按单季同比 bull');
+// 源码级：投票循环必须对 opProfit 剔除 qoq（防止未来误接线让环比改判）
+const maSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'metricAnalysis.js'), 'utf8');
+const voteStart = maSrc.indexOf('for (const mm of ordered)');
+const voteBlock = maSrc.slice(voteStart, maSrc.indexOf('return {', voteStart));
+ok(/mm\.key === 'opProfit'[\s\S]{0,260}qoq: na\('—（单季环比仅展示，不参与判定）'\)/.test(voteBlock),
+  '投票循环应把 opProfit 的 qoq 替换为不可得（只展示不改判定）');
+
 // ═══════════ C. fetchOpProfitSnippet（axios mock，不联网） ═══════════
 const axios = require('axios');
 const realGet = axios.get;
@@ -182,19 +220,61 @@ const { fetchOpProfitSnippet } = require('../lib/deep/financials');
   const snipEmpty = await fetchOpProfitSnippet('SZ000902', ['2026-06-30', '2025-06-30']);
   eq(snipEmpty, null, '利润表全空 → 返回 null');
 
+  // ─── 20261117b #019：单季环比差分（Q3/Q2/Q1/缺期/零基数）───
+  const QOQ_ROWS = [
+    { REPORT_DATE: '2025-09-30 00:00:00', OPERATE_PROFIT: 5000000000 },
+    { REPORT_DATE: '2026-03-31 00:00:00', OPERATE_PROFIT: 1000000000 },
+    { REPORT_DATE: '2026-06-30 00:00:00', OPERATE_PROFIT: 2500000000 },
+    { REPORT_DATE: '2026-09-30 00:00:00', OPERATE_PROFIT: 4600000000 },
+  ];
+  axios.get = async () => ({ data: { data: JSON.parse(JSON.stringify(QOQ_ROWS)) } });
+  // Q3：本期单季 = 9M − H1 = 46 − 25 = 21；上季 Q2 单季 = H1 − Q1 = 25 − 10 = 15；环比 = (21−15)/15 = +40%
+  const snipQ3 = await fetchOpProfitSnippet('SH600000', ['2026-09-30', '2025-09-30', '2026-06-30', '2025-06-30', '2026-03-31']);
+  ok(snipQ3 != null, 'Q3 快照应取到（5 期入参）');
+  eq(snipQ3.sqCur.opProfitYi, 21, 'Q3 单季 = 46 − 25 = 21亿');
+  eq(snipQ3.sqPrevQuarter.opProfitYi, 15, '上季 Q2 单季 = 25 − 10 = 15亿');
+  eq(snipQ3.sqPrevQuarter.date, '2026-06-30', '上季单季日期应为上期期末 2026-06-30');
+  eq(snipQ3.sqQoqPct, 40, 'Q3 环比 = (21−15)/15 = +40%');
+  // Q2：上季 Q1 单季 = Q1 累计；环比 = (15−10)/10 = +50%
+  const snipQ2 = await fetchOpProfitSnippet('SH600000', ['2026-06-30', '2025-06-30', '2026-03-31', '2025-03-31']);
+  eq(snipQ2.sqCur.opProfitYi, 15, 'Q2 单季 = 25 − 10 = 15亿');
+  eq(snipQ2.sqPrevQuarter.opProfitYi, 10, 'Q2 上季 Q1 单季 = Q1 累计 = 10亿');
+  eq(snipQ2.sqPrevQuarter.date, '2026-03-31', 'Q2 上季日期应为 2026-03-31');
+  eq(snipQ2.sqQoqPct, 50, 'Q2 环比 = (15−10)/10 = +50%');
+  // Q1 年初第一期：不做跨年环比
+  const snipQ1 = await fetchOpProfitSnippet('SH600000', ['2026-03-31', '2025-03-31']);
+  eq(snipQ1.sqPrevQuarter, null, 'Q1 无同年度上季 → sqPrevQuarter=null');
+  eq(snipQ1.sqQoqPct, null, 'Q1 年初第一期 → 环比不可得（不跨年比）');
+  // 缺上上期累计 → 上季单季无法差分 → 环比不可得（旧 4 期入参行为兼容）
+  const snipNoQ1 = await fetchOpProfitSnippet('SH600000', ['2026-09-30', '2025-09-30', '2026-06-30']);
+  eq(snipNoQ1.sqPrevQuarter, null, '缺上上期累计 → sqPrevQuarter=null');
+  eq(snipNoQ1.sqQoqPct, null, '缺上上期累计 → 环比不可得');
+  // 上季单季为 0 → 零基数不编造百分比
+  const zeroRows = QOQ_ROWS.map(r => String(r.REPORT_DATE).startsWith('2026-03') ? Object.assign({}, r, { OPERATE_PROFIT: 2500000000 }) : Object.assign({}, r));
+  axios.get = async () => ({ data: { data: zeroRows } });
+  const snipZero = await fetchOpProfitSnippet('SH600000', ['2026-09-30', '2025-09-30', '2026-06-30', '2025-06-30', '2026-03-31']);
+  eq(snipZero.sqPrevQuarter.opProfitYi, 0, 'Q1=H1=25亿 → 上季 Q2 单季为 0');
+  eq(snipZero.sqQoqPct, null, '上季单季为 0 → 环比不可得（零基数不编造）');
+  // 负单季基数：用 |上季| 避免符号翻转
+  const negRows = QOQ_ROWS.map(r => String(r.REPORT_DATE).startsWith('2026-03') ? Object.assign({}, r, { OPERATE_PROFIT: 3500000000 }) : Object.assign({}, r));
+  axios.get = async () => ({ data: { data: negRows } });
+  const snipNegQ = await fetchOpProfitSnippet('SH600000', ['2026-09-30', '2025-09-30', '2026-06-30', '2025-06-30', '2026-03-31']);
+  eq(snipNegQ.sqPrevQuarter.opProfitYi, -10, 'Q1=35亿 > H1=25亿 → 上季 Q2 单季 = -10亿');
+  eq(snipNegQ.sqQoqPct, 310, '负基数环比用 |上季|：(21−(-10))/10 = +310%');
+
   axios.get = realGet;
 
   // ═══════════ D. 左卡对齐（app.js 源码级断言） ═══════════
   const appSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'app.js'), 'utf8');
 
-  // D1. rows 字面量仍为 14 行（新两行经 splice 条件插入，不破坏既有顺序断言）
+  // D1. rows 字面量为 15 行（20261117a #018 末尾加商誉；营运利润/NBV 仍经 splice 条件插入）
   const anchor = appSrc.indexOf('ocflowPeriod');
   const start = appSrc.indexOf('const rows = [', anchor);
   const end = appSrc.indexOf('\n    ];', start);
   ok(start > 0 && end > start, '应能定位左卡 rows 数组字面量');
   const literalBlock = appSrc.slice(start, end);
   const literalRowCount = (literalBlock.match(/\n\s*\[/g) || []).length;
-  eq(literalRowCount, 14, 'rows 字面量应仍为 14 行（营运利润/NBV 由 splice 插入）');
+  eq(literalRowCount, 15, 'rows 字面量应为 15 行（20261117a +商誉；营运利润/NBV 由 splice 插入）');
 
   // D2. 条件插入块：在 rows 字面量之后、含两行、插在「扣非净利润增长」之后
   const insBlock = appSrc.slice(end, appSrc.indexOf('const periodNote', end));
@@ -213,17 +293,26 @@ const { fetchOpProfitSnippet } = require('../lib/deep/financials');
   ok(/'营运利润':\s*\{ title:/.test(appSrc), 'METRIC_HELP 应含「营运利润」释义');
   ok(/'NBV\(新业务价值\)':\s*\{ title:/.test(appSrc), 'METRIC_HELP 应含「NBV(新业务价值)」释义');
 
+  // D4b. 20261117b #019：server.js 报告期入参必须含同年度上上期（单季环比基数）
+  const serverSrc = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+  const odStart = serverSrc.indexOf('const opDates = [');
+  const odBlock = serverSrc.slice(odStart, serverSrc.indexOf('].filter(Boolean)', odStart));
+  ok(odStart > 0 && /prevPrevMap\[mmdd\]/.test(odBlock),
+    'opDates 应含 prevPrevMap[mmdd]（同年度上上期，供单季环比差分）');
+  ok(/const prevPrevMap = \{ '12-31': '-06-30', '09-30': '-03-31' \}/.test(serverSrc),
+    'prevPrevMap 映射应为 12-31→06-30、09-30→03-31（Q1 年初不传）');
+
   // D5. 右卡 note 渲染（20261105b：恢复按需单卡，签名 renderMetricAnalysis(data, activeKey)）
   ok(appSrc.indexOf('ma-metric-note') > appSrc.indexOf('renderMetricAnalysis(data, activeKey)'),
     'renderMetricAnalysis 应支持 note 渲染（.ma-metric-note）');
   ok(/m\.note \? `<div class="ma-metric-note">/.test(appSrc), 'note 渲染应使用 .ma-metric-note 类');
 
   // D6. 右卡输出顺序与左卡（含插入块）单调一致——用「逻辑顺序」断言：
-  // 左卡逻辑顺序 = 字面量 14 行 + 扣非后插两行；右卡 = METRIC_ORDER。两者应同序。
+  // 左卡逻辑顺序 = 字面量 15 行 + 扣非后插两行；右卡 = METRIC_ORDER。两者应同序。
   const leftLogical = [
     '市盈率(PE·TTM)', '市净率(PB)', 'PEG', 'ROE', '毛利率', '净利率',
     '营收增长', '归母净利润', '扣非净利润增长', '营运利润', 'NBV(新业务价值)',
-    '资产负债率', '流动比率', '股息率(TTM)', '每股经营现金流',
+    '资产负债率', '流动比率', '股息率(TTM)', '每股经营现金流', '商誉',
   ];
   // 字面量顺序（从源码提取）
   const literalLabels = [];

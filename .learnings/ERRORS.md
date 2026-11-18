@@ -474,3 +474,66 @@ amount/1e8 转亿；换手率改读 q.turnover；前日成交额/换手率改从
 - Tags: 数据源瞬断, 归零策略, 回退缺口
 
 ---
+
+## [ERR-20261117-001] goodwill_tdz_before_first_use
+
+**Logged**: 2026-11-17T11:47:32+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: backend
+
+### Summary
+商誉快照变量声明晚于首次使用，导致 /api/analysis 运行时 TDZ ReferenceError。
+
+### Error
+```
+ReferenceError: Cannot access 'goodwill' before initialization
+Analysis error: ReferenceError: Cannot access 'goodwill' before initialization
+```
+全量 `--quick` 中 4 个分析 E2E 守卫同时失败（A/B/C/D/health 组）。
+
+### Context
+- 任务卡 #018 接线时，把 `let goodwill = null` 与取数块放在营运利润/NBV 之后，但 `fundamentalAnalysis(..., { goodwill })` 与 `evaluateSignals(..., { goodwill })` 在其之前执行。
+- `let` 声明存在暂时性死区；静态 `node --check` 通过，只有真实路由运行才暴露。
+
+### Suggested Fix
+所有下游共用的新入参，声明+赋值必须前移到第一个消费者之前；并用 E2E 路由实跑覆盖，而非只靠语法检查/静态守卫。
+
+### Metadata
+- Reproducible: yes
+- Related Files: server.js
+- Tags: TDZ, 声明顺序, E2E 必测
+
+### Resolution
+- **Resolved**: 2026-11-17T11:47:32+08:00
+- **Notes**: 取数块前移至评分/信号之前；四个 E2E 守卫复跑全绿；全量 `--quick` 146/146。
+
+---
+## [ERR-20261117-001] frontend_runtime_reference_error
+
+**Logged**: 2026-11-17T17:15:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+任务卡 #022（20261117e）在 app.js 的 renderVolumeEngine 中误引用了 renderVolumePrice 的局部变量 vp，运行时抛 ReferenceError，导致资金量能页「量能分析」模块正文整块空白。
+
+### Error
+```
+ReferenceError: vp is not defined
+```
+
+### Context
+- 新增 20日均量比 卡时，两处渲染路径（主路径 vpHtml / 引擎路径 renderVolumeEngine）同步加卡；
+- 引擎路径函数签名是 renderVolumeEngine(data)，量价数据在 data.volumeIndicators.volumePrice，函数内并无 vp 变量；
+- 静态守卫（node --check + 字符串断言）全部通过，因为语法合法、字符串存在——只有真执行才暴露。
+
+### Suggested Fix
+已修复：引擎路径改为 data.volumeIndicators.volumePrice.unified.ratio20 优先 + series.ratio20Series 末值回退（20261117f）。
+
+### Resolution
+- **Resolved**: 2026-11-17T17:15:00+08:00
+- **Notes**: 守卫 test_volume_20day_avg_ratio.js 新增第 7 节：从 app.js 提取 renderVolumeEngine 方法体、以真实 payload 沙箱实跑，断言不抛错且输出含新卡/真实值/配对面板。静态断言永远抓不到运行时 ReferenceError——渲染函数改动必须实跑验证。
+
+---

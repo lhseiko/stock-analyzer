@@ -127,10 +127,10 @@ console.log('=== §4 全链路接线守卫（源码级）===');
 console.log('=== §5 版本戳 ===');
 {
   const svSrc = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
-  ok(/const APP_VERSION = '20261116f'/.test(svSrc), "APP_VERSION = '20261116a'");
+  ok(/const APP_VERSION = '20261118a'/.test(svSrc), "APP_VERSION = '20261116a'");
   ok(svSrc.indexOf('[20261104b] 增长口径一键切换') >= 0, 'server.js 版本注释含 [20261104b] 增长口径一键切换条目');
   const idx = fs.readFileSync(path.join(ROOT, 'public/index.html'), 'utf8');
-  ok(idx.indexOf('?v=20261116f') >= 0, 'index.html 版本戳 ?v=20261116f');
+  ok(idx.indexOf('?v=20261118a') >= 0, 'index.html 版本戳 ?v=20261118a');
 }
 
 // 清理测试设置文件

@@ -48,9 +48,9 @@ ok(ve.includes("schema: 'volume-engine-20261109c'"), '引擎 schema = volume-eng
 ok(sjd.includes("const LAYOUT_VERSION = '20261109c'"), 'LAYOUT_VERSION 已升 20261106o（量价配合子信号输入 signal 值域与分值变化：涨跌判定与 135 格走势档同源，判断记录强制重算）');
 
 section('§4 版本戳与缓存破坏');
-ok(/const APP_VERSION = '20261116f'/.test(server), 'APP_VERSION 已是当前版本');
+ok(/const APP_VERSION = '20261118a'/.test(server), 'APP_VERSION 已是当前版本');
 ok(server.includes('[20261106b]'), 'server.js 存在 [20261106b] 独立变更日志条目');
-// [20261116f] 漂移自愈：缓存戳以 server.js 的 APP_VERSION 为唯一权威，不再写字面量旧版本负断言
+// [20261118a] 漂移自愈：缓存戳以 server.js 的 APP_VERSION 为唯一权威，不再写字面量旧版本负断言
 {
   const _av = (server.match(/const APP_VERSION = '(\d{8}[a-z])'/) || [])[1];
   for (const f of ['index.html', 'accuracy.html', 'logic-model.html', 'notes.html', 'volume-map.html']) {

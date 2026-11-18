@@ -138,8 +138,11 @@ const VpRatioInterpret = (function () {
     });
   }
 
-  function buildTrigger(open) {
+  // [任务卡 #022] 第二参数 id 可选：首卡不传 → 输出与旧版逐字一致（事件委托仍走 row.nextElementSibling）；
+  // 新卡传 id → 触发器带 data-interpret-id，事件委托按 id 找同配对面板，实现一行两卡各自独立开合。
+  function buildTrigger(open, id) {
     return `<button type="button" class="cm-interpret-trigger${open ? ' is-open' : ''}"`
+      + (id ? ` data-interpret-id="${esc(id)}"` : '')
       + ` data-action="toggle-vp-interpret" aria-expanded="${open ? 'true' : 'false'}"`
       + ` title="展开/收起「数值解读逻辑」与今日量价结构比对">解读 <span class="cmi-chev">▾</span></button>`;
   }
@@ -161,7 +164,7 @@ const VpRatioInterpret = (function () {
         + `</div>`;
     }).join('');
 
-    return `<div class="cm-interpret-panel" data-cm-interpret="1"${o.open ? '' : ' hidden'}>`
+    return `<div class="cm-interpret-panel" data-cm-interpret="1"${o.id ? ` data-interpret-id="${esc(o.id)}"` : ''}${o.open ? '' : ' hidden'}>`
       + `<div class="cmi-head">数值解读逻辑<span class="cmi-head-sub">20日涨跌日量能比 = 近20日上涨日均量 ÷ 下跌日均量</span></div>`
       + `<div class="cmi-rows">${rows}</div>`
       + `<div class="cmi-foot">仅高亮行是当前命中判定（当前比值 ${esc(c.ratioText)}，${esc(band.label)}）；其余为参考说明。</div>`
@@ -178,7 +181,73 @@ const VpRatioInterpret = (function () {
       + `</div>`;
   }
 
-  return { esc, ratioBand, signalBias, combine, buildTrigger, buildPanel, EQ_LO, EQ_HI };
+  // ── [任务卡 #022] 20日均量比（当日量 ÷ 前20日均量）独立解读面板 ──────────────
+  // 与首卡「涨跌日量能比」是**不同分母的独立口径**，三档语义不同（放量/平量/缩量），
+  // 故另建确定性规则，不复用上方 ratioBand/BAND_ROWS，避免给出错误口径解读。
+  // 阈值与 lib/volumeCaliber.js 单一权威源同值：放量 >1.3 / 平量 0.8~1.3 / 缩量 <0.8。
+  const R20_AMP = 1.3, R20_SHRINK = 0.8;
+  const R20_BANDS = [
+    { key: 'amp', label: '＞1.3 放量', tone: 'bull',
+      lines: ['今日成交量 > 前20日均量的 1.3 倍', '交投明显活跃，资金参与度高。', '配合上涨＝增量资金进场、上攻有量能确认；配合下跌＝抛压集中释放。'] },
+    { key: 'flat', label: '0.8~1.3 平量', tone: 'neutral',
+      lines: ['今日成交量与前20日常态接近', '量能未明显放大或萎缩，方向更多由价格本身决定，不宜单看量能给强结论。'] },
+    { key: 'shrink', label: '＜0.8 缩量', tone: 'bear',
+      lines: ['今日成交量 < 前20日均量的 0.8 倍', '交投清淡、观望为主。', '配合上涨＝上攻乏力、买盘不足；配合下跌＝抛压衰减、杀跌动能有限。'] },
+  ];
+  function ratio20Band(r) {
+    if (typeof r !== 'number' || !isFinite(r)) return { key: 'na', tone: 'neutral', label: '数据不足' };
+    if (r > R20_AMP) return { key: 'amp', tone: 'bull', label: '＞1.3 放量' };
+    if (r < R20_SHRINK) return { key: 'shrink', tone: 'bear', label: '＜0.8 缩量' };
+    return { key: 'flat', tone: 'neutral', label: '0.8~1.3 平量' };
+  }
+  function buildRatio20Panel(ratio20, dayChgPct, opts) {
+    const o = opts || {};
+    const rv = (typeof ratio20 === 'number' && isFinite(ratio20)) ? ratio20 : null;
+    const rTxt = rv === null ? '--' : rv.toFixed(2);
+    const chg = (typeof dayChgPct === 'number' && isFinite(dayChgPct)) ? dayChgPct : null;
+    const chgTxt = chg === null ? '数据不足' : (chg > 0 ? '+' : '') + chg.toFixed(2) + '%';
+    const band = ratio20Band(rv);
+    const rows = R20_BANDS.map(row => {
+      const hit = row.key === band.key;
+      const badge = hit ? `cmi-badge cmi-hit-${row.tone}` : 'cmi-badge cmi-ref';
+      return `<div class="cmi-row${hit ? ' cmi-row-hit' : ''}">`
+        + `<span class="${badge}">${row.label}</span>`
+        + `<div class="cmi-lines">${row.lines.map(t => `<div>${esc(t)}</div>`).join('')}</div>`
+        + `</div>`;
+    }).join('');
+    // 确定性结合：量能档 × 当日涨跌方向 → 一句结论（着色遵循红涨绿跌语义）
+    let tone = 'neutral', tag = '中性／待观察', verdict;
+    if (band.key === 'na' || chg === null) {
+      verdict = '量能比或当日涨跌数据不足，无法做量能与价格的结合判断；上方三档仅作参考。';
+    } else if (band.key === 'amp') {
+      if (chg > 0) { tone = 'bull'; tag = '放量上涨'; verdict = `今日量 ${rTxt} 倍（放量）且收涨 ${chgTxt}，量价同向、增量资金进场，上攻有量能确认。`; }
+      else if (chg < 0) { tone = 'bear'; tag = '放量下跌'; verdict = `今日量 ${rTxt} 倍（放量）但收跌 ${chgTxt}，抛压集中释放、弱势信号，不宜视为缩量回踩。`; }
+      else { verdict = `今日量 ${rTxt} 倍（放量）但价格平盘，量能放大未转化为方向，观望。`; }
+    } else if (band.key === 'shrink') {
+      if (chg > 0) { tone = 'warn'; tag = '缩量上涨'; verdict = `今日量 ${rTxt} 倍（缩量）却收涨 ${chgTxt}，上攻缺乏量能确认、买盘不足，谨防冲高回落。`; }
+      else if (chg < 0) { tone = 'neutral'; tag = '缩量下跌'; verdict = `今日量 ${rTxt} 倍（缩量）且收跌 ${chgTxt}，抛压衰减、杀跌动能有限，不是放量出逃。`; }
+      else { verdict = `今日量 ${rTxt} 倍（缩量）且价格平盘，观望情绪浓。`; }
+    } else {
+      verdict = `今日量 ${rTxt} 倍，与前20日常态接近（平量）；收${chg > 0 ? '涨' : chg < 0 ? '跌' : '平'} ${chgTxt}，方向主要由价格本身决定，量能未给额外确认。`;
+    }
+    return `<div class="cm-interpret-panel" data-cm-interpret="1"${o.id ? ` data-interpret-id="${esc(o.id)}"` : ''}${o.open ? '' : ' hidden'}>`
+      + `<div class="cmi-head">数值解读逻辑<span class="cmi-head-sub">20日均量比 = 当日成交量 ÷ 前20日均量（不含当日）</span></div>`
+      + `<div class="cmi-rows">${rows}</div>`
+      + `<div class="cmi-foot">仅高亮行是当前命中判定（当前 ${esc(rTxt)} 倍，${esc(band.label)}）；其余为参考说明。</div>`
+      + `<div class="cmi-today">`
+      + `<div class="cmi-today-title">区分同是放量，结构好不好 · 结合当日涨跌判定</div>`
+      + `<div class="cmi-facts">`
+      + `<div class="cmi-fact"><span>20日均量比</span><b>${esc(rTxt)}</b><em>${esc(band.label)}</em></div>`
+      + `<div class="cmi-fact"><span>当日涨跌</span><b>${esc(chgTxt)}</b><em>红涨绿跌</em></div>`
+      + `</div>`
+      + `<div class="cmi-verdict cmi-${tone}"><span class="cmi-verdict-tag">${tag}</span>${esc(verdict)}</div>`
+      + `<div class="cmi-example">对照示例：A 票 1.8 倍 + 收涨 → 放量上涨、量价同向；B 票 0.6 倍 + 收涨 → 缩量上涨、买盘不足。</div>`
+      + `</div>`
+      + `<div class="cmi-caliber">口径说明：本卡 = 当日成交量 ÷ 前20日均量（不含当日），与全站量价判定、135 格归格统一同源；放量 &gt;${R20_AMP} / 平量 ${R20_SHRINK}~${R20_AMP} / 缩量 &lt;${R20_SHRINK} 与 lib/volumeCaliber.js 同值。与「20日涨跌日量能比」（近20日涨日均量 ÷ 跌日均量）是不同分母的独立口径，数值不应相等；盘中成交量为半天累计、收盘后以全日成交量定论。</div>`
+      + `</div>`;
+  }
+
+  return { esc, ratioBand, signalBias, combine, buildTrigger, buildPanel, buildRatio20Panel, ratio20Band, R20_AMP, R20_SHRINK, EQ_LO, EQ_HI };
 })();
 
 const CapitalCharts = {
@@ -360,9 +429,19 @@ const CapitalCharts = {
       : '';
     // 20261106f：数值解读下拉面板。展开状态在静默轮询 innerHTML 全量重建前读取、重建后恢复，
     // 避免每 60s 刷新把用户点开的面板自动收起（20261104j 轮询渲染铁律同源）。
-    const interpretOpen = !!el.querySelector('.cm-interpret-panel:not([hidden])');
+    const interpretOpen = !!el.querySelector('.cm-interpret-panel[data-cm-interpret]:not([data-interpret-id]):not([hidden])');
     const interpretTrigger = VpRatioInterpret.buildTrigger(interpretOpen);
     const interpretPanel = VpRatioInterpret.buildPanel(vp, { open: interpretOpen });
+    // [任务卡 #022] 兼容路径同步新增「20日均量比」卡：unified.ratio20 优先，回退 ratio20Series 末值。
+    const r20Open = !!el.querySelector('.cm-interpret-panel[data-interpret-id="r20"]:not([hidden])');
+    const r20Trigger = VpRatioInterpret.buildTrigger(r20Open, 'r20');
+    const s20 = vi.series || null;
+    const series20 = s20 && Array.isArray(s20.ratio20Series) ? s20.ratio20Series : [];
+    const r20FromSeries = series20.length ? series20[series20.length - 1] : null;
+    const un20 = vp.unified || null;
+    const r20Val = (un20 && typeof un20.ratio20 === 'number') ? un20.ratio20
+      : (typeof r20FromSeries === 'number' ? r20FromSeries : null);
+    const r20Panel = VpRatioInterpret.buildRatio20Panel(r20Val, dayPct, { open: r20Open, id: 'r20' });
     el.innerHTML = `
       <div class="cap-signal-box ${signalClass[vp.signal] || ''}">
         <div class="cap-signal-label">量价信号（当日）</div>
@@ -370,6 +449,7 @@ const CapitalCharts = {
         <div class="cap-signal-desc">${vp.description}</div>
       </div>
       <div class="cap-metrics-row">
+        <div class="cap-metric cm-has-interpret"><span class="cm-label" title="当日成交量 ÷ 前20日均量（不含当日），全站量价判定统一口径">20日均量比${r20Trigger}</span><span class="cm-value ${r20Val !== null ? (r20Val > 1.3 ? 'cap-pos' : r20Val < 0.8 ? 'cap-neg' : '') : ''}">${r20Val !== null ? r20Val.toFixed(2) : '--'}<span class="cm-sub" title="当日成交量 ÷ 前20日均量（不含当日）；放量 >1.3 / 平量 0.8~1.3 / 缩量 <0.8">当日量 ÷ 前20日均量</span></span></div>
         <div class="cap-metric"><span class="cm-label">今日涨跌</span>${dayPctHtml}</div>
         <div class="cap-metric"><span class="cm-label">${ratioLabel}</span><span class="cm-value ${ratioCls}">${ratioVal !== null ? ratioVal.toFixed(2) : '--'}</span></div>
         <div class="cap-metric"><span class="cm-label" title="近20日上涨天数 / 下跌天数；涨天数多于跌天数标红，反之标绿（全站红涨绿跌）">20日涨跌日</span><span class="cm-value ${daysCls}">${vp.upDays}天/${vp.downDays}天</span></div>
@@ -377,6 +457,7 @@ const CapitalCharts = {
         <div class="cap-metric"><span class="cm-label">20日净涨跌</span><span class="cm-value ${vp.netChangePct > 0 ? 'cap-pos' : vp.netChangePct < 0 ? 'cap-neg' : ''}">${vp.netChangePct > 0 ? '+' : ''}${vp.netChangePct}%</span></div>
         <div class="cap-metric"><span class="cm-label">量能热度</span><span class="cm-value">${vp.heatLevel || '--'}</span></div>
       </div>
+      ${r20Panel}
       ${interpretPanel}
       <div class="cap-date-note">${dateNote}${basisNote ? `<br>${basisNote}` : ''}</div>
     `;

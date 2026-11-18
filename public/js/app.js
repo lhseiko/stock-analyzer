@@ -257,7 +257,13 @@ const App = {
       const trigger = e.target && e.target.closest ? e.target.closest('.cm-interpret-trigger') : null;
       if (!trigger) return;
       const row = trigger.closest('.ve-tile-row, .cap-metrics-row');
-      const panel = row && row.nextElementSibling;
+      // [任务卡 #022] 带 data-interpret-id 的触发器按配对 id 找面板（新卡 20日均量比），
+      // 无 id 仍走 row.nextElementSibling（首卡 20日涨跌日量能比，行为逐字不变）。
+      const pid = trigger.getAttribute('data-interpret-id');
+      const scope = row && row.parentElement ? row.parentElement : document;
+      const panel = pid
+        ? scope.querySelector(`.cm-interpret-panel[data-interpret-id="${pid}"]`)
+        : (row && row.nextElementSibling);
       if (!panel || !panel.classList.contains('cm-interpret-panel')) return;
       const opening = panel.hasAttribute('hidden');
       if (opening) panel.removeAttribute('hidden');
@@ -1486,9 +1492,12 @@ const App = {
       let line = `准确率台账：已记录 <b>${acc.totalRecords}</b> 条预测，已结算 <b>${acc.settledCount}</b> 条`;
       if (acc.accuracy != null) {
         line += `，命中率 <b>${acc.accuracy}%</b>`;
-        // 20261013f：拆分展示「震荡未命中」与「方向真错」，避免 0% 一刀切被误读（结算口径不变）
-        if (acc.flatMissCount != null && (acc.flatMissCount + acc.dirMissCount) > 0) {
-          line += `（其中震荡未命中 <b>${acc.flatMissCount}</b> / 方向真错 <b>${acc.dirMissCount}</b>）`;
+        // [任务卡 #021] 震荡标签下拆成三态：小幅同向命中 / 小幅反向 / 方向真错
+        const flatHit = acc.smallFlatHitCount || 0;
+        const flatBad = acc.flatMissCount || 0;
+        const dirBad = acc.dirMissCount || 0;
+        if (acc.flatMissCount != null && flatHit + flatBad + dirBad > 0) {
+          line += `（其中小幅同向命中 <b>${flatHit}</b> / 小幅反向 <b>${flatBad}</b> / 方向真错 <b>${dirBad}</b>）`;
         }
       }
       line += `（口径：${esc(acc.horizonLabel || 'T+1 / T+3 / T+5')}）`;
@@ -2656,8 +2665,25 @@ const App = {
     // 20261106f：「20日涨跌日量能比」数值解读下拉面板。展开状态在静默轮询 innerHTML 全量重建前读取、
     // 重建后原样恢复，避免每 60s 刷新把用户点开的面板自动收起（20261104j 轮询渲染铁律同源）。
     // 规则与文案的单一真值源 = capitalCharts.js 的 VpRatioInterpret（同页先加载）。
-    const interpretOpen = !!el.querySelector('.cm-interpret-panel:not([hidden])');
+    const interpretOpen = !!el.querySelector('.cm-interpret-panel[data-cm-interpret]:not([data-interpret-id]):not([hidden])');
     const interpretTrigger = VpRatioInterpret.buildTrigger(interpretOpen);
+    // [任务卡 #022] 新增「20日均量比」卡（当日量 ÷ 前20日均量），独立配对解读面板。
+    // 展开状态按 data-interpret-id 单独读取，避免与首卡面板互相串开合。
+    const r20Open = !!el.querySelector('.cm-interpret-panel[data-interpret-id="r20"]:not([hidden])');
+    const r20Trigger = VpRatioInterpret.buildTrigger(r20Open, 'r20');
+    // [任务卡 #022][20261117f 修复] 此前误引用 renderVolumePrice 的局部变量 vp（本函数不存在），
+    // 运行时抛 ReferenceError 导致整个「量能分析」模块渲染中断、正文空白（用户 17:06 截图报障）。
+    // 正确取数：data.volumeIndicators.volumePrice.unified.ratio20 优先，回退 ratio20Series 末值。
+    const vpVE = (data && data.volumeIndicators && data.volumeIndicators.volumePrice) || null;
+    const veSeries20 = (data && data.volumeIndicators && data.volumeIndicators.series && Array.isArray(data.volumeIndicators.series.ratio20Series)) ? data.volumeIndicators.series.ratio20Series : [];
+    const r20FromSeries = veSeries20.length ? veSeries20[veSeries20.length - 1] : null;
+    const r20Val = (vpVE && vpVE.unified && typeof vpVE.unified.ratio20 === 'number') ? vpVE.unified.ratio20
+      : (typeof r20FromSeries === 'number' ? r20FromSeries : null);
+    const r20Panel = VpRatioInterpret.buildRatio20Panel(
+      r20Val,
+      (vpVE && typeof vpVE.dayChangePct === 'number') ? vpVE.dayChangePct : null,
+      { open: r20Open, id: 'r20' }
+    );
 
     // 量能指标行
     // 20261106l（用户裁决）：「5日量能比」卡退役——÷前5日均量口径由顶部 banner「量比」（腾讯行情直采）
@@ -2727,12 +2753,20 @@ const App = {
       // 不用绝对定位浮层 → 不受 .main-content 滚动容器裁剪，也不破坏 ve-cols-3 三列等宽。
       const interpretPanel = VpRatioInterpret.buildPanel(vp, { open: interpretOpen });
       const vpRatioTile = `<div class="cap-metric cm-has-interpret"><span class="cm-label" title="近20日上涨日均量 ÷ 下跌日均量，衡量量价健康度（与「量价判定」⑤量价健康度同源）">20日涨跌日量能比${interpretTrigger}</span><span class="cm-value ${ratioCls}">${vp.ratio != null ? vp.ratio : '--'}<span class="cm-sub" title="${esc(vpRatioTip)}">${esc(vpRatioSub)}</span></span></div>`;
+      // [任务卡 #022] 新卡「20日均量比」放最左；÷20 阈值着色（>1.3 放量红 / <0.8 缩量绿 / 区间中性）。
+      const r20Val = (vp.unified && typeof vp.unified.ratio20 === 'number') ? vp.unified.ratio20 : null;
+      const r20Cls = r20Val == null ? '' : (r20Val > 1.3 ? 'cap-pos' : r20Val < 0.8 ? 'cap-neg' : '');
+      const r20Sub = '当日量 ÷ 前20日均量';
+      const r20Tip = `当日成交量 ÷ 前20日均量（不含当日）= ${r20Val != null ? r20Val : '--'} 倍；放量 >1.3 / 平量 0.8~1.3 / 缩量 <0.8（与量价判定同源）`;
+      const r20Tile = `<div class="cap-metric cm-has-interpret"><span class="cm-label" title="当日成交量 ÷ 前20日均量（不含当日），全站量价判定统一口径">20日均量比${r20Trigger}</span><span class="cm-value ${r20Cls}">${r20Val != null ? r20Val : '--'}<span class="cm-sub" title="${esc(r20Tip)}">${esc(r20Sub)}</span></span></div>`;
       vpHtml = `
-      <div class="ve-tile-row ve-cols-3">
+      <div class="ve-tile-row ve-cols-4">
+        ${r20Tile}
         ${vpRatioTile}
         <div class="cap-metric"><span class="cm-label" title="近20日上涨天数 / 下跌天数；涨天数多于跌天数标红，反之标绿（全站红涨绿跌）">20日涨跌日</span><span class="cm-value ${daysCls}">${vp.upDays != null ? vp.upDays : '--'}天/${vp.downDays != null ? vp.downDays : '--'}天</span></div>
         <div class="cap-metric"><span class="cm-label">20日净涨跌</span><span class="cm-value ${ncCls}">${nc == null ? '--' : (nc > 0 ? '+' : '') + nc + '%'}</span></div>
       </div>
+      ${r20Panel}
       ${interpretPanel}
       <div class="cap-date-note">量价统计截止 ${esc(vpDate || '--')} · K线 · 本地计算｜口径说明：全量价判定已统一为 当日量 ÷ 20 日均量（与 135 格推演图同源）；本行「20日涨跌日量能比」= 近20日上涨日均量 ÷ 下跌日均量，为显式标注分母的原始指标卡（非量价判定结论），与 ÷20 统一口径分母不同，数值不应相等；「5日量能比」「60日量能确认」已退役——20261106n 起 60 日均量口径整体退役，全量价判定与文字分析统一使用 20 日量能比（当日量 ÷ 20 日均量），5 日均量原始值由顶部「量比」（腾讯行情直采）继续展示</div>`;
     } else {
@@ -3942,6 +3976,15 @@ const App = {
     const valPeriod = 'TTM';
     const divPeriod = 'TTM·分红';
     const ocflowPeriod = ocfLabel ? '财报 ' + ocfLabel : stmtPeriod;
+    // 20261117a 任务卡 #018：商誉（最新一期资产负债表，分母=归母净资产）
+    // 取不到时显示 -- 并沿用缺失规则；「没有商誉」backend 给数值 0 / 占比 0%，此处必须显示 0.00 而非 --。
+    const gwData = data.goodwill || null;
+    const gwOk = !!(gwData && gwData.available && gwData.ratio != null && gwData.goodwillYi != null);
+    const gwValue = gwOk
+      ? Number(gwData.goodwillYi).toFixed(2) + '亿 · 占净资产 ' + Number(gwData.ratio).toFixed(2) + '%'
+      : '--';
+    const gwPrior = (gwOk && gwData.priorRatio != null) ? '去年同期 ' + Number(gwData.priorRatio).toFixed(2) + '%' : null;
+    const gwPeriod = (gwOk && gwData.date) ? ('财报 ' + gwData.date) : '';
     const rows = [
       // ★ 20260923l：估值三项由 `m.pe?.toFixed(2)` 改为「真值判定」——与右卡「指标分析」统一 0/-- 口径
       //   （0 的 PE/PB/PS 不是可信数值，属兜底哨兵 → 显示 `--` 而非 `0.00`）。
@@ -3971,6 +4014,11 @@ const App = {
       ['流动比率', m.currentRatio ? m.currentRatio.toFixed(2) : '--', `流动比率 · 来源：${qf.reportSource || '东方财富财报'}${finLabel ? ' · 财报 ' + finLabel : ''}`, { indKey: null, pctKey: 'currentRatio' }, stmtPeriod],
       ['股息率(TTM)', m.dividendYield ? m.dividendYield.toFixed(2) + '%' : '--', '股息率(TTM) = 近12个月已实施除息的每股分红合计 ÷ 当前股价（滚动12个月口径；无近12个月分红记录时回退最近完整年度） · 来源：东方财富分红数据', { indKey: null, pctKey: null }, divPeriod],
       ['每股经营现金流', m.operatingCashFlowPerShare ? m.operatingCashFlowPerShare.toFixed(2) : '--', `每股经营现金流 = 经营现金流净额 ÷ 总股本${ocfLabel ? ' · 财报 ' + ocfLabel : ''} · 来源：${qf.operatingCashFlowSource || '东方财富财报'}`, { indKey: null, pctKey: null }, ocflowPeriod],
+      // ★ 20261117a #018：商誉固定在最下方，样式/字段结构/分析按钮与其他行完全一致。
+      ['商誉', gwValue, gwOk
+        ? `商誉 = 历史并购支付对价高于被收购方可辨认净资产公允价值的差额；主要来自非同一控制下企业合并（具体收购对象以财报附注为准，本工具不编造来源名称）。本值取${gwData.reportName || gwData.date}资产负债表，占总资产 ${gwData.assetRatio != null ? Number(gwData.assetRatio).toFixed(2) + '%' : '--'}、占归母净资产 ${Number(gwData.ratio).toFixed(2)}%。判定：>10% 利空、<5% 利好、5%~10%（含边界）中性；无商誉按 0% 利好。 · 来源：${gwData.source || '东方财富 F10 资产负债表'}`
+        : `商誉取最新一期资产负债表；当前取数失败或归母净资产不可得，如实显示 --，不参与评分。 · 来源：东方财富 F10 资产负债表（zcfzbAjaxNew）`,
+        { indKey: null, pctKey: null, prior: gwPrior }, gwPeriod],
     ];
     // ★ 20261029a：在「扣非净利润增长」之后条件插入「营运利润」(全个股) 与「NBV(新业务价值)」(保险股专属)。
     //   数据由 /api/analysis 下发（opProfit / insuranceNBV），取不到时整行不渲染（左右两卡一致，绝不编造）。
@@ -4005,7 +4053,7 @@ const App = {
     // ★ 20261103d：五维多数决统一判定——左卡徽标消费与右卡/顶栏同一 judgment（单一数据源）；
     //   多数决与信号判定冲突时 reason 已带「已按多数决为准」标注，悬停判定依据可见。
     (data.metricAnalysis?.metrics || []).forEach(mm => { if (mm && mm.key && mm.judgment) sigMap[mm.key] = mm.judgment; });
-    const keyOf = (label) => ({ '市盈率(PE)': 'pe', '市盈率(PE·TTM)': 'pe', '市净率(PB)': 'pb', '市销率(PS)': 'ps', '市销率(PS·TTM)': 'ps', 'PEG': 'peg', 'ROE': 'roe', '毛利率': 'grossMargin', '净利率': 'netMargin', '营收增长': 'growth', '归母净利润': 'profitGrowth', '扣非净利润增长': 'dedProfitGrowth', '营运利润': 'opProfit', 'NBV(新业务价值)': 'nbv', '资产负债率': 'debt', '流动比率': 'currentRatio', '股息率': 'div', '股息率(TTM)': 'div', '每股经营现金流': 'ocf' }[label]);
+    const keyOf = (label) => ({ '市盈率(PE)': 'pe', '市盈率(PE·TTM)': 'pe', '市净率(PB)': 'pb', '市销率(PS)': 'ps', '市销率(PS·TTM)': 'ps', 'PEG': 'peg', 'ROE': 'roe', '毛利率': 'grossMargin', '净利率': 'netMargin', '营收增长': 'growth', '归母净利润': 'profitGrowth', '扣非净利润增长': 'dedProfitGrowth', '营运利润': 'opProfit', 'NBV(新业务价值)': 'nbv', '资产负债率': 'debt', '流动比率': 'currentRatio', '股息率': 'div', '股息率(TTM)': 'div', '每股经营现金流': 'ocf', '商誉': 'goodwill' }[label]);
     const metricsEl = document.getElementById('fundMetrics');
     const periodNoteHtml = `<div class="metrics-period-note">${periodNote}</div>`;
     metricsEl.innerHTML = periodNoteHtml + rows.map(r => {
@@ -4073,13 +4121,20 @@ const App = {
       }
     }
 
-    // 基本面结论 + 论证过程（需求3/4）
-    const fc = this.buildFundamentalConclusion(fundamental);
+    // 基本面结论 + 评分明细 + 关键指标概况 + 论证过程（20261117c #020：整卡上移，内容扩写）
+    const fc = this.buildFundamentalConclusion(fundamental, data, rows);
     const fcEl = document.getElementById('fundConclusion');
     if (fcEl && fc) {
       fcEl.style.display = '';
-      const hasR = fc.reasoning.length > 0;
-      let html = `<h3>📋 基本面结论</h3><div class="section-conclusion"><div class="sc-summary"><span class="sc-icon">📌</span><span>${fc.conclusion}</span></div>`;
+      const hasR = !!(fc.reasoning && fc.reasoning.length > 0);
+      const toneCls = (t) => (t === 'bull' || t === 'bear' || t === 'neutral' || t === 'na') ? t : 'na';
+      let html = `<h3>📋 基本面结论</h3><div class="section-conclusion">
+        <div class="sc-summary"><span class="sc-icon">📌</span><span>${fc.conclusion}</span></div>
+        <div class="fc-block-title">评分明细</div>
+        <div class="fc-score-grid">${(fc.scoreRows || []).map(r => `<div class="fc-score-row"><span class="fc-score-label">${r.label}</span><span class="fc-score-val">${r.score}/${r.max}</span><span class="fc-score-word ${toneCls(r.tone)}">${r.word}</span></div>`).join('')}</div>
+        <div class="fc-block-title">关键财务指标</div>
+        <div class="fc-metric-grid">${(fc.metricRows || []).map(r => `<div class="fc-metric-row"><span class="fc-metric-name">${r.label}</span><span class="fc-metric-val">${r.value}</span><span class="fc-metric-word ${toneCls(r.tone)}">${r.word}</span></div>`).join('')}</div>
+        <div class="fc-plain">${fc.plain}</div>`;
       if (hasR) {
         html += `<button type="button" class="sc-toggle" id="fundToggle">查看论证过程 ▾</button>`;
         html += `<div class="sc-reasoning hidden" id="fundReasoning">${fc.reasoning.map(r => `<div class="sc-reason-item">• ${r}</div>`).join('')}</div>`;
@@ -4235,35 +4290,104 @@ const App = {
     pop.style.top = top + 'px';
   },
 
-  // 由基本面评分对象生成「结论 + 论证」
-  buildFundamentalConclusion(fund) {
+  // 由基本面评分对象生成「结论 + 评分明细 + 关键指标概况 + 论证」（20261117c 任务卡 #020）
+  // ★ 确定性代码拼装，零 LLM、零估算；所有数字直接复用左卡 rows 与评分对象，与页面其他位置同源。
+  // ★ 用户裁决：保留「较弱」(C) 评级代号；评分明细默认展开；关键指标固定 6 条；原论证过程折叠保留。
+  buildFundamentalConclusion(fund, data, rows) {
     if (!fund) return null;
     const { overall, rating, score, scores } = fund;
     const typeName = fund.companyTypeName || '均衡型';
+    const pctOfScore = (v) => (v && typeof v.score === 'number' && typeof v.max === 'number' && v.max > 0)
+      ? Math.round(v.score / v.max * 100) : null;
+    const tierOf = (pct) => (pct == null) ? 'na' : (pct >= 70 ? 'high' : pct >= 45 ? 'mid' : 'low');
+
+    // ── ① 一句话结论：保留评级代号，但把话说明白 ──
+    const arr = Object.values(scores || {});
+    let best = null, worst = null;
+    if (arr.length) {
+      const sorted = arr.slice().sort((a, b) => (pctOfScore(b) || 0) - (pctOfScore(a) || 0));
+      best = sorted[0]; worst = sorted[sorted.length - 1];
+    }
     const parts = [];
     parts.push(`${typeName}综合评级「${overall}」(${rating}，${score}/100)。`);
-    const arr = Object.values(scores || {});
-    if (arr.length) {
-      const sorted = [...arr].sort((a, b) => b.score / b.max - a.score / a.max);
-      const best = sorted[0], worst = sorted[sorted.length - 1];
-      const bestPct = Math.round(best.score / best.max * 100);
-      const worstPct = Math.round(worst.score / worst.max * 100);
-      parts.push(`最强维度为「${best.label}」(${bestPct}分)，最弱维度为「${worst.label}」(${worstPct}分)。`);
+    if (best && worst && best !== worst) {
+      const bp = pctOfScore(best), wp = pctOfScore(worst);
+      parts.push(`说白了：${best.label}还可以（${bp}分），但${worst.label}拖了后腿（${wp}分）。`);
     }
     const conclusion = parts.join('');
+
+    // ── ② 评分明细：四项默认展开，分数 + 大白话（与评分明细卡逐项同值）──
+    const SCORE_WORDS = {
+      valuation:     { high: '估值便宜',   mid: '估值适中',   low: '估值偏贵' },
+      profitability: { high: '赚钱能力强', mid: '赚钱能力一般', low: '赚钱能力弱' },
+      growth:        { high: '成长快',     mid: '成长一般',   low: '成长乏力' },
+      health:        { high: '财务稳健',   mid: '财务尚可',   low: '财务偏紧' },
+    };
+    const TONE_OF_TIER = { high: 'bull', mid: 'neutral', low: 'bear', na: 'na' };
+    const scoreRows = ['valuation', 'profitability', 'growth', 'health']
+      .filter(k => scores && scores[k])
+      .map(k => {
+        const v = scores[k];
+        const pct = pctOfScore(v);
+        const tier = tierOf(pct);
+        const word = (SCORE_WORDS[k] && SCORE_WORDS[k][tier]) || '数据不足，无法解读';
+        return { key: k, label: v.label || k, score: v.score, max: v.max, pct, tone: TONE_OF_TIER[tier], word };
+      });
+
+    // ── ③ 关键财务指标概况：固定 6 条，数值复用左卡 rows，解读复用现有判定信号 ──
+    const sigMap = {};
+    const ma = (data && data.metricAnalysis && data.metricAnalysis.metrics) || [];
+    ma.forEach(mm => { if (mm && mm.key && mm.judgment) sigMap[mm.key] = mm.judgment.signal; });
+    const sg = (data && data.signals && data.signals.signals) || [];
+    sg.forEach(s => { if (s && s.key && !sigMap[s.key]) sigMap[s.key] = s.signal; });
+
+    const METRIC_WORDS = {
+      pe:           { bull: '估值不贵',         bear: '估值偏贵',         neutral: '估值处于正常区间' },
+      pb:           { bull: '股价接近或低于净资产', bear: '股价明显高于净资产', neutral: '股价与净资产比例正常' },
+      roe:          { bull: '赚钱效率不错',       bear: '赚钱效率偏低',     neutral: '赚钱效率一般' },
+      growth:       { bull: '营收扩张快',         bear: '营收增长乏力',     neutral: '营收增长平稳' },
+      profitGrowth: { bull: '利润增长明显',       bear: '利润增长乏力',     neutral: '利润增长平稳' },
+      debt:         { bull: '负债压力小',         bear: '负债压力偏大',     neutral: '负债水平正常' },
+    };
+    const KEY_ROWS = [
+      { key: 'pe', label: '市盈率', match: ['市盈率'] },
+      { key: 'pb', label: '市净率', match: ['市净率'] },
+      { key: 'roe', label: 'ROE', match: ['ROE'] },
+      { key: 'growth', label: '营收增长', match: ['营收增长'] },
+      { key: 'profitGrowth', label: '归母净利润', match: ['归母净利润'] },
+      { key: 'debt', label: '资产负债率', match: ['资产负债率'] },
+    ];
+    const rowList = Array.isArray(rows) ? rows : [];
+    const metricRows = KEY_ROWS.map(cfg => {
+      const row = rowList.find(r => Array.isArray(r) && cfg.match.some(x => String(r[0] || '').indexOf(x) >= 0));
+      const value = row && row[1] != null && String(row[1]).trim() !== '' ? String(row[1]) : '--';
+      const signal = sigMap[cfg.key];
+      const hasValue = value !== '--';
+      const words = METRIC_WORDS[cfg.key] || {};
+      const word = !hasValue ? '数据不足，无法解读'
+        : (words[signal] || '暂无明确判定，只列数值');
+      return { key: cfg.key, label: (row && row[0]) || cfg.label, value, signal: signal || null, tone: hasValue ? (signal || 'na') : 'na', word };
+    });
+
+    // ── ④ 极简大白话收尾 ──
+    const scorePct = (typeof score === 'number' && score > 0) ? score : null;
+    const plain = (best && worst && scorePct != null)
+      ? `一句话：${best.label}是亮点，${worst.label}是短板，整体基本面${tierOf(Math.round(scorePct)) === 'high' ? '不错' : tierOf(Math.round(scorePct)) === 'mid' ? '一般' : '偏弱'}。`
+      : '一句话：基本面数据不完整，暂无法给出可靠解读。';
+
+    // ── ⑤ 原「查看论证过程」折疊区保留（真实推导链，不由本次改写）──
     const reasoning = [];
     const dl = fund.dimensionLogic || {};
     const order = ['valuation', 'profitability', 'growth', 'health'];
     for (const k of order) {
-      const v = scores[k]; if (!v) continue;
-      const pct = Math.round(v.score / v.max * 100);
-      const judge = pct >= 70 ? '表现良好' : pct >= 45 ? '表现一般' : '表现偏弱';
+      const v = scores && scores[k]; if (!v) continue;
+      const pct = pctOfScore(v);
+      const judge = pct == null ? '无法判断' : pct >= 70 ? '表现良好' : pct >= 45 ? '表现一般' : '表现偏弱';
       let line = `${v.label}：${v.score}/${v.max} 分（${pct}%），${judge}。`;
-      // 展示真实推导过程（如"成长性 0 分"是因为营收/净利增速≤0，落入无加分档）
       if (dl[k] && dl[k].rule) line += ` 推导：${dl[k].rule}。`;
       reasoning.push(line);
     }
-    return { conclusion, reasoning };
+    return { conclusion, scoreRows, metricRows, plain, reasoning };
   },
 
   // ---- Tab switching ----

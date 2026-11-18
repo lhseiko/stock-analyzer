@@ -137,7 +137,9 @@ section('§7 两条渲染路径 + 下拉交互 + 轮询状态恢复');
 {
   const rowEnd = '</div>\n      ${interpretPanel}';
   ok(app.includes('cm-has-interpret') && app.includes('20日涨跌日量能比${interpretTrigger}'), 'app.js 卡片标签行内嵌触发器（不额外占高度）');
-  ok(app.includes(rowEnd) || /\$\{volTierTile\}[\s\S]{0,900}\}\s*\$\{interpretPanel\}/.test(app), 'app.js 面板插在五联行下方、普通流跨整行');
+  // [任务卡 #022] 卡行下方现为两个面板（新卡 r20Panel + 首卡 interpretPanel）；首卡 interpretPanel 仍在卡行下方、普通流跨整行。
+  const rowEnd2 = '</div>\n      ${r20Panel}\n      ${interpretPanel}';
+  ok(app.includes(rowEnd) || app.includes(rowEnd2) || /\$\{volTierTile\}[\s\S]{0,900}\}\s*\$\{interpretPanel\}/.test(app), 'app.js 面板插在卡行下方、普通流跨整行（#022 起含新卡面板）');
   ok(app.indexOf('${interpretPanel}') < app.indexOf('class="cap-date-note"'), 'app.js 面板位于日期口径注释之前');
   ok(cc.includes('cm-has-interpret') && cc.includes('20日涨跌日量能比${interpretTrigger}'), 'capitalCharts.js 兼容路径同款触发器');
   ok(/\$\{interpretPanel\}\s*<div class="cap-date-note">/.test(cc), 'capitalCharts.js 面板位于指标行下方（同口径）');
@@ -145,8 +147,9 @@ section('§7 两条渲染路径 + 下拉交互 + 轮询状态恢复');
   ok(app.includes('row.nextElementSibling') && app.includes("removeAttribute('hidden')") && app.includes("setAttribute('hidden', '')"),
     '委托精确定位相邻面板并切换 hidden');
   ok(app.includes("trigger.setAttribute('aria-expanded'") && app.includes("trigger.classList.toggle('is-open'"), '同步 aria-expanded 与箭头状态（无障碍）');
-  ok((app.match(/\.cm-interpret-panel:not\(\[hidden\]\)/g) || []).length >= 1
-    && (cc.match(/\.cm-interpret-panel:not\(\[hidden\]\)/g) || []).length >= 1,
+  // [任务卡 #022] 首卡读取选择器加 :not([data-interpret-id]) 以排除新卡面板，仍为 :not([hidden]) 语义。
+  ok((app.match(/\.cm-interpret-panel[^'\n]*:not\(\[hidden\]\)/g) || []).length >= 1
+    && (cc.match(/\.cm-interpret-panel[^'\n]*:not\(\[hidden\]\)/g) || []).length >= 1,
     '两条路径都在重建前读取展开状态（静默轮询不自动收起）');
   ok(panel(1.7, '放量上涨').includes(' hidden') && !panel(1.7, '放量上涨', true).includes(' hidden'),
     '面板默认收起、open:true 时展开');
@@ -170,10 +173,10 @@ ok(app.includes('ve-cols-5') && css.includes('.ve-cols-5 { grid-template-columns
 section('§9 零后端改动 / 版本戳 / 缓存破坏');
 ok(ve.includes("schema: 'volume-engine-20261109c'"), '引擎 schema = volume-engine-20261109c（量能单一真值源）');
 ok(sjd.includes("const LAYOUT_VERSION = '20261109c'"), 'LAYOUT_VERSION 已升 20261106o（量价配合子信号输入 signal 值域与分值变化，判断记录强制重算）');
-ok(/const APP_VERSION = '20261116f'/.test(server), 'APP_VERSION 已是当前版本');
+ok(/const APP_VERSION = '20261118a'/.test(server), 'APP_VERSION 已是当前版本');
 ok(server.includes('[20261106f]'), 'server.js 存在 [20261106f] 独立变更日志条目');
 ok(server.includes('[20261106e]') && server.includes('[20261106d]'), '功能引入版本号保留，未随全局升版误改（铁律）');
-// [20261116f] 漂移自愈：缓存戳以 server.js 的 APP_VERSION 为唯一权威，不再写字面量旧版本负断言
+// [20261118a] 漂移自愈：缓存戳以 server.js 的 APP_VERSION 为唯一权威，不再写字面量旧版本负断言
 {
   const _av = (server.match(/const APP_VERSION = '(\d{8}[a-z])'/) || [])[1];
   for (const f of ['index.html', 'accuracy.html', 'logic-model.html', 'notes.html', 'volume-map.html']) {

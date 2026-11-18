@@ -115,6 +115,9 @@ ok(pageSrc.includes('/api/etf-flow'), '独立页自行拉取 /api/etf-flow 数�
 ok(pageSrc.includes('累计净申赎'), '累计表含「累计净申赎」列');
 ok(pageSrc.includes("_sortBtn('cumNet'"), '累计净申赎列带 ▲▼ 排序按钮');
 ok(pageSrc.includes('_cumNet') && pageSrc.includes('_fmtNegQty'), '净额按带符号相加、负数走单减号格式化（防双减号）');
+// 2026 11-18 任务卡 #023：「买/卖天数」原位替换为「净申赎占比」（累计净申赎 ÷ 流通股，腾讯字段72）
+ok(pageSrc.includes('净申赎占比') && !pageSrc.includes('<th class="num">买/卖天数</th>'), '累计表末列改为「净申赎占比」、旧买/卖天数列已移除');
+ok(pageSrc.includes("_sortBtn('netRatio'") && pageSrc.includes('floatShares'), '净申赎占比列带 ▲▼ 排序、分母取 floatShares');
 
 // ============================================================================
 // [E] 源码守卫

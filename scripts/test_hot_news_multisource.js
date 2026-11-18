@@ -4,6 +4,7 @@
  *
  * 背景：getHotNews 原为东方财富 7×24 单源，且「兜底」仍是东财内容搜索（同域名族），
  *       东财不可用时整卡空白。现为东财(主) + 新浪财经 7×24 + 财联社电报 + 华尔街见闻 7×24。
+ * 20261118：新增第五路第一财经（实测接口 /api/ajax/getbrieflist，无需签名），东财仍为主源。
  *
  * 锁定：
  *   §1 财联社签名 = md5(sha1(字典序 query))，与 scripts/hot_topics_collect.py 同算法
@@ -47,6 +48,17 @@ const WSCN = {
     { title: '', content_text: '无标题快讯正文', display_time: 1794648000, uri: '' },
   ] },
 };
+// 一财：字段名与取值形态均按 2026-11-18 真实响应复刻（含无标题丢弃、ShareUrl 缺失回退两种边界）
+const YICAI = [
+  { LiveID: 103445325, LiveTitle: '腾讯控股：第三季度金融科技及企业服务业务收入同比增长9%',
+    LiveContent: '腾讯控股公告称，金融科技及企业服务业务2026年第三季的收入同比增长9%至人民币637亿元。',
+    CreateDate: '2026-11-18T16:51:17', ShareUrl: 'https://m.yicai.com/brief/103445325.html' },
+  { LiveID: 103445319, LiveTitle: '', NewsTitle: '',
+    LiveContent: '无标题条目应丢弃', CreateDate: '2026-11-18T16:47:54', ShareUrl: '' },
+  { LiveID: 103445317, LiveTitle: '布伦特原油期货跌幅扩大至2%',
+    LiveContent: '布伦特原油期货跌幅扩大至2%，报91.28美元/桶。',
+    CreateDate: '2026-11-18T16:47:12', ShareUrl: '', url: '/brief/103445317.html' },
+];
 
 // ============ §1 财联社签名（钉死固定值，防算法漂移） ============
 console.log('\n§1 财联社签名 md5(sha1(字典序 query))');
@@ -59,7 +71,7 @@ console.log('\n§1 财联社签名 md5(sha1(字典序 query))');
 }
 
 // ============ §2 三源解析统一字段 ============
-console.log('\n§2 新浪 / 财联社 / 华尔街见闻 解析');
+console.log('\n§2 新浪 / 财联社 / 华尔街见闻 / 第一财经 解析');
 {
   const s = ns.parseSinaFlash(SINA);
   eq('新浪解析条数', s.length, 2);
@@ -84,22 +96,32 @@ console.log('\n§2 新浪 / 财联社 / 华尔街见闻 解析');
   eq('华尔街见闻摘要', w[0].summary, '沪指涨 0.5%，创业板指涨 1.2%。');
   eq('华尔街见闻无标题时取正文前 40 字', w[1].title, '无标题快讯正文');
   eq('华尔街见闻来源标注', w[0].source, '华尔街见闻 7×24');
+
+  const y = ns.parseYicaiBrief(YICAI);
+  eq('一财解析条数（无标题条目丢弃）', y.length, 2);
+  eq('一财标题取 LiveTitle', y[0].title, '腾讯控股：第三季度金融科技及企业服务业务收入同比增长9%');
+  ok('一财摘要取 LiveContent 且无 HTML 标签', y[0].summary.indexOf('腾讯控股公告称') === 0 && !/<b>/.test(y[0].summary), y[0].summary);
+  eq('一财来源标注', y[0].source, '第一财经 7×24');
+  eq('一财优先使用 ShareUrl 绝对链接', y[0].url, 'https://m.yicai.com/brief/103445325.html');
+  eq('一财缺 ShareUrl 时相对 url 转绝对地址', y[1].url, 'https://www.yicai.com/brief/103445317.html');
 }
 
 // ============ §3 时间一律北京时间（禁止 UTC 早 8 小时） ============
-console.log('\n§3 三源时间经 normalizeNewsTime 按北京时间渲染');
+console.log('\n§3 四源时间经 normalizeNewsTime 按北京时间渲染');
 {
-  const s = ns.parseSinaFlash(SINA), c = ns.parseClsTelegraph(CLS), w = ns.parseWscnLives(WSCN);
+  const s = ns.parseSinaFlash(SINA), c = ns.parseClsTelegraph(CLS), w = ns.parseWscnLives(WSCN), y = ns.parseYicaiBrief(YICAI);
   eq('新浪 create_time 墙钟字符串 → 北京时间', s[0].date, '2026-11-14 17:30');
   eq('财联社 ctime 秒级 epoch → 北京时间', c[0].date, '2026-11-14 17:30');
   eq('华尔街见闻 display_time 秒级 epoch → 北京时间', w[0].date, '2026-11-14 17:30');
-  ok('三源日期格式统一为 YYYY-MM-DD HH:mm', [s[0], c[0], w[0]].every(n => /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(n.date)),
-    { s: s[0].date, c: c[0].date, w: w[0].date });
+  eq('一财 CreateDate 带 T 的本地时间 → 北京时间', y[0].date, '2026-11-18 16:51');
+  ok('四源日期格式统一为 YYYY-MM-DD HH:mm', [s[0], c[0], w[0], y[0]].every(n => /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(n.date)),
+    { s: s[0].date, c: c[0].date, w: w[0].date, y: y[0].date });
   const src = fs.readFileSync(path.join(ROOT, 'lib', 'newsSearch.js'), 'utf8');
-  ok('新增三源解析中不出现 toISOString 渲染（避免 UTC 错位）',
+  ok('新增四源解析中不出现 toISOString 渲染（避免 UTC 错位）',
     !/parseSinaFlash[\s\S]{0,900}toISOString/.test(src) &&
     !/parseClsTelegraph[\s\S]{0,900}toISOString/.test(src) &&
-    !/parseWscnLives[\s\S]{0,900}toISOString/.test(src));
+    !/parseWscnLives[\s\S]{0,900}toISOString/.test(src) &&
+    !/parseYicaiBrief[\s\S]{0,900}toISOString/.test(src));
 }
 
 // ============ §4 跨源去重 ============
@@ -127,35 +149,49 @@ console.log('\n§5 异常载荷诚实返回空数组');
   eq('华尔街见闻 code!=20000', ns.parseWscnLives({ code: 400, data: {} }), []);
   eq('null 载荷', ns.parseSinaFlash(null), []);
   eq('财联社缺 roll_data', ns.parseClsTelegraph({ errno: 0, data: {} }), []);
+  eq('一财非数组载荷（对象包装）', ns.parseYicaiBrief({ data: [] }), []);
+  eq('一财 null 载荷', ns.parseYicaiBrief(null), []);
+  eq('一财条目为 null 时跳过', ns.parseYicaiBrief([null, YICAI[0]]).length, 1);
 }
 
 // ============ §6 输出结构不变 + 下游零改动 ============
 console.log('\n§6 对外返回结构不变（模块修改铁律第一条：隔离修改）');
 {
   const src = fs.readFileSync(path.join(ROOT, 'lib', 'newsSearch.js'), 'utf8');
-  const m = /async function getHotNews\(force = false\) \{([\s\S]*?)\n\}/.exec(src);
-  ok('getHotNews 函数可静态提取', !!m);
+  const m = /async function getHotNews\(force = false, limit = 24\) \{([\s\S]*?)\n\}/.exec(src);
+  ok('getHotNews 函数可静态提取（签名带默认 limit=24）', !!m);
   const body = m ? m[1] : '';
   ok('正常返回对象仅含 source / updated / items',
     /const result = \{ source: label, updated: new Date\(\)\.toISOString\(\), items \}/.test(body), body.slice(-700));
   ok('未新增 sources / status 等对外字段', !/const result = \{[^}]*sources\b/.test(body));
   ok('空状态返回仍为 source / updated / items / error',
     /const empty = \{ source: '多源快讯（暂不可用）', updated: new Date\(\)\.toISOString\(\), items: \[\], error:/.test(body));
-  ok('四路并行且逐路独立降级（Promise.allSettled）',
+  ok('五路并行且逐路独立降级（Promise.allSettled）',
     /Promise\.allSettled\(jobs\)/.test(src) && /fetchMultiSourceNews/.test(body));
   ok('东财仍为主源（jobs 第一项 fetchKuaixunNews）',
     /const jobs = \[fetchKuaixunNews\(\)/.test(src));
+  // 20261118 #025：条数改为调用方决定，且缓存存完整列表，避免首页 40 条污染事件引擎默认 24 条
+  ok('缓存保存完整列表、返回时才按 size 截断',
+    /return \{ \.\.\.result, items: items\.slice\(0, size\) \};/.test(body)
+      && !/items = items\.slice\(0, 24\)/.test(body), body.slice(-500));
+  ok('缓存命中分支同样按 size 截断（40 条不会回流给默认调用方）',
+    /return \{ \.\.\.c, items: \(c\.items \|\| \[\]\)\.slice\(0, size\) \};/.test(body));
+  ok('size 有边界钳制（1~100，非法值回退 24）',
+    /Math\.max\(1, Math\.min\(100, Number\(limit\) \|\| 24\)\)/.test(body));
 
   const server = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
-  ok('server.js /api/hot-news 仍只调 getHotNews（未改接线）',
-    /app\.get\('\/api\/hot-news'[\s\S]{0,400}getHotNews\(/.test(server));
+  ok('server.js /api/hot-news 传 limit=40（仅放大首页展示）',
+    /app\.get\('\/api\/hot-news'[\s\S]{0,400}getHotNews\(req\.query\.refresh === '1', 40\)/.test(server));
+  const ee = fs.readFileSync(path.join(ROOT, 'lib', 'eventEngine.js'), 'utf8');
+  ok('eventEngine 仍调 getHotNews(force) 不传 limit（默认 24 条，输入不放大）',
+    /getHotNews\(force\)/.test(ee) && !/getHotNews\(force\s*,/.test(ee));
   const homeJs = fs.readFileSync(path.join(ROOT, 'public', 'js', 'homeNews.js'), 'utf8');
   ok('homeNews.js 脚注仍用 data.source 自动透出（前端零改动）',
     /数据来源：\$\{escapeHtml\(\(data && data\.source\)/.test(homeJs));
-  ok('三个新解析函数与去重函数均已导出',
-    ['parseSinaFlash', 'parseClsTelegraph', 'parseWscnLives', 'dedupeHotNews', 'clsSign', 'fetchMultiSourceNews']
+  ok('四个新解析函数与去重函数均已导出',
+    ['parseSinaFlash', 'parseClsTelegraph', 'parseWscnLives', 'parseYicaiBrief', 'dedupeHotNews', 'clsSign', 'fetchMultiSourceNews']
       .every(k => typeof ns[k] === 'function'));
-  eq('源标签覆盖四路', Object.keys(ns.HOT_NEWS_SOURCE_LABELS).sort(), ['cls', 'eastmoney', 'sina', 'wscn']);
+  eq('源标签覆盖五路', Object.keys(ns.HOT_NEWS_SOURCE_LABELS).sort(), ['cls', 'eastmoney', 'sina', 'wscn', 'yicai']);
 }
 
 console.log('\n──────────────');

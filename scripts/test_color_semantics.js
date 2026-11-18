@@ -56,8 +56,12 @@ const hash = crypto.createHash('sha256').update(rgSels.slice().sort().join('\n')
 //   .es-score-dir b.pos/.neg  速览倾向文字：红=看涨 / 绿=看跌（同 dirCls 口径）
 // [任务卡 #015 2026-11-16] 「今日市场情绪速览」整块下线，上述 6 条 .es-* 规则随 CSS 一并删除，基线回到 231；
 // 本次为纯删除、无新增红绿用法，方向语义不变。
-const BASELINE_HASH = '55b10d93892be6d31f79e8268ce86251298fe643a681c12645aa98220f04dcfb';
-ok(rgSels.length === 231, `使用红绿的 CSS 规则数锁定为 231（当前 ${rgSels.length}）`);
+// [任务卡 #020 人工语义复核 2026-11-17] 新增 2 条红绿规则（231→233），全部为方向语义着色：
+//   .fc-score-word.bull / .fc-metric-word.bull  基本面结论评分与指标解读：红=利好/高档
+//   .fc-score-word.bear / .fc-metric-word.bear  基本面结论评分与指标解读：绿=利空/低档
+// neutral / na 两态用中性灰，不参与红绿；无按数值符号机械着色。
+const BASELINE_HASH = '33c63e2dd3df163914d57ec908249f1dc2e056e3d8d6d1e27c16bf568142fefc';
+ok(rgSels.length === 233, `使用红绿的 CSS 规则数锁定为 233（当前 ${rgSels.length}）`);
 ok(hash === BASELINE_HASH, '红绿规则集合哈希与基线一致（新增红绿用法必须走人工语义复核）',
   hash === BASELINE_HASH ? '' : '当前 ' + hash);
 ok((css.match(/\{/g) || []).length === (css.match(/\}/g) || []).length, 'CSS 大括号平衡');

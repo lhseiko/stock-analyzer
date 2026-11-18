@@ -242,7 +242,9 @@ const withBars = (bars, over = {}) => baseBundle({ index: { code: 'sh000001', na
   r = await computeMarketEmotion({ data: withBars(hb), macroFactors: [] });
   const rec = JSON.parse(fs.readFileSync(path.join(TMP, 'records.json'), 'utf8')).find(x => x.date === base);
   ok(rec && rec.settledT1 === true, 'T+1 已结算');
-  ok(rec && rec.correctT1 === false, '预测看涨但实际下跌 → 记为未命中');
+  // [任务卡 #021] mkBars 的 T+1 是 +0.05%（小幅同向）：旧口径标「震荡」记未命中，
+  // 新口径按实际符号判命中。原注释「实际下跌」有误，此处一并更正。
+  ok(rec && rec.correctT1 === true, '看涨 + 次日 +0.05%（小幅同向）→ 命中（任务卡 #021）');
 
   console.log('\n[9] 股吧热度时效：滞后 1~2 个交易日 → 打 8 折且不剔除');
   const bars9 = mkBars(260);

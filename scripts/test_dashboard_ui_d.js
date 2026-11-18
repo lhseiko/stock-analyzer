@@ -69,7 +69,8 @@ ok(!app.includes('const vs = ve.volumeState'), '20261106l：主分支专用 vs �
 ok(!ve.includes('confirmDesc:') && !/pc\.confirm\b/.test(ve) && !cf.includes('confirm'), '20261106n：引擎与 capitalFlow 的 60 日口径字段（confirm/confirmDesc）已彻底删除');
 ok(app.includes('全量价判定已统一为 当日量 ÷ 20 日均量（与 135 格推演图同源）') && app.includes('与 ÷20 统一口径分母不同，数值不应相等'), '底部口径说明写明全量价判定统一 ÷20 分母并列原始指标卡');
 ok(app.includes('60 日均量口径整体退役') && app.includes('全量价判定与文字分析统一使用 20 日量能比'), '20261106n：口径说明披露 60 日口径整体退役、文字分析统一 ÷20');
-ok(/<div class="ve-tile-row ve-cols-3">\s*\$\{vpRatioTile\}/.test(app), '20261106l：三联行 ve-cols-3（20日涨跌日量能比 → 20日涨跌日 → 20日净涨跌）');
+// [任务卡 #022] 三联升级四联：新增「20日均量比」居首，其余三卡顺次右移；原三卡内容与顺序不变。
+ok(/<div class="ve-tile-row ve-cols-4">\s*\$\{r20Tile\}\s*\$\{vpRatioTile\}/.test(app), '任务卡#022：四联行 ve-cols-4（20日均量比 → 20日涨跌日量能比 → 20日涨跌日 → 20日净涨跌）');
 
 section('§5 数值 / 公式 / 判定结构零改动');
 ok(cf.includes('const volumePriceRatio = avgDownVol > 0 ? avgUpVol / avgDownVol : 1;'), 'capitalFlow 量价比公式原样');
@@ -82,7 +83,7 @@ ok(ve.includes("schema: 'volume-engine-20261109c'"), '引擎 schema = volume-eng
 ok(sjd.includes("const LAYOUT_VERSION = '20261109c'"), 'LAYOUT_VERSION 已升 20261106o（量价配合子信号输入 signal 值域与分值变化：涨跌判定与 135 格走势档同源，判断记录强制重算）');
 
 section('§6 版本戳与缓存破坏');
-ok(/const APP_VERSION = '20261116f'/.test(server), 'APP_VERSION 已是当前版本');
+ok(/const APP_VERSION = '20261118a'/.test(server), 'APP_VERSION 已是当前版本');
 ok(server.includes('[20261106e]'), 'server.js 存在 [20261106e] 独立变更日志条目');
 ok(server.includes('[20261106d]'), 'server.js 存在 [20261106d] 独立变更日志条目');
 ok(server.includes('[20261106c]') && server.includes('[20261106b]'), '功能引入版本号保留，未随全局升版误改（铁律）');

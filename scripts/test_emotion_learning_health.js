@@ -46,18 +46,19 @@ const SA = src('lib/sentimentAccuracy.js');
 const T_ACC = src('scripts/test_event_weight_sentiment_acc.js');
 const SERVER = src('server.js');
 
-console.log('\n=== 1) F01 因子命中率口径：震荡日不计入样本 ===');
-ok(M.includes("if (actualDir === 'flat') continue;"), 'applyFactorAccuracy 显式跳过 flat 日');
+console.log('\n=== 1) F01 因子命中率口径：[任务卡 #021] 方向符号一致即命中 ===');
+ok(M.includes('hitDir') && M.includes("if (!hitDir || hitDir === 'flat') continue;"), 'applyFactorAccuracy 按实际符号计入样本，仅零涨幅/不可判定跳过');
+ok(!M.includes("if (actualDir === 'flat') continue;"), '旧「flat 整日跳过」逻辑已移除');
 {
   const s = { factorAcc: {} };
   model.applyFactorAccuracy(s, [{ record: { factorDirs: { indexMomentum: -1, margin: 1 } }, actualDir: 'flat' }]);
-  ok(Object.keys(s.factorAcc).length === 0, 'flat 日实测：零个因子样本被写入（旧口径会写 2 个且全判命中）');
+  ok(Object.keys(s.factorAcc).length === 0, '无涨跌幅的旧调用仍不写样本（旧行为兼容）');
 }
 {
   const s = { factorAcc: {} };
-  model.applyFactorAccuracy(s, [{ record: { factorDirs: { indexMomentum: -1, margin: 1, volumePrice: 0 } }, actualDir: 'down' }]);
-  ok(s.factorAcc.indexMomentum.samples[0] === true, 'down 日实测：看空因子记命中');
-  ok(s.factorAcc.margin.samples[0] === false, 'down 日实测：看多因子记未命中');
+  model.applyFactorAccuracy(s, [{ record: { factorDirs: { indexMomentum: -1, margin: 1, volumePrice: 0 } }, actualDir: 'flat', hitDir: 'down', chgPct: -0.2 }]);
+  ok(s.factorAcc.indexMomentum.samples[0] === true, '小幅下跌（-0.2%）看空因子记命中');
+  ok(s.factorAcc.margin.samples[0] === false, '小幅下跌（ -0.2%）看多因子记未命中');
   ok(!s.factorAcc.volumePrice, '中性方向（dir=0）仍不参与命中统计');
 }
 
@@ -69,7 +70,8 @@ ok(has('scripts/rebuild_emotion_factor_acc.js', "k === 'priceVolume' ? 'volumePr
   const a = rebuild.rebuild({ dir: PROD_EMO_DIR });
   const b = rebuild.rebuild({ dir: PROD_EMO_DIR });
   ok(JSON.stringify(a.summary) === JSON.stringify(b.summary), '重放幂等：两次结果逐字一致');
-  ok(a.summary.skippedFlat > 0, `重放确实剔除了震荡日（${a.summary.skippedFlat} 条）`);
+  ok(a.summary.skippedFlat > 0, `重放仅跳过零涨幅/无涨跌幅日（${a.summary.skippedFlat} 条）`);
+  ok(a.summary.smallMoveReplayed > 0, `重放把小幅同向日计入样本（${a.summary.smallMoveReplayed} 条）`);
   ok(!Object.prototype.hasOwnProperty.call(a.state.factorAcc, 'priceVolume'), '重放结果无 priceVolume 孤儿键');
   ok(Object.values(a.state.weights).every(v => v <= model.W_MAX + 1e-9), '重放结果无超 W_MAX 权重');
 }

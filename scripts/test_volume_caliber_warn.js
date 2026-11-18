@@ -55,21 +55,23 @@ ok(!app.includes('const volTierTip') && app.includes('const vpRatioTip ='), '202
 ok(cc.includes('近20日涨日均量 ÷ 跌日均量') && cc.includes('class="cm-sub"'), 'capitalCharts.js 兼容渲染路径同类同步副行');
 ok(cc.includes('20日涨跌日量能比') && !cc.includes('20日量价比'), '兼容路径标签仍为 20261106b 定名');
 
-section('§4 卡片顺序：20日涨跌日量能比居首，其余顺移（20261106l 三联）');
+section('§4 卡片顺序：20日均量比居首，原三卡顺次右移（任务卡 #022 四联）');
 // 20261106f：联行之后新增「数值解读逻辑」下拉面板（普通流跨整行，不在 grid 内）；
-// 20261106k：「60日量能确认」卡退役，五联改四联；20261106l：「5日量能比」卡退役，四联改三联（ve-cols-3）。
-const rowMatch = app.match(/<div class="ve-tile-row ve-cols-3">\s*\$\{vpRatioTile\}([\s\S]{0,1200}?)<\/div>\s*\$\{interpretPanel\}\s*<div class="cap-date-note">/);
-ok(!!rowMatch, '定位到量价统计三联行（含其后解读面板）');
-ok(app.includes('</div>\n      ${interpretPanel}\n      <div class="cap-date-note">'), '解读面板在三联行下方、口径注释上方，未挤入三卡栅格');
+// 20261106l：五联改三联（ve-cols-3）；[任务卡 #022] 新增「20日均量比」居首，三联升四联（ve-cols-4）。
+const rowMatch = app.match(/<div class="ve-tile-row ve-cols-4">\s*\$\{r20Tile\}\s*\$\{vpRatioTile\}([\s\S]{0,1200}?)<\/div>\s*\$\{r20Panel\}\s*\$\{interpretPanel\}\s*<div class="cap-date-note">/);
+ok(!!rowMatch, '定位到量价统计四联行（含其后两个解读面板）');
+ok(app.includes('</div>\n      ${r20Panel}\n      ${interpretPanel}\n      <div class="cap-date-note">'), '两个解读面板在四联行下方、口径注释上方，未挤入四卡栅格');
 if (rowMatch) {
   const row = rowMatch[0];
+  const iR20 = row.indexOf('${r20Tile}');
   const iRatio = row.indexOf('${vpRatioTile}');
   const iDays = row.indexOf('20日涨跌日</span>');
   const iNet = row.indexOf('20日净涨跌</span>');
-  ok(iRatio >= 0, '20日涨跌日量能比居三联行首位');
+  ok(iR20 >= 0, '任务卡#022：20日均量比居四联行最左');
+  ok(iRatio > iR20, '20日涨跌日量能比顺移居第二（原首卡，内容不变）');
   ok(iDays > iRatio, '20日涨跌日顺移居中');
   ok(iNet > iDays, '20日净涨跌居末');
-  ok(!row.includes('${confirmTile}') && !row.includes('${volTierTile}') && row.indexOf('ve-cols-3') >= 0, '20261106l：ve-cols-3 三卡满行，confirmTile/volTierTile 插槽零残留');
+  ok(!row.includes('${confirmTile}') && !row.includes('${volTierTile}') && row.indexOf('ve-cols-4') >= 0, '任务卡#022：ve-cols-4 四卡满行，退役卡插槽零残留');
 }
 ok(/<div class="ve-src-notes"><div class="ve-gap-item">· 量价数据不足/.test(app) && !/\$\{volTierTile\}\s*<\/div>\s*<div class="ve-src-notes">/.test(app),
   '20261106l：vp 缺失降级分支无独立量能卡，仅输出诚实降级说明（旧 volTierTile 收尾结构零残留）');
@@ -85,11 +87,11 @@ ok(ve.includes("schema: 'volume-engine-20261109c'"), '引擎 schema = volume-eng
 ok(sjd.includes("const LAYOUT_VERSION = '20261109c'"), 'LAYOUT_VERSION 已升 20261106o（量价配合子信号输入 signal 值域与分值变化：涨跌判定与 135 格走势档同源，判断记录强制重算）');
 
 section('§6 版本戳与缓存破坏');
-ok(/const APP_VERSION = '20261116f'/.test(server), 'APP_VERSION 已是当前版本');
+ok(/const APP_VERSION = '20261118a'/.test(server), 'APP_VERSION 已是当前版本');
 ok(server.includes('[20261106e]'), 'server.js 存在 [20261106e] 独立变更日志条目');
 ok(server.includes('[20261106c]'), 'server.js 存在 [20261106c] 独立变更日志条目');
 ok(server.includes('[20261106b]'), '[20261106b] 功能引入版本号保留，未随全局升版误改（铁律）');
-// [20261116f] 漂移自愈：缓存戳以 server.js 的 APP_VERSION 为唯一权威，不再写字面量旧版本负断言
+// [20261118a] 漂移自愈：缓存戳以 server.js 的 APP_VERSION 为唯一权威，不再写字面量旧版本负断言
 {
   const _av = (server.match(/const APP_VERSION = '(\d{8}[a-z])'/) || [])[1];
   for (const f of ['index.html', 'accuracy.html', 'logic-model.html', 'notes.html', 'volume-map.html']) {
@@ -101,7 +103,7 @@ ok(server.includes('[20261106b]'), '[20261106b] 功能引入版本号保留，�
 const guards = ['test_volume_ratio_labels.js', 'test_position_trend_segment.js', 'test_consistency_audit.js']; // test_cap_vol_ratio_chart 动态读取 APP_VERSION（无版本字面量），不参与字面量同步断言
 for (const g of guards) {
   const s = read('scripts/' + g);
-  ok(s.includes('20261116f'), `既有守卫当前版本断言已同步 20261116f：${g}`);
+  ok(s.includes('20261118a'), `既有守卫当前版本断言已同步 20261118a：${g}`);
 }
 
 console.log(`\n===== 汇总：通过 ${pass} / ${fail} 失败 =====`);

@@ -263,3 +263,107 @@ bump 只改 server.js APP_VERSION、public/*.html ?v=、以及"版本戳语境"�
 - See Also: LRN-20261116-001
 
 ---
+
+## [LRN-20261117-001] best_practice
+
+**Logged**: 2026-11-17T11:47:32+08:00
+**Priority**: high
+**Status**: promoted
+**Area**: backend
+
+### Summary
+用户给出的阈值规则是硬约束，不能让通用「五维多数决」覆盖；新增此类指标必须显式跳出投票。
+
+### Details
+商誉阈值（<5% 利好 / 5%~10% 中性 / >10% 利空）由用户拍板。接入 `metricAnalysis` 后，五维多数决把「商誉占比同比上升」视为利空票，实测把海天味业 0.71%（利好档）改判为中性，违背用户规则。正解：商誉判定不参与 `dimsVote`，五维只展示对比，判定始终取阈值信号。
+
+### Suggested Action
+以后凡用户给出明确业务阈值/分档的指标，接入通用投票/加权引擎前先判断「是否允许被其他维度改判」；不允许时在投票循环里显式跳过，并写断言用「低档但占比上升」夹具锁定。
+
+### Metadata
+- Source: error
+- Tags: 硬阈值, 多数决, 业务规则优先级
+- Pattern-Key: hard_threshold_bypass_generic_vote
+- Recurrence-Count: 1
+- First-Seen: 2026-11-17
+- Last-Seen: 2026-11-17
+- Promoted: .workbuddy/memory/MEMORY.md §10
+
+---
+
+## [LRN-20261117-002] best_practice
+
+**Logged**: 2026-11-17T12:55:00+08:00
+**Priority**: medium
+**Status**: candidate
+**Area**: testing
+
+### Summary
+全量回归出现与本任务无关的守卫失败时，用「单独复跑 + 二次全量」区分真回归与测试间顺序/残留污染。
+
+### Details
+任务卡 #019 升版后首次全量 `--quick` 为 144/146，失败两项均在「手动区间」模块，与本次营运利润改动无文件交集。按失败现场 `index.json` 与 `.log` 先定位：两项分别使用独立测试代码（999001 / 999999），排除手动区间文件互相覆盖。随后单独复跑分别 36/36、74/74 全绿，二次全量 146/146 全绿，确认为间歇性顺序/残留污染，未改业务代码、未回滚。
+
+### Suggested Action
+遇到全量回归失败且失败模块与改动文件无交集时，先读失败现场日志、再单独复跑失败守卫、最后二次全量确认；三项证据齐备才判定为环境性间歇失败。避免直接复跑自愈而跳过根因定位，也避免把无关失败误判为回归后回滚正确改动。
+
+### Metadata
+- Source: verification
+- Tags: 全量回归, 间歇失败, 顺序污染, 根因诊断
+- Pattern-Key: flaky_full_suite_vs_real_regression
+- Recurrence-Count: 1
+- First-Seen: 2026-11-17
+- Last-Seen: 2026-11-17
+
+---
+
+## [LRN-20261117-003] user_correction
+
+**Logged**: 2026-11-17T14:10:00+08:00
+**Priority**: high
+**Status**: candidate
+**Area**: market-emotion
+
+### Summary
+「震荡」是展示标签，不是「无方向」；小幅同向必须命中，不能把标签语义当命中语义。
+
+### Details
+任务卡 #021 用户纠正：判跌遇次日 −0.2% 也应命中，不能因为 ±0.5% 标为震荡就算未命中。此前两处把标签与判定绑死：界面台账 `correct = dir === actualDir`、模型 `correctT1 = pred === dir`，因子学习更把 flat 整日跳过，造成 26 个有方向的小幅日被丢弃。修复方式是把两者解耦：阈值继续决定展示标签，符号判定统一走 `lib/directionHit.js`，并让历史记录按已存涨跌幅重算且原值留痕。
+
+### Suggested Action
+任何「标签 + 判定」双态设计都要先问用户：标签是否参与命中？不要把展示分档直接当判定条件。用户确认后以纯函数单源实现，台账与模型内部同步改，历史重算保留原值以便追溯。
+
+### Metadata
+- Source: user_correction
+- Tags: 市场情绪, 命中判定, 标签与判定解耦, 历史重算
+- Pattern-Key: label_is_not_verdict
+- Recurrence-Count: 1
+- First-Seen: 2026-11-17
+- Last-Seen: 2026-11-17
+
+---
+## [LRN-20261117-001] best_practice
+
+**Logged**: 2026-11-17T17:16:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+同一改动落在多条渲染路径时，静态守卫（node --check + 源码字符串断言）无法发现「变量作用域错位」类运行时错误；渲染函数必须沙箱实跑验证。
+
+### Details
+任务卡 #022 在 app.js 两条渲染路径同步新增卡片：主路径的量价数据局部变量叫 vp，引擎路径 renderVolumeEngine(data) 里同名数据在 data.volumeIndicators.volumePrice。照抄主路径写法导致引擎路径引用未定义变量，模块整块空白，而全部静态守卫通过、语法检查通过。用户以截图报障才发现。修复后守卫补「提取方法体 + 真实 payload 沙箱实跑 + 断言输出内容」一节，同类问题今后在测试阶段即被拦截。
+
+### Suggested Action
+凡修改 JS 渲染函数（尤其同名改动跨多个函数/路径时）：① 先核对新函数签名与作用域内实际存在的变量，禁止凭上一处代码的记忆照抄；② 守卫必须含实跑断言（提取方法体 + stub DOM + 真实数据结构 payload），不能只做字符串匹配。
+
+### Metadata
+- Source: user_feedback
+- Related Files: public/js/app.js, scripts/test_volume_20day_avg_ratio.js
+- Tags: frontend, runtime-error, guard-design, multi-path
+- Pattern-Key: harden.runtime_exec_verification
+- First-Seen: 2026-11-17
+- Last-Seen: 2026-11-17
+
+---

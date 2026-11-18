@@ -92,7 +92,7 @@ section('§3 引擎-页面同源（posModel135 文案 ⊆ volume-map.html）');
 section('§4 版本断言（20261106k）');
 {
   const server = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
-  // [20261116f] 漂移自愈：版本断言以 server.js 的 APP_VERSION 为唯一权威，不再写字面量
+  // [20261118a] 漂移自愈：版本断言以 server.js 的 APP_VERSION 为唯一权威，不再写字面量
   const _av = (server.match(/const APP_VERSION = '(\d{8}[a-z])'/) || [])[1];
   ok(!!_av && server.includes("const APP_VERSION = '" + _av + "'"), 'server.js APP_VERSION=当前版本');
   ok(server.includes('[20261103k] 量价判定第三步补「大涨 / 大跌」强形态') && server.includes('[20261104c] AI 解读生成失败修复') && server.includes('[20261104d] 融资融券 tile 文案歧义修复') && server.includes('[20261104e] 量价判定位置阶梯'), 'server.js 版本注释含 [20261103k]/[20261104c]/[20261104d]/[20261105b] 条目');

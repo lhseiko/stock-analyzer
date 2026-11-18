@@ -216,8 +216,8 @@ const input = {
   console.log('\n=== 7) 版本戳强绑定 ===');
   const verMatch = SERVER.match(/const APP_VERSION = '(\d{8}[a-z])'/);
   const ver = verMatch ? verMatch[1] : '';
-  ok(ver === '20261116f', 'APP_VERSION = 20261116f', ver);
-  ok(WATCH.includes("const WATCH_VERSION = '20261116f'"), '观察层自身版本戳与 APP_VERSION 一致');
+  ok(ver === '20261118a', 'APP_VERSION = 20261118a', ver);
+  ok(WATCH.includes("const WATCH_VERSION = '20261118a'"), '观察层自身版本戳与 APP_VERSION 一致');
   {
     const htmls = fs.readdirSync(path.join(ROOT, 'public')).filter(f => f.endsWith('.html'));
     const withV = htmls.filter(f => /\?v=\d{8}[a-z]/.test(src('public/' + f)));
@@ -226,11 +226,11 @@ const input = {
     const OLD_VER = '20261115' + 'c';
     const stale = withV.filter(f => src('public/' + f).includes('?v=' + OLD_VER));
     ok(stale.length === 0, `无残留 ?v=${OLD_VER}`, stale.join(','));
-    const notNew = withV.filter(f => !/\?v=20261116f/.test(src('public/' + f)));
-    ok(notNew.length === 0, '所有带戳 HTML 均已同步 ?v=20261116f', notNew.join(','));
-    const total = withV.reduce((n, f) => n + (src('public/' + f).match(/\?v=20261116f/g) || []).length, 0);
+    const notNew = withV.filter(f => !/\?v=20261118a/.test(src('public/' + f)));
+    ok(notNew.length === 0, '所有带戳 HTML 均已同步 ?v=20261118a', notNew.join(','));
+    const total = withV.reduce((n, f) => n + (src('public/' + f).match(/\?v=20261118a/g) || []).length, 0);
     // [任务卡 #015] 删除 emotionSummary.js 脚本引入，?v= 从 58 → 57 处
-    ok(total === 57, `?v=20261116f 共 57 处（实际 ${total}）`);
+    ok(total === 57, `?v=20261118a 共 57 处（实际 ${total}）`);
   }
 
   console.log('\n=== 8) 样本不足时如实降级（不外推） ===');
