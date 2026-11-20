@@ -173,7 +173,7 @@ ok(app.includes('ve-cols-5') && css.includes('.ve-cols-5 { grid-template-columns
 section('§9 零后端改动 / 版本戳 / 缓存破坏');
 ok(ve.includes("schema: 'volume-engine-20261109c'"), '引擎 schema = volume-engine-20261109c（量能单一真值源）');
 ok(sjd.includes("const LAYOUT_VERSION = '20261109c'"), 'LAYOUT_VERSION 已升 20261106o（量价配合子信号输入 signal 值域与分值变化，判断记录强制重算）');
-ok(/const APP_VERSION = '20261118a'/.test(server), 'APP_VERSION 已是当前版本');
+ok(/const APP_VERSION = '20261120a'/.test(server), 'APP_VERSION 已是当前版本');
 ok(server.includes('[20261106f]'), 'server.js 存在 [20261106f] 独立变更日志条目');
 ok(server.includes('[20261106e]') && server.includes('[20261106d]'), '功能引入版本号保留，未随全局升版误改（铁律）');
 // [20261118a] 漂移自愈：缓存戳以 server.js 的 APP_VERSION 为唯一权威，不再写字面量旧版本负断言

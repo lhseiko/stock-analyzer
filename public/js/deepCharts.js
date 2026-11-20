@@ -1775,6 +1775,129 @@ const DeepCharts = {
   },
 
   // Render all deep analysis charts
+  // ---- 全卡片总结（任务卡 #028）：顶部总览；打开只读缓存不耗额度，点按钮才生成 ----
+  _summaryText(v, max) {
+    const cap = max || 300;
+    if (v == null) return '';
+    if (typeof v === 'string') return v.slice(0, cap);
+    if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+    if (typeof v === 'object') {
+      const parts = [];
+      ['overallRating', 'title', 'verdict', 'conclusion', 'text', 'summary', 'value'].forEach(k => {
+        if (v[k] != null && typeof v[k] !== 'object') parts.push(String(v[k]));
+      });
+      if (parts.length) return parts.join('：').slice(0, cap);
+      try { return JSON.stringify(v).slice(0, cap); } catch (e) { return ''; }
+    }
+    return '';
+  },
+
+  _buildSummaryDigest(sections) {
+    const d = {};
+    if (!sections) return d;
+    const er = sections.earningsReport;
+    if (er && (er.summary || er.verdict)) {
+      d.earnings = {
+        reportPeriod: er.reportPeriod || '', verdict: er.verdict || '',
+        signal: er.earningsSignal, summary: String(er.summary || '').slice(0, 900),
+      };
+    }
+    if (sections.conclusion) d.valuation = this._summaryText(sections.conclusion, 700);
+    if (sections.researchAI && sections.researchAI.summary) d.research = String(sections.researchAI.summary).slice(0, 400);
+    if (sections.announcementAI && sections.announcementAI.summary) d.announcements = String(sections.announcementAI.summary).slice(0, 400);
+    const C = sections._conclusions || {};
+    const cards = {};
+    Object.keys(C).forEach(k => { const t = this._summaryText(C[k], 260); if (t) cards[k] = t; });
+    if (Object.keys(cards).length) d.cardConclusions = cards;
+    if (sections.currentPrice) d.currentPrice = this._summaryText(sections.currentPrice, 80);
+    return d;
+  },
+
+  _renderDeepSummaryContent(ai) {
+    const el = document.getElementById('deepSummary');
+    if (!el) return;
+    const dateStr = ai.date ? new Date(ai.date).toISOString().slice(0, 10) : '';
+    const paras = String(ai.summary).split(/\r?\n/).filter(l => l.trim())
+      .map(l => '<p>' + this._earningsHighlight(this.escapeHtml(l.trim())) + '</p>').join('');
+    const flags = (ai.stale ? ' · 提示词已更新' : '') + (ai.expired ? ' · 已超7天' : '');
+    el.innerHTML = `<div class="mx-summary">${paras}</div>
+      <div class="ai-holder-foot"><span class="ai-holder-date">${dateStr}${ai.model ? ' · ' + this.escapeHtml(ai.model) : ''}${flags}</span>
+      <button class="ai-trigger-btn" id="deepSummaryBtn" type="button">重新生成</button></div>`;
+    this._bindDeepSummaryBtn();
+  },
+
+  _renderDeepSummaryEmpty(note) {
+    const el = document.getElementById('deepSummary');
+    if (!el) return;
+    el.innerHTML = `<div class="data-empty">${note ? this.escapeHtml(note) + '<br><br>' : ''}汇总本页所有卡片（业绩、估值、财报、股东、研报公告等）生成一段总览。打开页面不消耗额度，点击按钮才生成。<br><br>
+      <button class="ai-trigger-btn" id="deepSummaryBtn" type="button">✨ 生成全卡片总结</button></div>`;
+    this._bindDeepSummaryBtn();
+  },
+
+  _bindDeepSummaryBtn() {
+    const btn = document.getElementById('deepSummaryBtn');
+    if (btn) btn.onclick = () => this._triggerDeepSummary(this._symbol, this._stockName);
+  },
+
+  renderDeepSummary(ai, symbol, stockName) {
+    const el = document.getElementById('deepSummary');
+    if (!el || !symbol) return;
+    const key = 'deepSummary_' + symbol;
+    if ((!ai || !ai.summary) && this._aiCache && this._aiCache[key]) ai = this._aiCache[key];
+    if (ai && ai.summary) { this._renderDeepSummaryContent(ai); return; }
+    el.innerHTML = this._aiLoadingPlaceholder('全卡片总结');
+    fetch('/api/ai/deep-summary/' + encodeURIComponent(symbol))
+      .then(r => r.json())
+      .then(data => {
+        if (this._symbol !== symbol) return;
+        if (data && data.success && data.summary) {
+          this._aiCache = this._aiCache || {};
+          this._aiCache[key] = data;
+          this._renderDeepSummaryContent(data);
+        } else { this._renderDeepSummaryEmpty(''); }
+      })
+      .catch(() => { if (this._symbol === symbol) this._renderDeepSummaryEmpty(''); });
+  },
+
+  _triggerDeepSummary(symbol, stockName) {
+    if (!symbol) return;
+    const key = 'deepSummary_' + symbol;
+    this._aiInflight = this._aiInflight || {};
+    if (this._aiInflight[key]) return;
+    const el = document.getElementById('deepSummary');
+    if (!el) return;
+    const digest = this._buildSummaryDigest(this._lastSections);
+    if (!Object.keys(digest).length) {
+      this._renderDeepSummaryEmpty('各卡片数据尚未就绪，请等深度分析加载完成后再生成。');
+      return;
+    }
+    this._aiInflight[key] = true;
+    el.innerHTML = this._aiLoadingPlaceholder('全卡片总结');
+    fetch('/api/ai/deep-summary', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol, stockName: stockName || '', digest, force: true }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        this._aiInflight[key] = false;
+        if (this._symbol !== symbol) return;
+        if (data && data.success && data.summary) {
+          this._aiCache = this._aiCache || {};
+          this._aiCache[key] = data;
+          this._renderDeepSummaryContent(data);
+        } else if (data && data.error === 'NO_KEY') {
+          el.innerHTML = this._aiNoKeyPlaceholder();
+        } else {
+          this._renderDeepSummaryEmpty('生成失败：' + ((data && (data.message || data.error)) || '未知错误'));
+        }
+      })
+      .catch(e => {
+        this._aiInflight[key] = false;
+        if (this._symbol === symbol) this._renderDeepSummaryEmpty('生成失败：' + e.message);
+      });
+  },
+
   renderAll(sections, symbol, stockName) {
     this._symbol = symbol || this._symbol;
     this._stockName = stockName || this._stockName;
@@ -1788,8 +1911,10 @@ const DeepCharts = {
     // 每个分节独立 try/catch：任一分节渲染失败都不会导致整页空白
     const safe = (label, fn) => { try { fn(); } catch (e) { console.error('DeepCharts 渲染失败 [' + label + ']:', e); } };
 
+    this._lastSections = sections; // 任务卡 #028：供「全卡片总结」构建各卡片摘要
     // [20261111d] 最先渲染价格口径降级警告，独立于任何图表分节；无 degraded 时负责移除旧条
     safe('dataGaps', () => this.renderDataGapsWarning(sections.dataGaps, sections.currentPrice));
+    safe('deepSummary', () => this.renderDeepSummary(null, this._symbol, this._stockName));
 
     // 20260905j：公司类型/分析重点行已按需求删除（估值区合并为单模块），renderCompanyType 保留但不再调用
     // safe('companyType', () => this.renderCompanyType(sections.companyClassification));

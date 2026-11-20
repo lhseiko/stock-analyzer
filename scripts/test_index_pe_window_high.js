@@ -77,9 +77,10 @@ ok(pySrc.includes('for name in ["上证50", "沪深300", "中证1000"]'), '脚�
 ok(pySrc.includes('all_start_str = "2019-01-01"'), '科创50 应全历史抓取（2019-01-01 起）');
 
 // ---------- §3 版本戳 ----------
-ok(/const APP_VERSION = '20261118a'/.test(serverSrc), 'server.js APP_VERSION 应为 20261116a');
+ok(/const APP_VERSION = '20261120a'/.test(serverSrc), 'server.js APP_VERSION 应为 20261116a');
 ok(/\[20261105b\]/.test(serverSrc), 'server.js 应有 [20261105b] 独立注释条目');
-ok(/20261118a/.test(indexHtml), 'index.html 版本戳/注释应对齐 20261118a');
+const curAv = (serverSrc.match(/const APP_VERSION = '(\d{8}[a-z])'/) || [])[1];
+ok(indexHtml.includes('?v=' + curAv), `index.html 版本戳应对齐 APP_VERSION=${curAv}`);
 
 // ---------- 汇总 ----------
 console.log(`\n共 ${pass + fail} 断言：PASS ${pass} / FAIL ${fail}`);

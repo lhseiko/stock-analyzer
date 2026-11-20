@@ -129,7 +129,7 @@ ok(!chartsCode.includes('全模块综合总结（代码聚合）'), '聚合行�
 ok(!chartsCode.includes('20261106m（用户裁决'), 'm 轮聚合块注释已清理（留档注释除外）');
 
 section('§8 版本戳 / 缓存破坏');
-ok(/const APP_VERSION = '20261118a'/.test(server), 'APP_VERSION 已是当前版本');
+ok(/const APP_VERSION = '20261120a'/.test(server), 'APP_VERSION 已是当前版本');
 ok(server.includes('[20261106i]'), 'server.js 存在 [20261106i] 独立变更日志');
 ok(server.includes('[20261106h]') && server.includes('[20261106g]'), '功能引入版本号保留（铁律）');
 // [20261118a] 漂移自愈：缓存戳以 server.js 的 APP_VERSION 为唯一权威，不再写字面量旧版本负断言

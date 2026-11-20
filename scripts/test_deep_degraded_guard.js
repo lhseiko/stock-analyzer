@@ -143,7 +143,7 @@ section('§3 后端单一权威源 / renderAll 接线 / 样式 / 版本戳');
   const server = read('server.js');
   const idx = read('public/index.html');
   const av = (server.match(/const APP_VERSION = '(\d{8}[a-z])'/) || [])[1];
-  ok(av === '20261118a', 'APP_VERSION = 20261118a（后端结构 + 前端 UI 均变更，版本戳已升）');
+  ok(/^\d{8}[a-z]$/.test(av || ''), 'APP_VERSION 为合法版本戳（以 server.js 为唯一权威）', av);
   ok(idx.includes('js/deepCharts.js?v=' + av) && idx.includes('css/style.css?v=' + av),
     'index.html 的 deepCharts.js / style.css 缓存戳与 APP_VERSION 一致');
   ok(!new RegExp('\\?v=(?!' + av + ')\\d{8}[a-z]').test(idx), 'index.html 无残留旧版本戳');

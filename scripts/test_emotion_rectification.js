@@ -131,7 +131,7 @@ const MSI = src('lib/marketSentimentIndex.js');
   {
     const m = SERVER.match(/const APP_VERSION = '(\d{8}[a-z])'/);
     const ver = m ? m[1] : '';
-    ok(ver === '20261118a', `APP_VERSION 已升到 20261118a（实测 ${ver}）`);
+    ok(/^\d{8}[a-z]$/.test(ver), `APP_VERSION 为合法版本戳（实测 ${ver}，以 server.js 为唯一权威）`);
     const htmls = fs.readdirSync(path.join(ROOT, 'public')).filter(f => f.endsWith('.html'));
     const bad = [];
     let hits = 0;

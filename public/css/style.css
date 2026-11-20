@@ -2851,6 +2851,8 @@ body {
 .ve-cc-wide .ve-cc-label { margin-bottom: 0; flex: none; }
 .ve-cc-label { display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; }
 .ve-cc-text { display: block; font-size: 13px; line-height: 1.55; }
+/* [任务卡 #024] 融资融券卡内两行：融资一行 + 融券一行（<br> 分行），各自语义色 */
+.ve-margin-line { display: inline; }
 /* 20261103f（用户截图指令）：量能分析卡利好/利空语义着色——利好=红、利空=绿（全站红涨绿跌语义），中性不着色 */
 .ve-tone-bull { color: var(--red); }
 .ve-tone-bear { color: var(--green); }

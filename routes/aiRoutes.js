@@ -313,6 +313,27 @@ router.get('/api/ai/earnings/:symbol', (req, res) => {
   res.json({ success: true, cached: true, ...cached });
 });
 
+// 全卡片总结（任务卡 #028）：POST 按需生成（消耗一次额度），GET 只读缓存（打开页面不耗额度）
+const { analyzeDeepSummary } = require('../lib/ai/deepSummary');
+const { readDeepSummaryCache } = require('../lib/ai/cache');
+router.post('/api/ai/deep-summary', async (req, res) => {
+  try {
+    const { symbol, stockName, digest, force } = req.body || {};
+    if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL', message: '缺少股票代码' });
+    const data = await analyzeDeepSummary({ symbol, stockName, digest, force: !!force });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+router.get('/api/ai/deep-summary/:symbol', (req, res) => {
+  const symbol = String(req.params.symbol || '').trim();
+  if (!symbol) return res.status(400).json({ success: false, error: 'NO_SYMBOL' });
+  const cached = readDeepSummaryCache(symbol);
+  if (!cached) return res.json({ success: false, cached: false });
+  res.json({ success: true, cached: true, ...cached });
+});
+
 // ========== 东方财富「妙想」数据（股东户数 / 机构评级 / 业绩预告 / 龙虎榜 / 资讯）==========
 // 开始授权：返回 authUrl 供用户扫码/打开授权；已授权则直接 authed
 router.get('/api/miaoxiang/auth', async (req, res) => {

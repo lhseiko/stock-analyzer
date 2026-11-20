@@ -87,7 +87,7 @@ ok(ve.includes("schema: 'volume-engine-20261109c'"), '引擎 schema = volume-eng
 ok(sjd.includes("const LAYOUT_VERSION = '20261109c'"), 'LAYOUT_VERSION 已升 20261106o（量价配合子信号输入 signal 值域与分值变化：涨跌判定与 135 格走势档同源，判断记录强制重算）');
 
 section('§6 版本戳与缓存破坏');
-ok(/const APP_VERSION = '20261118a'/.test(server), 'APP_VERSION 已是当前版本');
+ok(/const APP_VERSION = '20261120a'/.test(server), 'APP_VERSION 已是当前版本');
 ok(server.includes('[20261106e]'), 'server.js 存在 [20261106e] 独立变更日志条目');
 ok(server.includes('[20261106c]'), 'server.js 存在 [20261106c] 独立变更日志条目');
 ok(server.includes('[20261106b]'), '[20261106b] 功能引入版本号保留，未随全局升版误改（铁律）');
@@ -103,7 +103,8 @@ ok(server.includes('[20261106b]'), '[20261106b] 功能引入版本号保留，�
 const guards = ['test_volume_ratio_labels.js', 'test_position_trend_segment.js', 'test_consistency_audit.js']; // test_cap_vol_ratio_chart 动态读取 APP_VERSION（无版本字面量），不参与字面量同步断言
 for (const g of guards) {
   const s = read('scripts/' + g);
-  ok(s.includes('20261118a'), `既有守卫当前版本断言已同步 20261118a：${g}`);
+  const curAv = (server.match(/const APP_VERSION = '(\d{8}[a-z])'/) || [])[1];
+  ok(s.includes(curAv), `既有守卫当前版本断言已同步 ${curAv}：${g}`);
 }
 
 console.log(`\n===== 汇总：通过 ${pass} / ${fail} 失败 =====`);

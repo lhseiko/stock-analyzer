@@ -1333,3 +1333,20 @@
 - **实测**：腾讯字段72 取数 601318=106.60亿股、601398=2696.12亿股；隔离目录验证缓存写入链路成功，临时目录已清理。
 - **升版**：`APP_VERSION` / 全站 `?v=` / `WATCH_VERSION` → `20261118a`。
 - **状态**：本地改动完成，未 commit / 未 push / 未三端同步；当前 3005 为旧进程需重启加载新代码 + 触发一次采集生成流通股缓存 + Ctrl+F5 硬刷新验收；等用户「同步」指令。
+
+## 11-18 21:1x 三端同步完成（用户明确「同步」指令）
+
+- **范围**：11-17~11-18 六张任务卡累积改动（#018 商誉 / #019 营运利润环比 / #020 基本面结论卡 / #021 情绪命中方向判定 / #022 20日均量比卡+缺陷修复 / #023 ETF净申赎占比），APP_VERSION 20261116f → 20261118a。
+- **提交**：`2f7dad4`（79 文件，+3482/-335），commit message 按 6 子任务分节；提交前密钥扫描零命中、根目录与 scripts 无 scratch 临时文件。
+- **三端**：本地 / GitHub origin / 工作空间克隆 HEAD 全等 `2f7dad44a2a90b99b3265a484e4cebe320cf21d9`；EOL 归一化抽查 12 个关键文件（含 directionHit.js / goodwill.js / marketEmotionModel.js / etfFlow.js / 前端卡行）全部一致。
+- **方式**：本地 SSH push 成功；克隆端因 HTTPS 被拦走「从本地仓 fetch + reset --hard FETCH_HEAD」。
+
+## 11-20 11:3x 任务卡 #024：个股「融资融券」卡补齐融券侧（本地完成，未同步）
+
+- **用户裁决**：截图报「融资融券缺失融券的数据，补上」→ 任务卡确认「按推荐执行」= ①完整对称信息（余额+占流通市值比+余额变化+方向）+ ②卡内融资/融券两行并列 + ③缺失如实标注。
+- **根因**：后端 `margin.latest` 已含 `rqBalance/rqChange/rqVolume`，`capitalCharts.js::buildConclusionParts` 的摘要文案只拼融资侧，纯前端展示遗漏；大盘情绪因子卡早有融券双栏，不在本次范围。
+- **落地**：`public/js/capitalCharts.js` 融资行原文逐字不变、新增融券行（占比=融券余额÷融资余额×融资占比，同一流通市值分母，零新增数据源；小额变化用「万」避免显示 0.00 亿）；方向色融资增红/融券增绿（语义相反、独立 span 着色，整卡 tone 仍按融资侧计票零改动）；`style.css` 新增 `.ve-margin-line`；缺字段显示「融券数据缺失（本股非两融标的或源数据不全）」，rqBalance=0 如实显示 0.00 亿。新增 `scripts/test_margin_short_display.js`（静态 + vm 实跑 19 断言）。
+- **升版**：`APP_VERSION` / 全站 `?v=` / `WATCH_VERSION` → `20261120a`；bump 导致 8 个守卫字面量版本断言失配，统一改为动态读取 server.js APP_VERSION（deep_degraded / emotion_rectification / emotion_watch / etf_flow_holiday / index_pe_window_high / limit_pool_store / volume_caliber_warn / valuation_weigao），防后续再漂移。
+- **验证**：专项守卫 19/19、缓存戳 3/3、颜色语义 154/154、8 个修正守卫全绿；全量 `--quick` **154/156**（跳过 16 需网络）；实时 `/api/capital-flow/601318` 实跑输出「融资余额336.8亿（占流通市值5.78%），净买入-1.54亿，融资减少 / 融券余额3.01亿，占流通市值0.05%，增加34万」，两行均 bear=绿、融资行原文不变。
+- **两项历史遗留失败（与本次零交集，未擅改）**：`test_swallow_catch_guard` 基线 138（11-10）vs 现 140，但 HEAD `2f7dad4` 的清单已是 140、本次重生成清单除行号外逐行一致 → 零新增空 catch，基线属历史未收编；`test_emotion_learning_health` 两条「假记录已归档」断言指向 `data/test-scenes/` 两文件，守卫自身从未创建且 data/ 被 gitignore → 守卫设计缺陷。两项均需用户裁决后再动，未自动改基线/守卫。
+- **状态**：本地改动完成，未 commit / 未 push / 未三端同步；当前 3005 为旧进程，需重启 + Ctrl+F5 硬刷新验收；等用户「同步」指令。

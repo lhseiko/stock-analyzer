@@ -4692,6 +4692,10 @@ const App = {
     const cardOf = (id) => { const el = helper(id); return el ? (el.closest('.chart-card') || el) : null; };
 
     const groups = [
+      // [20261118c] 任务卡 #028 修复：全卡片总结必须登记进分组，否则下方「移除所有子节点再按组装回」
+      // 会把它当作未登记节点直接丢弃（用户实测看不到卡片与按钮）。
+      { id: 'group-summary', title: '🧭 全卡片总结', open: true,
+        nodes: [cardOf('deepSummary')] },
       { id: 'group-overview', title: '📋 综合估值', open: true,
         nodes: [document.querySelector('.valuation-merged')] },
       { id: 'group-earnings', title: '📑 财报解读',

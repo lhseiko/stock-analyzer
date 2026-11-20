@@ -184,12 +184,12 @@ console.log('\n§6 下游相邻模块一次性同步');
   ok('前端行内显示雪球分与最热成分股', /r\.xq\.topStock/.test(ui) && /r\.xq\.soloHot/.test(ui));
 
   const server = read('server.js');
-  ok('APP_VERSION 升至 20261114c', /const APP_VERSION = '20261118a';/.test(server));
+  ok('APP_VERSION 升至 20261114c', /const APP_VERSION = '20261120a';/.test(server));
   const htmls = fs.readdirSync(path.join(ROOT, 'public')).filter(f => f.endsWith('.html'));
-  const stale = htmls.filter(f => /\?v=20261118a/.test(read('public/' + f)));
+  const stale = htmls.filter(f => /\?v=20261120a/.test(read('public/' + f)));
   eq('8 个 HTML 无 20261114b 旧戳残留', stale, []);
-  const hits = htmls.reduce((n, f) => n + (read('public/' + f).match(/\?v=20261118a/g) || []).length, 0);
-  eq('全站 ?v=20261118a 缓存戳总数', hits, 57);
+  const hits = htmls.reduce((n, f) => n + (read('public/' + f).match(/\?v=20261120a/g) || []).length, 0);
+  eq('全站 ?v=20261120a 缓存戳总数', hits, 57);
 }
 
 // ============ §7 合规边界 ============

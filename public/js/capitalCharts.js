@@ -846,7 +846,40 @@ const CapitalCharts = {
       // 产生歧义（读成净买入占流通市值 4.46%）→ 调整为紧贴「融资余额」之后：融资余额15.7亿（占流通市值4.46%），净买入0.27亿
       const ratioStr = l.rzRatio ? `（占流通市值${l.rzRatio.toFixed(2)}%）` : '';
       const netBuyStr = l.rzNetBuy !== undefined ? `，净买入${(l.rzNetBuy / 1e8).toFixed(2)}亿` : '';
-      rows.push({ icon: '🏦', label: '融资融券', text: `融资余额${(l.rzBalance / 1e8).toFixed(1)}亿${ratioStr}${netBuyStr}，${margin.trend}`, tone: moneyTone(l.rzChange) });
+      // [任务卡 #024] 融资融券卡补齐融券侧：融资一行 + 融券一行（卡内两行）。
+      // 融资行原文逐字不变；融券行显示余额/占流通市值比/余额变化/趋势。
+      // 方向色按语义：融资增加=利好红、减少=利空绿；融券增加=利空绿、减少=利好红（两者相反，不用 moneyTone）。
+      // 融券占比 = 融券余额 ÷ 融资余额 × 融资占比（同一流通市值分母，确定性计算，不新增数据源）。
+      const rzLine = `融资余额${(l.rzBalance / 1e8).toFixed(1)}亿${ratioStr}${netBuyStr}，${margin.trend}`;
+      const rzTone = moneyTone(l.rzChange);
+      let rqLine, rqTone;
+      // 字段存在即为有效（含余额 0，如实显示）；仅 undefined/null/非数才判缺失。
+      const rqValid = typeof l.rqBalance === 'number' && isFinite(l.rqBalance);
+      if (rqValid) {
+        // 融券余额为 0 的合规标的也如实显示 0，不臆造；余额字段缺失才显示缺失。
+        const rqRatio = (typeof l.rzRatio === 'number' && l.rzRatio > 0 && l.rzBalance > 0)
+          ? (l.rqBalance / l.rzBalance) * l.rzRatio : null;
+        const rqRatioStr = rqRatio != null ? `，占流通市值${rqRatio.toFixed(2)}%` : '';
+        const rqChg = typeof l.rqChange === 'number' ? l.rqChange : null;
+        // 余额变化：正=融券增加=利空，负=融券减少=利好（与融资相反）。
+        // 融券余额本身小（常为几千万），变化常不足 0.01 亿 → 用「万」为单位避免显示成 0.00 亿误导。
+        const rqChgAbs = rqChg == null ? null : Math.abs(rqChg);
+        const rqChgTxt = rqChgAbs == null ? ''
+          : rqChgAbs < 1e7 ? `，${rqChg > 0 ? '增加' : rqChg < 0 ? '减少' : '持平'}${Math.round(rqChgAbs / 1e4)}万`
+            : `，${rqChg > 0 ? '增加' : rqChg < 0 ? '减少' : '持平'}${(rqChgAbs / 1e8).toFixed(2)}亿`;
+        rqLine = `融券余额${(l.rqBalance / 1e8).toFixed(2)}亿${rqRatioStr}${rqChgTxt}`;
+        rqTone = rqChg == null ? 'neutral' : (rqChg > 0 ? 'bear' : rqChg < 0 ? 'bull' : 'neutral');
+      } else {
+        rqLine = '融券数据缺失（本股非两融标的或源数据不全）';
+        rqTone = 'neutral';
+      }
+      rows.push({
+        icon: '🏦', label: '融资融券',
+        // tone 用融资侧（整卡计票口径不变），融券侧单独用一个 span 精确着色
+        text: `<span class="ve-margin-line ve-tone-${rzTone}">${rzLine}</span>`
+          + `<br><span class="ve-margin-line ve-tone-${rqTone}">${rqLine}</span>`,
+        tone: rzTone,
+      });
     }
 
     // 综合判断（优先复用后端统一结论，与判断引擎因子保持一致）→ verdict
