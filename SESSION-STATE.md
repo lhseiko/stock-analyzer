@@ -1350,3 +1350,11 @@
 - **验证**：专项守卫 19/19、缓存戳 3/3、颜色语义 154/154、8 个修正守卫全绿；全量 `--quick` **154/156**（跳过 16 需网络）；实时 `/api/capital-flow/601318` 实跑输出「融资余额336.8亿（占流通市值5.78%），净买入-1.54亿，融资减少 / 融券余额3.01亿，占流通市值0.05%，增加34万」，两行均 bear=绿、融资行原文不变。
 - **两项历史遗留失败（与本次零交集，未擅改）**：`test_swallow_catch_guard` 基线 138（11-10）vs 现 140，但 HEAD `2f7dad4` 的清单已是 140、本次重生成清单除行号外逐行一致 → 零新增空 catch，基线属历史未收编；`test_emotion_learning_health` 两条「假记录已归档」断言指向 `data/test-scenes/` 两文件，守卫自身从未创建且 data/ 被 gitignore → 守卫设计缺陷。两项均需用户裁决后再动，未自动改基线/守卫。
 - **状态**：本地改动完成，未 commit / 未 push / 未三端同步；当前 3005 为旧进程，需重启 + Ctrl+F5 硬刷新验收；等用户「同步」指令。
+
+## 11-21 09:5x 三端同步完成（用户明确「同步」指令）
+
+- **触发**：用户 11-20 首次「同步」→ 本地 commit `ad9fd5e`（45 文件，+702/-120，按 #024 / #028 / 升版守卫三节）；push 命令在中断处未生效，远端仍停 `2f7dad4`。11-21 用户再下「同步」→ 重推成功。
+- **提交前检查**：密钥扫描零命中；根目录与 scripts 无 scratch；本地与克隆端基线同为 `2f7dad4`（干净）。
+- **同步**：本地 SSH push `2f7dad4..ad9fd5e` 成功并核对远端已更新；克隆端走「从本地仓 fetch + reset --hard FETCH_HEAD」（HTTPS 被拦）。
+- **校验**：三端 hash 全等 `ad9fd5e73dc13fe3e494d654ec542a27000dd8bf`（本地 = GitHub origin = 克隆端）；13 个关键文件（含 capitalCharts.js / deepSummary.js / cache.js / aiRoutes.js / deepCharts.js / 两守卫 / SESSION-STATE.md）EOL 归一化后逐字节一致。
+- **说明**：当前 3005 仍为旧进程，用户需重启 + Ctrl+F5 硬刷新验收新卡片；data/ 与克隆端无该目录属 gitignore 正常。
